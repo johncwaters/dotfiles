@@ -1,25 +1,31 @@
 # dotfiles
 
-Personal machine setup repo. Successor to `claude-setup` for everything that is not
-Claude Code itself.
+Personal machine setup. Linux, with mac seams left open; no Windows.
 
 ## Invariants
 
-- No secrets in tracked files. Config that needs a credential reads it from the
-  environment or from an untracked `*.local` sibling, with a tracked `.example` next to
-  it documenting the shape.
-- Scripts are idempotent. Re-running a bootstrap step on a converged machine is a no-op,
-  because a machine is set up by running everything, not by remembering what already ran.
-- Machine-specific values are rendered, never committed. Absolute paths, hostnames, and
-  clone urls come from a profile or a token substitution at apply time.
-- Removals converge too. Retiring a tool means adding it to the removal list, not just
-  deleting it from the install list, so machines that already have it drop it.
+- No secrets in tracked files. Config needing a credential reads it from the environment
+  or an untracked sibling, with a tracked `.example` documenting the shape.
+- Symlink, do not copy. A copy means the machine silently drifts from the repo until
+  someone reruns the installer; a link cannot drift. Render only what a profile varies.
+- Installers are idempotent. A machine is converged by running everything, not by
+  remembering what already ran.
+- Removals converge too. Retiring a tool means adding it to a removal list, so machines
+  that already have it drop it, rather than only deleting it from the install list.
+- A topic owns its concern completely: config, `install.sh`, `test.sh`. Deleting the dir
+  deletes the feature.
+- Machine-specific values are rendered or untracked, never committed.
+- `~/.claude` holds runtime state (`projects/`, `sessions/`, `plugins/`, credentials)
+  that must never enter this repo, so `ai/install.sh` links per entry rather than
+  linking whole directories.
 
 ## Map
 
-- `README.md`: scope boundary against `claude-setup`, layout
-- `CLAUDE.md`: pointer to this file only
-
-## Related repos
-
-- `claude-setup`: Claude Code config (agents, skills, hooks, profiles, compiled-commit)
+- `script/bootstrap`: reads the profile, runs its topics in listed order
+- `script/lib/`: shared shell helpers (logging, linking, rendering, profile parsing)
+- `script/collect`: pulls live machine state back into the repo
+- `bin/`: on PATH
+- `profiles/<name>/profile.json`: the topic list for that machine, in run order
+- `<topic>/install.sh`: idempotent, safe to rerun, no assumptions about run order beyond
+  what the profile guarantees
+- `test/`: shared Docker matrix; per-topic tests live next to their installer
