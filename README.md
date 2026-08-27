@@ -35,10 +35,13 @@ only ensures the links exist. The exception is `~/.claude/settings.json`, render
 
 `profiles/<name>/profile.json` lists the topics that profile runs, in order. Ordering is
 load-bearing: `packages` installs node before `ai` needs it, git before `repos` clones.
-Alongside it sit the files that genuinely differ per machine: `CLAUDE.md`, `commit.md`,
-`settings.overlay.json`.
+Alongside it sit the files that genuinely differ per machine: `CLAUDE.md`,
+`commit-policy.json`, `settings.overlay.json`.
 
-The active profile comes from `.machine-profile` (untracked) or `$DOTFILES_PROFILE`.
+The active profile comes from `--profile`, then `$DOTFILES_PROFILE`, then the untracked
+`.machine-profile`. An existing `.machine-profile` is never rewritten, so a differing
+`--profile` or `$DOTFILES_PROFILE` applies to that one run and the machine keeps its
+profile.
 
 - `personal`: this workstation
 - `server`: headless, no editor or desktop topics

@@ -31,5 +31,6 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
 - `bin/`: on PATH
 - `profiles/<name>/profile.json`: the topic list for that machine, in run order
 - `<topic>/install.sh`: idempotent, safe to rerun, no assumptions about run order beyond
-  what the profile guarantees
+  what the profile guarantees; ends at `finishTopic`, which exits non-zero when the topic
+  warned so bootstrap still sees the failure if the shared counts file is lost
 - `test/`: shared Docker matrix; per-topic tests live next to their installer

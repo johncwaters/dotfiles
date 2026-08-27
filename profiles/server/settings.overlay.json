@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:unpkg.com)"
+    ],
+    "defaultMode": "auto"
+  },
+  "alwaysThinkingEnabled": true
+}

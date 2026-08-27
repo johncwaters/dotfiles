@@ -1,0 +1,6 @@
+{
+  "worktree": { "baseRef": "fresh" },
+  "enabledPlugins": { "example-org-plugin@example-org": true },
+  "theme": "dark",
+  "switchModelsOnFlag": false
+}

@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+
+selfDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib/context.sh
+source "$selfDirectory/lib/context.sh"
+
+scriptStartSeconds=$SECONDS
+requestedProfile=""
+
+usage() {
+  cat <<'USAGE'
+Usage: script/bootstrap [--profile <name>]
+
+Points ~/.dotfiles at this clone, resolves the machine profile, and runs that
+profile's topics in the order its profile.json lists them.
+
+The profile comes from --profile, then $DOTFILES_PROFILE, then .machine-profile.
+An existing .machine-profile is never rewritten, so a differing --profile or
+$DOTFILES_PROFILE applies to that one run and the machine keeps its profile.
+USAGE
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --profile)
+      if (($# < 2)) || [[ -z "$2" ]]; then
+        printf 'bootstrap: --profile needs a name.\n' >&2
+        usage >&2
+        exit 1
+      fi
+      requestedProfile="$2"
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'bootstrap: unknown argument %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$requestedProfile" ]]; then
+  profileName="$requestedProfile"
+fi
+
+if [[ -z "$profileName" ]]; then
+  printf 'bootstrap: no profile. Pass --profile <name>, set $DOTFILES_PROFILE, or write %s.\n' \
+    "$(profileMarkerPath)" >&2
+  exit 1
+fi
+
+requireSafeName "profile" "$profileName" || exit 1
+requireUsableMarkerPath || exit 1
+
+profileDir="$(profileDirectory "$profileName")"
+profileJson="$profileDir/profile.json"
+if [[ ! -f "$profileJson" ]]; then
+  printf 'bootstrap: no such profile %s (expected %s).\n' "$profileName" "$profileJson" >&2
+  exit 1
+fi
+
+topicsOutput=""
+topicsStatus=0
+topicsOutput="$(readProfileTopics "$profileJson")" || topicsStatus=$?
+if ((topicsStatus != 0)); then
+  printf 'bootstrap: could not read the topics list in %s.\n' "$profileJson" >&2
+  exit 1
+fi
+profileTopics=()
+if [[ -n "$topicsOutput" ]]; then
+  mapfile -t profileTopics <<< "$topicsOutput"
+fi
+if ((${#profileTopics[@]} == 0)); then
+  printf 'bootstrap: %s lists no topics.\n' "$profileJson" >&2
+  exit 1
+fi
+
+repoIsLinkedWorktree() {
+  local gitDirectory
+  local gitCommonDirectory
+  gitDirectory="$(git -C "$dotfilesRepo" rev-parse --git-dir 2>/dev/null)" || return 1
+  gitCommonDirectory="$(git -C "$dotfilesRepo" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  gitDirectory="$(cd -- "$dotfilesRepo" && cd -- "$gitDirectory" && pwd -P)" || return 1
+  gitCommonDirectory="$(cd -- "$dotfilesRepo" && cd -- "$gitCommonDirectory" && pwd -P)" || return 1
+  [[ "$gitDirectory" != "$gitCommonDirectory" ]]
+}
+
+ensureDotfilesAlias() {
+  if aliasResolvesToRepo; then
+    notePresent "~/.dotfiles" "points at this clone"
+    return 0
+  fi
+  if repoIsLinkedWorktree; then
+    printf 'bootstrap: %s is a linked worktree; run bootstrap from the main checkout so %s survives worktree removal.\n' \
+      "$dotfilesRepo" "$dotfilesAlias" >&2
+    exit 1
+  fi
+  if [[ -e "$dotfilesAlias" && ! -L "$dotfilesAlias" ]]; then
+    printf 'bootstrap: %s exists and is not a symlink; move it aside first.\n' "$dotfilesAlias" >&2
+    exit 1
+  fi
+  rm -f -- "$dotfilesAlias"
+  ln -s -- "$dotfilesRepo" "$dotfilesAlias"
+  noteApplied "~/.dotfiles" "points at $dotfilesRepo"
+}
+
+# The commit skill reads this marker, so a one-off profile must never rewrite it.
+ensureProfileMarker() {
+  local markedProfile
+  markedProfile="$(readMarkedProfileName)"
+  if [[ -z "$markedProfile" ]]; then
+    printf '%s\n' "$profileName" > "$(profileMarkerPath)"
+    noteApplied ".machine-profile" "now $profileName"
+    return 0
+  fi
+  if [[ "$markedProfile" == "$profileName" ]]; then
+    notePresent ".machine-profile" "$profileName"
+    return 0
+  fi
+  noteDetail ".machine-profile" "stays $markedProfile, $profileName applies to this run only"
+}
+
+appliedTally=0
+installedTally=0
+presentTally=0
+warnedTally=0
+
+countNoteTokens() {
+  grep -c -x -F -e "$1" -- "$countsFile" 2>/dev/null || true
+}
+
+seedCountsFile() {
+  if [[ -n "${countsFile:-}" ]]; then
+    rm -f -- "$countsFile"
+  fi
+  countsFile="$(mktemp "${TMPDIR:-/tmp}/dotfiles-counts.XXXXXX")"
+  printf 'nonce %s\n' "$countsNonce" > "$countsFile"
+  useCountsFile "$countsFile"
+  export DOTFILES_COUNTS_FILE="$countsFile"
+}
+
+countsFileIsOurs() {
+  [[ ! -L "$countsFile" && -f "$countsFile" ]] || return 1
+  [[ "$(head -n 1 -- "$countsFile" 2>/dev/null)" == "nonce $countsNonce" ]]
+}
+
+# A topic can delete or symlink the counts file, so notes are banked here and it is reseeded.
+drainCountsIntoTally() {
+  if ! countsFileIsOurs; then
+    seedCountsFile
+    noteWarned "counts" "the shared tally was lost mid run, earlier notes may be undercounted"
+  fi
+  appliedTally=$((appliedTally + $(countNoteTokens applied)))
+  installedTally=$((installedTally + $(countNoteTokens installed)))
+  presentTally=$((presentTally + $(countNoteTokens present)))
+  warnedTally=$((warnedTally + $(countNoteTokens warned)))
+  seedCountsFile
+}
+
+countsFile=""
+countsNonce="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+trap 'rm -f -- "$countsFile"' EXIT
+seedCountsFile
+export DOTFILES_COUNTS_NONCE="$countsNonce"
+export DOTFILES_PROFILE="$profileName"
+
+writeSection "Profile $profileName"
+ensureDotfilesAlias
+ensureProfileMarker
+noteDetail "topics" "${profileTopics[*]}"
+
+runTopic() {
+  local topicName="$1"
+  if ! nameIsSafe "$topicName"; then
+    noteWarned "$topicName" "invalid topic name"
+    return 0
+  fi
+  if ! topicIsKnown "$topicName"; then
+    noteWarned "$topicName" "no such topic in this repo"
+    return 0
+  fi
+  local warnedTallyBeforeTopic=$warnedTally
+  local topicStatus=0
+  bash "$dotfilesRepo/$topicName/install.sh" || topicStatus=$?
+  drainCountsIntoTally
+  if ((topicStatus == 0)); then
+    return 0
+  fi
+  if ((warnedTally > warnedTallyBeforeTopic)); then
+    noteDetail "$topicName" "install.sh exited $topicStatus, warned above"
+    return 0
+  fi
+  noteWarned "$topicName" "install.sh exited $topicStatus"
+}
+
+for topicName in "${profileTopics[@]}"; do
+  writeSection "$topicName"
+  runTopic "$topicName"
+  drainCountsIntoTally
+done
+
+writeSummary "$((SECONDS - scriptStartSeconds))" \
+  "$appliedTally" \
+  "$installedTally" \
+  "$presentTally" \
+  "$warnedTally"
+
+if ((warnedTally != 0)); then
+  exit 1
+fi
