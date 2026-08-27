@@ -15,13 +15,17 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
 - A topic owns its concern completely: config, `install.sh`, `test.sh`. Deleting the dir
   deletes the feature.
 - Machine-specific values are rendered or untracked, never committed.
+- Link targets are written as `~/.dotfiles/...`, never as the clone path. The alias is
+  what makes the checkout relocatable and lets a machine keep the repo wherever its owner
+  works; `bootstrap` creates it and repoints it if the clone moved.
 - `~/.claude` holds runtime state (`projects/`, `sessions/`, `plugins/`, credentials)
   that must never enter this repo, so `ai/install.sh` links per entry rather than
   linking whole directories.
 
 ## Map
 
-- `script/bootstrap`: reads the profile, runs its topics in listed order
+- `script/bootstrap`: points `~/.dotfiles` at this clone, reads the profile, runs its
+  topics in listed order
 - `script/lib/`: shared shell helpers (logging, linking, rendering, profile parsing)
 - `script/collect`: pulls live machine state back into the repo
 - `bin/`: on PATH

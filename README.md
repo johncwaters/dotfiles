@@ -8,14 +8,18 @@ Linux, with mac seams left open. No Windows.
 
 ## Install
 
+Clone it wherever you work on repos, then bootstrap:
+
 ```sh
-git clone git@github.com:johncwaters/dotfiles.git ~/.dotfiles
-cd ~/.dotfiles
+git clone git@github.com:johncwaters/dotfiles.git ~/Projects/dotfiles
+cd ~/Projects/dotfiles
 script/bootstrap
 ```
 
-The repo path is baked into every symlink it creates, so it lives at `~/.dotfiles` and
-stays there.
+`bootstrap` points `~/.dotfiles` at the clone and every link it creates resolves through
+that alias, never through the clone path. So the checkout lives wherever you want it and
+moving it later means repointing one symlink instead of rewriting every link on the
+machine.
 
 ## How it works
 
