@@ -1,0 +1,395 @@
+#!/usr/bin/env bash
+# Detaches ~/.claude from the claude-setup clone it used to be, leaving every runtime
+# path in place so this repo's ai topic can link into the emptied shell.
+
+selfDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib/context.sh
+source "$selfDirectory/lib/context.sh"
+
+claudeHome="$HOME/.claude"
+backupDirectory=""
+lockDirectory="$HOME/.adopt-claude-home.lock"
+lockHolderPidFile="$lockDirectory/holder-pid"
+lockHolderPid=""
+backupWasCreated=0
+removalHasStarted=0
+confirmed=0
+
+# Paths Claude writes at runtime. A clone that tracks one of these names is mispackaged,
+# so the answer is to stop rather than to believe the index and delete live state.
+protectedRuntimeNames=(
+  projects sessions plugins tasks teams file-history shell-snapshots session-env
+  cache backups paste-cache downloads ide daemon plans
+  .credentials.json settings.local.json settings.json history.jsonl .machine-profile
+)
+
+# Folder names a sync client uploads, so a backup landing in one hands the OAuth token to a
+# third party that no .gitignore can take it back from.
+syncedFolderNames=(
+  dropbox nextcloud owncloud onedrive googledrive "google drive" "my drive" "mobile documents"
+  cloudstorage icloud "icloud drive" seafile syncthing sync mega megasync pclouddrive "box sync"
+  "yandex.disk" "proton drive" insync tresorit koofr jottacloud
+)
+
+usage() {
+  cat <<'USAGE'
+Usage: script/adopt-claude-home --yes [--backup-dir <path>]
+
+Backs up ~/.claude, verifies the backup against every path that is about to go, then
+removes its git clone and each top level path that clone tracked. Runtime state and
+credentials are left alone. Whole tracked directories go, untracked files inside them
+included, so an untracked file found inside one stops the run instead. Safe to rerun:
+an already adopted ~/.claude is left alone.
+
+--yes is required, because the removal cannot be undone except from the backup.
+USAGE
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --backup-dir)
+      if (($# < 2)) || [[ -z "$2" ]]; then
+        printf 'adopt-claude-home: --backup-dir needs a path.\n' >&2
+        exit 1
+      fi
+      backupDirectory="$2"
+      shift 2
+      ;;
+    --yes)
+      confirmed=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'adopt-claude-home: unknown argument %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+writeSection "Adopt ~/.claude"
+
+# A symlink makes cp, find and rm disagree about what they are acting on, and the copy
+# becomes a link beside its own target, so the backup would be no backup at all.
+if [[ -L "$claudeHome" ]]; then
+  printf 'adopt-claude-home: %s is a symlink to %s; adopt that directory directly.\n' \
+    "$claudeHome" "$(readlink -- "$claudeHome")" >&2
+  exit 1
+fi
+
+if [[ ! -d "$claudeHome" ]]; then
+  notePresent "~/.claude" "does not exist, nothing to adopt"
+  finishTopic
+fi
+
+if [[ ! -e "$claudeHome/.git" ]]; then
+  notePresent "~/.claude" "already adopted, no clone to detach"
+  finishTopic
+fi
+
+# Only a claude-setup clone is ever detached, so pointing this at an unrelated repo
+# cannot delete its tracked files.
+originUrl="$(git -C "$claudeHome" remote get-url origin 2>/dev/null || true)"
+case "$originUrl" in
+  *claude-setup*) ;;
+  *)
+    printf 'adopt-claude-home: %s is a git repo whose origin is %s, not claude-setup; refusing.\n' \
+      "$claudeHome" "${originUrl:-unset}" >&2
+    exit 1
+    ;;
+esac
+
+if ((confirmed == 0)); then
+  printf 'adopt-claude-home: this removes the clone and its tracked paths from %s. Rerun with --yes.\n' \
+    "$claudeHome" >&2
+  exit 1
+fi
+
+releaseLock() {
+  rm -f -- "$lockHolderPidFile" 2>/dev/null || true
+  rmdir -- "$lockDirectory" 2>/dev/null || true
+}
+
+settleBackupAfterFailure() {
+  if ((backupWasCreated == 0)); then
+    return 0
+  fi
+  if ((removalHasStarted == 0)) && rm -rf -- "$backupDirectory" 2>/dev/null && [[ ! -e "$backupDirectory" ]]; then
+    printf 'adopt-claude-home: nothing was removed from %s, so the backup at %s and its copy of your credentials were discarded.\n' \
+      "$claudeHome" "$backupDirectory" >&2
+    return 0
+  fi
+  printf 'adopt-claude-home: the backup at %s was kept and holds a copy of your credentials; shred it once you no longer need it.\n' \
+    "$backupDirectory" >&2
+}
+
+finishRun() {
+  local exitStatus=$?
+  if ((exitStatus != 0)); then
+    settleBackupAfterFailure
+  fi
+  releaseLock
+}
+
+claimLock() {
+  if ! mkdir -- "$lockDirectory" 2>/dev/null; then
+    return 1
+  fi
+  printf '%s\n' "$$" > "$lockHolderPidFile"
+}
+
+readLockHolderPid() {
+  lockHolderPid="$(cat -- "$lockHolderPidFile" 2>/dev/null || true)"
+}
+
+lockHolderIsAlive() {
+  if [[ ! "$lockHolderPid" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  kill -0 "$lockHolderPid" 2>/dev/null
+}
+
+# Renaming the lock aside is atomic, so two runs that both find it abandoned cannot both take it.
+takeOverAbandonedLock() {
+  local abandonedLockPath="$lockDirectory.abandoned.$$"
+  rm -rf -- "$abandonedLockPath"
+  if ! mv -- "$lockDirectory" "$abandonedLockPath" 2>/dev/null; then
+    return 1
+  fi
+  rm -rf -- "$abandonedLockPath"
+  claimLock
+}
+
+if ! claimLock; then
+  readLockHolderPid
+  if lockHolderIsAlive; then
+    printf 'adopt-claude-home: pid %s is adopting %s right now; wait for it to finish and it clears %s on its way out.\n' \
+      "$lockHolderPid" "$claudeHome" "$lockDirectory" >&2
+    exit 1
+  fi
+  if ! takeOverAbandonedLock; then
+    printf 'adopt-claude-home: another run claimed %s first; try again once it finishes.\n' \
+      "$lockDirectory" >&2
+    exit 1
+  fi
+  noteDetail "lock reclaimed" "the run holding ${lockHolderPid:-it} is gone"
+fi
+trap finishRun EXIT
+
+isPathInside() {
+  [[ "$1" == "$2" || "$1" == "$2"/* ]]
+}
+
+refuseBackupPlacement() {
+  printf 'adopt-claude-home: the backup would land %s; name a path outside it.\n' "$1" >&2
+  exit 1
+}
+
+nearestExistingAncestor() {
+  local candidatePath="$1"
+  while [[ ! -d "$candidatePath" && "$candidatePath" != "/" ]]; do
+    candidatePath="$(dirname -- "$candidatePath")"
+  done
+  printf '%s\n' "$candidatePath"
+}
+
+listHoldsName() {
+  local candidateName="$1"
+  shift
+  local listedName
+  for listedName in "$@"; do
+    if [[ "$candidateName" == "$listedName" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+nearestAncestorHoldingGitEntry() {
+  local candidatePath="$1"
+  while :; do
+    if [[ -e "$candidatePath/.git" || -L "$candidatePath/.git" ]]; then
+      printf '%s\n' "$candidatePath"
+      return 0
+    fi
+    if [[ "$candidatePath" == "/" ]]; then
+      return 1
+    fi
+    candidatePath="$(dirname -- "$candidatePath")"
+  done
+}
+
+nearestSyncedAncestor() {
+  local candidatePath="$1"
+  local componentName
+  while :; do
+    componentName="$(basename -- "$candidatePath")"
+    if listHoldsName "${componentName,,}" "${syncedFolderNames[@]}"; then
+      printf '%s\n' "$candidatePath"
+      return 0
+    fi
+    if [[ "$candidatePath" == "/" ]]; then
+      return 1
+    fi
+    candidatePath="$(dirname -- "$candidatePath")"
+  done
+}
+
+if [[ -z "$backupDirectory" ]]; then
+  backupDirectory="$HOME/.claude-backup-$(date +%Y%m%d-%H%M%S)"
+fi
+backupDirectory="$(realpath -m -- "$backupDirectory")"
+
+for forbiddenParent in "$claudeHome" "$dotfilesRepo" "$dotfilesAlias"; do
+  resolvedForbiddenParent="$(realpath -m -- "$forbiddenParent")"
+  if isPathInside "$backupDirectory" "$resolvedForbiddenParent"; then
+    refuseBackupPlacement "in $resolvedForbiddenParent"
+  fi
+done
+
+syncedBackupAncestor="$(nearestSyncedAncestor "$backupDirectory" || true)"
+if [[ -n "$syncedBackupAncestor" ]]; then
+  refuseBackupPlacement "in $syncedBackupAncestor, which a sync client uploads to a third party"
+fi
+
+enclosingCheckout="$(nearestAncestorHoldingGitEntry "$backupDirectory" || true)"
+if [[ -n "$enclosingCheckout" ]]; then
+  refuseBackupPlacement "in the git checkout at $enclosingCheckout"
+fi
+
+gitToplevelStatus=0
+enclosingWorkTree="$(git -C "$(nearestExistingAncestor "$backupDirectory")" rev-parse --show-toplevel 2>/dev/null)" \
+  || gitToplevelStatus=$?
+if ((gitToplevelStatus == 0)) && [[ -n "$enclosingWorkTree" ]]; then
+  refuseBackupPlacement "in the git working tree at $enclosingWorkTree"
+fi
+# 128 is git saying there is no repository here; every other status is git failing, and a guard
+# that cannot answer has to refuse rather than read as a clean no.
+if ((gitToplevelStatus != 0)) && ((gitToplevelStatus != 128)); then
+  printf 'adopt-claude-home: git could not say whether %s sits in a working tree (exit %s); refusing.\n' \
+    "$backupDirectory" "$gitToplevelStatus" >&2
+  exit 1
+fi
+
+mapfile -d '' trackedTopLevelEntries < <(
+  git -C "$claudeHome" -c core.quotePath=false ls-files -z | cut -z -d/ -f1 | sort -zu
+)
+if ((${#trackedTopLevelEntries[@]} == 0)); then
+  printf 'adopt-claude-home: the clone tracks no files; refusing to guess what to remove.\n' >&2
+  exit 1
+fi
+
+protectedNamesTracked=()
+for trackedEntry in "${trackedTopLevelEntries[@]}"; do
+  if listHoldsName "$trackedEntry" "${protectedRuntimeNames[@]}"; then
+    protectedNamesTracked+=("$trackedEntry")
+  fi
+done
+
+if ((${#protectedNamesTracked[@]} > 0)); then
+  printf 'adopt-claude-home: the clone tracks runtime paths this must never remove:\n' >&2
+  printf '  %s\n' "${protectedNamesTracked[@]}" >&2
+  exit 1
+fi
+
+untrackedInsideRemovalSet=()
+while IFS= read -r -d '' untrackedPath; do
+  untrackedTopLevelName="${untrackedPath%%/*}"
+  if [[ "$untrackedTopLevelName" == "$untrackedPath" ]]; then
+    continue
+  fi
+  if ! listHoldsName "$untrackedTopLevelName" "${trackedTopLevelEntries[@]}"; then
+    continue
+  fi
+  untrackedInsideRemovalSet+=("$untrackedPath")
+done < <(git -C "$claudeHome" -c core.quotePath=false ls-files -z --others)
+
+if ((${#untrackedInsideRemovalSet[@]} > 0)); then
+  printf 'adopt-claude-home: these untracked files sit inside directories this would remove; move them out first:\n' >&2
+  printf '  %s\n' "${untrackedInsideRemovalSet[@]}" >&2
+  exit 1
+fi
+
+mkdir -p -- "$(dirname -- "$backupDirectory")"
+if ! mkdir -m 700 -- "$backupDirectory" 2>/dev/null; then
+  printf 'adopt-claude-home: could not create %s; name a fresh backup directory.\n' "$backupDirectory" >&2
+  exit 1
+fi
+backupWasCreated=1
+
+cp -a -- "$claudeHome/." "$backupDirectory/"
+# cp -a stamps the source directory's own mode onto the backup root, undoing the mkdir -m 700.
+chmod 700 -- "$backupDirectory" 2>/dev/null || true
+noteApplied "backup" "$backupDirectory"
+
+backupRootMode="$(stat -c %a -- "$backupDirectory" 2>/dev/null || true)"
+if [[ "$backupRootMode" != "700" ]]; then
+  printf 'adopt-claude-home: %s came out mode %s rather than 700, so this filesystem drops permissions and the copied credentials would be readable by others; refusing.\n' \
+    "$backupDirectory" "${backupRootMode:-unreadable}" >&2
+  exit 1
+fi
+
+backupTopLevelCount="$(find "$backupDirectory" -mindepth 1 -maxdepth 1 ! -name .git 2>/dev/null | wc -l)"
+if ((backupTopLevelCount == 0)); then
+  printf 'adopt-claude-home: the backup holds nothing outside .git; refusing to remove anything.\n' >&2
+  exit 1
+fi
+
+verifiedEntryNames=("${trackedTopLevelEntries[@]}" ".git")
+differingEntryReports=()
+for verifiedEntry in "${verifiedEntryNames[@]}"; do
+  if [[ ! -e "$claudeHome/$verifiedEntry" && ! -L "$claudeHome/$verifiedEntry" ]]; then
+    continue
+  fi
+  entryDifference=""
+  if ! entryDifference="$(diff -r -q --no-dereference -- \
+    "$claudeHome/$verifiedEntry" "$backupDirectory/$verifiedEntry" 2>&1)"; then
+    differingEntryReports+=("$verifiedEntry: ${entryDifference//$'\n'/ ; }")
+  fi
+done
+
+if ((${#differingEntryReports[@]} > 0)); then
+  printf 'adopt-claude-home: the backup does not match what would be removed; refusing to remove anything.\n' >&2
+  printf '  %s\n' "${differingEntryReports[@]}" >&2
+  exit 1
+fi
+noteApplied "backup verified" "${#verifiedEntryNames[@]} paths compared, $backupTopLevelCount kept"
+
+# The credential file is the one thing whose loss cannot be repaired from a remote, so
+# its bytes are compared rather than merely counted.
+if [[ -f "$claudeHome/.credentials.json" ]]; then
+  if ! cmp -s -- "$claudeHome/.credentials.json" "$backupDirectory/.credentials.json"; then
+    printf 'adopt-claude-home: .credentials.json did not survive the copy; refusing to remove anything.\n' >&2
+    exit 1
+  fi
+  sourceCredentialMode="$(stat -c %a -- "$claudeHome/.credentials.json" 2>/dev/null || true)"
+  backupCredentialMode="$(stat -c %a -- "$backupDirectory/.credentials.json" 2>/dev/null || true)"
+  if [[ -z "$sourceCredentialMode" || "$backupCredentialMode" != "$sourceCredentialMode" ]]; then
+    printf 'adopt-claude-home: .credentials.json is mode %s in %s but %s in the backup; refusing to remove anything.\n' \
+      "${sourceCredentialMode:-unreadable}" "$claudeHome" "${backupCredentialMode:-unreadable}" >&2
+    exit 1
+  fi
+  noteApplied "credentials verified" "byte identical in the backup, mode $sourceCredentialMode"
+fi
+
+printf '    about to remove from %s:\n' "$claudeHome"
+printf '      %s\n' "${verifiedEntryNames[@]}"
+
+removalHasStarted=1
+for trackedEntry in "${trackedTopLevelEntries[@]}"; do
+  if [[ -z "$trackedEntry" || "$trackedEntry" == "." || "$trackedEntry" == ".." ]]; then
+    continue
+  fi
+  rm -rf -- "${claudeHome:?}/$trackedEntry"
+done
+noteApplied "tracked paths removed" "${#trackedTopLevelEntries[@]} entries"
+
+rm -rf -- "$claudeHome/.git"
+noteApplied "clone detached" "removed .git"
+
+noteDetail "restore from" "$backupDirectory"
+finishTopic

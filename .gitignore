@@ -14,3 +14,11 @@ node_modules/
 
 # Machine-local: the profile this machine runs
 .machine-profile
+
+# Session tooling state, not repo content
+.glissa/
+
+# A ~/.claude backup carries a live OAuth token; nothing here may ever stage one
+.credentials.json
+claude-backup*
+.claude-backup*
