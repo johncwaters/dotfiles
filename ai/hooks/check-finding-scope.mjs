@@ -2,21 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import fs from "node:fs";
-
-const SPAWN_TOOLS = new Set(["Agent", "Task"]);
-
-function allow() {
-  process.exit(0);
-}
-
-function readPayload() {
-  try {
-    return JSON.parse(fs.readFileSync(0, "utf8"));
-  } catch {
-    return null;
-  }
-}
+import { allow, readPayload, SPAWN_TOOLS } from "./hook-io.mjs";
 
 function collectText(value, collectedText) {
   if (typeof value === "string") {

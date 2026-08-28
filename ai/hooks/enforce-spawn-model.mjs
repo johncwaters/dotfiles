@@ -22,9 +22,7 @@
  * Keep it dependency-free, synchronous, and pure ASCII.
  */
 
-import fs from "node:fs";
-
-const SPAWN_TOOLS = new Set(["Agent", "Task"]);
+import { allow, readPayload, SPAWN_TOOLS } from "./hook-io.mjs";
 
 const REQUIRED_PROMPT_MARKERS = [
   { label: "Scope:", pattern: /^\s*(?:#{1,6}\s*)?scope:/im },
@@ -43,10 +41,6 @@ const PIN_HINT =
   'mechanical slices), or "haiku" (one-shot basics whose whole output is a ' +
   'short checkable answer).';
 
-function allow() {
-  process.exit(0);
-}
-
 function deny(reason) {
   process.stdout.write(
     JSON.stringify({
@@ -58,14 +52,6 @@ function deny(reason) {
     })
   );
   process.exit(0);
-}
-
-function readPayload() {
-  try {
-    return JSON.parse(fs.readFileSync(0, "utf8"));
-  } catch {
-    return null;
-  }
 }
 
 function main() {
