@@ -1,0 +1,5 @@
+# Copy to ~/.localrc. Machine-only environment: paths, SDK roots, credential locations.
+export PROJECTS="$HOME/Projects"
+export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+export OPENAI_API_KEY_FILE="$HOME/.secrets/openai"
+prependToPathOnce "$ANDROID_SDK_ROOT/platform-tools"

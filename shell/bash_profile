@@ -1,0 +1,15 @@
+# shellcheck shell=bash
+# bash reads only the first of ~/.bash_profile, ~/.bash_login, ~/.profile, so this stub sources the two it shadows.
+displacedLoginFile=""
+[[ -f "$HOME/.profile" ]] && displacedLoginFile="$HOME/.profile"
+[[ -f "$HOME/.bash_login" ]] && displacedLoginFile="$HOME/.bash_login"
+if [[ -n "$displacedLoginFile" ]]; then
+  # shellcheck source=/dev/null
+  source "$displacedLoginFile"
+fi
+unset displacedLoginFile
+
+if [[ -z "${dotfilesShellLoaded:-}" && -f "$HOME/.bashrc" ]]; then
+  # shellcheck source=./bashrc
+  source "$HOME/.bashrc"
+fi

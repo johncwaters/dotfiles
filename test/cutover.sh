@@ -42,6 +42,8 @@ printf 'history\n' > "$claudeHome/history.jsonl"
 # them into the cutover as untracked files this repo is about to take over.
 printf '{"model":"rendered-by-the-old-setup"}\n' > "$claudeHome/settings.json"
 printf 'the old profile CLAUDE.md\n' > "$claudeHome/CLAUDE.md"
+printf '[user]\n\tname = Sandbox Author\n\temail = sandbox@example.com\n' > "$HOME/.gitconfig"
+printf 'export SANDBOX_MACHINE_ENV=1\n' > "$HOME/.localrc"
 
 check "the rehearsal starts from a real clone" test -d "$claudeHome/.git"
 check "the rehearsal starts with the tracked file present" test -e "$claudeHome/settings.base.json"
@@ -116,6 +118,11 @@ check "the displaced settings.json was preserved" \
 check "the displaced CLAUDE.md was preserved" \
   bash -c 'grep -rqs "the old profile CLAUDE.md" "$1".pre-dotfiles.bak*' _ "$claudeHome/CLAUDE.md"
 
+check "the shell rc stub sources the repo rc through the alias" \
+  grep -qF 'source "$HOME/.dotfiles/shell/bashrc"' "$HOME/.bashrc"
+check "the git identity moved into .gitconfig.local" grep -q 'Sandbox Author' "$HOME/.gitconfig.local"
+check "git reads the identity through the linked config" \
+  bash -c '[[ "$(git -C "$HOME" config --get user.name)" == "Sandbox Author" ]]'
 check "skills resolve through the link" test -f "$claudeHome/skills/commit/SKILL.md"
 check "agents resolve through the link" test -f "$claudeHome/agents/code-reviewer.md"
 check "the codex mirror resolves" test -f "$HOME/.codex/AGENTS.md"

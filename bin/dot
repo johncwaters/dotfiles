@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Pulls the dotfiles and converges this machine; run it whenever, it only changes what drifted.
+
+set -euo pipefail
+
+dotfiles="$HOME/.dotfiles"
+if [[ ! -L "$dotfiles" || ! -f "$dotfiles/script/bootstrap" ]]; then
+  printf 'dotfiles: ~/.dotfiles is not a symlink to the clone; run script/bootstrap from the clone first\n' >&2
+  exit 1
+fi
+
+git -C "$dotfiles" pull --ff-only \
+  || printf 'dotfiles: pull failed; converging the checkout as it stands\n' >&2
+exec "$dotfiles/script/bootstrap" "$@"
