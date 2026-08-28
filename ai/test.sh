@@ -73,6 +73,7 @@ countSettingsCommand() {
 }
 check "the base SessionStart hook reaches the profile" test "$(countSettingsCommand inject-routing.mjs)" -eq 1
 check "the profile SessionStart hook is added, not replaced" test "$(countSettingsCommand caveman-ultra.mjs)" -eq 1
+check "the finding scope hook reaches the profile" test "$(countSettingsCommand check-finding-scope.mjs)" -eq 1
 check "the retired sync hook is gone" test "$(countSettingsCommand sync-agents-md.mjs)" -eq 0
 
 rm -f "$sandbox/.claude/AGENTS.md"
@@ -182,5 +183,7 @@ renderIntoSandbox || rerunAfterDirectorySidecarStatus=$?
 check "a directory at the sidecar path does not wedge later runs" \
   test "$rerunAfterDirectorySidecarStatus" -eq 0
 check "the destination still holds what the renderer produced" grep -q 'second' "$renderDestination"
+
+check "hook behavior tests pass" node --test "$topicDir/hooks/hooks.test.mjs"
 
 reportTopicResults "ai"

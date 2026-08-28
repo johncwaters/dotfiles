@@ -49,17 +49,21 @@ function preflightResult(paths: string[]): Result {
 
   const branch = git.currentBranch();
   const { changed, untracked } = computeScope(git, paths);
+  const resolvedScopePaths = [...new Set([...changed, ...untracked])].sort();
   const { profile, policy, warning } = readCommitPolicy();
 
-  return ready({
-    branch,
-    branchAllowed: isBranchAllowed(branch, policy),
-    changed: [...changed].sort(),
-    untracked,
-    ...(profile ? { profile } : {}),
-    ...(policy ? { policy } : {}),
-    warnings: warning ? [warning] : [],
-  });
+  return {
+    ...ready({
+      branch,
+      branchAllowed: isBranchAllowed(branch, policy),
+      changed: [...changed].sort(),
+      untracked,
+      ...(profile ? { profile } : {}),
+      ...(policy ? { policy } : {}),
+      warnings: warning ? [warning] : [],
+    }),
+    paths: resolvedScopePaths,
+  };
 }
 
 const parsed = parseArguments(process.argv.slice(2));

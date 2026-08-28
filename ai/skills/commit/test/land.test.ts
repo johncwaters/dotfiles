@@ -265,7 +265,7 @@ test("a nested denylisted file is not staged through its parent directory", () =
   }
 });
 
-test("a file staged outside --paths is committed with a warning naming it", () => {
+test("a file staged outside --paths is unstaged and excluded from the commit", () => {
   const repo = makeRepo();
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -277,11 +277,11 @@ test("a file staged outside --paths is committed with a warning naming it", () =
     const { result } = land(repo, ["--no-push", "--paths", "a.txt"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.match((result.warnings as string[]).join("\n"), /already staged outside --paths.*b\.txt/);
+    assert.match((result.warnings as string[]).join("\n"), /excluded staged files outside --paths.*b\.txt/);
     assert.deepEqual(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]).split("\n"), [
       "a.txt",
-      "b.txt",
     ]);
+    assert.deepEqual(gitOutput(repo, ["diff", "--name-only"]), "b.txt");
   } finally {
     cleanup(repo);
   }
@@ -296,7 +296,11 @@ test("a staged denylisted addition stops the run instead of riding along", () =>
     runGit(repo, ["add", "-f", "--", ".env"]);
     const head = gitOutput(repo, ["rev-parse", "HEAD"]);
 
-    const { code, result } = land(repo, ["--no-push", "--paths", "a.txt"], VALID_MESSAGE);
+    const { code, result } = land(
+      repo,
+      ["--no-push", "--paths", "a.txt", ".env"],
+      VALID_MESSAGE,
+    );
 
     assert.equal(result.outcome, "DENYLISTED_FILE_STAGED");
     assert.equal(code, 25);

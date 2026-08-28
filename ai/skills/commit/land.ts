@@ -219,7 +219,10 @@ class Landing {
   }
 
   private commit(message: string, untracked: string[]): FailureOutcome | null {
-    this.warnAboutStagedFilesOutsideScope();
+    const exclusionOutcome = this.excludeStagedFilesOutsideScope();
+    if (exclusionOutcome) {
+      return exclusionOutcome;
+    }
     this.git.addUpdate(this.config.paths);
     for (const filePath of untracked) {
       this.git.addPath(filePath);
@@ -246,22 +249,24 @@ class Landing {
     return null;
   }
 
-  // git commits the whole index, so anything another session staged rides along
-  // even under --paths; the caller has to hear about what it did not review.
-  private warnAboutStagedFilesOutsideScope(): void {
+  private excludeStagedFilesOutsideScope(): FailureOutcome | null {
     if (this.config.paths.length === 0) {
-      return;
+      return null;
     }
     const inScope = new Set(this.git.diffNameOnly({ cached: true, paths: this.config.paths }));
     const outOfScope = this.git
       .diffNameOnly({ cached: true })
       .filter((filePath) => !inScope.has(filePath));
     if (outOfScope.length === 0) {
-      return;
+      return null;
     }
-    this.warnings.push(
-      `already staged outside --paths and committed anyway: ${outOfScope.join(", ")}`,
-    );
+    const restore = this.git.run(["restore", "--staged", "--", ...outOfScope]);
+    if (restore.code !== 0) {
+      this.warnings.push(`could not exclude staged files outside --paths: ${restore.stderr.trim()}`);
+      return "HOOK_FAILED";
+    }
+    this.warnings.push(`excluded staged files outside --paths: ${outOfScope.join(", ")}`);
+    return null;
   }
 
   private pushFeatureBranch(): FailureOutcome | null {

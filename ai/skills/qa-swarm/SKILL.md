@@ -59,12 +59,18 @@ Every model id and CLI invocation above comes from the model table in `~/.claude
 
 Every delegation prompt carries, per the delegation contract in `~/.claude/ROUTING.md`:
 
+```
+Scope: <changed-file set and REVIEW_CMD range for this lane>
+Out of scope: Pre-existing issues outside that set
+Definition of done: <this lane's required structured output>
+```
+
 - the repo path and the exact `REVIEW_CMD` (plus any `-- <paths>` restriction for this lane)
 - the caller's context, verbatim
 - facts already verified live, and the settled `NIT` and `AMBIGUOUS` list, so the lane does not re-flag settled ground
 - the claimed-fixed list as explicit regression checks, phrased as "confirm each of these is actually gone", never as "skip these"
 - the router's danger and complexity ratings and which files it classified into this lane
-- the ask: real defects with a concrete failure scenario, severity-tagged, no nits
+- the ask: real defects with a concrete failure scenario, severity-tagged, with LOW as the minimum and never NIT
 - the reviewer output format below
 
 Hand over the command, never the diff text. Do not restate standing rules from AGENTS.md; every target already reads them.
@@ -75,7 +81,7 @@ Every lane, and this skill itself, ends its response with:
 
 ```
 STRUCTURED_FINDINGS:
-- file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM|LOW|NIT> | reviewer: <tag> | body: <the review comment text>
+- file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM|LOW> | reviewer: <tag> | body: <the review comment text>
 - file: ...
 
 OVERALL_SUMMARY:
@@ -98,7 +104,7 @@ OVERALL_SUMMARY:
 
 **`side`** says which half of the diff `line` indexes: `RIGHT` for a line the diff adds or leaves in place, `LEFT` for a line the diff removes, in which case `line` is its number in the pre-change file. Default to `RIGHT`; a lane that reports a defect in deleted code must say `LEFT` explicitly. Nothing downstream can recover this from the finding alone, and a `LEFT` finding published as `RIGHT` lands on unrelated code. Omit the field entirely when `line` is `general`.
 
-**NIT** comes only from lanes that produce style-tier observations. `security` never emits it.
+Lanes emit LOW at minimum and never `NIT`. Only code-review may use `NIT` as a disposition.
 
 ## Step 3: Converge
 
@@ -106,11 +112,11 @@ OVERALL_SUMMARY:
 
 `router`, `external`, and `tiebreak` are exempt at every stage, before or after dispatch: they run on an external CLI with its own quota and none is ever the sole coverage for a concern. Their failure degrades, never blocks:
 
-- Codex router unavailable: fall back down the tier ladder, then to an `opus` agent (Step 1). Every one of those failing means nobody rated danger or picked lanes, so **run `code`, `security`, and `structure` all three** and say the lane set was the no-router default. Running the always-on `code` lane alone would silently drop the security lane on a security-sensitive diff, which is the one failure this skill exists to prevent
+- Codex router unavailable: fall back down the tier ladder, then to an `opus` agent (Step 1). Every one of those failing means nobody rated danger or picked lanes, so run `code` and `security` and say the lane set was the no-router default. Running the always-on `code` lane alone would drop security coverage on a security-sensitive diff
 - Codex `external` unavailable: run without it and say so in the summary. A concern the router routed there re-routes to `code` or `security`. If no lane can safely cover it, emit it as a HIGH finding naming the lane that was unavailable
 - `tiebreak` unavailable: a contradiction is one defect claim plus one lane's verified-safe position, and only the claim is a finding, so there is no second finding to return. Emit the asserting lane's finding once, tagged `contested: <asserting lane> vs <disputing lane>`, with the disputing lane's reasoning in its body and `Confidence: low, tiebreak unavailable` at the end. That guarantees the caller triages it `AMBIGUOUS` rather than acting on a disputed claim
 
-**Deduplication.** Two findings merge when they name the same file within 5 lines of each other, or are plainly the same concern in different words. Merged findings carry the tag `convergent: <tag> + <tag>`. Convergence means independent lanes reached the same conclusion, so it promotes confidence: a merged finding counts as confirmed even when one lane marked it low-confidence. It does **not** by itself raise severity; keep the highest severity any lane assigned and name that lane in the body.
+**Deduplication.** First compute the changed-file set with `git diff --name-only` for the review range. Drop any finding whose `file` is outside that set and mention all such drops in at most one summary sentence. Then merge findings that name the same file within 5 lines of each other, or are plainly the same concern in different words. Merged findings carry the tag `convergent: <tag> + <tag>`. Convergence means independent lanes reached the same conclusion, so it promotes confidence: a merged finding counts as confirmed even when one lane marked it low-confidence. It does **not** by itself raise severity; keep the highest severity any lane assigned and name that lane in the body.
 
 **Contradiction.** One lane asserts a defect and another explicitly verified it as safe: that is a `tiebreak` case, not a merge. Dispatch the Grok lane on those findings alone, with both positions in the prompt, and keep whichever finding its ruling supports.
 

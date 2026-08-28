@@ -8,6 +8,13 @@ Say "carbon unit" / "carbon units" wherever prose would say human, person, peopl
 `<routing>` and `<auto_commit>` are main-loop only. Subagents (Agent/Task) and externally dispatched CLIs (Codex, Grok): execute the assigned task with your own tools, never spawn further agents, never offload to Codex or Grok, never run /commit, report results back instead. Every other section applies to everyone.
 </scope>
 
+<scope_boundary>
+Applies to everyone, including subagents. The assigned surface is the task's stated files or diff.
+Work only in that surface. Name anything found outside it in the report, never fix it.
+If the task cannot be completed inside the surface, stop and report instead of widening it.
+"Keep iterating" in `<verification>` remains bounded by this surface.
+</scope_boundary>
+
 <routing>
 Main loop only; never loaded for subagents or externally dispatched CLIs. Full rules live in `~/.claude/ROUTING.md`, injected at SessionStart by `hooks/inject-routing.mjs`. Main loop that finds no routing rules in context: read that file before delegating or dispatching.
 </routing>
@@ -27,7 +34,7 @@ Main session loop only; subagents skip per `<scope>`. Change complete and every 
 
 <reuse_before_create>
 Before writing a new component, hook, util, fetcher, schema, script, skill, or agent: search for existing equivalents with Glob/Grep (Explore agent for broad sweeps), by behavior and by synonym/abbreviation/domain wording.
-- Match: extend, compose, or refactor. Never duplicate.
+- Match: extend or compose. Refactor only within the assigned surface; otherwise extend or report. Never duplicate.
 - Near-match: surface to the user before deciding new vs. extend.
 - No match: write new.
 Skip only for trivial one-liners with no plausible prior art. State the search result in one line before writing (e.g. `Searched for "FilterSheet": no match, creating new.`).
@@ -40,7 +47,7 @@ NEVER write `else` statements. Zero tolerance. Use early returns and guard claus
 - Extract a helper function if that is what it takes to enable an early return.
 - Sole exceptions: expression-level constructs with no statement alternative (ternaries, exhaustive `match`/pattern-matching arms). Nothing else qualifies; "would duplicate logic" is not an excuse, restructure instead.
 - Applies to all languages, all files, all contexts (code, examples in docs, snippets in reviews).
-- Editing existing code: refactor every touched `else` branch to guards, even if the change is not strictly local. Any `else` in a diff you produce is a defect.
+- Editing existing code: refactor every `else` branch on lines the current change already modifies. Any `else` in a diff you produce is a defect.
 </code_style_no_else>
 
 <code_style_comments>
@@ -53,7 +60,7 @@ Comments are a last resort. Default to zero. Only the "why", never the "what", a
 - No section-banner comments, no changelog-style comments, no comments narrating an edit to the reviewer, no commented-out code, no TODO essays (a TODO is one line naming the trigger for removal).
 - Tests: intent lives in the test name, not in comments. No scenario narration inside test bodies; a test needing a comment to explain its setup needs a better name or a helper.
 - Doc comments: a one-line summary on exported public API, only where repo tooling (a lint rule or doc generator config, not mere habit in neighboring files) enforces the convention; parameter docs only when that tooling demands them.
-- Editing existing code: delete or rewrite any touched comment that violates these rules or that your change made stale. Deleting a bad comment is a fix, not scope creep.
+- Editing existing code: delete or rewrite violating or stale comments only on lines the current change already touches.
 </code_style_comments>
 
 <code_style_naming>
@@ -79,11 +86,11 @@ A button's label carries NO state of any kind, ever. One control, one constant l
 </ui_button_labels>
 
 <research_not_assume>
-Do not assume. Research. Do not bandaid. Fix upstream.
+Do not assume. Research. Do not bandaid. Fix upstream when it is inside the assigned surface; otherwise report it.
 - Unknown API/SDK/framework: fetch official docs (or `document-specialist` agent) before writing. Training data is stale.
 - Unknown project behavior: read the file, run the command, check the schema. Do not infer from filename or memory.
 - Tool/lint/type/test failure: find root cause. Never silence with `@ts-ignore`, `eslint-disable`, `--no-verify`, swallowed `try/catch`, skip flags, or "temporary" workarounds. Real upstream blocker forcing a workaround: leave a one-line comment naming the issue and the removal trigger.
-- Symptom in caller: fix the source, not every caller.
+- Symptom in caller: fix the source when it is inside the assigned surface; otherwise report it instead of widening the task.
 - Flaky test: find the race or shared state. Do not retry-loop or skip.
 State the assumption in one line before acting so the user can redirect early.
 </research_not_assume>

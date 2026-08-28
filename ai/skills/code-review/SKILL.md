@@ -9,9 +9,9 @@ One pass. Pin, find, triage, judge, return. Every cycle in the review ladder liv
 
 ## Contract with the caller
 
-**Required input.** A target, in one of three forms: `staged`, `working` (a local tree), or a base and head ref (a branch or a pull request). Plus 2 to 4 sentences of context that the diff does not carry.
+**Required input.** A target, in one of three forms: `staged`, `working` (a local tree), or a base and head ref (a branch or a pull request); the changed-file set as `-- <paths>`; and 2 to 4 sentences of context that the diff does not carry. If the caller omits paths, derive the set with `git diff --name-only` from the target diff and state the derived set in the output.
 
-**Optional input.** A `-- <paths>` scope restriction, and the previous round's findings block plus the writer's receipt, so this pass can tell settled ground from ground that was supposedly repaired.
+**Optional input.** The previous round's findings block plus the writer's receipt, so this pass can tell settled ground from ground that was supposedly repaired.
 
 **Guaranteed output.** A `VERDICT` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
 
@@ -40,11 +40,11 @@ REVIEW_CMD="git diff HEAD $TREE"
 
 - **branch or pull request**: resolve `BASE_SHA` and `HEAD_SHA`, then `REVIEW_CMD="git diff <BASE_SHA>..<HEAD_SHA>"`. Both are already immutable
 
-Record the file count, the changed-line count, and the touched subsystems. Report the pin in the summary so the caller can prove which tree was judged.
+Record the changed-file set, file count, changed-line count, and touched subsystems. Report the pin and changed-file set in the summary so the caller can prove which tree and files were judged.
 
 ## Step 2: Call qa-swarm
 
-Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, any scope restriction, and any findings already dispositioned in an earlier round.
+Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and any findings already dispositioned in an earlier round.
 
 Do not spawn a reviewer agent directly from here. All finding goes through `qa-swarm`, so there is exactly one place that knows which lanes exist and when they trigger.
 
@@ -53,6 +53,8 @@ Do not spawn a reviewer agent directly from here. All finding goes through `qa-s
 ## Step 3: Triage
 
 Every finding leaves this step with exactly one disposition. A finding with none is a bug in the run, not an acceptable outcome.
+
+Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. Mention all such removals in at most one sentence in `OVERALL_SUMMARY`, never in `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then keep at most 10 findings per lane, highest severity first, and summarize overflow in one sentence.
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
@@ -65,7 +67,7 @@ Rules that decide the hard cases:
 - A finding whose `body` carries `Confidence: low` is never `ACTIONABLE`. It is `AMBIGUOUS` if it would block, `NIT` if it would not.
 - A `convergent:` finding is `ACTIONABLE` if its fix is bounded, even when one contributing lane was low-confidence. Independent agreement is what clears the confidence bar.
 - A CRITICAL or HIGH finding is never `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
-- Severity and disposition are independent axes. A LOW finding with an obvious one-line fix is `ACTIONABLE`; a CRITICAL one needing an architecture call is `AMBIGUOUS`.
+- A LOW finding is recorded as `NIT`, never `ACTIONABLE`, and never triggers another review round. A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
 
 Carried-in findings are handled by disposition, not uniformly:
 
@@ -76,20 +78,20 @@ Carried-in findings are handled by disposition, not uniformly:
 
 ## Step 4: Verdict
 
-The tier is the highest severity still standing after triage and dedup, counting `NIT` as `LOW`:
+The tier is the highest severity still standing after triage and dedup:
 
 | Highest severity | Verdict |
 |---|---|
 | CRITICAL | `BLOCKED` |
 | HIGH | `REQUEST CHANGES` |
 | MEDIUM | `APPROVE WITH NITS` |
-| LOW, NIT, or nothing | `APPROVE` |
+| LOW or nothing | `APPROVE` |
 
 Highest-severity-wins rather than a count-weighted score, because CRITICAL and HIGH block outright; a scheme where two HIGH findings block and one does not would contradict that. Counts go in the summary, where they inform without moving the gate.
 
 A fifth value, `FAILED`, means the review could not be completed: `qa-swarm` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code and never means APPROVE. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
 
-**The verdict is not the loop's exit condition.** A LOW or MEDIUM finding dispositioned `ACTIONABLE` is a verified defect with a bounded fix, and it maps to a passing verdict; a caller that exits on the verdict alone would commit it unfixed. State both facts on their own line in the summary: the verdict, and the count of surviving `ACTIONABLE` findings. Callers that loop gate on the second one.
+**The verdict is not the loop's exit condition.** A MEDIUM finding dispositioned `ACTIONABLE` is a verified defect with a bounded fix, and it maps to a passing verdict; a caller that exits on the verdict alone would commit it unfixed. State both facts on their own line in the summary: the verdict, and the count of surviving `ACTIONABLE` findings at MEDIUM or higher. The loop exits when that count is zero.
 
 ## Step 5: Return
 
@@ -98,7 +100,7 @@ VERDICT: <APPROVE|APPROVE WITH NITS|REQUEST CHANGES|BLOCKED|FAILED>
 ACTIONABLE: <count>
 
 STRUCTURED_FINDINGS:
-- file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM|LOW|NIT> | reviewer: <tag> | disposition: <ACTIONABLE|NIT|AMBIGUOUS> | body: <the review comment text>
+- file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM|LOW> | reviewer: <tag> | disposition: <ACTIONABLE|NIT|AMBIGUOUS> | body: <the review comment text>
 
 OVERALL_SUMMARY:
 <one paragraph>
@@ -119,7 +121,7 @@ OVERALL_SUMMARY:
 
 `VERDICT` and `ACTIONABLE` come first so a caller can gate on two lines without parsing the block. A looping caller gates on `ACTIONABLE`; a landing caller gates on `VERDICT`; both are needed because they can disagree.
 
-The summary states: the pinned tree or SHA range, file and line counts, which lanes ran and which degraded, the count per severity, and the count per disposition. Then stop. No recommendation about what to do next, and no offer to fix anything.
+The summary states: the pinned tree or SHA range, changed-file set, file and line counts, which lanes ran and which degraded, the count per severity, and the count per disposition. Then stop. No recommendation about what to do next, and no offer to fix anything.
 
 ## Token discipline
 

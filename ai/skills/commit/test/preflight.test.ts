@@ -68,6 +68,7 @@ test("a clean tree is READY with an empty scope", () => {
     assert.equal(code, 0);
     assert.deepEqual(result.changed, []);
     assert.deepEqual(result.untracked, []);
+    assert.deepEqual(result.paths, []);
     assert.equal(result.branch, "main");
   } finally {
     cleanup(repo);
@@ -86,6 +87,7 @@ test("modified and untracked files are reported, denylisted paths are not", () =
     const { result } = preflight(repo);
     assert.deepEqual(result.changed, ["a.txt"]);
     assert.deepEqual(result.untracked, ["new.txt"]);
+    assert.deepEqual(result.paths, ["a.txt", "new.txt"]);
   } finally {
     cleanup(repo);
   }
@@ -100,6 +102,7 @@ test("--paths restricts the reported scope", () => {
     writeFile(repo, "b.txt", "two\n");
     const { result } = preflight(repo, ["--paths", "a.txt"]);
     assert.deepEqual(result.changed, ["a.txt"]);
+    assert.deepEqual(result.paths, ["a.txt"]);
   } finally {
     cleanup(repo);
   }

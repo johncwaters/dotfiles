@@ -49,32 +49,38 @@ tell the user to run `setup/apply`.
 Nothing rewrites the code between the last review and the commit, so the review is the
 gate.
 
-**Step 0, once.** Run the `ai-slop-cleaner` skill over the changed files.
+**Step 0, once.** Run the `ai-slop-cleaner` skill with the explicit changed-file list from preflight. In this invocation it may not create files, including tests, and the UI/design checklist is out of scope.
 
 **Then loop.**
 
-1. Invoke `/code-review` with target `working`, the repo path, and one or two sentences of
-   what changed and why. Always `working`, never `staged`: `land.ts` stages every tracked
+1. Invoke `/code-review` with target `working`, the repo path, the explicit changed-file
+   list from preflight as `--paths`, and one or two sentences of what changed and why.
+   Always `working`, never `staged`: `land.ts` stages every tracked
    modification in scope plus the scoped untracked files, so a `staged` review would
    approve a subset of what gets committed.
 2. Read its first two lines, `VERDICT` and `ACTIONABLE`, and act:
    - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
      and report; never treat a failed review as a passed one.
-   - Any `AMBIGUOUS` finding, at any verdict: stop and put it to the user with both
-     readings stated. Carry their answer into the next `/code-review` call as a stated
-     decision so the finding is re-dispositioned; an `AMBIGUOUS` finding that survives an
-     answer means the answer never reached the next round.
-   - `ACTIONABLE` greater than zero and rounds remaining: hand exactly those findings to
-     the `finding-fixer` agent in a single spawn, then go back to step 1. `NIT` findings
-     are never sent to it.
-   - `ACTIONABLE` greater than zero and this was the last permitted round: stop without
-     dispatching the writer. Fixing after the final review leaves an unverified edit.
-   - `ACTIONABLE: 0` with a verdict of `APPROVE` or `APPROVE WITH NITS`: leave the loop.
+   - Any `AMBIGUOUS` finding at MEDIUM or higher, at any verdict: stop and put it to the
+     carbon unit with both readings stated. Carry the answer into the next `/code-review`
+     call as a stated decision so the finding is re-dispositioned; an `AMBIGUOUS` finding
+     that survives an answer means the answer never reached the next round. Report lower
+     severity `AMBIGUOUS` findings without interrupting.
+   - `ACTIONABLE` at MEDIUM or higher and rounds remaining: hand exactly those findings
+     plus the changed-file list to the `finding-fixer` agent in a single spawn, and state
+     that `Scope:` is that list, `Out of scope:` is pre-existing issues outside it, and
+     `Definition of done:` is its finding-fixer receipt. Then go back to step 1. LOW findings are
+     listed in the commit report and left alone.
+   - Any `ACTIONABLE` finding at MEDIUM or higher on the last permitted round: stop
+     without dispatching the writer. Fixing after the final review leaves an unverified
+     edit.
+   - No `ACTIONABLE` finding at MEDIUM or higher, with a verdict of `APPROVE` or `APPROVE WITH NITS`: leave the loop.
 3. At most **three** rounds. Still not passing after the third: stop, report the surviving
    findings and the round count, and do not run `land.ts`.
 
-The loop exits on `ACTIONABLE: 0`, not on the verdict: a MEDIUM finding dispositioned
-`ACTIONABLE` is a verified defect with a bounded fix and still maps to a passing verdict.
+The loop exits when no `ACTIONABLE` finding of MEDIUM or higher remains, not on the
+verdict: a MEDIUM finding dispositioned `ACTIONABLE` is a verified defect with a bounded
+fix and still maps to a passing verdict. LOW never triggers another round.
 
 Carry two separate lists into the next `/code-review` call, never merged: the findings
 settled as `NIT` or `AMBIGUOUS`, and the `finding-fixer` receipt. The first suppresses

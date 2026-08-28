@@ -2,13 +2,12 @@
 /**
  * PreToolUse guard for subagent spawns (Agent / Task tool calls).
  *
- * Enforces the CLAUDE.md routing rule that every spawn pins `model`
- * explicitly. The session model is fable, so a spawn that omits `model`
- * silently inherits it and the choice of tier becomes an accident; prose
- * in CLAUDE.md cannot block that, this hook can (docs_must_be_enforceable).
+ * Enforces the CLAUDE.md routing rules that every spawn pins `model` and
+ * carries explicit scope boundaries and a definition of done.
  *
  * Denies when:
  *   - `model` is missing or empty (would inherit the session model)
+ *   - `prompt` omits a required scope marker
  *
  * fable is a permitted spawn target: the routing table lists it as a
  * normal tier, so only the missing-pin case is a violation now.
@@ -26,6 +25,17 @@
 import fs from "node:fs";
 
 const SPAWN_TOOLS = new Set(["Agent", "Task"]);
+
+const REQUIRED_PROMPT_MARKERS = [
+  { label: "Scope:", pattern: /^\s*(?:#{1,6}\s*)?scope:/im },
+  { label: "Out of scope:", pattern: /^\s*(?:#{1,6}\s*)?out of scope:/im },
+  {
+    label: "Definition of done:",
+    pattern: /^\s*(?:#{1,6}\s*)?definition of done:/im,
+  },
+];
+
+const SCOPE_TEMPLATE = "Scope:\nOut of scope:\nDefinition of done:";
 
 const PIN_HINT =
   'Re-issue the call with an explicit model: "opus" (default coding tier), ' +
@@ -65,7 +75,18 @@ function main() {
 
   const input = payload.tool_input;
   if (!input || typeof input !== "object") allow();
+
   if (input.subagent_type === "fork") allow();
+
+  const prompt = typeof input.prompt === "string" ? input.prompt : "";
+  const missingMarkers = REQUIRED_PROMPT_MARKERS.filter(
+    ({ pattern }) => !pattern.test(prompt)
+  ).map(({ label }) => label);
+  if (missingMarkers.length > 0)
+    deny(
+      `Subagent spawn prompt is missing required scope markers: ${missingMarkers.join(", ")}\n` +
+        `Use this template:\n${SCOPE_TEMPLATE}`
+    );
 
   const model =
     typeof input.model === "string" ? input.model.trim().toLowerCase() : "";

@@ -88,7 +88,7 @@ test("a policy file that does not parse warns instead of throwing", () => {
 });
 
 test("the profiles shipped in this repo all parse and name a forbid list", () => {
-  const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
+  const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..", "..");
   for (const profile of ["personal", "server", "work"]) {
     const policyPath = path.join(repoRoot, "profiles", profile, "commit-policy.json");
     const policy = JSON.parse(fs.readFileSync(policyPath, "utf8")) as Record<string, unknown>;

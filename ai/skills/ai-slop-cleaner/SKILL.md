@@ -42,7 +42,8 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
 - Good fit: `/ai-slop-cleaner src/auth/session.ts src/auth/token.ts`
 - Good fit: the /commit workflow handing off only the files staged for that commit
 - Preserve the same regression-safe workflow even when the scope is a short file list
-- Do not silently expand a changed-file scope into broader cleanup work unless the user explicitly asks for it
+- Do not expand a changed-file scope. List broader cleanup opportunities in the report instead
+- When invoked from /commit, never create files, including tests
 
 ## Review Mode (`--review`)
 
@@ -68,7 +69,7 @@ In review mode:
 
 1. **Protect current behavior first**
    - Identify what must stay the same.
-   - Add or run the narrowest regression tests needed before editing.
+   - Add or run the narrowest regression tests needed before editing. From /commit, run existing tests only and do not add files.
    - If tests cannot come first, record the verification plan explicitly before touching code.
 
 2. **Write a cleanup plan before code**
@@ -82,9 +83,11 @@ In review mode:
    - **Needless abstraction**: pass-through wrappers, speculative indirection, single-use helper layers
    - **Boundary violations**: hidden coupling, misplaced responsibilities, wrong-layer imports or side effects
    - **Missing tests**: behavior not locked, weak regression coverage, edge-case gaps
-   - **UI/design defaults**: generic visual patterns that make an AI-built interface feel unreviewed
+   - **UI/design defaults**: generic visual patterns that make an AI-built interface feel unreviewed. Skip this category when invoked from /commit.
 
 ### UI/Design Reviewer Checklist
+
+Do not use this checklist when invoked from /commit.
 
 Use these as review prompts, not absolute bans. Keep intentional brand, accessibility, product-density, or design-system choices when they have a clear rationale.
 
@@ -98,8 +101,8 @@ Use these as review prompts, not absolute bans. Keep intentional brand, accessib
 4. **Run one smell-focused pass at a time**
    - **Pass 1: Dead code deletion**
    - **Pass 2: Duplicate removal**
-   - **Pass 3: Naming and error-handling cleanup**
-   - **Pass 4: Test reinforcement**
+   - **Pass 3: Naming and error-handling cleanup**, limited to lines already changed when invoked from /commit
+   - **Pass 4: Test reinforcement**, limited to lines already changed when invoked from /commit
    - Re-run targeted verification after each pass.
    - Do not bundle unrelated refactors into the same edit set.
 
