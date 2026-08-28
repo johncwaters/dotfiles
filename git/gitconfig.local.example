@@ -1,7 +1,6 @@
-[include]
-	path = ~/.gitconfig.local
-
-# The empty helper clears anything a system config set, so gh is the only one asked.
+[user]
+	name = AUTHOR_NAME
+	email = AUTHOR_EMAIL
 [credential "https://github.com"]
 	helper =
 	helper = !gh auth git-credential

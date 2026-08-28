@@ -16,6 +16,9 @@ cd ~/Projects/dotfiles
 script/bootstrap
 ```
 
+After that, `dot` is on PATH in any new interactive shell: it pulls the repo and reruns bootstrap, so
+keeping a machine current is one command.
+
 `bootstrap` points `~/.dotfiles` at the clone and every link it creates resolves through
 that alias, never through the clone path. So the checkout lives wherever you want it and
 moving it later means repointing one symlink instead of rewriting every link on the
@@ -30,7 +33,10 @@ in listed order, and each topic links its config into place.
 Almost everything is a symlink, so a `git pull` updates the machine and `script/bootstrap`
 only ensures the links exist. Destinations that carry a machine-specific value are rendered
 or copied instead, and those go through `script/lib/render.sh`, which keeps a sidecar of what
-it last wrote so a hand edit is backed up and its own output is not.
+it last wrote so a hand edit is backed up and its own output is not. `~/.gitconfig`,
+`~/.bashrc`, `~/.bash_profile` are small stubs that include the repo copy, because git
+and installers append to those files in place and a link would send the appends into the
+repo.
 
 ## Profiles
 
@@ -53,8 +59,9 @@ profile.
 
 | Topic | Installs |
 | --- | --- |
+| `shell` | `~/.bashrc` and `~/.bash_profile` stubs; `~/.localrc` first, then the profile's topics' `*.bash`; a `c` completion over `$PROJECTS` |
+| `git` | global gitconfig, with identity and credentials in `~/.gitconfig.local` |
 | `ai` | Claude Code and Codex: agents, commands, hooks, hud, skills, compiled-commit |
-| `git` | global gitconfig |
 | `vscodium` | settings, keybindings, mcp.json, extensions |
 | `glissa` | dashboard config, plus the user service on profiles that serve Glissa |
 | `fonts` | CommitMono |
@@ -70,10 +77,14 @@ Vendored third-party skills are listed in [NOTICE.md](NOTICE.md).
 ## Machine-local files
 
 Anything holding a path, hostname, or credential is untracked, with a tracked
-`.example` sibling documenting its shape: `repos/repos.txt`, `glissa/config.json`, and
-`~/.gitconfig.local`. `~/.claude/settings.json` is rendered from `ai/settings.base.json`
-plus the active profile's `settings.overlay.json`. `.machine-profile` is written by
-`script/bootstrap`.
+example documenting its shape: `repos/repos.example.txt` for `repos/repos.txt`,
+`glissa/config.example.json` for `glissa/config.json`, `git/gitconfig.local.example`
+for `~/.gitconfig.local`, and `shell/localrc.example` for `~/.localrc`.
+`~/.claude/settings.json` is rendered from `ai/settings.base.json` plus the active
+profile's `settings.overlay.json`. `.machine-profile` is written by `script/bootstrap`.
+
+`~/.localrc` is where a machine's own exports go. The shell topic sources it before
+anything else. The git topic seeds `~/.gitconfig.local` from the previous `~/.gitconfig`.
 
 `vscodium/mcp.json` reads its PostHog token from the environment, so
 `POSTHOG_PERSONAL_API_KEY` has to be exported where VSCodium can see it.

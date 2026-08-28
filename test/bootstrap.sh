@@ -143,6 +143,19 @@ check "collect refuses a profile name that is not a name" \
 check "collect says what a profile name may hold" \
   outputHas "$collectUnsafeProfileOutput" 'expected lowercase letters, digits and dashes'
 
+stubMarkerProbePath="$sandbox/stub-marker-probe.sh"
+cat > "$stubMarkerProbePath" <<'PROBE'
+#!/usr/bin/env bash
+source "$1/script/lib/context.sh"
+ensureStubFile "probe" "$2" "the marker line" <<< "a body that never mentions it"
+PROBE
+
+stubMarkerDestination="$fakeHome/.stub-marker-probe"
+stubMarkerOutput="$(env HOME="$fakeHome" NO_COLOR=1 bash "$stubMarkerProbePath" "$fakeRepo" "$stubMarkerDestination")"
+check "a stub body without its marker line warns" \
+  bash -c '[[ "$1" == *"stub content lacks its marker line"* ]]' _ "$stubMarkerOutput"
+check "a stub body without its marker line writes nothing" test ! -e "$stubMarkerDestination"
+
 cleanupProbePath="$sandbox/cleanup-probe.sh"
 cat > "$cleanupProbePath" <<'PROBE'
 #!/usr/bin/env bash
@@ -225,5 +238,34 @@ check "a suite that opts out of the real home check still reports clean" \
 check "the shared stub runner owns all sandbox paths and environment" stubEnvironmentIsComplete
 check "a sandboxed run writes no state into the runner's own state directory" \
   test ! -d "$sandbox/state-the-runner-inherited"
+
+aliaslessHome="$sandbox/no-alias-home"
+mkdir -p "$aliaslessHome"
+dotWithoutAliasStatus=0
+dotWithoutAliasOutput="$(env HOME="$aliaslessHome" bash "$repoRoot/bin/dot" 2>&1)" \
+  || dotWithoutAliasStatus=$?
+check "dot refuses to run without the alias" test "$dotWithoutAliasStatus" -eq 1
+check "the refusal says how to create the alias" \
+  bash -c '[[ "$1" == *"run script/bootstrap from the clone first"* ]]' _ "$dotWithoutAliasOutput"
+
+plainDirHome="$sandbox/plain-dir-home"
+mkdir -p "$plainDirHome/.dotfiles/script"
+cp "$repoRoot/script/bootstrap" "$plainDirHome/.dotfiles/script/bootstrap"
+dotOnPlainDirStatus=0
+env HOME="$plainDirHome" bash "$repoRoot/bin/dot" > /dev/null 2>&1 || dotOnPlainDirStatus=$?
+check "dot refuses a plain directory at the alias" test "$dotOnPlainDirStatus" -eq 1
+
+pullFailHome="$sandbox/pull-fail-home"
+pullFailRepo="$sandbox/pull-fail-repo"
+mkdir -p "$pullFailHome" "$pullFailRepo/script"
+printf '#!/usr/bin/env bash\nprintf "converged anyway\\n"\n' > "$pullFailRepo/script/bootstrap"
+chmod +x "$pullFailRepo/script/bootstrap"
+git -C "$pullFailRepo" init -q
+ln -s "$pullFailRepo" "$pullFailHome/.dotfiles"
+pullFailStatus=0
+pullFailOutput="$(env HOME="$pullFailHome" bash "$repoRoot/bin/dot" 2>&1)" || pullFailStatus=$?
+check "a failing pull still converges the machine" \
+  bash -c '[[ "$1" == *"converged anyway"* ]]' _ "$pullFailOutput"
+check "a failing pull says so without failing the run" test "$pullFailStatus" -eq 0
 
 reportTopicResults "bootstrap"

@@ -137,6 +137,25 @@ checkTheCommandLogLeftTheRealHomeAlone() {
     commandLogNamesNoPathUnder "${guardedPaths[@]}"
 }
 
+runTopicInstall() {
+  env HOME="$sandbox" DOTFILES_PROFILE="${2-personal}" NO_COLOR=1 bash "$1/install.sh"
+}
+
+runTopicInstallWithoutProfile() {
+  env -u DOTFILES_PROFILE HOME="$sandbox" NO_COLOR=1 bash "$1/install.sh"
+}
+
+checkRerunIsQuiet() {
+  local description="$1"
+  local output="$2"
+  if ! printf '%s\n' "$output" | grep -qE "$changeMarkerPattern"; then
+    pass "$description"
+    return 0
+  fi
+  fail "$description"
+  printf '%s\n' "$output" | grep -E "$changeMarkerPattern"
+}
+
 reportTopicResults() {
   local topicName="$1"
   checkTheCommandLogLeftTheRealHomeAlone

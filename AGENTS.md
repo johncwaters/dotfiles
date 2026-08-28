@@ -8,6 +8,9 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
   or an untracked sibling, with a tracked `.example` documenting the shape.
 - Symlink, do not copy. A copy means the machine silently drifts from the repo until
   someone reruns the installer; a link cannot drift. Render only what a profile varies.
+  Files that tools append to in place (`~/.gitconfig`, `~/.bashrc`, `~/.bash_profile`) are
+  small stubs including the repo copy, since a link there makes `git config --global` and
+  installer hooks write into the tracked file.
 - Installers are idempotent. A machine is converged by running everything, not by
   remembering what already ran.
 - Removals converge too. Retiring a tool means adding it to a removal list, so machines
@@ -40,6 +43,9 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
   what the profile guarantees; ends at `finishTopic`, which exits non-zero when the topic
   warned so bootstrap still sees the failure if the shared counts file is lost
 - `<topic>/collect.sh`: optional, run by `script/collect`
+- `<topic>/*.bash`: sourced by the shell loader for the profile's topics, `path.bash`
+  first, `completion.bash` last; `shell/test.sh` pins the order
+- `bin/dot`: pulls this repo and reruns bootstrap
 - `test/`: shared bubblewrap sandbox and cross-cutting suites listed in `test/run-all.sh`;
   per-topic tests live next to their installer
 - `test/harness.sh`: shared assertions, sandbox home, command stubs

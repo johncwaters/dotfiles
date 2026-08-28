@@ -24,9 +24,7 @@ cp -a "$repoUnderTest" "$stagedRepo"
 rm -rf "$stagedRepo/.git" "$stagedRepo/.machine-profile"
 printf 'personal\n' > "$stagedRepo/.machine-profile"
 # Every topic that converges a fresh home without reaching the network, so packages and repos stay out.
-printf '{ "topics": ["ai", "git", "fonts"] }\n' > "$stagedRepo/profiles/personal/profile.json"
-export GIT_USER_NAME="Cutover Carbon Unit"
-export GIT_USER_EMAIL="cutover@example.invalid"
+printf '{ "topics": ["shell", "ai", "git", "fonts"] }\n' > "$stagedRepo/profiles/personal/profile.json"
 
 git clone --quiet "$claudeSetupRepo" "$claudeHome"
 mkdir -p "$claudeHome/projects/live-work" "$claudeHome/sessions" "$claudeHome/plugins/repos" \
@@ -40,6 +38,8 @@ printf 'history\n' > "$claudeHome/history.jsonl"
 # The predecessor rendered these two and gitignored them, so a real ~/.claude carries them in as untracked files this repo takes over.
 printf '{"model":"rendered-by-the-old-setup"}\n' > "$claudeHome/settings.json"
 printf 'the old profile CLAUDE.md\n' > "$claudeHome/CLAUDE.md"
+printf '[user]\n\tname = Sandbox Author\n\temail = sandbox@example.com\n' > "$HOME/.gitconfig"
+printf 'export SANDBOX_MACHINE_ENV=1\n' > "$HOME/.localrc"
 
 check "the rehearsal starts from a real clone" test -d "$claudeHome/.git"
 check "the rehearsal starts with the tracked file present" test -e "$claudeHome/settings.base.json"
@@ -83,9 +83,8 @@ if ((firstConvergeStatus != 0)); then
 fi
 check "the alias was created" test -L "$HOME/.dotfiles"
 check "the alias points at the staged clone" bash -c '[[ "$(readlink "$1")" == "$2" ]]' _ "$HOME/.dotfiles" "$stagedRepo"
-check "the git topic converged" test -L "$HOME/.gitconfig"
-check "the git identity came from the environment" \
-  grep -q 'Cutover Carbon Unit' "$HOME/.gitconfig.local"
+check "the git topic converged to a real stub" bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$HOME/.gitconfig"
+check "the git identity moved from the previous config" grep -q 'Sandbox Author' "$HOME/.gitconfig.local"
 check "the fonts topic converged" test -L "$HOME/.local/share/fonts/CommitMono-400-Regular.otf"
 
 brokenLinks=0
@@ -118,6 +117,11 @@ check "the displaced settings.json was preserved" \
 check "the displaced CLAUDE.md was preserved" \
   bash -c 'grep -rqs "the old profile CLAUDE.md" "$1".pre-dotfiles.bak*' _ "$claudeHome/CLAUDE.md"
 
+check "the shell rc stub sources the repo rc through the alias" \
+  grep -qF 'source "$HOME/.dotfiles/shell/bashrc"' "$HOME/.bashrc"
+check "the git identity moved into .gitconfig.local" grep -q 'Sandbox Author' "$HOME/.gitconfig.local"
+check "git reads the identity through the linked config" \
+  bash -c '[[ "$(git -C "$HOME" config --get user.name)" == "Sandbox Author" ]]'
 check "skills resolve through the link" test -f "$claudeHome/skills/commit/SKILL.md"
 check "agents resolve through the link" test -f "$claudeHome/agents/code-reviewer.md"
 check "the codex mirror resolves" test -f "$HOME/.codex/AGENTS.md"

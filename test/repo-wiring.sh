@@ -65,9 +65,9 @@ for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
   fi
 done
 
-# ai links entries into ~/.claude and runs no command, so it is the one topic with nothing to stub.
+# These topics confine their commands to the sandbox home without command stubs.
 topicSuitesNeedingStubs() {
-  topicDirectoriesWithAnInstaller | grep -vx 'ai'
+  topicDirectoriesWithAnInstaller | grep -Evx 'ai|git|shell'
 }
 
 for stubbedTopicSuite in $(topicSuitesNeedingStubs); do
@@ -88,8 +88,10 @@ check "the README profile file list names glissa overlays" \
   grep -qF '`glissa.overlay.json`' "$repoRoot/README.md"
 check "the README profile file list names vscodium settings" \
   grep -qF '`vscodium.json`' "$repoRoot/README.md"
-check "the README limits example siblings to the three that exist" \
-  grep -qF '`repos/repos.txt`, `glissa/config.json`, and' "$repoRoot/README.md"
+for examplePath in repos/repos.example.txt glissa/config.example.json \
+  git/gitconfig.local.example shell/localrc.example; do
+  check "the README names $examplePath" grep -qF "\`$examplePath\`" "$repoRoot/README.md"
+done
 check "the README names the rendered Claude settings inputs" \
   bash -c 'grep -qF '\''`~/.claude/settings.json` is rendered from `ai/settings.base.json`'\'' "$1/README.md" && grep -qF '\''`settings.overlay.json`'\'' "$1/README.md"' \
   _ "$repoRoot"

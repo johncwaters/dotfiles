@@ -102,6 +102,8 @@ Docs and comments carry only the Why: rationale, tradeoffs, invariants with thei
 - Never narrate mechanisms, data flow, or behavior a reader gets from the code or its tests. A test pins behavior better than a paragraph.
 - Project instruction files (AGENTS.md, CLAUDE.md) are instruction-tier: conventions, invariants plus why, lean map. Feature rationale stays out unless it changes how an agent must act.
 - A merged feature adds at most a few lines to any instruction file: the invariant, its why, a pointer. No design essays, no incident chronology beyond one line naming the lesson.
+- An invariant lives in the AGENTS.md NEAREST the code it governs. A repo's root file is a lean map plus cross-cutting conventions only; a subsystem rule written there is a defect, since the root is charged to every session in every directory while a nested file is uncapped and loads only when that code is open.
 - Growth is bounded: `hooks/validate-file.mjs` caps AGENTS.md, CLAUDE.md, and ROUTING.md by byte size, so making room means cutting, not appending.
+- At the cap, make room by RETIRING a rule whose code is gone or whose test now pins it, never by trimming words off live ones. Trimming to fit turns the ceiling into a target and leaves the file permanently full, which is how one repo's root reached 172KB before it was cut.
 - The docs_must_be_enforceable gate blocks NEW docs; this section governs the content of all docs. "The doc gate blocks a new file" is never a reason to dump prose into an existing one.
 </doc_style_why_only>

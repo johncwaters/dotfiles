@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Runs git/install.sh against a sandbox HOME and asserts that a machine's existing
+# identity moves into ~/.gitconfig.local and keeps working through the linked config.
+
 set -euo pipefail
 
 topicDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -6,168 +9,186 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 
-startStubbedSandbox "git"
-
-# XDG_CONFIG_HOME is unset so git config --global reads the sandbox and nothing else.
-runInstallWithoutIdentityEnvironment() {
-  runInStubbedSandbox "$sandbox" PATH="$PATH" env -u GIT_USER_NAME -u GIT_USER_EMAIL -u XDG_CONFIG_HOME \
-    DOTFILES_PROFILE=personal NO_COLOR=1 \
-    bash "$topicDir/install.sh"
+startGitSandbox() {
+  startSandboxHome "$1"
+  export XDG_CONFIG_HOME="$sandbox/.config"
 }
+
+startGitSandbox "git"
+cat > "$sandbox/.gitconfig" <<'PREVIOUS'
+[user]
+	name = Sandbox Author
+	email = sandbox@example.com
+[include]
+	path = ~/.gitconfig.local
+PREVIOUS
+chmod 644 "$sandbox/.gitconfig"
 
 runInstall() {
-  runInStubbedSandbox "$sandbox" PATH="$PATH" env -u XDG_CONFIG_HOME DOTFILES_PROFILE=personal NO_COLOR=1 \
-    GIT_USER_NAME="Test Carbon Unit" GIT_USER_EMAIL="test@example.com" \
-    bash "$topicDir/install.sh"
+  runTopicInstall "$topicDir"
 }
 
-fileModeIs() {
-  [[ "$(stat -c %a "$1")" == "$2" ]]
+gitConfigValue() {
+  env HOME="$sandbox" git -C "$sandbox" config --get "$1"
+}
+
+modeOf() {
+  stat -c %a "$1"
 }
 
 printf '\ngit topic\n'
 
-printf '[user]\n\tname = Existing Carbon Unit\n' > "$sandbox/.gitconfig"
 installStatus=0
-firstRunOutput="$(runInstall)" || installStatus=$?
+runInstall > /dev/null || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
-check "install says what it did" test -n "$firstRunOutput"
-check "gitconfig is a symlink" test -L "$sandbox/.gitconfig"
-check "gitconfig links through the alias" \
-  test "$(readlink -- "$sandbox/.gitconfig")" = "$sandbox/.dotfiles/git/.gitconfig"
-check "gitconfig resolves" test -e "$sandbox/.gitconfig"
-check "pre-existing gitconfig was backed up" test -f "$sandbox/.gitconfig.pre-dotfiles.bak"
-check "backup keeps the old content" \
-  grep -q 'Existing Carbon Unit' "$sandbox/.gitconfig.pre-dotfiles.bak"
-check "identity config comes from the environment" \
-  grep -q 'Test Carbon Unit' "$sandbox/.gitconfig.local"
-check "identity config is private" fileModeIs "$sandbox/.gitconfig.local" 600
+check ".gitconfig is a real file" bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$sandbox/.gitconfig"
+check ".gitconfig includes the repo config through the alias" grep -qF 'path = ~/.dotfiles/git/gitconfig' "$sandbox/.gitconfig"
+check ".gitconfig.local was seeded from the previous config" grep -q 'Sandbox Author' "$sandbox/.gitconfig.local"
+check ".gitconfig.local is not world readable" test "$(modeOf "$sandbox/.gitconfig.local")" = "600"
+check "the seed dropped the include of itself" \
+  bash -c '! grep -q "gitconfig.local" "$1"' _ "$sandbox/.gitconfig.local"
+check "the previous config was backed up" test -f "$sandbox/.gitconfig.pre-dotfiles.bak"
+check "the backup is not world readable" test "$(modeOf "$sandbox/.gitconfig.pre-dotfiles.bak")" = "600"
+check "git still sees the identity" test "$(gitConfigValue user.name)" = "Sandbox Author"
+check "git sees the shared defaults" test "$(gitConfigValue pull.rebase)" = "true"
 
-secondRunOutput="$(runInstall)"
-check "second run reports no changes" reportsNoChanges "$secondRunOutput"
+checkRerunIsQuiet "second run reports no changes" "$(runInstall)"
 
-check "the tracked gitconfig keeps the gh credential helper" \
-  grep -q 'gh auth git-credential' "$topicDir/.gitconfig"
-check "the credential helper is reachable through the link" \
-  grep -q 'gh auth git-credential' "$sandbox/.gitconfig"
+printf '[user]\n\tname = Hand Edited\n' > "$sandbox/.gitconfig.local"
+runInstall > /dev/null
+check "a hand written local config is never overwritten" test "$(gitConfigValue user.name)" = "Hand Edited"
 
-startStubbedSandbox "git-existing-identity"
-printf '[user]\n\tname = Machine Carbon Unit\n\temail = machine@example.com\n' \
-  > "$sandbox/.gitconfig"
-carriedOverStatus=0
-carriedOverOutput="$(runInstallWithoutIdentityEnvironment)" || carriedOverStatus=$?
-check "an install with no identity environment exits clean" test "$carriedOverStatus" -eq 0
-check "the existing name survives the cutover" \
-  grep -q 'Machine Carbon Unit' "$sandbox/.gitconfig.local"
-check "the existing email survives the cutover" \
-  grep -q 'machine@example.com' "$sandbox/.gitconfig.local"
-check "the carried identity says where it came from" \
-  outputHas "$carriedOverOutput" 'already on this machine'
-check "the carried identity is private" fileModeIs "$sandbox/.gitconfig.local" 600
-check "the second run carries nothing over again" \
-  reportsNoChanges "$(runInstallWithoutIdentityEnvironment)"
+env HOME="$sandbox" git config --global user.name "Written By Git"
+check "git's own global write lands in the stub, not the repo" \
+  bash -c '! grep -q "Written By Git" "$1"' _ "$repoRoot/git/gitconfig"
+check "git's own global write is what git reads back" test "$(gitConfigValue user.name)" = "Written By Git"
+checkRerunIsQuiet "an appended stub is still recognised as ours" "$(runInstall)"
 
-startStubbedSandbox "git-half-identity"
-printf '[user]\n\tname = Half Configured Carbon Unit\n' > "$sandbox/.gitconfig.local"
-chmod 600 "$sandbox/.gitconfig.local"
-printf '[user]\n\tname = Machine Carbon Unit\n\temail = machine@example.com\n' \
-  > "$sandbox/.gitconfig"
-halfIdentityStatus=0
-halfIdentityOutput="$(runInstallWithoutIdentityEnvironment)" || halfIdentityStatus=$?
-check "a local config missing the email exits clean" test "$halfIdentityStatus" -eq 0
-check "the missing email is filled in from the machine" \
-  grep -q 'machine@example.com' "$sandbox/.gitconfig.local"
-check "the name already in the local config is kept" \
-  grep -q 'Half Configured Carbon Unit' "$sandbox/.gitconfig.local"
-check "the name is not written a second time" \
-  test "$(grep -c 'name =' "$sandbox/.gitconfig.local")" -eq 1
-check "filling a field in is reported" \
-  outputHas "$halfIdentityOutput" 'user.email filled in'
-check "the second run fills nothing in again" \
-  reportsNoChanges "$(runInstallWithoutIdentityEnvironment)"
+rm -f "$sandbox/.gitconfig.local"
+reseedStatus=0
+runInstall > /dev/null || reseedStatus=$?
+check "the stub this repo wrote is never seeded from" bash -c '! test -e "$1"' _ "$sandbox/.gitconfig.local"
+check "the missing local config still warns" test "$reseedStatus" -eq 1
 
-startStubbedSandbox "git-half-identity-unterminated"
-printf '[user]\n\tname = Unterminated Carbon Unit' > "$sandbox/.gitconfig.local"
-chmod 600 "$sandbox/.gitconfig.local"
-printf '[user]\n\tname = Machine Carbon Unit\n\temail = machine@example.com\n' \
-  > "$sandbox/.gitconfig"
-unterminatedStatus=0
-runInstallWithoutIdentityEnvironment > /dev/null || unterminatedStatus=$?
-check "a local config with no trailing newline exits clean" test "$unterminatedStatus" -eq 0
-check "the name that ended the file is left intact" \
-  grep -qx $'\tname = Unterminated Carbon Unit' "$sandbox/.gitconfig.local"
-check "the appended section starts on its own line" \
-  grep -qx '\[user\]' "$sandbox/.gitconfig.local"
-check "the filled in email is readable by git" \
-  grep -qx $'\temail = machine@example.com' "$sandbox/.gitconfig.local"
+check "the example holds every key the seed would" bash -c 'grep -q "^\[user\]" "$1" && grep -q "gh auth git-credential" "$1"' _ "$topicDir/gitconfig.local.example"
+check "the example resolves gh on PATH" bash -c '! grep -q "/usr/bin/gh" "$1"' _ "$topicDir/gitconfig.local.example"
 
-startStubbedSandbox "git-half-identity-uncapturable"
-printf '[user]\n\tname = Only A Name\n' > "$sandbox/.gitconfig.local"
-chmod 600 "$sandbox/.gitconfig.local"
-uncapturableStatus=0
-uncapturableOutput="$(runInstallWithoutIdentityEnvironment)" || uncapturableStatus=$?
-check "a field that cannot be filled in warns" test "$uncapturableStatus" -eq 1
-check "the warning names the field the local config lacks" \
-  outputHas "$uncapturableOutput" 'declares no user.email'
-check "a field that cannot be filled in is not invented" \
-  bash -c '! grep -q "email" "$1"' _ "$sandbox/.gitconfig.local"
+startGitSandbox "git-symlinked"
+mkdir -p "$sandbox/elsewhere"
+printf '[user]\n\tname = Linked Author\n\temail = linked@example.com\n' > "$sandbox/elsewhere/gitconfig"
+ln -s "$sandbox/elsewhere/gitconfig" "$sandbox/.gitconfig"
+linkedStatus=0
+runInstall > /dev/null || linkedStatus=$?
+check "a symlinked previous config installs clean" test "$linkedStatus" -eq 0
+check "a symlinked previous config is seeded from its target" grep -q 'Linked Author' "$sandbox/.gitconfig.local"
+check "git reads the identity the link carried" test "$(gitConfigValue user.name)" = "Linked Author"
+check "the previous link was backed up" test -L "$sandbox/.gitconfig.pre-dotfiles.bak"
+check "the link target was left where it was" grep -q 'Linked Author' "$sandbox/elsewhere/gitconfig"
 
-startStubbedSandbox "git-symlinked-identity"
-outsideIdentityPath="$sandbox/an-identity-file-this-topic-never-chose"
-printf 'a file this topic never chose\n' > "$outsideIdentityPath"
-ln -s "$outsideIdentityPath" "$sandbox/.gitconfig.local"
-symlinkedIdentityStatus=0
-symlinkedIdentityOutput="$(runInstall)" || symlinkedIdentityStatus=$?
-check "a symlinked local config warns" \
-  outputMatches "$symlinkedIdentityOutput" '\[warn\].*local config is a symlink'
-check "a symlinked local config exits non-zero" test "$symlinkedIdentityStatus" -eq 1
-check "a symlinked local config is never appended through" \
-  grep -qx 'a file this topic never chose' "$outsideIdentityPath"
-check "nothing outside the home gains an identity" \
-  bash -c '! grep -q "Test Carbon Unit" "$1"' _ "$outsideIdentityPath"
-check "a symlinked local config is left where it was" test -L "$sandbox/.gitconfig.local"
+startGitSandbox "git-fresh"
+freshStatus=0
+freshOutput="$(runInstall)" || freshStatus=$?
+check "a fresh machine without a local config warns" bash -c 'printf "%s\n" "$1" | grep -q "gitconfig.local.example"' _ "$freshOutput"
+check "the warning fails the topic" test "$freshStatus" -eq 1
+check "the fresh machine still got the stub" grep -qF 'gitconfig.local' "$sandbox/.gitconfig"
 
-startStubbedSandbox "git-foreign-section"
-printf '[github]\n\tname = not the identity\n\temail = not@the.identity\n' \
-  > "$sandbox/.gitconfig.local"
-chmod 600 "$sandbox/.gitconfig.local"
-foreignSectionStatus=0
-foreignSectionOutput="$(runInstall)" || foreignSectionStatus=$?
-check "a name under another section is not read as the identity" \
-  outputHas "$foreignSectionOutput" 'user.name filled in'
-check "an email under another section is not read as the identity" \
-  outputHas "$foreignSectionOutput" 'user.email filled in'
-check "the identity is written under [user]" \
-  grep -q 'Test Carbon Unit' "$sandbox/.gitconfig.local"
-check "the other section keeps its own keys" \
-  grep -qx $'\tname = not the identity' "$sandbox/.gitconfig.local"
-check "filling in past another section exits clean" test "$foreignSectionStatus" -eq 0
-check "the run after filling in past another section changes nothing" \
-  reportsNoChanges "$(runInstall)"
+startGitSandbox "git-relative-include"
+cat > "$sandbox/.gitconfig" <<'PREVIOUS'
+[user]
+	name = Relative Author
+[pull]
+	rebase = false
+[include]
+	path = .gitconfig.local
+PREVIOUS
+relativeStatus=0
+runInstall > /dev/null || relativeStatus=$?
+check "a relative self include installs clean" test "$relativeStatus" -eq 0
+check "the seed dropped the relative include of itself" \
+  bash -c '! grep -q "gitconfig.local" "$1"' _ "$sandbox/.gitconfig.local"
+check "the machine's own setting outranks the shared default" \
+  test "$(gitConfigValue pull.rebase)" = "false"
 
-startStubbedSandbox "git-user-subsection"
-printf '[user "work"]\n\tname = not the identity\n\temail = not@the.identity\n' \
-  > "$sandbox/.gitconfig.local"
-chmod 600 "$sandbox/.gitconfig.local"
-userSubsectionStatus=0
-userSubsectionOutput="$(runInstall)" || userSubsectionStatus=$?
-check "a name under a [user] subsection is not read as the identity" \
-  outputHas "$userSubsectionOutput" 'user.name filled in'
-check "an email under a [user] subsection is not read as the identity" \
-  outputHas "$userSubsectionOutput" 'user.email filled in'
-check "the identity is written under the plain user section" \
-  grep -qx $'\tname = Test Carbon Unit' "$sandbox/.gitconfig.local"
-check "the subsection keeps its own keys" \
-  grep -qx $'\tname = not the identity' "$sandbox/.gitconfig.local"
-check "filling in past a [user] subsection exits clean" test "$userSubsectionStatus" -eq 0
-check "the run after filling in past a subsection changes nothing" \
-  reportsNoChanges "$(runInstall)"
+startGitSandbox "git-repo-include"
+cat > "$sandbox/.gitconfig" <<PREVIOUS
+[user]
+	name = Cycle Author
+[include]
+	path = $repoRoot/git/gitconfig
+[include]
+	path = $sandbox/.dotfiles/git/gitconfig
+[include]
+  path = ~/.dotfiles/git/gitconfig
+[include]
+	path = ~/work/other/git/gitconfig
+PREVIOUS
+repoIncludeStatus=0
+runInstall > /dev/null || repoIncludeStatus=$?
+check "a previous config including the repo config installs clean" test "$repoIncludeStatus" -eq 0
+check "the seed dropped the alias forms of the repo config include" \
+  bash -c '! grep -q "\.dotfiles/git/gitconfig" "$1"' _ "$sandbox/.gitconfig.local"
+check "the seed dropped the clone path form of the repo config include" \
+  bash -c '! grep -qF "$2/git/gitconfig" "$1"' _ "$sandbox/.gitconfig.local" "$repoRoot"
+check "an unrelated third party include survives the seed" \
+  grep -qF 'path = ~/work/other/git/gitconfig' "$sandbox/.gitconfig.local"
+check "git still reads the identity the cycle carried" test "$(gitConfigValue user.name)" = "Cycle Author"
 
-startStubbedSandbox "git-missing-identity"
-missingIdentityStatus=0
-missingIdentityOutput="$(runInstallWithoutIdentityEnvironment)" || missingIdentityStatus=$?
-check "missing identity exits with a warning" test "$missingIdentityStatus" -eq 1
-check "missing identity explains how to configure it" \
-  grep -q 'GIT_USER_NAME and GIT_USER_EMAIL' <<< "$missingIdentityOutput"
+startGitSandbox "git-xdg"
+mkdir -p "$sandbox/.config/git"
+printf '[user]\n\tname = Xdg Author\n[pull]\n\trebase = false\n[safe]\n\tdirectory = /srv/one\n' \
+  > "$sandbox/.config/git/config"
+xdgStatus=0
+runInstall > /dev/null || xdgStatus=$?
+check "an xdg config without a ~/.gitconfig installs clean" test "$xdgStatus" -eq 0
+check "the xdg config seeded the local config" grep -q 'Xdg Author' "$sandbox/.gitconfig.local"
+check "git reads the identity the xdg config carried" test "$(gitConfigValue user.name)" = "Xdg Author"
+check "the xdg machine setting outranks the shared default" test "$(gitConfigValue pull.rebase)" = "false"
+check "the seeded xdg config was moved aside" test -f "$sandbox/.config/git/config.pre-dotfiles.bak"
+check "a multi valued key the xdg config carried is applied once" \
+  test "$(env HOME="$sandbox" git -C "$sandbox" config --get-all safe.directory | wc -l)" = "1"
+
+startGitSandbox "git-multi-valued-local"
+printf '[user]\n\tname = Multi Author\n[safe]\n\tdirectory = /srv/one\n' > "$sandbox/.gitconfig.local"
+runInstall > /dev/null || true
+check "a multi valued local key is applied once" \
+  test "$(env HOME="$sandbox" git -C "$sandbox" config --get-all safe.directory | wc -l)" = "1"
+
+startGitSandbox "git-odd-include-syntax"
+cat > "$sandbox/.gitconfig" <<PREVIOUS
+[user]
+	name = Odd Author
+[include]
+	Path = ~/.gitconfig.local ; trailing comment
+	path = $sandbox/.dotfiles/git/gitconfig # another
+PREVIOUS
+oddStatus=0
+runInstall > /dev/null || oddStatus=$?
+check "uppercase and commented self includes install clean" test "$oddStatus" -eq 0
+check "uppercase and commented self includes are stripped" \
+  bash -c '! grep -qi "gitconfig" "$1"' _ "$sandbox/.gitconfig.local"
+check "git still runs after odd include syntax" test "$(gitConfigValue user.name)" = "Odd Author"
+
+startGitSandbox "git-local-already-present"
+printf '[user]\n\tname = Local First\n' > "$sandbox/.gitconfig.local"
+printf '[commit]\n\tgpgSign = true\n' > "$sandbox/.gitconfig"
+presentStatus=0
+presentOutput="$(runInstall)" || presentStatus=$?
+check "a previous config that cannot be merged warns" \
+  bash -c 'printf "%s\n" "$1" | grep -q "was not merged"' _ "$presentOutput"
+check "the unmerged previous config fails the topic" test "$presentStatus" -eq 1
+check "the unmerged previous config is preserved in a backup" \
+  grep -q 'gpgSign' "$sandbox/.gitconfig.pre-dotfiles.bak"
+check "the existing local config was left alone" test "$(gitConfigValue user.name)" = "Local First"
+
+startGitSandbox "git-xdg-relative-include"
+mkdir -p "$sandbox/.config/git"
+printf '[user]\n\tname = Sibling Author\n' > "$sandbox/.config/git/identity"
+printf '[include]\n\tpath = identity\n' > "$sandbox/.config/git/config"
+relativeXdgStatus=0
+runInstall > /dev/null || relativeXdgStatus=$?
+check "an XDG config with a relative include installs clean" test "$relativeXdgStatus" -eq 0
+check "the relative include was rebased onto the XDG dir" \
+  grep -qF "path = $sandbox/.config/git/identity" "$sandbox/.gitconfig.local"
+check "the sibling include still applies after retirement" test "$(gitConfigValue user.name)" = "Sibling Author"
 
 reportTopicResults "git"

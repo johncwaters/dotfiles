@@ -1,0 +1,47 @@
+# shellcheck shell=bash
+[[ $- != *i* ]] && return
+
+# Deliberately not exported: a nested login shell must load this file again, not skip it.
+dotfilesShellLoaded=1
+
+export DOTFILES="$HOME/.dotfiles"
+export PROJECTS="${PROJECTS:-$HOME/Projects}"
+
+prependToPathOnce() {
+  case ":$PATH:" in
+    *":$1:"*) return 0 ;;
+  esac
+  export PATH="$1:$PATH"
+}
+
+# shellcheck source=/dev/null
+[[ -f "$HOME/.localrc" ]] && source "$HOME/.localrc"
+
+nullglobState="$(shopt -p nullglob)"
+shopt -s nullglob
+dotfilesTopicDirs=("$DOTFILES/shell")
+if [[ -f "$HOME/.config/dotfiles/topics" ]]; then
+  dotfilesTopicDirs=()
+  while read -r topicName; do
+    [[ -n "$topicName" ]] && dotfilesTopicDirs+=("$DOTFILES/$topicName")
+  done < "$HOME/.config/dotfiles/topics"
+fi
+dotfilesShellFiles=()
+for topicDir in "${dotfilesTopicDirs[@]}"; do
+  dotfilesShellFiles+=("$topicDir"/*.bash)
+done
+$nullglobState
+
+for shellFile in "${dotfilesShellFiles[@]}"; do
+  [[ "$shellFile" == */path.bash ]] && source "$shellFile"
+done
+for shellFile in "${dotfilesShellFiles[@]}"; do
+  case "$shellFile" in
+    */path.bash | */completion.bash) continue ;;
+  esac
+  source "$shellFile"
+done
+for shellFile in "${dotfilesShellFiles[@]}"; do
+  [[ "$shellFile" == */completion.bash ]] && source "$shellFile"
+done
+unset shellFile topicName topicDir nullglobState dotfilesTopicDirs dotfilesShellFiles
