@@ -17,11 +17,8 @@ printf '{"token":"keep-me"}\n' > "$sandbox/.claude/.credentials.json"
 printf 'pre-existing user notes\n' > "$sandbox/.claude/AGENTS.md"
 
 runInstall() {
-  env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 \
-    bash "$topicDir/install.sh"
+  runTopicInstall "$topicDir"
 }
-
-changeMarkerPattern='\[ (ok|\+\+) \]'
 
 printf '\nai topic\n'
 
@@ -85,17 +82,10 @@ check "a later displaced file gets its own backup" test -f "$sandbox/.claude/AGE
 check "the later backup holds the later content" grep -q 'later hand written notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak.2"
 check "the first backup is untouched" grep -q 'pre-existing user notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak"
 
-secondRunOutput="$(runInstall)"
-if printf '%s\n' "$secondRunOutput" | grep -qE "$changeMarkerPattern"; then
-  fail "second run reports no changes"
-  printf '%s\n' "$secondRunOutput" | grep -E "$changeMarkerPattern"
-fi
-if ! printf '%s\n' "$secondRunOutput" | grep -qE "$changeMarkerPattern"; then
-  pass "second run reports no changes"
-fi
+checkRerunIsQuiet "second run reports no changes" "$(runInstall)"
 
 warnedRunStatus=0
-env -u DOTFILES_PROFILE HOME="$sandbox" NO_COLOR=1 bash "$topicDir/install.sh" > /dev/null \
+runTopicInstallWithoutProfile "$topicDir" > /dev/null \
   || warnedRunStatus=$?
 check "a topic that emits a warning exits non-zero" test "$warnedRunStatus" -eq 1
 
