@@ -100,8 +100,16 @@ noteWarned() {
   appendCountToken warned
 }
 
+warningCountSoFar() {
+  printf '%s\n' "$warningsEmittedHere"
+}
+
 noteDetail() {
   writeLine " -- " "$colorDarkGray" "$1" "$2"
+}
+
+noteStarting() {
+  writeLine " .. " "$colorYellow" "$1" "$2"
 }
 
 writeSummary() {

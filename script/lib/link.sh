@@ -36,18 +36,36 @@ symlinkPointsIntoThisRepo() {
   return 1
 }
 
+linkIsCurrent() {
+  local repoRelativeSource="$1"
+  local destination="$2"
+  [[ -L "$destination" ]] || return 1
+  [[ "$(symlinkTargetOf "$destination")" == "$(aliasTargetFor "$repoRelativeSource")" ]]
+}
+
+# The outcome goes to a variable the caller names, so two links in one process cannot read each other's result.
+recordLinkOutcome() {
+  local outcomeVariableName="$1"
+  if [[ -z "$outcomeVariableName" ]]; then
+    return 0
+  fi
+  printf -v "$outcomeVariableName" '%s' "$2"
+}
+
 linkEntry() {
   local label="$1"
   local repoRelativeSource="$2"
   local destination="$3"
+  local outcomeVariableName="${4:-}"
   local sourcePath="$dotfilesRepo/$repoRelativeSource"
+  recordLinkOutcome "$outcomeVariableName" current
   if [[ ! -e "$sourcePath" ]]; then
     noteWarned "$label" "not in repo: $repoRelativeSource"
     return 0
   fi
   local wantedTarget
   wantedTarget="$(aliasTargetFor "$repoRelativeSource")"
-  if [[ -L "$destination" ]] && [[ "$(symlinkTargetOf "$destination")" == "$wantedTarget" ]]; then
+  if linkIsCurrent "$repoRelativeSource" "$destination"; then
     notePresent "$label" "linked"
     return 0
   fi
@@ -59,5 +77,6 @@ linkEntry() {
     moveExistingAside "$label" "$destination"
   fi
   ln -s -- "$wantedTarget" "$destination"
+  recordLinkOutcome "$outcomeVariableName" changed
   noteApplied "$label" "linked"
 }

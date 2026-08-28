@@ -7,12 +7,18 @@ filesAreIdentical() {
   cmp -s -- "$1" "$2"
 }
 
-# mv onto a directory or a symlink writes inside it or through it, so anything that is
-# not a plain file has to leave before the rendered file can take the name.
-clearDestinationForRender() {
+# An unterminated last line swallows whatever gets appended into the value it holds.
+terminateFinalLine() {
+  local filePath="$1"
+  if [[ -s "$filePath" ]] && [[ -n "$(tail -c 1 -- "$filePath")" ]]; then
+    printf '\n' >> "$filePath"
+  fi
+}
+
+clearDestinationIfNotPlainFile() {
   local label="$1"
   local destination="$2"
-  if [[ ! -L "$destination" ]] && { [[ ! -e "$destination" ]] || [[ -f "$destination" ]]; }; then
+  if pathIsPlainFileOrAbsent "$destination"; then
     return 0
   fi
   local displacedPath
@@ -34,7 +40,7 @@ recordRenderedCopy() {
   local destination="$2"
   local copyPath
   copyPath="$(renderedCopyPath "$destination")"
-  if ! clearDestinationForRender "$label sidecar" "$copyPath"; then
+  if ! clearDestinationIfNotPlainFile "$label sidecar" "$copyPath"; then
     return 0
   fi
   local stagedPath
@@ -52,10 +58,30 @@ destinationHoldsHandEdits() {
   fi
   local copyPath
   copyPath="$(renderedCopyPath "$destination")"
-  if [[ -L "$copyPath" ]] || { [[ -e "$copyPath" ]] && [[ ! -f "$copyPath" ]]; }; then
+  if ! pathIsPlainFileOrAbsent "$copyPath"; then
     return 0
   fi
   ! filesAreIdentical "$destination" "$copyPath"
+}
+
+# Renames only when the staged file differs, so an unchanged destination keeps its inode; zero means the destination changed.
+commitRenderedFile() {
+  local label="$1"
+  local stagedPath="$2"
+  local destination="$3"
+  if filesAreIdentical "$stagedPath" "$destination"; then
+    rm -f -- "$stagedPath"
+    recordRenderedCopy "$label" "$destination"
+    return 1
+  fi
+  if destinationHoldsHandEdits "$destination"; then
+    local backupPath
+    backupPath="$(nextBackupPath "$destination")"
+    cp -f -- "$destination" "$backupPath"
+    noteApplied "$label backup" "saved $(basename -- "$backupPath")"
+  fi
+  mv -f -- "$stagedPath" "$destination"
+  recordRenderedCopy "$label" "$destination"
 }
 
 renderJsonTemplate() {
@@ -88,25 +114,18 @@ renderJsonTemplate() {
   fi
   rm -f -- "$renderErrorPath"
   mkdir -p -- "$(dirname -- "$destination")"
-  if ! clearDestinationForRender "$label" "$destination"; then
+  if ! clearDestinationIfNotPlainFile "$label" "$destination"; then
     rm -f -- "$renderedPath"
     return 0
   fi
-  if filesAreIdentical "$renderedPath" "$destination"; then
-    rm -f -- "$renderedPath"
-    chmod 600 -- "$destination"
-    recordRenderedCopy "$label" "$destination"
-    notePresent "$label" "up to date"
-    return 0
+  local destinationChanged=0
+  if commitRenderedFile "$label" "$renderedPath" "$destination"; then
+    destinationChanged=1
   fi
-  if destinationHoldsHandEdits "$destination"; then
-    local backupPath
-    backupPath="$(nextBackupPath "$destination")"
-    cp -f -- "$destination" "$backupPath"
-    noteApplied "$label backup" "saved $(basename -- "$backupPath")"
-  fi
-  mv -f -- "$renderedPath" "$destination"
   chmod 600 -- "$destination"
-  recordRenderedCopy "$label" "$destination"
-  noteApplied "$label" "rendered"
+  if ((destinationChanged == 1)); then
+    noteApplied "$label" "rendered"
+    return 0
+  fi
+  notePresent "$label" "up to date"
 }

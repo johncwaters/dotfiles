@@ -11,6 +11,8 @@ backupSuffix=".pre-dotfiles.bak"
 
 # shellcheck source=./log.sh
 source "$libDirectory/log.sh"
+# shellcheck source=./state.sh
+source "$libDirectory/state.sh"
 # shellcheck source=./link.sh
 source "$libDirectory/link.sh"
 # shellcheck source=./render.sh

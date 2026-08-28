@@ -1,0 +1,5 @@
+app.zen_browser.zen Zen
+com.bitwarden.desktop Bitwarden
+com.discordapp.Discord Discord
+com.slack.Slack Slack
+org.remmina.Remmina Remmina

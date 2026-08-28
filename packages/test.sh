@@ -1,0 +1,374 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+topicDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repoRoot="$(cd -- "$topicDir/.." && pwd)"
+# shellcheck source=../test/harness.sh
+source "$repoRoot/test/harness.sh"
+
+startStubbedSandbox "packages"
+
+realHome="$HOME"
+realHomePathsNoStubMayName=(
+  "$realHome/.bashrc"
+  "$realHome/.npm-global"
+)
+sandboxTemp="$sandbox/tmp"
+
+mkdir -p "$stubState/package-commands" \
+  "$stubState/npm-installed" "$stubState/flatpak-installed" "$stubState/python-modules" \
+  "$sandboxTemp"
+
+coreUtilities=(
+  bash sh env cat sed awk grep tail head cut tr find sort uniq wc mktemp rm mkdir
+  rmdir cp mv ln readlink basename dirname chmod cmp id date stat touch true false xargs
+  od tee expr sleep printf test
+)
+linkCoreUtilities "${coreUtilities[@]}"
+
+writeAptStubThatInstallsMappedCommands
+
+writeContainedSudoStub
+
+writeStub curl <<'STUB'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+requestedUrl=""
+outputPath=""
+while (($# > 0)); do
+  if [[ "$1" == "-o" ]]; then
+    outputPath="$2"
+    shift 2
+    continue
+  fi
+  if [[ "$1" == http* ]]; then
+    requestedUrl="$1"
+  fi
+  shift
+done
+emitBody() {
+  case "$requestedUrl" in
+    *nodesource.com*)
+      printf ':\n'
+      ;;
+    *claude.ai/install.sh)
+      printf 'mkdir -p "$HOME/.local/bin"\n'
+      printf 'cp "$DOTFILES_TEST_STATE/available/claude" "$HOME/.local/bin/claude"\n'
+      ;;
+    *zed.dev/install.sh)
+      printf 'mkdir -p "$HOME/.local/bin"\n'
+      printf 'cp "$DOTFILES_TEST_STATE/available/zed" "$HOME/.local/bin/zed"\n'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+if [[ -n "$outputPath" ]]; then
+  emitBody > "$outputPath"
+  exit $?
+fi
+emitBody
+STUB
+
+writeStub npm <<'STUB'
+#!/usr/bin/env bash
+printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+prefixFile="$DOTFILES_TEST_STATE/npm-prefix"
+installedDir="$DOTFILES_TEST_STATE/npm-installed"
+currentPrefix() {
+  if [[ -f "$prefixFile" ]]; then
+    cat "$prefixFile"
+    return 0
+  fi
+  printf '%s\n' "$DOTFILES_TEST_STATE/system-npm-prefix"
+}
+encodeName() {
+  printf '%s\n' "$1" | tr '/' '%'
+}
+case "$1 ${2:-}" in
+  "config get")
+    if [[ "${3:-}" == "prefix" ]]; then
+      currentPrefix
+      exit 0
+    fi
+    exit 1
+    ;;
+  "config set")
+    if [[ "${3:-}" == "prefix" ]]; then
+      printf '%s\n' "${4:-}" > "$prefixFile"
+      exit 0
+    fi
+    exit 1
+    ;;
+  "root -g")
+    printf '%s/lib/node_modules\n' "$(currentPrefix)"
+    exit 0
+    ;;
+  "prefix -g")
+    currentPrefix
+    exit 0
+    ;;
+esac
+if [[ "$1" == "ls" ]]; then
+  printf '%s/lib/node_modules\n' "$(currentPrefix)"
+  for recordFile in "$installedDir"/*; do
+    if [[ ! -f "$recordFile" ]]; then
+      continue
+    fi
+    printf '%s/lib/node_modules/%s\n' "$(currentPrefix)" "$(cat "$recordFile")"
+  done
+  exit 0
+fi
+if [[ "$1" == "pack" ]]; then
+  packageSpec="$2"
+  packageName="${packageSpec##*/}"
+  printf '%s' "" > "$packageName-0.0.0.tgz"
+  printf '%s\n' "$packageName" > "$packageName-0.0.0.tgz.name"
+  printf '%s-0.0.0.tgz\n' "$packageName"
+  exit 0
+fi
+if [[ "$1" == "install" ]]; then
+  packageSpec="$3"
+  packageName="$packageSpec"
+  if [[ "$packageSpec" == *.tgz ]]; then
+    packageName="$(cat "$packageSpec.name")"
+  fi
+  printf '%s\n' "$packageName" > "$installedDir/$(encodeName "$packageName")"
+  exit 0
+fi
+if [[ "$1" == "uninstall" ]]; then
+  rm -f "$installedDir/$(encodeName "$3")"
+  exit 0
+fi
+exit 0
+STUB
+
+writeStub node <<'STUB'
+#!/usr/bin/env bash
+printf 'node %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "-v" ]]; then
+  printf 'v22.18.0\n'
+  exit 0
+fi
+exit 0
+STUB
+
+writeStub python3 <<'STUB'
+#!/usr/bin/env bash
+printf 'python3 %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+moduleDir="$DOTFILES_TEST_STATE/python-modules"
+if [[ "${1:-}" == "-m" && "${2:-}" == "pip" && "${3:-}" == "--version" ]]; then
+  printf 'pip 24.0\n'
+  exit 0
+fi
+if [[ "${1:-}" == "-c" ]]; then
+  moduleName="${2#import }"
+  [[ -f "$moduleDir/$moduleName" ]]
+  exit $?
+fi
+if [[ "${1:-}" == "-m" && "${2:-}" == "pip" && "${3:-}" == "install" ]]; then
+  if [[ "$*" == *" pyyaml" && "$*" != *" --user "* ]]; then
+    exit 1
+  fi
+  for argument in "$@"; do
+    case "$argument" in
+      -* | pip | install) continue ;;
+    esac
+    mappingFile="$DOTFILES_TEST_STATE/pip-modules/$argument"
+    if [[ -f "$mappingFile" ]]; then
+      touch "$moduleDir/$(cat "$mappingFile")"
+    fi
+  done
+  exit 0
+fi
+exit 0
+STUB
+
+writeStub gh <<'STUB'
+#!/usr/bin/env bash
+printf 'gh %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "auth" && "${2:-}" == "status" ]]; then
+  [[ ! -f "$DOTFILES_TEST_STATE/gh-unauthed" ]]
+  exit $?
+fi
+exit 0
+STUB
+
+writeStub git <<'STUB'
+#!/usr/bin/env bash
+printf 'git %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "clone" ]]; then
+  targetDirectory="${*: -1}"
+  mkdir -p "$targetDirectory"
+  exit 0
+fi
+exit 0
+STUB
+
+writeStub flatpak <<'STUB'
+#!/usr/bin/env bash
+printf 'flatpak %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+installedDir="$DOTFILES_TEST_STATE/flatpak-installed"
+if [[ "${1:-}" == "info" ]]; then
+  [[ -f "$installedDir/$2" ]]
+  exit $?
+fi
+if [[ "${1:-}" == "install" ]]; then
+  appId="${*: -1}"
+  touch "$installedDir/$appId"
+  exportShare="$HOME/.local/share/flatpak/exports/share"
+  mkdir -p "$exportShare/applications" "$exportShare/icons/hicolor/128x128/apps"
+  printf '[Desktop Entry]\nName=%s\n' "$appId" > "$exportShare/applications/$appId.desktop"
+  printf 'icon bytes\n' > "$exportShare/icons/hicolor/128x128/apps/$appId.png"
+  exit 0
+fi
+exit 0
+STUB
+
+writeStub claude <<'STUB'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+exit 0
+STUB
+
+writeStub zed <<'STUB'
+#!/usr/bin/env bash
+printf 'zed %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+exit 0
+STUB
+
+for recordingOnlyCommand in dpkg systemctl update-desktop-database gtk-update-icon-cache; do
+  writeStub "$recordingOnlyCommand" <<STUB
+#!/usr/bin/env bash
+printf '$recordingOnlyCommand %s\n' "\$*" >> "\$DOTFILES_TEST_LOG"
+exit 0
+STUB
+done
+
+for presentFromTheStart in apt-get sudo curl flatpak dpkg systemctl \
+  update-desktop-database gtk-update-icon-cache; do
+  provideCommand "$presentFromTheStart"
+done
+
+mapPackageToCommands git "git"
+mapPackageToCommands gh "gh"
+mapPackageToCommands nodejs "node npm"
+mapPackageToCommands npm "npm"
+mapPackageToCommands python3 "python3"
+
+mkdir -p "$stubState/pip-modules"
+printf 'ruff\n' > "$stubState/pip-modules/ruff"
+printf 'yaml\n' > "$stubState/pip-modules/pyyaml"
+
+printf 'oh-my-claude-sisyphus\n' > "$stubState/npm-installed/oh-my-claude-sisyphus"
+
+runInstall() {
+  runInStubbedSandbox "$sandbox" \
+    TMPDIR="$sandboxTemp" \
+    DOTFILES_PROFILE="${1:-personal}" \
+    NO_COLOR=1 \
+    bash "$topicDir/install.sh"
+}
+
+
+printf '\npackages topic\n'
+
+realBashrcFingerprint() {
+  if [[ ! -f "$realHome/.bashrc" ]]; then
+    printf 'absent\n'
+    return 0
+  fi
+  cksum < "$realHome/.bashrc"
+}
+
+realBashrcBefore="$(realBashrcFingerprint)"
+
+installStatus=0
+firstRunOutput="$(runInstall)" || installStatus=$?
+check "install exits clean" test "$installStatus" -eq 0
+check "install says what it did" test -n "$firstRunOutput"
+
+check "git is installed through the package manager" logHas "apt-get -o DPkg::Lock::Timeout=180 install -y git"
+check "the GitHub CLI is installed" logHas "install -y gh"
+check "python arrives with pip" logHas "install -y python3 python3-pip"
+check "every package manager call goes through sudo" \
+  test "$(countLogLines '^sudo -n [^ ]*/apt-get ')" -eq "$(countLogLines '^apt-get ')"
+check "the package index is refreshed once per repository change" \
+  test "$(countLogLines '^apt-get .* update$')" -eq 2
+check "a third party installer gets the dpkg lock first" logHas "apt-get -o DPkg::Lock::Timeout=180 check"
+check "node comes from NodeSource" logHas "https://deb.nodesource.com/setup_22.x"
+check "the NodeSource package is installed" logHas "install -y nodejs"
+check "Claude Code runs its native installer" logHas "https://claude.ai/install.sh"
+check "Claude Code landed in ~/.local/bin" test -x "$sandbox/.local/bin/claude"
+check "Zed runs its official installer" logHas "https://zed.dev/install.sh"
+check "Zed landed in ~/.local/bin" test -x "$sandbox/.local/bin/zed"
+
+for flatpakAppId in app.zen_browser.zen com.bitwarden.desktop com.discordapp.Discord \
+  com.slack.Slack org.remmina.Remmina; do
+  check "$flatpakAppId is installed from flathub" logHas "flatpak install --user -y flathub $flatpakAppId"
+  check "$flatpakAppId reaches the desktop app list" \
+    test -f "$sandbox/.local/share/applications/$flatpakAppId.desktop"
+done
+check "the desktop database is refreshed" logHas "update-desktop-database"
+
+check "the npm prefix moves to the per account one" logHas "npm config set prefix $sandbox/.npm-global"
+check "~/.bashrc keeps ~/.local/bin on PATH" grep -q '\.local/bin' "$sandbox/.bashrc"
+check "~/.bashrc keeps the npm prefix on PATH" grep -q '\.npm-global/bin' "$sandbox/.bashrc"
+
+for wantedNpmPackage in @ast-grep/napi @biomejs/biome @earendil-works/pi-coding-agent \
+  @openai/codex @xai-official/grok postiz typescript typescript-language-server; do
+  check "$wantedNpmPackage is installed globally" logHas "npm install -g $wantedNpmPackage"
+done
+check "a git sourced package is packed before it is installed" logHas "npm pack github:johncwaters/glissa"
+check "the packed tarball is what gets installed" logHas "npm install -g $sandboxTemp/dotfiles-npm-pack"
+check "a retired package that is present is uninstalled" logHas "npm uninstall -g oh-my-claude-sisyphus"
+check "a retired package that is absent is left alone" logLacks "uninstall -g @vibe-kit/grok-cli"
+
+check "ruff is installed with noninteractive pip" logHas "pip install --quiet --no-input ruff"
+check "pyyaml first uses noninteractive pip" logHas "pip install --quiet --no-input pyyaml"
+check "pyyaml retry uses noninteractive pip" \
+  logHas "pip install --quiet --no-input --user --break-system-packages pyyaml"
+
+check "no command was refused for reaching outside the stubs" logLacks "sudo refused"
+check "systemd is never touched" logLacks "systemctl "
+check "dpkg is never driven directly" logLacks "dpkg "
+
+check "the real ~/.bashrc is untouched" test "$realBashrcBefore" = "$(realBashrcFingerprint)"
+
+: > "$commandLog"
+secondRunOutput="$(runInstall)"
+check "second run reports no changes" reportsNoChanges "$secondRunOutput"
+check "second run installs no system package" logLacks "install -y"
+check "second run installs no npm package" logLacks "npm install -g"
+check "second run uninstalls nothing" logLacks "npm uninstall"
+check "second run installs no flatpak" logLacks "flatpak install"
+check "second run installs no pip package" logLacks "pip install"
+check "second run downloads no installer" logLacks "curl"
+
+rm -f "$stubState/npm-installed/@biomejs%biome"
+: > "$commandLog"
+workRunStatus=0
+workRunOutput="$(runInstall work)" || workRunStatus=$?
+check "a profile that varies the groups exits clean" test "$workRunStatus" -eq 0
+check "the work profile installs the hook's biome" logHas "npm install -g @biomejs/biome"
+check "the work profile installs no system package" logLacks "install -y"
+check "the work profile installs no flatpak" logLacks "flatpak install"
+check "the work profile still installs its python tools" outputHas "$workRunOutput" "ruff"
+
+touch "$stubState/gh-unauthed"
+unauthedRunStatus=0
+unauthedRunOutput="$(runInstall)" || unauthedRunStatus=$?
+check "a missing GitHub login warns" outputMatches "$unauthedRunOutput" '\[warn\].*GitHub auth'
+check "a warning makes the topic exit non-zero" test "$unauthedRunStatus" -eq 1
+rm -f "$stubState/gh-unauthed"
+
+profilelessRunStatus=0
+profilelessRunOutput="$(runInstall "nosuchprofile")" || profilelessRunStatus=$?
+check "a profile with no package list warns" outputMatches "$profilelessRunOutput" '\[warn\].*package groups'
+check "a profile with no package list installs nothing" \
+  reportsNoChanges "$profilelessRunOutput"
+check "a profile with no package list exits non-zero" test "$profilelessRunStatus" -eq 1
+
+reportTopicResults "packages"

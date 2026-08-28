@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+selfDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib/context.sh
+source "$selfDirectory/lib/context.sh"
+
+if [[ -z "$profileName" ]]; then
+  printf 'collect: no profile. Set $DOTFILES_PROFILE or write %s.\n' "$(profileMarkerPath)" >&2
+  exit 1
+fi
+
+topicsOutput=""
+topicsOutput="$(resolveProfileTopics "collect" "$profileName")" || exit 1
+
+profileTopics=()
+if [[ -n "$topicsOutput" ]]; then
+  mapfile -t profileTopics <<< "$topicsOutput"
+fi
+
+failedTopics=()
+collectedTopics=0
+
+for topicName in ${profileTopics[@]+"${profileTopics[@]}"}; do
+  if ! topicIsKnown "$topicName"; then
+    printf 'collect: no such topic in this repo: %s\n' "$topicName" >&2
+    failedTopics+=("$topicName")
+    continue
+  fi
+  collectorPath="$dotfilesRepo/$topicName/collect.sh"
+  if [[ ! -f "$collectorPath" ]]; then
+    continue
+  fi
+  collectedTopics=$((collectedTopics + 1))
+  bash "$collectorPath" || failedTopics+=("$topicName")
+done
+
+if ((${#failedTopics[@]} > 0)); then
+  printf 'collect: these topics failed: %s\n' "${failedTopics[*]}" >&2
+  exit 1
+fi
+
+printf 'collect: %s of %s topics had something to collect.\n' \
+  "$collectedTopics" "${#profileTopics[@]}"

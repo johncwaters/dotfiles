@@ -1,0 +1,7 @@
+system-tools
+node
+claude-code
+zed
+flatpaks
+npm-globals
+python-tools

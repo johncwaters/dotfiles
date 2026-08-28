@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# End to end rehearsal of the claude-setup cutover: builds a ~/.claude that is a real
-# clone with real runtime state, adopts it, converges it, and checks the result against
-# the migration's done criteria.
-#
-# Destructive by design. It replaces $HOME/.claude, so it only ever runs inside the
-# throwaway home that test/run-sandbox.sh provides.
+# Destructive by design: it replaces $HOME/.claude, so it only runs inside the throwaway home test/run-sandbox.sh provides.
 
 set -euo pipefail
 
@@ -28,6 +23,10 @@ mkdir -p "$HOME/Projects"
 cp -a "$repoUnderTest" "$stagedRepo"
 rm -rf "$stagedRepo/.git" "$stagedRepo/.machine-profile"
 printf 'personal\n' > "$stagedRepo/.machine-profile"
+# Every topic that converges a fresh home without reaching the network, so packages and repos stay out.
+printf '{ "topics": ["ai", "git", "fonts"] }\n' > "$stagedRepo/profiles/personal/profile.json"
+export GIT_USER_NAME="Cutover Carbon Unit"
+export GIT_USER_EMAIL="cutover@example.invalid"
 
 git clone --quiet "$claudeSetupRepo" "$claudeHome"
 mkdir -p "$claudeHome/projects/live-work" "$claudeHome/sessions" "$claudeHome/plugins/repos" \
@@ -38,8 +37,7 @@ printf '{"permissions":{"allow":["Bash(true:*)"]}}\n' > "$claudeHome/settings.lo
 printf 'session transcript\n' > "$claudeHome/projects/live-work/transcript.jsonl"
 printf 'installed plugin\n' > "$claudeHome/plugins/repos/marker"
 printf 'history\n' > "$claudeHome/history.jsonl"
-# The predecessor rendered these two and gitignored them, so a real ~/.claude carries
-# them into the cutover as untracked files this repo is about to take over.
+# The predecessor rendered these two and gitignored them, so a real ~/.claude carries them in as untracked files this repo takes over.
 printf '{"model":"rendered-by-the-old-setup"}\n' > "$claudeHome/settings.json"
 printf 'the old profile CLAUDE.md\n' > "$claudeHome/CLAUDE.md"
 
@@ -85,6 +83,10 @@ if ((firstConvergeStatus != 0)); then
 fi
 check "the alias was created" test -L "$HOME/.dotfiles"
 check "the alias points at the staged clone" bash -c '[[ "$(readlink "$1")" == "$2" ]]' _ "$HOME/.dotfiles" "$stagedRepo"
+check "the git topic converged" test -L "$HOME/.gitconfig"
+check "the git identity came from the environment" \
+  grep -q 'Cutover Carbon Unit' "$HOME/.gitconfig.local"
+check "the fonts topic converged" test -L "$HOME/.local/share/fonts/CommitMono-400-Regular.otf"
 
 brokenLinks=0
 cloneTargetedLinks=0
@@ -145,8 +147,7 @@ fi
 check "the second converge reports no changes" bash -c '[[ "$1" == *": 0 changed,"* ]]' _ "$secondConverge"
 check "the second converge reports no warnings" bash -c '[[ "$1" == *", 0 warnings."* ]]' _ "$secondConverge"
 
-# Everything below rebuilds ~/.claude as a synthetic claude-setup clone, because the
-# refusals are what stand between a live home and an unrecoverable removal.
+# Everything below rebuilds ~/.claude as a synthetic claude-setup clone, because the refusals stand between a live home and an unrecoverable removal.
 printf '\nrefusals\n'
 
 fixtureIdentity=(-c user.name=cutover -c user.email=cutover@example.invalid)
@@ -178,10 +179,6 @@ runAdopt() {
   runAdoptFrom "$HOME" "$@"
 }
 
-outputHolds() {
-  [[ "$adoptOutput" == *"$1"* ]]
-}
-
 resetFixtureHome
 mkdir -p "$claudeHome/setup"
 printf 'tracked\n' > "$claudeHome/setup/marker"
@@ -190,7 +187,7 @@ commitFixture setup
 for forbiddenBackup in relative-leak "$stagedRepo/leaked-backup" "$HOME/.dotfiles/claude-backup" "$claudeHome/inside-backup"; do
   runAdoptFrom "$stagedRepo" --yes --backup-dir "$forbiddenBackup"
   check "a backup at $forbiddenBackup is refused" test "$adoptStatus" -ne 0
-  check "the refusal for $forbiddenBackup says where the backup would land" outputHolds 'would land in'
+  check "the refusal for $forbiddenBackup says where the backup would land" outputHas "$adoptOutput" 'would land in'
 done
 check "a refused placement copied nothing into the repo" \
   bash -c '! test -e "$1/relative-leak" && ! test -e "$1/leaked-backup" && ! test -e "$1/claude-backup"' _ "$stagedRepo"
@@ -204,7 +201,7 @@ mv "$claudeHome" "$symlinkTargetHome"
 ln -s "$symlinkTargetHome" "$claudeHome"
 runAdopt --yes --backup-dir "$HOME/symlink-backup"
 check "a symlinked ~/.claude is refused" test "$adoptStatus" -ne 0
-check "the refusal names the symlink" outputHolds 'is a symlink'
+check "the refusal names the symlink" outputHas "$adoptOutput" 'is a symlink'
 check "the symlink target kept its clone" test -d "$symlinkTargetHome/.git"
 check "the symlink target kept its tracked content" test -e "$symlinkTargetHome/setup/marker"
 check "a symlinked ~/.claude wrote no backup" bash -c '! test -e "$1"' _ "$HOME/symlink-backup"
@@ -217,9 +214,9 @@ commitFixture setup
 rm -rf "$claudeHome/setup" "$claudeHome/projects" "$claudeHome/.credentials.json"
 runAdopt --yes --backup-dir "$HOME/empty-backup"
 check "a backup holding nothing outside .git is refused" test "$adoptStatus" -ne 0
-check "the empty backup refusal says so" outputHolds 'holds nothing outside .git'
+check "the empty backup refusal says so" outputHas "$adoptOutput" 'holds nothing outside .git'
 check "the emptied clone survived the refusal" test -d "$claudeHome/.git"
-check "the empty backup refusal names the backup it made" outputHolds "$HOME/empty-backup"
+check "the empty backup refusal names the backup it made" outputHas "$adoptOutput" "$HOME/empty-backup"
 check "the empty backup refusal took its backup back" bash -c '! test -e "$1"' _ "$HOME/empty-backup"
 
 resetFixtureHome
@@ -229,7 +226,7 @@ printf 'installed plugin\n' > "$claudeHome/plugins/repos/installed"
 commitFixture plugins/vendored.txt
 runAdopt --yes --backup-dir "$HOME/protected-backup"
 check "a clone tracking a protected runtime name is refused" test "$adoptStatus" -ne 0
-check "the refusal names the protected path" outputHolds 'plugins'
+check "the refusal names the protected path" outputHas "$adoptOutput" 'plugins'
 check "the installed plugin survived the refusal" grep -q 'installed plugin' "$claudeHome/plugins/repos/installed"
 check "a protected name wrote no backup" bash -c '! test -e "$1"' _ "$HOME/protected-backup"
 
@@ -241,7 +238,7 @@ printf 'https://example.invalid/private.git\n' > "$claudeHome/setup/repos.txt"
 commitFixture setup/config.example .gitignore
 runAdopt --yes --backup-dir "$HOME/untracked-backup"
 check "an untracked file inside a tracked directory is refused" test "$adoptStatus" -ne 0
-check "the refusal names the untracked file" outputHolds 'setup/repos.txt'
+check "the refusal names the untracked file" outputHas "$adoptOutput" 'setup/repos.txt'
 check "the untracked private file survived the refusal" grep -q 'private.git' "$claudeHome/setup/repos.txt"
 
 shimDirectory="$HOME/shims"
@@ -264,10 +261,10 @@ adoptStatus=0
 adoptOutput="$(PATH="$shimDirectory:$PATH" "$stagedRepo/script/adopt-claude-home" \
   --yes --backup-dir "$HOME/corrupt-backup" 2>&1)" || adoptStatus=$?
 check "a backup missing a file that would be destroyed aborts the run" test "$adoptStatus" -ne 0
-check "the abort names the entry the backup lost" outputHolds 'setup:'
+check "the abort names the entry the backup lost" outputHas "$adoptOutput" 'setup:'
 check "the file the backup lost is still in ~/.claude" grep -q 'tracked' "$claudeHome/setup/marker"
 check "the clone survived the aborted run" test -d "$claudeHome/.git"
-check "the aborted run names the backup it made" outputHolds "$HOME/corrupt-backup"
+check "the aborted run names the backup it made" outputHas "$adoptOutput" "$HOME/corrupt-backup"
 check "the aborted run took its backup back" bash -c '! test -e "$1"' _ "$HOME/corrupt-backup"
 
 resetFixtureHome
@@ -292,7 +289,7 @@ runAdopt --yes --backup-dir "$HOME/race-backup"
 touch "$liveWriterStopFile"
 wait "$liveWriterPid" 2>/dev/null || true
 check "a write landing during the copy aborts the run" test "$adoptStatus" -ne 0
-check "the abort names the directory that changed under it" outputHolds 'bulk:'
+check "the abort names the directory that changed under it" outputHas "$adoptOutput" 'bulk:'
 check "the raced tree is still in ~/.claude" test -e "$claudeHome/bulk/ballast.bin"
 check "the clone survived the raced run" test -d "$claudeHome/.git"
 check "the raced run took its backup back" bash -c '! test -e "$1"' _ "$HOME/race-backup"
@@ -335,7 +332,7 @@ git -C "$worktreeOrigin" "${fixtureIdentity[@]}" worktree add --quiet "$prunedWo
 
 runAdopt --yes --backup-dir "$prunedWorkTree/leaked-backup"
 check "a backup inside a healthy worktree is refused" test "$adoptStatus" -ne 0
-check "the healthy worktree refusal says where the backup would land" outputHolds 'would land in'
+check "the healthy worktree refusal says where the backup would land" outputHas "$adoptOutput" 'would land in'
 
 rm -rf "$worktreeOrigin/.git/worktrees"
 oldSwallowedGuardAnswer="$(git -C "$prunedWorkTree" rev-parse --show-toplevel 2>/dev/null || true)"
@@ -343,7 +340,7 @@ check "the swallowed git call reads a pruned worktree as no repository at all" \
   test -z "$oldSwallowedGuardAnswer"
 runAdopt --yes --backup-dir "$prunedWorkTree/leaked-backup"
 check "a backup inside a worktree whose gitdir is gone is refused" test "$adoptStatus" -ne 0
-check "the pruned worktree refusal says where the backup would land" outputHolds 'would land in'
+check "the pruned worktree refusal says where the backup would land" outputHas "$adoptOutput" 'would land in'
 check "the pruned worktree refusal wrote no backup" bash -c '! test -e "$1"' _ "$prunedWorkTree/leaked-backup"
 check "the pruned worktree refusal left the clone in place" test -d "$claudeHome/.git"
 check "the pruned worktree refusal left the credential where it was" \
@@ -354,7 +351,7 @@ for syncedBackup in "$HOME/Dropbox/claude-backup" "$HOME/Nextcloud/claude-backup
   "$HOME/Library/Mobile Documents/claude-backup" "$HOME/Sync/claude-backup"; do
   runAdopt --yes --backup-dir "$syncedBackup"
   check "a backup at $syncedBackup is refused" test "$adoptStatus" -ne 0
-  check "the refusal for $syncedBackup names the sync client" outputHolds 'sync client uploads'
+  check "the refusal for $syncedBackup names the sync client" outputHas "$adoptOutput" 'sync client uploads'
   check "the refusal for $syncedBackup wrote nothing" bash -c '! test -e "$1"' _ "$syncedBackup"
 done
 check "a synced placement left the clone in place" test -d "$claudeHome/.git"
@@ -377,8 +374,8 @@ adoptStatus=0
 adoptOutput="$(PATH="$widenCredentialShimDirectory:$PATH" "$stagedRepo/script/adopt-claude-home" \
   --yes --backup-dir "$HOME/widened-backup" 2>&1)" || adoptStatus=$?
 check "a backup whose credential lost its 600 bit is refused" test "$adoptStatus" -ne 0
-check "the widened credential refusal names the mode the source had" outputHolds 'mode 600'
-check "the widened credential refusal names the mode the backup got" outputHolds '644 in the backup'
+check "the widened credential refusal names the mode the source had" outputHas "$adoptOutput" 'mode 600'
+check "the widened credential refusal names the mode the backup got" outputHas "$adoptOutput" '644 in the backup'
 check "the widened credential refusal removed nothing" test -e "$claudeHome/setup/marker"
 check "the widened backup was not left behind" bash -c '! test -e "$1"' _ "$HOME/widened-backup"
 
@@ -393,7 +390,7 @@ adoptStatus=0
 adoptOutput="$(PATH="$droppedModeShimDirectory:$PATH" "$stagedRepo/script/adopt-claude-home" \
   --yes --backup-dir "$HOME/wide-root-backup" 2>&1)" || adoptStatus=$?
 check "a backup root that did not keep mode 700 is refused" test "$adoptStatus" -ne 0
-check "the wide backup root refusal names the mode it got" outputHolds 'rather than 700'
+check "the wide backup root refusal names the mode it got" outputHas "$adoptOutput" 'rather than 700'
 check "the wide backup root refusal removed nothing" test -e "$claudeHome/setup/marker"
 check "the wide backup root was not left behind" bash -c '! test -e "$1"' _ "$HOME/wide-root-backup"
 
@@ -406,7 +403,7 @@ chmod 000 "$claudeHome/setup/sealed"
 runAdopt --yes --backup-dir "$HOME/unreadable-backup"
 chmod 644 "$claudeHome/setup/sealed"
 check "a file the copy cannot read aborts the run" test "$adoptStatus" -ne 0
-check "the unreadable copy names the backup it made" outputHolds "$HOME/unreadable-backup"
+check "the unreadable copy names the backup it made" outputHas "$adoptOutput" "$HOME/unreadable-backup"
 check "the unreadable copy took its backup back" bash -c '! test -e "$1"' _ "$HOME/unreadable-backup"
 check "the unreadable copy removed nothing" test -e "$claudeHome/setup/marker"
 
@@ -429,8 +426,8 @@ adoptOutput="$(PATH="$blockedRemovalShimDirectory:$PATH" "$stagedRepo/script/ado
   --yes --backup-dir "$HOME/kept-backup" 2>&1)" || adoptStatus=$?
 check "a removal that fails part way aborts the run" test "$adoptStatus" -ne 0
 check "a refusal once removal began keeps the backup" test -d "$HOME/kept-backup"
-check "the kept backup is named in the refusal" outputHolds "$HOME/kept-backup"
-check "the refusal says the backup was kept" outputHolds 'was kept and holds a copy of your credentials'
+check "the kept backup is named in the refusal" outputHas "$adoptOutput" "$HOME/kept-backup"
+check "the refusal says the backup was kept" outputHas "$adoptOutput" 'was kept and holds a copy of your credentials'
 check "the kept backup still holds the credential" grep -q 'SANDBOX-CREDENTIAL' "$HOME/kept-backup/.credentials.json"
 rm -rf "$HOME/kept-backup"
 
@@ -447,7 +444,7 @@ mkdir -p "$adoptLockDirectory"
 printf '%s\n' "$deadHolderPid" > "$adoptLockDirectory/holder-pid"
 runAdopt --yes --backup-dir "$HOME/reclaimed-backup"
 check "a lock whose recorded pid is gone is reclaimed" test "$adoptStatus" -eq 0
-check "the reclaimed lock is reported" outputHolds 'lock reclaimed'
+check "the reclaimed lock is reported" outputHas "$adoptOutput" 'lock reclaimed'
 check "the reclaiming run finished the adoption" bash -c '! test -e "$1/.git"' _ "$claudeHome"
 check "the reclaiming run released the lock" bash -c '! test -e "$1"' _ "$adoptLockDirectory"
 
@@ -459,7 +456,7 @@ mkdir -p "$adoptLockDirectory"
 printf '%s\n' "$liveHolderPid" > "$adoptLockDirectory/holder-pid"
 runAdopt --yes --backup-dir "$HOME/blocked-backup"
 check "a lock whose recorded pid is alive is refused" test "$adoptStatus" -ne 0
-check "the live lock refusal names the pid holding it" outputHolds "pid $liveHolderPid"
+check "the live lock refusal names the pid holding it" outputHas "$adoptOutput" "pid $liveHolderPid"
 check "the live lock refusal does not tell the operator to delete it" \
   bash -c '[[ "$1" != *"remove that directory"* ]]' _ "$adoptOutput"
 check "the live lock survived the refusal" test -e "$adoptLockDirectory/holder-pid"

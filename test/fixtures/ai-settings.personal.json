@@ -1,0 +1,88 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_COMMIT_POLICY_ROOT": "/fixture/home/.dotfiles"
+  },
+  "model": "claude-fable-5[1m]",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/validate-file.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Agent|Task)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/enforce-spawn-model.mjs"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/inject-routing.mjs"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/caveman-ultra.mjs"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node /fixture/home/.claude/hud/hud.mjs"
+  },
+  "effortLevel": "high",
+  "awaySummaryEnabled": false,
+  "autoUpdatesChannel": "latest",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:unpkg.com)"
+    ],
+    "defaultMode": "auto"
+  },
+  "enabledPlugins": {
+    "caveman@caveman": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "posthog@claude-plugins-official": false,
+    "github@claude-plugins-official": false,
+    "postiz@skills-dir": false
+  },
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "claude-community": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-community"
+      }
+    }
+  },
+  "spinnerTipsEnabled": false,
+  "alwaysThinkingEnabled": true,
+  "theme": "auto"
+}

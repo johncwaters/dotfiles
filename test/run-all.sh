@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Every suite in the repo. Topic suites run directly; suites that converge a home run
-# inside the throwaway one test/run-sandbox.sh provides.
 
 set -uo pipefail
 
@@ -26,6 +24,8 @@ for topicSuite in "$repoRoot"/*/test.sh; do
 done
 
 runSuite "bootstrap" bash "$repoRoot/test/bootstrap.sh"
+runSuite "packages-lib" bash "$repoRoot/test/packages-lib.sh"
+runSuite "repo-wiring" bash "$repoRoot/test/repo-wiring.sh"
 
 if command -v bwrap >/dev/null 2>&1; then
   runSuite "cutover" "$repoRoot/test/run-sandbox.sh" bash "$repoRoot/test/cutover.sh"

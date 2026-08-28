@@ -1,13 +1,11 @@
 # shellcheck shell=bash
 
-# The marker names the machine's live profile and the commit skill reads it, so a test
-# run points it at a sandbox rather than repointing the machine it runs on.
+# The commit skill reads the marker, so a test run points it at a sandbox rather than repointing the machine it runs on.
 profileMarkerPath() {
   printf '%s\n' "${DOTFILES_MARKER_PATH:-$dotfilesRepo/.machine-profile}"
 }
 
-# The marker is a caller-supplied write target that gets truncated, so a path holding
-# anything but a profile name is refused rather than destroyed.
+# The marker is a caller-supplied write target that gets truncated, so a path holding anything but a profile name is refused rather than destroyed.
 requireUsableMarkerPath() {
   local marker
   marker="$(profileMarkerPath)"
@@ -75,8 +73,7 @@ profileDirectory() {
   printf '%s\n' "$dotfilesRepo/profiles/$1"
 }
 
-# Reads the "topics" array without a JSON parser so bootstrap can run before the
-# packages topic has installed node.
+# Reads the "topics" array without a JSON parser so bootstrap can run before the packages topic has installed node.
 readProfileTopics() {
   local profileJsonPath="$1"
   if [[ ! -f "$profileJsonPath" ]]; then
@@ -93,6 +90,85 @@ readProfileTopics() {
     return 0
   fi
   printf '%s\n' "$topicsRegion" | grep -o '"[^"]*"' | tr -d '"'
+}
+
+# Bootstrap can run before node is installed, so the fallback accepts only a flat object of string or boolean pairs.
+settingsFileIsWellFormed() {
+  local settingsPath="$1"
+  if command -v node >/dev/null 2>&1; then
+    node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$settingsPath" \
+      >/dev/null 2>&1
+    return $?
+  fi
+  local settingsText
+  settingsText="$(tr '\n' ' ' < "$settingsPath")"
+  local settingPair='"[^"\\]*"[[:space:]]*:[[:space:]]*("[^"\\]*"|true|false)'
+  [[ "$settingsText" =~ ^[[:space:]]*\{[[:space:]]*($settingPair[[:space:]]*(,[[:space:]]*$settingPair[[:space:]]*)*)?\}[[:space:]]*$ ]]
+}
+
+# Status 2 separates an unparseable file from an absent one: guessing between them prunes what a machine's owner wanted kept.
+readProfileSetting() {
+  local settingsPath="$1"
+  local settingKey="$2"
+  if [[ ! -f "$settingsPath" ]]; then
+    return 1
+  fi
+  if command -v node >/dev/null 2>&1; then
+    node -e '
+      const fs = require("fs");
+      const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const settingKey = process.argv[2];
+      if (!Object.prototype.hasOwnProperty.call(settings, settingKey)) process.exit(2);
+      const settingValue = settings[settingKey];
+      if (typeof settingValue !== "string" && typeof settingValue !== "boolean") process.exit(2);
+      process.stdout.write(String(settingValue));
+    ' "$settingsPath" "$settingKey" 2>/dev/null || return 2
+    printf '\n'
+    return 0
+  fi
+  if ! settingsFileIsWellFormed "$settingsPath"; then
+    return 2
+  fi
+  local rawSettingValue
+  rawSettingValue="$(tr -d '\n' < "$settingsPath" \
+    | sed -n "s/.*\"$settingKey\"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\\1/p" \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  if [[ "$rawSettingValue" == \"*\" ]]; then
+    printf '%s\n' "${rawSettingValue:1:${#rawSettingValue}-2}"
+    return 0
+  fi
+  if [[ "$rawSettingValue" == "true" || "$rawSettingValue" == "false" ]]; then
+    printf '%s\n' "$rawSettingValue"
+    return 0
+  fi
+  if [[ -z "$rawSettingValue" ]]; then
+    return 2
+  fi
+  return 2
+}
+
+# Every entry point resolves a profile the same way: the marker and the name are caller supplied, so both are checked before a topic list is read.
+resolveProfileTopics() {
+  local toolName="$1"
+  local wantedProfile="$2"
+  local profileJsonPath
+  local topicsOutput
+  requireSafeName "profile" "$wantedProfile" || return 1
+  requireUsableMarkerPath || return 1
+  profileJsonPath="$(profileDirectory "$wantedProfile")/profile.json"
+  if [[ ! -f "$profileJsonPath" ]]; then
+    printf '%s: no such profile %s (expected %s).\n' "$toolName" "$wantedProfile" \
+      "$profileJsonPath" >&2
+    return 1
+  fi
+  if ! topicsOutput="$(readProfileTopics "$profileJsonPath")"; then
+    printf '%s: could not read the topics list in %s.\n' "$toolName" "$profileJsonPath" >&2
+    return 1
+  fi
+  if [[ -z "$topicsOutput" ]]; then
+    return 0
+  fi
+  printf '%s\n' "$topicsOutput"
 }
 
 topicIsKnown() {

@@ -1,0 +1,5 @@
+system-tools
+node
+claude-code
+npm-globals
+python-tools

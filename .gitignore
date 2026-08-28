@@ -22,3 +22,5 @@ node_modules/
 .credentials.json
 claude-backup*
 .claude-backup*
+repos/repos.txt
+glissa/config.json

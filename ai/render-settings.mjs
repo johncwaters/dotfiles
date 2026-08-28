@@ -1,90 +1,55 @@
-// Render a settings.json by deep-merging a profile overlay onto the shared base,
-// then substituting the {{HOME}} token with the machine home directory.
-// Usage: node render-settings.mjs <base.json> <overlay.json> <out.json> [homeOverride]
-import fs from "node:fs";
 import os from "node:os";
+import { mergeJsonFiles } from "../script/lib/merge-json.mjs";
 
-function fail(message) {
-  process.stderr.write("render-settings: " + message + "\n");
+function mergeHookEvents(baseHooks, overlayHooks) {
+  const mergedHooks = {};
+  for (const event of Object.keys(baseHooks)) {
+    mergedHooks[event] = baseHooks[event];
+  }
+  for (const event of Object.keys(overlayHooks)) {
+    const baseEventHooks = Array.isArray(mergedHooks[event]) ? mergedHooks[event] : [];
+    const overlayEventHooks = Array.isArray(overlayHooks[event]) ? overlayHooks[event] : [];
+    mergedHooks[event] = [...baseEventHooks, ...overlayEventHooks];
+  }
+  return mergedHooks;
+}
+
+const [basePath, overlayPath, destinationPath, homeOverride] = process.argv.slice(2);
+if (!basePath || !overlayPath || !destinationPath) {
+  process.stderr.write(
+    "render-settings: usage: node render-settings.mjs <base.json> <overlay.json> <out.json> [homeOverride]\n",
+  );
   process.exit(1);
 }
 
-function readJson(path) {
-  let raw;
-  try {
-    raw = fs.readFileSync(path, "utf8");
-  } catch (readError) {
-    return fail("cannot read " + path + ": " + readError.message);
-  }
-  try {
-    return JSON.parse(raw);
-  } catch (parseError) {
-    return fail("cannot parse JSON in " + path + ": " + parseError.message);
-  }
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function asArray(value) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-  return [];
-}
-
-// Hook events are the one place a profile adds to the base rather than replacing it,
-// so a hook added to the base still reaches every profile that registers its own.
-function mergeHookEvents(base, overlay) {
-  const merged = {};
-  for (const event of Object.keys(base)) {
-    merged[event] = base[event];
-  }
-  for (const event of Object.keys(overlay)) {
-    merged[event] = [...asArray(merged[event]), ...asArray(overlay[event])];
-  }
-  return merged;
-}
-
-// Plain objects merge recursively with base key order preserved and overlay-only
-// keys appended. Arrays and scalars from the overlay replace the base value.
-function deepMerge(base, overlay) {
-  if (!isPlainObject(base) || !isPlainObject(overlay)) {
-    return overlay;
-  }
-  const merged = {};
-  for (const key of Object.keys(base)) {
-    if (key === "hooks" && isPlainObject(base[key]) && isPlainObject(overlay[key])) {
-      merged[key] = mergeHookEvents(base[key], overlay[key]);
-      continue;
-    }
-    if (Object.prototype.hasOwnProperty.call(overlay, key)) {
-      merged[key] = deepMerge(base[key], overlay[key]);
-      continue;
-    }
-    merged[key] = base[key];
-  }
-  for (const key of Object.keys(overlay)) {
-    if (Object.prototype.hasOwnProperty.call(merged, key)) {
-      continue;
-    }
-    merged[key] = overlay[key];
-  }
-  return merged;
-}
-
-const [basePath, overlayPath, outPath, homeOverride] = process.argv.slice(2);
-if (!basePath || !overlayPath || !outPath) {
-  fail("usage: node render-settings.mjs <base.json> <overlay.json> <out.json> [homeOverride]");
-}
-
-const merged = deepMerge(readJson(basePath), readJson(overlayPath));
-const home = (homeOverride || os.homedir()).replace(/\\/g, "/");
-const text = (JSON.stringify(merged, null, 2) + "\n").split("{{HOME}}").join(home);
-
 try {
-  fs.writeFileSync(outPath, text, { encoding: "utf8" });
-} catch (writeError) {
-  fail("cannot write " + outPath + ": " + writeError.message);
+  mergeJsonFiles({
+    basePath,
+    overlayPath,
+    destinationPath,
+    home: homeOverride || os.homedir(),
+    mergeProperty: ({ key, baseValue, overlayValue }) => {
+      if (key !== "hooks") {
+        return undefined;
+      }
+      if (
+        baseValue === null ||
+        typeof baseValue !== "object" ||
+        Array.isArray(baseValue)
+      ) {
+        return undefined;
+      }
+      if (
+        overlayValue === null ||
+        typeof overlayValue !== "object" ||
+        Array.isArray(overlayValue)
+      ) {
+        return undefined;
+      }
+      return mergeHookEvents(baseValue, overlayValue);
+    },
+  });
+} catch (renderError) {
+  process.stderr.write("render-settings: " + renderError.message + "\n");
+  process.exit(1);
 }

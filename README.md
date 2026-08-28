@@ -28,15 +28,17 @@ its `test.sh`. `script/bootstrap` reads the machine's profile, runs that profile
 in listed order, and each topic links its config into place.
 
 Almost everything is a symlink, so a `git pull` updates the machine and `script/bootstrap`
-only ensures the links exist. The exception is `~/.claude/settings.json`, rendered from
-`ai/settings.base.json` plus the profile's `settings.overlay.json`.
+only ensures the links exist. Destinations that carry a machine-specific value are rendered
+or copied instead, and those go through `script/lib/render.sh`, which keeps a sidecar of what
+it last wrote so a hand edit is backed up and its own output is not.
 
 ## Profiles
 
 `profiles/<name>/profile.json` lists the topics that profile runs, in order. Ordering is
 load-bearing: `packages` installs node before `ai` needs it, git before `repos` clones.
-Alongside it sit the files that genuinely differ per machine: `CLAUDE.md`,
-`commit-policy.json`, `settings.overlay.json`.
+Alongside it sit the files that genuinely differ per machine: `packages.txt`, `CLAUDE.md`,
+`commit-policy.json`, `settings.overlay.json`, `glissa.json`, `glissa.overlay.json`,
+`vscodium.json`.
 
 The active profile comes from `--profile`, then `$DOTFILES_PROFILE`, then the untracked
 `.machine-profile`. An existing `.machine-profile` is never rewritten, so a differing
@@ -54,17 +56,29 @@ profile.
 | `ai` | Claude Code and Codex: agents, commands, hooks, hud, skills, compiled-commit |
 | `git` | global gitconfig |
 | `vscodium` | settings, keybindings, mcp.json, extensions |
-| `glissa` | dashboard config and user service |
+| `glissa` | dashboard config, plus the user service on profiles that serve Glissa |
 | `fonts` | CommitMono |
 | `dictation` | ydotoold user service |
 | `screenshot` | flameshot desktop entry and save path |
 | `packages` | system packages, npm globals, python tools, and their removals |
 | `repos` | clones the working set |
+| `tailscale` | the tailnet client |
+| `peripherals` | Logitech tooling and the headset udev rule |
 
 Vendored third-party skills are listed in [NOTICE.md](NOTICE.md).
 
 ## Machine-local files
 
 Anything holding a path, hostname, or credential is untracked, with a tracked
-`.example` sibling documenting its shape: `.machine-profile`, `repos/repos.txt`,
-`glissa/config.json`, `~/.claude/settings.json`.
+`.example` sibling documenting its shape: `repos/repos.txt`, `glissa/config.json`, and
+`~/.gitconfig.local`. `~/.claude/settings.json` is rendered from `ai/settings.base.json`
+plus the active profile's `settings.overlay.json`. `.machine-profile` is written by
+`script/bootstrap`.
+
+`vscodium/mcp.json` reads its PostHog token from the environment, so
+`POSTHOG_PERSONAL_API_KEY` has to be exported where VSCodium can see it.
+
+`johnwaters.glissa-visions` is built on this machine and published to no marketplace, so
+`vscodium/extensions.txt` cannot name it. Install it by hand with
+`codium --install-extension <path>.vsix`; exact sync keeps it, because an extension whose
+manifest says `private` is never pruned.

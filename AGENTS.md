@@ -18,6 +18,9 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
 - Link targets are written as `~/.dotfiles/...`, never as the clone path. The alias is
   what makes the checkout relocatable and lets a machine keep the repo wherever its owner
   works; `bootstrap` creates it and repoints it if the clone moved.
+- What a converge still owes is state, not config: it is recorded under
+  `$XDG_STATE_HOME/dotfiles` through `script/lib/state.sh`, so a run can retry owed work
+  and no marker lands beside a root-owned target the next run cannot rewrite.
 - `~/.claude` holds runtime state (`projects/`, `sessions/`, `plugins/`, credentials)
   that must never enter this repo, so `ai/install.sh` links per entry rather than
   linking whole directories.
@@ -26,11 +29,17 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
 
 - `script/bootstrap`: points `~/.dotfiles` at this clone, reads the profile, runs its
   topics in listed order
-- `script/lib/`: shared shell helpers (logging, linking, rendering, profile parsing)
+- `script/lib/`: shared helpers (logging, linking, rendering, profile parsing)
+- `script/lib/merge-json.mjs`: shared base-plus-overlay JSON merge with `{{HOME}}`
+  substitution, used by `ai` and `glissa`
+- `script/lib/packages.sh`: opt-in package tooling each software topic sources itself
 - `script/collect`: pulls live machine state back into the repo
-- `bin/`: on PATH
 - `profiles/<name>/profile.json`: the topic list for that machine, in run order
+- `profiles/<name>/packages.txt`: the package groups the `packages` topic installs there
 - `<topic>/install.sh`: idempotent, safe to rerun, no assumptions about run order beyond
   what the profile guarantees; ends at `finishTopic`, which exits non-zero when the topic
   warned so bootstrap still sees the failure if the shared counts file is lost
-- `test/`: shared Docker matrix; per-topic tests live next to their installer
+- `<topic>/collect.sh`: optional, run by `script/collect`
+- `test/`: shared bubblewrap sandbox and cross-cutting suites listed in `test/run-all.sh`;
+  per-topic tests live next to their installer
+- `test/harness.sh`: shared assertions, sandbox home, command stubs
