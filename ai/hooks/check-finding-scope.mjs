@@ -23,6 +23,34 @@ function collectText(value, collectedText) {
   }
 }
 
+const FIELD_SEPARATOR = " | ";
+
+function fieldValue(fields, label) {
+  const prefix = `${label}:`;
+  const field = fields.find((entry) => entry.trim().toLowerCase().startsWith(prefix));
+  if (field === undefined) {
+    return null;
+  }
+  return field.trim().slice(prefix.length).trim();
+}
+
+function findingFilePath(line) {
+  const trimmedLine = line.trim();
+  if (!trimmedLine.startsWith("-")) {
+    return null;
+  }
+  const fields = trimmedLine.slice(1).split(FIELD_SEPARATOR);
+  const lineValue = fieldValue(fields, "line");
+  if (lineValue === null || !/^(?:\d+|general)\b/i.test(lineValue)) {
+    return null;
+  }
+  const filePath = fieldValue(fields, "file");
+  if (!filePath || filePath === "(none)" || /^<.*>$/.test(filePath)) {
+    return null;
+  }
+  return filePath;
+}
+
 function findingFiles(toolResponse) {
   const collectedText = [];
   collectText(toolResponse, collectedText);
@@ -37,11 +65,11 @@ function findingFiles(toolResponse) {
     if (line.trim() === "OVERALL_SUMMARY:") {
       break;
     }
-    const finding = /^\s*-\s+file:\s*(.*?)\s+\|\s+line:/i.exec(line);
-    if (!finding?.[1]) {
+    const filePath = findingFilePath(line);
+    if (filePath === null) {
       continue;
     }
-    files.push(finding[1]);
+    files.push(filePath);
   }
   return files;
 }

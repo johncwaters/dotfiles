@@ -134,6 +134,97 @@ test("finding scope warns only for files outside the diff", () => {
   }
 });
 
+test("finding scope ignores placeholder file entries", () => {
+  const repository = makeRepository();
+  try {
+    const processResult = runHook("check-finding-scope.mjs", {
+      cwd: repository,
+      tool_name: "Agent",
+      tool_response: [
+        "STRUCTURED_FINDINGS:",
+        '- file: <path> | line: <number or "general"> | side: RIGHT | severity: LOW',
+        "- file: (none) | line: general | side: RIGHT | severity: LOW",
+        "",
+        "OVERALL_SUMMARY:",
+      ].join("\n"),
+    });
+
+    assert.equal(processResult.status, 0);
+    assert.equal(processResult.stdout, "");
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("finding scope reports real paths alongside placeholders", () => {
+  const repository = makeRepository();
+  try {
+    const processResult = runHook("check-finding-scope.mjs", {
+      cwd: repository,
+      tool_name: "Agent",
+      tool_response: [
+        "STRUCTURED_FINDINGS:",
+        '- file: <path> | line: <number or "general"> | side: RIGHT | severity: LOW',
+        "- file: b.txt | line: 1 | side: RIGHT | severity: LOW",
+        "",
+        "OVERALL_SUMMARY:",
+      ].join("\n"),
+    });
+
+    assert.equal(processResult.status, 0);
+    const warning = JSON.parse(processResult.stdout);
+    assert.match(warning.hookSpecificOutput.additionalContext, /b\.txt/);
+    assert.doesNotMatch(warning.hookSpecificOutput.additionalContext, /<path>/);
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("finding scope ignores a placeholder line value followed by a later line field", () => {
+  const repository = makeRepository();
+  try {
+    const processResult = runHook("check-finding-scope.mjs", {
+      cwd: repository,
+      tool_name: "Agent",
+      tool_response: [
+        "STRUCTURED_FINDINGS:",
+        '- file: b.txt | line: <number or "general"> | side: RIGHT | body: x | line: 5',
+        "",
+        "OVERALL_SUMMARY:",
+      ].join("\n"),
+    });
+
+    assert.equal(processResult.status, 0);
+    assert.equal(processResult.stdout, "");
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("finding scope parses a padded file value without backtracking blowup", () => {
+  const repository = makeRepository();
+  try {
+    const startedAtMs = Date.now();
+    const processResult = runHook("check-finding-scope.mjs", {
+      cwd: repository,
+      tool_name: "Agent",
+      tool_response: [
+        "STRUCTURED_FINDINGS:",
+        `- file:${" ".repeat(4000)}| line: x`,
+        "",
+        "OVERALL_SUMMARY:",
+      ].join("\n"),
+    });
+    const elapsedMs = Date.now() - startedAtMs;
+
+    assert.equal(processResult.status, 0);
+    assert.equal(processResult.stdout, "");
+    assert.ok(elapsedMs < 2000, `hook took ${elapsedMs}ms`);
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
 test("finding scope is silent without a structured findings block", () => {
   const processResult = runHook("check-finding-scope.mjs", {
     cwd: process.cwd(),
