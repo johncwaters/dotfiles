@@ -136,7 +136,7 @@ emDash="$(printf '\u2014')"
 emDashVerdict="$(printf '{"tool_input":{"file_path":"%s/probe.md","content":"a sentence with an em dash %s in it"}}' "$HOME" "$emDash" \
   | node "$claudeHome/hooks/validate-file.mjs" 2>/dev/null || true)"
 check "the fixture really holds an em dash" \
-  bash -c '[[ "$(printf "%s" "$1" | xxd -p)" == "e28094" ]]' _ "$emDash"
+  bash -c '[[ "$(printf "%s" "$1" | od -An -tx1 | tr -d " \n")" == "e28094" ]]' _ "$emDash"
 check "validate-file still rejects an em dash" bash -c '[[ "$1" == *deny* ]]' _ "$emDashVerdict"
 
 cleanVerdict="$(printf '{"tool_input":{"file_path":"%s/probe.md","content":"a sentence with no dash in it"}}' "$HOME" \
