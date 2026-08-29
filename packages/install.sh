@@ -22,6 +22,7 @@ knownPackageGroups=(
   npm-globals
   biome
   python-tools
+  dotnet
 )
 
 packageGroupIsKnown() {
@@ -204,6 +205,40 @@ installZed() {
     return 0
   fi
   noteWarned "Zed" "installed, but not on PATH yet"
+}
+
+dotnetInstallDirectory() {
+  printf '%s\n' "$HOME/.dotnet"
+}
+
+dotnetIsInstalled() {
+  if command -v dotnet >/dev/null 2>&1; then
+    return 0
+  fi
+  [[ -x "$(dotnetInstallDirectory)/dotnet" ]]
+}
+
+# Debian ships no .NET, so the SDK lands user-local through Microsoft's installer; the shell loader puts ~/.dotnet on PATH.
+installDotnetSdk() {
+  refreshSessionPath
+  if dotnetIsInstalled; then
+    notePresent ".NET SDK" "already installed"
+    return 0
+  fi
+  noteStarting ".NET SDK" "running dotnet-install.sh (LTS) into ~/.dotnet"
+  local installerLog
+  installerLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-dotnet-install.XXXXXX")"
+  if ! DOTNET_INSTALL_DIR="$(dotnetInstallDirectory)" DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    installFromVendorScript ".NET SDK" bash https://dot.net/v1/dotnet-install.sh "$installerLog"; then
+    rm -f -- "$installerLog"
+    return 0
+  fi
+  rm -f -- "$installerLog"
+  if dotnetIsInstalled; then
+    noteInstalled ".NET SDK" "installed to ~/.dotnet"
+    return 0
+  fi
+  noteWarned ".NET SDK" "installer ran, but ~/.dotnet/dotnet is missing"
 }
 
 installProfileFlatpaks() {
@@ -406,6 +441,11 @@ if packageGroupEnabled "biome"; then
   if npmToolingIsReady; then
     ensureNpmGlobals "biome" "@biomejs/biome"
   fi
+fi
+
+if packageGroupEnabled "dotnet"; then
+  writeSection ".NET"
+  installDotnetSdk
 fi
 
 if packageGroupEnabled "python-tools"; then

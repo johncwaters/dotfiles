@@ -60,6 +60,11 @@ emitBody() {
       printf 'mkdir -p "$HOME/.local/bin"\n'
       printf 'cp "$DOTFILES_TEST_STATE/available/zed" "$HOME/.local/bin/zed"\n'
       ;;
+    *dot.net/v1/dotnet-install.sh)
+      printf 'mkdir -p "$DOTNET_INSTALL_DIR"\n'
+      printf 'printf "%%s\\n" "$DOTNET_INSTALL_DIR" > "$DOTFILES_TEST_STATE/dotnet-install-dir"\n'
+      printf 'cp "$DOTFILES_TEST_STATE/available/zed" "$DOTNET_INSTALL_DIR/dotnet"\n'
+      ;;
     *)
       return 1
       ;;
@@ -356,6 +361,22 @@ check "the work profile installs the hook's biome" logHas "npm install -g @biome
 check "the work profile installs no system package" logLacks "install -y"
 check "the work profile installs no flatpak" logLacks "flatpak install"
 check "the work profile still installs its python tools" outputHas "$workRunOutput" "ruff"
+
+: > "$commandLog"
+serverRunStatus=0
+serverRunOutput="$(runInstall server)" || serverRunStatus=$?
+check "the server profile exits clean" test "$serverRunStatus" -eq 0
+check "the server profile runs the .NET installer" logHas "https://dot.net/v1/dotnet-install.sh"
+check "the .NET installer is told to use ~/.dotnet" \
+  test "$(cat "$stubState/dotnet-install-dir")" = "$sandbox/.dotnet"
+check "the .NET SDK landed in ~/.dotnet" test -x "$sandbox/.dotnet/dotnet"
+check "the .NET installer needs no sudo" logLacks "sudo -n [^ ]*/bash"
+check "the server profile installs no flatpak" logLacks "flatpak install"
+: > "$commandLog"
+serverSecondRunOutput="$(runInstall server)"
+check "a second server run downloads no .NET installer" logLacks "dotnet-install.sh"
+check "a second server run reports .NET present" outputHas "$serverSecondRunOutput" ".NET SDK"
+check "the personal profile never installs .NET" outputLacks "$firstRunOutput" ".NET"
 
 touch "$stubState/gh-unauthed"
 unauthedRunStatus=0

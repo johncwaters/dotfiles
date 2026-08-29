@@ -3,3 +3,4 @@ node
 claude-code
 npm-globals
 python-tools
+dotnet
