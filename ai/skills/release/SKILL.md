@@ -38,7 +38,6 @@ The profile checks below are read and applied by you, not by a program: the Pyth
   },
   "git": {
     "release_from": "main",
-    "integration": "develop",
     "release_commit_pattern": "chore(release): vX.Y.Z",
     "require": ["clean_tree", "ff_promotion", "ci_green_on_sha"]
   },
