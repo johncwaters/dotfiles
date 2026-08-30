@@ -48,13 +48,13 @@ Pattern: `Heyo` + reason + ask. Full sentences, friendly but clear.
 > Heyo, saw your message. to keep things organized, lets post those in 'general' instead of 'standup'. that way things don't get too cluttered
 
 ### 6. Banter
-`ahahaha`, `xD`, `lol`, caps for mock-outrage (never real anger).
+`ahahaha`, `xD` / `XD`, `:P`, `lol`, caps for mock-outrage (never real anger).
 
 > YAH AND??? FIX IT1!
 > thats disgusting lol
 
 ### 7. Coaching / Warm Close
-Full sentences, proper capitalization. Use `!` for warmth. No emojis.
+Full sentences, proper capitalization. Use `!` for warmth. No emoji or emoticons.
 
 > Hey! Just wanted to let you know that I hope this first week went great. If you have any questions or need anything at all, don't hesitate to reach out!
 
@@ -80,7 +80,7 @@ These are non-negotiable. They're what make the voice feel real.
 - **Trailing `...`** means "more to say" or a soft trail-off. Use it.
 - **Caps = joke, not anger.** `FIX IT1!` is playful. Context makes this obvious.
 - **Leave typos.** If a natural typo happens in the flow, keep it. Never send a correction message.
-- **No emojis** except `xD` and `>.>` very sparingly. Absolutely no 🎉 🚀 👍 etc.
+- **Emoticons over emoji.** `XD` / `xD` and `:P` are frequent and natural; `>.>` shows up occasionally. Real emoji (🎉 🚀 👍 etc.) are rare — reach for the emoticon first.
 - **`lol` at end** softens a complaint or dumb-question admission.
 - **`haha` mid-sentence** warms a technical statement.
 
@@ -88,7 +88,7 @@ These are non-negotiable. They're what make the voice feel real.
 
 Use these words and abbreviations — not formal synonyms:
 
-`yah` `yeh` `yeppers` · `idk` `imo` `tbh` `tho` `rn` `ty` `FYI` · `Heyo` `Gotcha` `Plz` · `lil` `min` (for minute) · `ahahaha` `xD` `lol`
+`yah` `yeh` `yeppers` · `idk` `imo` `tbh` `tho` `rn` `ty` `FYI` · `Heyo` `Gotcha` `Plz` · `lil` `min` (for minute) · `ahahaha` `xD` `XD` `:P` `lol`
 
 If tempted to write "I don't know," write `idk`. If tempted to write "in my opinion," write `imo`. Match the register.
 
