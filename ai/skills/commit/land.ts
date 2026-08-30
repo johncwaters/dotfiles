@@ -1,4 +1,4 @@
-import { Git, type PushRefResult, type PushRefStatus, type PushResult } from "./lib/git.ts";
+import { Git, type PushRefResult, type PushResult } from "./lib/git.ts";
 import { repositoryGuard } from "./lib/guard.ts";
 import { normalizeMessage, validateMessage } from "./lib/message.ts";
 import {
@@ -6,6 +6,7 @@ import {
   denylistedFileStaged,
   emit,
   hookFailed,
+  mainlineAhead,
   messageInvalid,
   nothingToCommit,
   promoteConflict,
@@ -13,24 +14,16 @@ import {
   pushFailed,
   type Result,
 } from "./lib/outcome.ts";
+import { configuredMainline, readCommitPolicy } from "./lib/policy.ts";
 import { readStdin } from "./lib/stdio.ts";
 import {
   computeScope,
   findWorktreeForBranch,
   isDenylisted,
-  isDirtyStatusLineInScope,
-  MAINLINE_CANDIDATES,
   resolveMainline,
 } from "./lib/workspace.ts";
 
 const PUSH_ATTEMPTS = 3;
-
-// Refs git could have pushed but did not because a sibling ref in the same
-// --atomic batch was rejected; they name no failure of their own. Git says
-// "atomic push failed" client-side and "atomic push failure" remote-side.
-const ATOMIC_COLLATERAL_PATTERN = /atomic push fail/;
-
-type PromoteTarget = "develop" | "mainline";
 
 type FailureOutcome =
   | "NOTHING_TO_COMMIT"
@@ -38,14 +31,14 @@ type FailureOutcome =
   | "HOOK_FAILED"
   | "PUSH_FAILED"
   | "PROMOTE_CONFLICT"
-  | "PROMOTE_FAILED";
+  | "PROMOTE_FAILED"
+  | "MAINLINE_AHEAD";
 
-type PendingPushRef = { branch: string; kind: "feature" | "promote"; source?: string };
+type PendingPushRef = { branch: string; kind: "feature" | "promote" };
 
 type Arguments = {
   paths: string[];
   promote: boolean;
-  promoteTarget: PromoteTarget;
   noPush: boolean;
   pushRetryDelayMs: number;
 };
@@ -61,7 +54,6 @@ function parseArguments(argv: string[]): Arguments {
   const parsed: Arguments = {
     paths: [],
     promote: false,
-    promoteTarget: "mainline",
     noPush: false,
     pushRetryDelayMs: 2000,
   };
@@ -79,16 +71,6 @@ function parseArguments(argv: string[]): Arguments {
     }
     if (argument === "--no-push") {
       parsed.noPush = true;
-      collectingPaths = false;
-      continue;
-    }
-    if (argument === "--promote-to") {
-      const value = argv[index + 1];
-      if (value !== "develop" && value !== "mainline") {
-        throw new Error("--promote-to takes develop or mainline");
-      }
-      parsed.promoteTarget = value;
-      index += 1;
       collectingPaths = false;
       continue;
     }
@@ -121,6 +103,8 @@ class Landing {
   private readonly deletedRemoteBranches: string[] = [];
   private denylistedStagedFiles: string[] = [];
   private conflicts: string[] = [];
+  private localOnlyCommits: string[] = [];
+  private mainline: string | null = null;
   private pushed = false;
   private commitHash: string | null = null;
   private deferredFeatureBranch: string | null = null;
@@ -209,6 +193,13 @@ class Landing {
     if (outcome === "PROMOTE_FAILED") {
       return promoteFailed(state);
     }
+    if (outcome === "MAINLINE_AHEAD") {
+      return mainlineAhead({
+        ...state,
+        mainline: this.mainline ?? "",
+        localOnlyCommits: this.localOnlyCommits,
+      });
+    }
     if (outcome === "NOTHING_TO_COMMIT") {
       return nothingToCommit({ pushed: this.pushed, promoted: this.promoted, warnings: this.warnings });
     }
@@ -285,13 +276,12 @@ class Landing {
     }
 
     const pending: PendingPushRef[] = [{ branch, kind: "feature" }];
-    const { refsToPush, skippedRefs } = this.partitionUpToDateRefs(pending);
-    if (skippedRefs.length > 0) {
+    if (this.originRefIsUpToDate(branch)) {
       this.pushed = true;
       return null;
     }
 
-    const outcome = this.pushPendingRefs(refsToPush, !this.git.hasUpstream(), "PUSH_FAILED");
+    const outcome = this.pushPendingRefs(pending, !this.git.hasUpstream(), "PUSH_FAILED");
     if (outcome) {
       return outcome;
     }
@@ -302,73 +292,67 @@ class Landing {
 
   private promote(): FailureOutcome | null {
     const originExists = this.git.listRemotes().includes("origin");
-    this.prefetchPromotionBranches(originExists);
-
-    const mainline = resolveMainline(this.git);
-    const developPresent =
-      this.git.verifyRef("refs/heads/develop") || this.git.verifyRef("refs/remotes/origin/develop");
-
-    if (!developPresent && mainline === null) {
-      this.warnings.push("no develop or mainline branch; promotion skipped");
-      return null;
+    const { policy } = readCommitPolicy();
+    const mainline = resolveMainline(this.git, configuredMainline(policy));
+    this.mainline = mainline;
+    if (mainline === null) {
+      this.warnings.push("promotion skipped: no mainline");
+      return this.pushDeferredFeatureBranch();
     }
 
     const current = this.git.currentBranch();
-    if (mainline !== null && current === mainline) {
-      this.warnings.push(
-        `commit landed directly on ${mainline}; promotion skipped, develop not updated`,
-      );
+    if (current === mainline) {
+      this.warnings.push(`commit landed directly on ${mainline}; promotion skipped`);
       return null;
     }
 
-    if (this.config.promoteTarget === "develop" && current === "develop") {
-      this.warnings.push(
-        "promote target is develop and current branch is develop; nothing to promote",
-      );
-      return null;
-    }
-
-    const hops = this.promotionHops(current, mainline);
-    if (hops.length === 0) {
-      this.warnings.push("current branch is develop and no mainline exists; nothing to promote");
-      return null;
-    }
-
-    if (!developPresent && mainline !== null) {
-      this.createDevelop(mainline, originExists);
-    }
-
-    const promotedBranches: string[] = [];
-    for (const [source, destination] of hops) {
-      const outcome = this.promoteHop(source, destination, originExists);
-      if (outcome) {
-        return outcome;
+    const featureBranch = this.featureBranchForPromotion(current, mainline);
+    if (originExists) {
+      const syncOutcome = this.syncMainlineWithOrigin(mainline);
+      if (syncOutcome) {
+        return syncOutcome;
       }
-      promotedBranches.push(destination);
+    }
+
+    const promoteOutcome = this.promoteHop(current, mainline);
+    if (promoteOutcome) {
+      return promoteOutcome;
     }
 
     if (!originExists) {
+      this.warnAboutMissingOrigin();
+      this.promoted.push(mainline);
       return null;
     }
 
-    // On a mainline target the feature branch fast-forwards into mainline, so
-    // pushing it too would only leave a dead remote branch behind.
-    const featureBranch = this.featureBranchForPromotion(current, mainline);
-    const pendingRefs: PendingPushRef[] = [];
-    if (featureBranch && this.config.promoteTarget === "develop") {
-      pendingRefs.push({ branch: featureBranch, kind: "feature" });
-    }
-    for (const [source, destination] of hops) {
-      pendingRefs.push({ branch: destination, kind: "promote", source });
+    const pushOutcome = this.pushMainline(mainline);
+    if (pushOutcome) {
+      this.pushFeatureAfterFailedMainlinePromotion(featureBranch, pushOutcome);
+      return pushOutcome;
     }
 
-    const outcome = this.pushPromotedBatch(pendingRefs, promotedBranches, hops);
+    this.promoted.push(mainline);
+    this.deleteMergedRemoteFeatureBranch(featureBranch, mainline);
+    return null;
+  }
+
+  private pushDeferredFeatureBranch(): FailureOutcome | null {
+    if (!this.deferredFeatureBranch || this.config.noPush) {
+      return null;
+    }
+    if (!this.git.listRemotes().includes("origin")) {
+      this.warnings.push("no origin remote configured; skipping push");
+      return null;
+    }
+    const outcome = this.pushPendingRefs(
+      [{ branch: this.deferredFeatureBranch, kind: "feature" }],
+      !this.git.hasUpstream(),
+      "PUSH_FAILED",
+    );
     if (outcome) {
-      this.pushFeatureAfterFailedMainlinePromotion(featureBranch, outcome);
       return outcome;
     }
-
-    this.deleteMergedRemoteFeatureBranch(featureBranch, mainline);
+    this.pushed = true;
     return null;
   }
 
@@ -379,21 +363,16 @@ class Landing {
     if (this.config.noPush) {
       return null;
     }
-    if (current === "develop" || current === mainline) {
+    if (current === mainline) {
       return null;
     }
     return current;
   }
 
-  // Promotion stopped short of mainline, so the work exists only locally unless the
-  // feature branch goes out on its own.
   private pushFeatureAfterFailedMainlinePromotion(
     featureBranch: string | null,
     outcome: FailureOutcome,
   ): void {
-    if (this.config.promoteTarget !== "mainline") {
-      return;
-    }
     if (outcome !== "PROMOTE_FAILED" || !featureBranch) {
       return;
     }
@@ -443,92 +422,27 @@ class Landing {
     this.warnings.push(`could not delete merged remote branch ${featureBranch}: ${failureText}`);
   }
 
-  private promotionHops(current: string, mainline: string | null): Array<[string, string]> {
-    if (this.config.promoteTarget === "develop") {
-      return [[current, "develop"]];
-    }
-    if (current === "develop") {
-      if (mainline === null) {
-        return [];
+  private promoteHop(source: string, destination: string): FailureOutcome | null {
+    const rebase = this.git.rebase(destination);
+    if (rebase.code !== 0) {
+      const conflicts = this.git.conflictingFiles();
+      this.git.rebaseAbort();
+      if (conflicts.length > 0) {
+        this.conflicts = conflicts;
+        this.warnings.push(
+          `rebase conflict promoting ${source} into ${destination}: ${conflicts.join(", ")}`,
+        );
+        return "PROMOTE_CONFLICT";
       }
-      return [["develop", mainline]];
+      this.warnings.push(
+        `could not rebase ${source} onto ${destination}; promotion stopped: ${rebase.stderr.trim()}`,
+      );
+      return "PROMOTE_FAILED";
     }
-    const hops: Array<[string, string]> = [[current, "develop"]];
-    if (mainline !== null) {
-      hops.push(["develop", mainline]);
+    if (this.commitHash !== null) {
+      this.commitHash = this.git.revParseHead();
     }
-    return hops;
-  }
-
-  private prefetchPromotionBranches(originExists: boolean): void {
-    if (!originExists) {
-      return;
-    }
-    const candidates = this.localPromotionCandidates();
-    if (candidates.length === 0) {
-      return;
-    }
-    const fetch = this.git.fetchMany("origin", candidates);
-    if (fetch.code === 0) {
-      return;
-    }
-    this.warnings.push(
-      `combined promotion fetch failed; falling back to per-branch fetches: ${fetch.stderr.trim()}`,
-    );
-    for (const name of candidates) {
-      this.git.fetch("origin", name);
-    }
-  }
-
-  private localPromotionCandidates(): string[] {
-    const candidates: string[] = [];
-    for (const name of ["develop", ...MAINLINE_CANDIDATES]) {
-      if (
-        this.git.verifyRef(`refs/heads/${name}`) ||
-        this.git.verifyRef(`refs/remotes/origin/${name}`)
-      ) {
-        candidates.push(name);
-      }
-    }
-    return candidates;
-  }
-
-  private createDevelop(mainline: string, originExists: boolean): void {
-    const startPoint =
-      originExists && this.git.verifyRef(`refs/remotes/origin/${mainline}`)
-        ? `origin/${mainline}`
-        : mainline;
-    this.git.createBranchAt("develop", startPoint);
-    this.warnings.push(`develop branch did not exist; created it at ${startPoint}`);
-  }
-
-  private promoteHop(
-    source: string,
-    destination: string,
-    originExists: boolean,
-  ): FailureOutcome | null {
-    if (originExists) {
-      const outcome = this.syncDestinationWithOrigin(destination);
-      if (outcome) {
-        return outcome;
-      }
-    }
-
-    const fastForward = this.git.fetchLocalFf(source, destination);
-    if (fastForward.code !== 0) {
-      const outcome = this.handleFastForwardRefusal(source, destination, fastForward.stderr);
-      if (outcome) {
-        return outcome;
-      }
-    }
-
-    if (originExists) {
-      return null;
-    }
-
-    this.warnAboutMissingOrigin();
-    this.promoted.push(destination);
-    return null;
+    return this.fastForwardDestination(source, destination);
   }
 
   private warnAboutMissingOrigin(): void {
@@ -539,74 +453,55 @@ class Landing {
     this.noOriginPromoteWarned = true;
   }
 
-  private syncDestinationWithOrigin(destination: string, fetchRemote = false): FailureOutcome | null {
-    if (fetchRemote) {
-      const fetch = this.git.fetch("origin", destination);
-      if (fetch.code !== 0) {
-        this.warnings.push(
-          `could not fetch origin ${destination}; continuing with local state: ${fetch.stderr.trim()}`,
-        );
-      }
-    }
-
-    if (this.git.verifyRef(`refs/remotes/origin/${destination}`)) {
-      return this.handleDestinationOriginUpdate(
-        destination,
-        this.git.fetchLocalFromTracking(destination),
-      );
-    }
-
-    return this.handleDestinationOriginUpdate(
-      destination,
-      this.git.fetchUpdateLocalRef("origin", destination),
-    );
-  }
-
-  private handleDestinationOriginUpdate(
-    destination: string,
-    update: { code: number; stderr: string },
-  ): FailureOutcome | null {
-    if (update.code === 0) {
-      return null;
-    }
-
-    const stderr = update.stderr;
-    if (stderr.includes("checked out")) {
-      return this.fastForwardInHoldingWorktree(`origin/${destination}`, destination);
-    }
-
-    if (stderr.includes("non-fast-forward") || stderr.includes("rejected")) {
-      const outcome = this.mergeForPromotion(`origin/${destination}`, destination);
-      if (outcome) {
-        return outcome;
-      }
+  private syncMainlineWithOrigin(mainline: string): FailureOutcome | null {
+    const fetch = this.git.fetch("origin", mainline);
+    if (fetch.code !== 0) {
       this.warnings.push(
-        `local ${destination} diverged from origin/${destination}; merged origin/${destination} into ${destination} and continued promotion`,
+        `could not fetch origin ${mainline}; continuing with local state: ${fetch.stderr.trim()}`,
       );
       return null;
     }
 
-    this.warnings.push(
-      `could not update local ${destination} from origin, continuing with local state: ${stderr.trim()}`,
-    );
-    return null;
-  }
-
-  private handleFastForwardRefusal(
-    source: string,
-    destination: string,
-    stderr: string,
-  ): FailureOutcome | null {
-    if (stderr.includes("checked out")) {
-      return this.fastForwardInHoldingWorktree(source, destination);
-    }
-    if (!stderr.includes("non-fast-forward") && !stderr.includes("rejected")) {
-      this.warnings.push(
-        `could not fast-forward ${destination} from ${source}; promotion stopped: ${stderr.trim()}`,
-      );
+    const localRef = `refs/heads/${mainline}`;
+    const remoteRef = `refs/remotes/origin/${mainline}`;
+    const localTip = this.git.revParseRef(localRef);
+    const remoteTip = this.git.revParseRef(remoteRef);
+    if (localTip === null || remoteTip === null) {
+      this.warnings.push(`local or remote ${mainline} ref is missing; promotion stopped`);
       return "PROMOTE_FAILED";
     }
-    return this.mergeForPromotion(source, destination);
+    if (localTip === remoteTip) {
+      return null;
+    }
+    if (this.git.isAncestor(localRef, remoteRef)) {
+      return this.fastForwardDestination(remoteRef, mainline);
+    }
+    if (this.git.isAncestor(remoteRef, localRef)) {
+      this.localOnlyCommits = this.git.revList(`${remoteRef}..${localRef}`);
+      this.warnings.push(
+        `local ${mainline} is ahead of origin/${mainline}; resolve local-only commits before promotion`,
+      );
+      return "MAINLINE_AHEAD";
+    }
+    this.warnings.push(`local ${mainline} has diverged from origin/${mainline}; promotion stopped`);
+    return "PROMOTE_CONFLICT";
+  }
+
+  private fastForwardDestination(source: string, destination: string): FailureOutcome | null {
+    const fastForward = this.git.fetchLocalFf(source, destination);
+    if (fastForward.code === 0) {
+      return null;
+    }
+    if (fastForward.stderr.includes("checked out")) {
+      return this.fastForwardInHoldingWorktree(source, destination);
+    }
+    this.warnings.push(
+      `could not fast-forward ${destination} from ${source}; promotion stopped: ${fastForward.stderr.trim()}`,
+    );
+    if (fastForward.stderr.includes("non-fast-forward") || fastForward.stderr.includes("rejected")) {
+      return "PROMOTE_CONFLICT";
+    }
+    return "PROMOTE_FAILED";
   }
 
   private fastForwardInHoldingWorktree(source: string, destination: string): FailureOutcome | null {
@@ -641,91 +536,6 @@ class Landing {
     return null;
   }
 
-  private mergeForPromotion(source: string, destination: string): FailureOutcome | null {
-    const dirty = this.git
-      .statusShort()
-      .filter((line) => !line.startsWith("??") && isDirtyStatusLineInScope(line));
-    if (dirty.length > 0) {
-      this.warnings.push(`working tree not clean; cannot merge ${source} into ${destination}`);
-      return "PROMOTE_FAILED";
-    }
-
-    const original = this.git.currentBranch();
-    const checkoutDestination = this.git.checkout(destination);
-    if (checkoutDestination.code !== 0) {
-      this.warnings.push(
-        `could not check out ${destination} for merge; promotion stopped: ${checkoutDestination.stderr.trim()}`,
-      );
-      return "PROMOTE_FAILED";
-    }
-
-    const merge = this.git.mergeNoEdit(source);
-    if (merge.code !== 0) {
-      const conflicts = this.git.conflictingFiles();
-      this.git.mergeAbort();
-      const restoreAfterConflict = this.git.checkout(original);
-      if (restoreAfterConflict.code !== 0) {
-        this.warnings.push(
-          `aborted the failed merge of ${source} into ${destination} but could not return to ${original}; repository left on ${destination}: ${restoreAfterConflict.stderr.trim()}`,
-        );
-      }
-      if (conflicts.length === 0) {
-        this.warnings.push(
-          `merging ${source} into ${destination} failed without conflicts; promotion stopped: ${merge.stderr.trim()}`,
-        );
-        return "PROMOTE_FAILED";
-      }
-      this.conflicts = conflicts;
-      this.warnings.push(
-        `merge conflict promoting ${source} into ${destination}: ${conflicts.join(", ")}`,
-      );
-      return "PROMOTE_CONFLICT";
-    }
-
-    const restore = this.git.checkout(original);
-    if (restore.code !== 0) {
-      this.warnings.push(
-        `merged ${source} into ${destination} locally but could not return to ${original}; repository left on ${destination}, push of ${destination} skipped: ${restore.stderr.trim()}`,
-      );
-      return "PROMOTE_FAILED";
-    }
-    return null;
-  }
-
-  private resyncPromotedDestination(
-    source: string | undefined,
-    destination: string,
-  ): FailureOutcome | null {
-    const outcome = this.syncDestinationWithOrigin(destination, true);
-    if (outcome) {
-      return outcome;
-    }
-    if (source === undefined) {
-      return null;
-    }
-    const fastForward = this.git.fetchLocalFf(source, destination);
-    if (fastForward.code === 0) {
-      return null;
-    }
-    return this.handleFastForwardRefusal(source, destination, fastForward.stderr);
-  }
-
-  private partitionUpToDateRefs(pendingRefs: PendingPushRef[]): {
-    refsToPush: PendingPushRef[];
-    skippedRefs: PendingPushRef[];
-  } {
-    const refsToPush: PendingPushRef[] = [];
-    const skippedRefs: PendingPushRef[] = [];
-    for (const pendingRef of pendingRefs) {
-      if (this.originRefIsUpToDate(pendingRef.branch)) {
-        skippedRefs.push(pendingRef);
-        continue;
-      }
-      refsToPush.push(pendingRef);
-    }
-    return { refsToPush, skippedRefs };
-  }
-
   private originRefIsUpToDate(branch: string): boolean {
     const local = this.git.revParseRef(`refs/heads/${branch}`);
     if (local === null) {
@@ -736,6 +546,17 @@ class Landing {
       return false;
     }
     return local === remote;
+  }
+
+  private pushMainline(mainline: string): FailureOutcome | null {
+    if (this.originRefIsUpToDate(mainline)) {
+      return null;
+    }
+    return this.pushPendingRefs(
+      [{ branch: mainline, kind: "promote" }],
+      false,
+      "PROMOTE_FAILED",
+    );
   }
 
   private pushPendingRefs(
@@ -749,12 +570,17 @@ class Landing {
 
     const refspecs = pendingRefs.map((pendingRef) => branchRefspec(pendingRef.branch));
     for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt += 1) {
-      const push = this.git.pushAtomic("origin", refspecs, setUpstream);
+      const push = this.git.push("origin", refspecs, setUpstream);
       const statuses = statusByBranch(push, pendingRefs);
       if (allRefsPushed(statuses)) {
         return null;
       }
       if (hasCauseFailure(statuses)) {
+        for (const pendingRef of pendingRefs) {
+          this.warnings.push(
+            `${pendingRef.kind === "promote" ? "promote " : ""}push ${pendingRef.branch} failed: ${pushFailureText(push, pendingRef.branch)}`,
+          );
+        }
         return exhaustedOutcome;
       }
 
@@ -765,133 +591,6 @@ class Landing {
       sleep(this.config.pushRetryDelayMs);
     }
     return exhaustedOutcome;
-  }
-
-  private pushPromotedBatch(
-    pendingRefs: PendingPushRef[],
-    promotedBranches: string[],
-    hops: Array<[string, string]>,
-  ): FailureOutcome | null {
-    const { refsToPush, skippedRefs } = this.partitionUpToDateRefs(pendingRefs);
-    this.markSkippedPushRefs(skippedRefs, promotedBranches);
-    if (refsToPush.length === 0) {
-      return null;
-    }
-
-    const push = this.pushBatchUntilPerRefResult(refsToPush);
-    if (push === null) {
-      return "PROMOTE_FAILED";
-    }
-
-    const statuses = statusByBranch(push, refsToPush);
-    if (refsToPush.some((ref) => ref.kind === "feature" && isCauseFailure(statuses[ref.branch]))) {
-      return "PUSH_FAILED";
-    }
-
-    const errorRefs = refsToPush.filter(
-      (ref) => ref.kind === "promote" && isCauseFailureOf(statuses[ref.branch], "error"),
-    );
-    if (errorRefs.length > 0) {
-      this.appendPromoteFailureWarnings(errorRefs, push, 1);
-      return "PROMOTE_FAILED";
-    }
-
-    const rejectedRefs = refsToPush.filter(
-      (ref) => ref.kind === "promote" && isCauseFailureOf(statuses[ref.branch], "rejected"),
-    );
-    if (rejectedRefs.length > 0) {
-      return this.resyncAndRetryRejectedPromotedRefs(
-        refsToPush,
-        rejectedRefs,
-        promotedBranches,
-        hops,
-        push,
-      );
-    }
-
-    this.markSuccessfulPushRefs(refsToPush, promotedBranches);
-    return null;
-  }
-
-  private pushBatchUntilPerRefResult(pendingRefs: PendingPushRef[]): PushResult | null {
-    const refspecs = pendingRefs.map((pendingRef) => branchRefspec(pendingRef.branch));
-    for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt += 1) {
-      const push = this.git.pushAtomic("origin", refspecs, false);
-      const statuses = statusByBranch(push, pendingRefs);
-      if (allRefsPushed(statuses) || hasCauseFailure(statuses)) {
-        return push;
-      }
-
-      this.appendBatchTransportWarnings(pendingRefs, attempt, push.stderr.trim());
-      if (attempt === PUSH_ATTEMPTS) {
-        break;
-      }
-      sleep(this.config.pushRetryDelayMs);
-    }
-    return null;
-  }
-
-  private resyncAndRetryRejectedPromotedRefs(
-    refsToPush: PendingPushRef[],
-    rejectedRefs: PendingPushRef[],
-    promotedBranches: string[],
-    hops: Array<[string, string]>,
-    initialPush: PushResult,
-  ): FailureOutcome | null {
-    this.appendPromoteFailureWarnings(rejectedRefs, initialPush, 1);
-    for (const pendingRef of rejectedRefs) {
-      const outcome = this.resyncPromotedDestination(pendingRef.source, pendingRef.branch);
-      if (outcome) {
-        return outcome;
-      }
-    }
-
-
-    // A resync can pull commits into an earlier hop's destination, so every hop
-    // is replayed in order; pushing the later ones as they were would publish a
-    // mainline missing what develop just picked up.
-    for (const [source, destination] of hops) {
-      const outcome = this.promoteHop(source, destination, true);
-      if (outcome) {
-        return outcome;
-      }
-    }
-
-    // The whole batch is retried, not only the rejected refs: --atomic means
-    // none of the siblings landed either.
-    const retryPush = this.git.pushAtomic(
-      "origin",
-      refsToPush.map((pendingRef) => branchRefspec(pendingRef.branch)),
-      false,
-    );
-    const retryStatuses = statusByBranch(retryPush, refsToPush);
-    if (allRefsPushed(retryStatuses)) {
-      this.markSuccessfulPushRefs(refsToPush, promotedBranches);
-      return null;
-    }
-
-    if (refsToPush.some((ref) => ref.kind === "feature" && isCauseFailure(retryStatuses[ref.branch]))) {
-      return "PUSH_FAILED";
-    }
-
-    this.appendPromoteFailureWarnings(
-      refsToPush.filter((pendingRef) => pendingRef.kind === "promote"),
-      retryPush,
-      2,
-    );
-    return "PROMOTE_FAILED";
-  }
-
-  private appendPromoteFailureWarnings(
-    pendingRefs: PendingPushRef[],
-    push: PushResult,
-    attempt: number,
-  ): void {
-    for (const pendingRef of pendingRefs) {
-      this.warnings.push(
-        `promote push ${pendingRef.branch} attempt ${attempt}/${PUSH_ATTEMPTS} failed: ${pushFailureText(push, pendingRef.branch)}`,
-      );
-    }
   }
 
   private appendBatchTransportWarnings(
@@ -908,36 +607,6 @@ class Landing {
         `promote push ${pendingRef.branch} attempt ${attempt}/${PUSH_ATTEMPTS} failed: ${stderr}`,
       );
     }
-  }
-
-  private markSkippedPushRefs(skippedRefs: PendingPushRef[], promotedBranches: string[]): void {
-    for (const pendingRef of skippedRefs) {
-      if (pendingRef.kind === "feature") {
-        this.pushed = true;
-        continue;
-      }
-      this.appendPromotedInHopOrder(pendingRef.branch, promotedBranches);
-    }
-  }
-
-  private markSuccessfulPushRefs(pendingRefs: PendingPushRef[], promotedBranches: string[]): void {
-    for (const pendingRef of pendingRefs) {
-      if (pendingRef.kind === "feature") {
-        this.pushed = true;
-        continue;
-      }
-      this.appendPromotedInHopOrder(pendingRef.branch, promotedBranches);
-    }
-  }
-
-  private appendPromotedInHopOrder(branch: string, promotedBranches: string[]): void {
-    if (!promotedBranches.includes(branch)) {
-      return;
-    }
-    if (this.promoted.includes(branch)) {
-      return;
-    }
-    this.promoted.push(branch);
   }
 }
 
@@ -969,17 +638,7 @@ function statusByBranch(
 }
 
 function isCauseFailure(entry: PushRefResult | undefined): boolean {
-  if (!entry) {
-    return false;
-  }
-  if (entry.status !== "rejected" && entry.status !== "error") {
-    return false;
-  }
-  return !ATOMIC_COLLATERAL_PATTERN.test(entry.summary);
-}
-
-function isCauseFailureOf(entry: PushRefResult | undefined, status: PushRefStatus): boolean {
-  return isCauseFailure(entry) && entry?.status === status;
+  return entry?.status === "rejected" || entry?.status === "error";
 }
 
 function allRefsPushed(statuses: Record<string, PushRefResult>): boolean {

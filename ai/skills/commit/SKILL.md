@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Personal commit workflow. Reviews and fixes in a loop via /code-review, then runs two deterministic steps (preflight, land) that stage, commit, push, and promote through develop into main/master with typed outcomes. Use for /commit, "commit this", "commit and push", or landing finished work.
+description: Personal commit workflow. Reviews and fixes in a loop via /code-review, then runs two deterministic steps (preflight, land) that stage, commit, push, and promote a feature branch onto the resolved mainline with typed outcomes. Use for /commit, "commit this", "commit and push", or landing finished work.
 ---
 
 # Commit
@@ -11,7 +11,7 @@ outside the recovery sections below.
 
 ```
 node "$HOME/.claude/skills/commit/preflight.ts" [--paths <file-or-dir> ...]
-node "$HOME/.claude/skills/commit/land.ts" [--paths ...] [--promote] [--promote-to develop] [--no-push] <<'MSG'
+node "$HOME/.claude/skills/commit/land.ts" [--paths ...] [--promote] [--no-push] <<'MSG'
 <commit message>
 MSG
 ```
@@ -33,11 +33,17 @@ whether `branchAllowed` permits committing on it, the `changed` and `untracked` 
 will be staged, and the machine's `policy`.
 
 **Branch guard.** `branchAllowed: false` means the profile forbids committing on this
-branch. Read `policy.commitBranches.onForbidden`:
+branch. `policy.commitBranches.onForbidden` permits only `create-feature-branch`: create
+a branch named for the work item, switch to it, and proceed. `POLICY_INVALID` means the
+profile still names an unsupported remedy; stop and update the profile file named in
+`errors`.
 
-- `switch-to-develop`: check out `develop` (create it from main/master when absent) and
-  proceed. Uncommitted changes carry over with the checkout.
-- `create-feature-branch`: create a branch named for the work item, switch to it, proceed.
+`policy.resolved.mainline` is the destination for promotion. With `mainline: "auto"`,
+preflight checks the `origin/HEAD` target, then `main`, then `master`. A literal policy
+value selects that branch. An unresolved mainline warns but does not refuse preflight;
+landing then commits and pushes the feature branch without promotion. A repository
+`.claude/release-profile.yml` whose `git.integration` differs from the resolved mainline
+also warns without refusing.
 
 **No policy.** A missing `policy` field (the warning names the reason) means the machine
 profile has not been applied. `main` and `master` are still guarded, so `branchAllowed`
@@ -153,11 +159,10 @@ Flags:
   carried work this run never scoped; say so when you report. A denylisted file staged that
   way stops the run outright rather than riding along, as `DENYLISTED_FILE_STAGED`.
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
-  through develop into main/master. Omit it when the user asked for commit-only ("commit
+  by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
+  mainline, and pushing mainline. Omit it when the user asked for commit-only ("commit
   only", "don't merge"), when `policy.afterCommit` is `pull-request`, or when there is no
   policy.
-- `--promote-to develop`: for PR-flow branches, so promotion stops at develop and
-  main/master stays untouched. Main/master then moves only from develop.
 - `--no-push`: only when the user asks for a local commit.
 
 ## Outcomes
@@ -174,14 +179,17 @@ finding fixed. Expand only on failures.
 | `HOOK_FAILED` | 21 | A commit hook rejected the commit; its stderr is in `warnings`. Fix the cause, then re-run |
 | `DENYLISTED_FILE_STAGED` | 25 | The index would add a file the denylist names (`.env*`, `*.log`, `node_modules/`, `dist/`, `__pycache__/`); `files` lists them and nothing was committed. Unstage each one (`git restore --staged <file>`) and re-run, or put it to the user when it genuinely belongs in the commit |
 | `PUSH_FAILED` | 22 | The commit exists, the push did not land. Recover below |
-| `PROMOTE_CONFLICT` | 23 | The commit exists, the conflicted merge was aborted, the tree is clean, `conflicts` names the files. Resolve below |
+| `PROMOTE_CONFLICT` | 23 | The commit exists. A conflicted feature rebase was aborted and `conflicts` names the files, or an empty list means mainline diverged from origin. Resolve below |
 | `PROMOTE_FAILED` | 24 | The commit exists; promotion stopped for a non-conflict reason named in `warnings`, and `promoted` says which branches did update. Recover below |
+| `MAINLINE_AHEAD` | 26 | Local mainline has commits absent from origin. `localOnlyCommits` lists their SHAs. Push or drop them by hand, then re-run; the skill never publishes them implicitly |
+| `POLICY_INVALID` | 27 | The applied profile uses unsupported commit policy vocabulary. Update the profile file named in `errors`, then re-run preflight |
 | `NOT_A_REPO` | 10 | Stop and relay |
 | `DETACHED_HEAD` | 11 | Stop and relay |
 | `OPERATION_IN_PROGRESS` | 12 | A merge, rebase, or cherry-pick is in flight (`operation`). Stop and relay |
 
-With `--promote` the feature-branch push is deferred into promotion's single atomic push,
-so `pushed` can be false on a promote failure even though the commit exists.
+With `--promote` the feature-branch push is deferred until promotion determines whether
+mainline absorbed it, so `pushed` can be false on a promote failure even though the commit
+exists.
 
 Promoting to mainline does not push the feature branch at all: it fast-forwards into
 mainline, so pushing it too would only leave a dead remote branch. `pushed: false` on a
@@ -189,25 +197,26 @@ mainline, so pushing it too would only leave a dead remote branch. `pushed: fals
 merged remote branch named `glissa/*` is deleted once mainline carries it, listed in
 `deletedRemoteBranches` (a refused deletion is a warning, never an outcome change), and a
 `PROMOTE_FAILED` mainline run pushes the feature branch on its own so the work is not
-stranded locally. `--promote-to develop` keeps pushing the feature branch, since nothing
-has absorbed it yet.
+stranded locally. A missing mainline also pushes the feature branch and reports the skip
+in `warnings`.
 
 ## Conflict resolution
 
-`PROMOTE_CONFLICT` is yours to resolve; do not dead-end on it. The merge is already
-aborted, so the tree is clean.
+`PROMOTE_CONFLICT` with files in `conflicts` is yours to resolve; do not dead-end on it.
+The rebase is already aborted, so the tree is clean.
 
-1. Note the current branch, check out the destination branch from the warning ("promoting
-   `<src>` into `<dst>`"), and merge the source into it.
+1. On the feature branch, fetch origin and rebase onto `policy.resolved.mainline`.
 2. Resolve each conflicted file on its merits: read both sides, keep both intents where
    they are independent, and pick the semantically correct result where they collide. Never
    resolve by blanket `--ours`/`--theirs`, and never drop changes you cannot account for.
-3. Stage the resolutions and complete the merge commit.
-4. Re-review the merge result on the branch you resolved it on, targeting the merge commit
-   itself (`BASE_SHA` is its first parent, `HEAD_SHA` is the merge). Promotion would
-   otherwise carry an unreviewed merge into mainline.
-5. Return to the branch you started on and re-run `land.ts` with the same flags so it
-   finishes the remaining hops and the push. `NOTHING_TO_COMMIT` there is expected.
+3. Stage the resolutions and continue the rebase.
+4. Re-review the rewritten feature range before it reaches mainline.
+5. Re-run `land.ts` with the same flags so it finishes the fast-forward and push.
+   `NOTHING_TO_COMMIT` there is expected.
+
+An empty `conflicts` list means local mainline diverged from origin. Stop and put the
+listed branch relationship to the carbon unit; the skill never merges, resets, rebases,
+or force-pushes a diverged mainline.
 
 Stop and report instead when the same hop conflicts again after two attempts, a conflict
 involves changes you cannot attribute, or resolving would mean discarding one side
@@ -220,10 +229,11 @@ root cause. Fix it, then re-run `land.ts` (keeping `--promote` when it was passe
 `NOTHING_TO_COMMIT` outcome on the re-run is expected. These git commands are sanctioned
 only to unblock the run.
 
-- Push rejected (non-fast-forward, "stale info", "fetch first"): the remote branch moved.
-  Fetch, merge `origin/<branch>` into the local branch, push it, then re-run. This is the
-  carve-out: same branch, remote copy, already reviewed. A conflict you resolve by hand is
-  not covered, so re-review that merge commit before pushing.
+- Mainline push rejected (non-fast-forward, "stale info", "fetch first"): the remote moved
+  after preflight. The feature branch safety push preserves the work. Resolve local
+  mainline against origin by hand without force, then re-run from the feature branch.
+- Feature push rejected: fetch and merge `origin/<branch>` into the same local feature
+  branch, push it, then re-run. A conflict resolved by hand requires re-review first.
 - A destination branch checked out in a dirty worktree: if the uncommitted changes are this
   session's, land them by running this whole workflow in that worktree, review loop
   included. Never commit them by hand to clear the way. Changes you cannot attribute are a
@@ -238,15 +248,13 @@ changes you cannot attribute.
 
 Read `policy.afterCommit`:
 
-- `promote`: promotion already ran inside `land.ts`. Every change goes through develop, and
-  main/master only ever receives merges from develop. Never merge branches yourself (sole
-  exception: redoing a conflicted merge above), and never merge anything other than develop
-  into main/master, even when asked to "just merge it quickly"; re-run `land.ts` instead.
-  A clean tree with `--promote` still promotes, which is how develop/main drift gets
-  repaired.
+- `promote`: promotion already ran inside `land.ts`. Mainline receives the rebased feature
+  branch by fast-forward. Never merge branches
+  yourself (sole exception: the recovery above), even when asked to "just merge it
+  quickly"; re-run `land.ts` instead. A clean tree with `--promote` still promotes an
+  unlanded feature tip.
 - `pull-request`: never merge the feature branch anywhere. Offer to open a pull request with
   `/org-pull-request`, which applies the org's PR standards. If the user declines, stop
-  after reporting. The chain is fixed: feature branch into develop by PR, develop into
-  master by the release flow, never skipping develop. Reviewing a work pull request belongs
-  to `/org-pr-review`; `/pr-review` is only a supplemental audit trail, and only when asked
-  for by name.
+  after reporting. The pull request targets the repository's mainline. Reviewing a work
+  pull request belongs to `/org-pr-review`; `/pr-review` is only a supplemental audit trail,
+  and only when asked for by name.

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   cleanup,
   commitFile,
+  makeBareOrigin,
   makePolicyRoot,
   makeRepo,
   preflight,
@@ -112,7 +113,8 @@ test("a branch the applied profile forbids reports branchAllowed false", () => {
   const repo = makeRepo();
   const policyRoot = makePolicyRoot("personal", {
     profile: "personal",
-    commitBranches: { forbid: ["main", "master"], onForbidden: "switch-to-develop" },
+    commitBranches: { forbid: ["main", "master"], onForbidden: "create-feature-branch" },
+    mainline: "auto",
     afterCommit: "promote",
   });
   try {
@@ -125,9 +127,120 @@ test("a branch the applied profile forbids reports branchAllowed false", () => {
     assert.equal(onMain.result.profile, "personal");
     assert.equal("warnings" in onMain.result, false);
 
-    runGit(repo, ["checkout", "-q", "-b", "develop"]);
-    const onDevelop = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
-    assert.equal(onDevelop.result.branchAllowed, true);
+    runGit(repo, ["checkout", "-q", "-b", "feature"]);
+    const onFeature = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+    assert.equal(onFeature.result.branchAllowed, true);
+    assert.deepEqual((onFeature.result.policy as Record<string, unknown>).resolved, {
+      mainline: "main",
+    });
+  } finally {
+    cleanup(repo, policyRoot);
+  }
+});
+
+test("a retired forbidden-branch remedy refuses preflight and names the profile file", () => {
+  const repo = makeRepo();
+  const policyRoot = makePolicyRoot("legacy", {
+    profile: "legacy",
+    commitBranches: { forbid: ["main"], onForbidden: "switch-to-develop" },
+    mainline: "auto",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    const { code, result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+    assert.equal(result.outcome, "POLICY_INVALID");
+    assert.equal(code, 27);
+    assert.match(
+      (result.errors as string[]).join("\n"),
+      /profiles\/legacy\/commit-policy\.json/,
+    );
+  } finally {
+    cleanup(repo, policyRoot);
+  }
+});
+
+test("a literal policy mainline resolves into preflight policy output", () => {
+  const repo = makeRepo();
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "main",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["checkout", "-q", "-b", "feature"]);
+    const { result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+    assert.deepEqual((result.policy as Record<string, unknown>).resolved, { mainline: "main" });
+  } finally {
+    cleanup(repo, policyRoot);
+  }
+});
+
+test("auto mainline prefers origin HEAD over a different local main branch", () => {
+  const origin = makeBareOrigin();
+  const repo = makeRepo();
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "auto",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["remote", "add", "origin", origin]);
+    runGit(repo, ["push", "-q", "origin", "main"]);
+    runGit(repo, ["checkout", "-q", "-b", "trunk"]);
+    runGit(repo, ["push", "-q", "origin", "trunk"]);
+    runGit(origin, ["symbolic-ref", "HEAD", "refs/heads/trunk"]);
+    runGit(repo, ["remote", "set-head", "origin", "-a"]);
+    runGit(repo, ["checkout", "-q", "-b", "feature"]);
+    const { result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+    assert.deepEqual((result.policy as Record<string, unknown>).resolved, { mainline: "trunk" });
+  } finally {
+    cleanup(origin, repo, policyRoot);
+  }
+});
+
+test("a mismatched release integration warns without refusing preflight", () => {
+  const repo = makeRepo();
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "main",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    writeFile(repo, ".claude/release-profile.yml", "git:\n  integration: staging\n");
+    const { result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+    assert.equal(result.outcome, "READY");
+    assert.match((result.warnings as string[]).join("\n"), /staging.*main/);
+  } finally {
+    cleanup(repo, policyRoot);
+  }
+});
+
+test("an unresolved policy mainline stays READY with a warning", () => {
+  const repo = makeRepo();
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "missing-trunk",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    const { result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+    assert.equal(result.outcome, "READY");
+    assert.deepEqual((result.policy as Record<string, unknown>).resolved, { mainline: null });
+    assert.match((result.warnings as string[]).join("\n"), /promotion will be skipped/);
   } finally {
     cleanup(repo, policyRoot);
   }

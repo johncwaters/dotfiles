@@ -3,10 +3,10 @@
   "commitBranches": {
     "forbid": [
       "main",
-      "master",
-      "develop"
+      "master"
     ],
     "onForbidden": "create-feature-branch"
   },
+  "mainline": "auto",
   "afterCommit": "pull-request"
 }

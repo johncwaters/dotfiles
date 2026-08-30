@@ -6,11 +6,13 @@ import {
   detachedHead,
   EXIT_CODES,
   hookFailed,
+  mainlineAhead,
   messageInvalid,
   messageValid,
   notARepo,
   nothingToCommit,
   operationInProgress,
+  policyInvalid,
   promoteConflict,
   promoteFailed,
   pushFailed,
@@ -36,13 +38,15 @@ test("exit codes keep the numbering the recovery procedures branch on", () => {
     PUSH_FAILED: 22,
     PROMOTE_CONFLICT: 23,
     PROMOTE_FAILED: 24,
+    MAINLINE_AHEAD: 26,
+    POLICY_INVALID: 27,
   });
 });
 
 test("every outcome constructor round-trips through JSON", () => {
   const results: Result[] = [
-    ready({ branch: "develop", branchAllowed: true, changed: ["a.ts"], untracked: [] }),
-    committed({ commit: "abc123", pushed: true, promoted: ["develop", "master"] }),
+    ready({ branch: "feature", branchAllowed: true, changed: ["a.ts"], untracked: [] }),
+    committed({ commit: "abc123", pushed: true, promoted: ["main"] }),
     notARepo({}),
     detachedHead({}),
     operationInProgress({ operation: "MERGE_HEAD" }),
@@ -52,8 +56,16 @@ test("every outcome constructor round-trips through JSON", () => {
     hookFailed({ warnings: ["pre-commit hook failed"] }),
     denylistedFileStaged({ files: [".env"] }),
     pushFailed({ commit: "abc123", pushed: false, promoted: [] }),
-    promoteConflict({ commit: "abc123", pushed: true, promoted: ["develop"], conflicts: ["a.ts"] }),
-    promoteFailed({ commit: "abc123", pushed: true, promoted: ["develop"] }),
+    promoteConflict({ commit: "abc123", pushed: false, promoted: [], conflicts: ["a.ts"] }),
+    promoteFailed({ commit: "abc123", pushed: true, promoted: [] }),
+    mainlineAhead({
+      commit: "abc123",
+      pushed: false,
+      promoted: [],
+      mainline: "main",
+      localOnlyCommits: ["def456"],
+    }),
+    policyInvalid({ errors: ["bad policy"] }),
   ];
 
   for (const result of results) {

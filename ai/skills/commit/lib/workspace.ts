@@ -36,11 +36,33 @@ export function computeScope(git: Git, paths: string[]): Scope {
   return { changed, untracked };
 }
 
-export function isDirtyStatusLineInScope(line: string): boolean {
-  return !isDenylisted(line.slice(3).trim());
+function originHeadBranch(git: Git): string | null {
+  const originHead = git.symbolicRef("refs/remotes/origin/HEAD");
+  const prefix = "refs/remotes/origin/";
+  if (!originHead?.startsWith(prefix)) {
+    return null;
+  }
+  if (!git.verifyRef(originHead)) {
+    return null;
+  }
+  return originHead.slice(prefix.length);
 }
 
-export function resolveMainline(git: Git): string | null {
+export function resolveMainline(git: Git, configuredMainline: unknown = "auto"): string | null {
+  if (typeof configuredMainline === "string" && configuredMainline !== "auto") {
+    if (
+      git.verifyRef(`refs/heads/${configuredMainline}`) ||
+      git.verifyRef(`refs/remotes/origin/${configuredMainline}`)
+    ) {
+      return configuredMainline;
+    }
+    return null;
+  }
+
+  const remoteDefault = originHeadBranch(git);
+  if (remoteDefault !== null) {
+    return remoteDefault;
+  }
   for (const name of MAINLINE_CANDIDATES) {
     if (git.verifyRef(`refs/heads/${name}`) || git.verifyRef(`refs/remotes/origin/${name}`)) {
       return name;

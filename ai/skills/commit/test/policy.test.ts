@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { forbiddenBranches, isBranchAllowed, readCommitPolicy } from "../lib/policy.ts";
+import {
+  forbiddenBranches,
+  isBranchAllowed,
+  policyValidationErrors,
+  readCommitPolicy,
+} from "../lib/policy.ts";
 import { cleanup, makePolicyRoot } from "./helpers.ts";
 
 const PERSONAL_POLICY = {
   profile: "personal",
-  commitBranches: { forbid: ["main", "master"], onForbidden: "switch-to-develop" },
+  commitBranches: { forbid: ["main", "master"], onForbidden: "create-feature-branch" },
+  mainline: "auto",
   afterCommit: "promote",
 };
 
@@ -26,20 +32,23 @@ test("an applied profile yields its policy", () => {
 test("a forbidden branch is not allowed and any other branch is", () => {
   assert.equal(isBranchAllowed("master", PERSONAL_POLICY), false);
   assert.equal(isBranchAllowed("main", PERSONAL_POLICY), false);
-  assert.equal(isBranchAllowed("develop", PERSONAL_POLICY), true);
   assert.equal(isBranchAllowed("feature/x", PERSONAL_POLICY), true);
 });
 
-test("a work policy forbids develop as well", () => {
-  const workPolicy = { commitBranches: { forbid: ["main", "master", "develop"] } };
-  assert.equal(isBranchAllowed("develop", workPolicy), false);
-  assert.equal(isBranchAllowed("feature/x", workPolicy), true);
+test("only create-feature-branch is an accepted forbidden-branch remedy", () => {
+  assert.deepEqual(policyValidationErrors(PERSONAL_POLICY, "/profiles/personal/commit-policy.json"), []);
+  const errors = policyValidationErrors(
+    { commitBranches: { onForbidden: "retired-remedy" } },
+    "/profiles/legacy/commit-policy.json",
+  );
+  assert.match(errors[0] ?? "", /\/profiles\/legacy\/commit-policy\.json/);
+  assert.match(errors[0] ?? "", /create-feature-branch/);
 });
 
 test("no policy still guards mainline and still allows ordinary branches", () => {
   assert.deepEqual(forbiddenBranches(undefined), ["main", "master"]);
   assert.equal(isBranchAllowed("master", undefined), false);
-  assert.equal(isBranchAllowed("develop", undefined), true);
+  assert.equal(isBranchAllowed("feature/x", undefined), true);
 });
 
 test("a policy whose forbid list is not a list falls back to guarding mainline", () => {
@@ -98,5 +107,7 @@ test("the profiles shipped in this repo all parse and name a forbid list", () =>
       ["promote", "pull-request"].includes(policy.afterCommit as string),
       `${profile} needs a known afterCommit`,
     );
+    assert.ok(["auto", "main", "master"].includes(policy.mainline as string));
+    assert.deepEqual(policyValidationErrors(policy, policyPath), []);
   }
 });

@@ -65,20 +65,20 @@ export class Git {
     return this.run(["rev-parse", "HEAD"]).stdout.trim();
   }
 
+  symbolicRef(ref: string): string | null {
+    const proc = this.run(["symbolic-ref", "-q", ref]);
+    if (proc.code !== 0) {
+      return null;
+    }
+    return proc.stdout.trim();
+  }
+
+  revList(range: string): string[] {
+    return nonEmptyLines(this.run(["rev-list", "--reverse", range]).stdout);
+  }
+
   fetch(remote: string, branch: string): GitResult {
     return this.run(["fetch", remote, branch]);
-  }
-
-  fetchMany(remote: string, branches: string[]): GitResult {
-    return this.run(["fetch", remote, ...branches]);
-  }
-
-  fetchUpdateLocalRef(remote: string, branch: string): GitResult {
-    return this.run(["fetch", remote, `${branch}:${branch}`]);
-  }
-
-  fetchLocalFromTracking(branch: string): GitResult {
-    return this.fetchLocalFf(`refs/remotes/origin/${branch}`, `refs/heads/${branch}`);
   }
 
   fetchLocalFf(src: string, dst: string): GitResult {
@@ -89,20 +89,12 @@ export class Git {
     return this.run(["worktree", "list", "--porcelain"]);
   }
 
-  checkout(ref: string): GitResult {
-    return this.run(["checkout", ref]);
+  rebase(ref: string): GitResult {
+    return this.run(["rebase", ref]);
   }
 
-  createBranchAt(name: string, startPoint: string): GitResult {
-    return this.run(["branch", name, startPoint]);
-  }
-
-  mergeNoEdit(ref: string): GitResult {
-    return this.run(["merge", "--no-edit", ref]);
-  }
-
-  mergeAbort(): GitResult {
-    return this.run(["merge", "--abort"]);
+  rebaseAbort(): GitResult {
+    return this.run(["rebase", "--abort"]);
   }
 
   mergeFfOnlyIn(worktreePath: string, ref: string): GitResult {
@@ -164,8 +156,8 @@ export class Git {
     return this.run(["merge-base", "--is-ancestor", ancestorRef, descendantRef]).code === 0;
   }
 
-  pushAtomic(remote: string, refspecs: string[], setUpstream: boolean): PushResult {
-    const args = ["push", "--atomic", "--porcelain"];
+  push(remote: string, refspecs: string[], setUpstream: boolean): PushResult {
+    const args = ["push", "--porcelain"];
     if (setUpstream) {
       args.push("-u");
     }

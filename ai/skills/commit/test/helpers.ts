@@ -80,12 +80,16 @@ export function runSkillScript(
   message = "",
   env: Record<string, string> = {},
 ): RunResult {
+  const childEnv = { ...process.env, ...env };
+  if (!("CLAUDE_COMMIT_POLICY_ROOT" in env)) {
+    delete childEnv.CLAUDE_COMMIT_POLICY_ROOT;
+  }
   const proc = spawnSync("node", [path.join(SKILL_DIR, script), ...args], {
     cwd: repo,
     input: message,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
-    env: { ...process.env, ...env },
+    env: childEnv,
   });
   const stdout = proc.stdout ?? "";
   const stderr = proc.stderr ?? "";

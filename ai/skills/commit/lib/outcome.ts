@@ -11,6 +11,8 @@ export const EXIT_CODES = {
   PUSH_FAILED: 22,
   PROMOTE_CONFLICT: 23,
   PROMOTE_FAILED: 24,
+  MAINLINE_AHEAD: 26,
+  POLICY_INVALID: 27,
 } as const;
 
 export type OutcomeName = keyof typeof EXIT_CODES;
@@ -156,6 +158,18 @@ export const promoteFailed = defineOutcome("PROMOTE_FAILED", {
   commit: optional("string"),
   pushed: required("boolean"),
   promoted: required("stringList"),
+});
+
+export const mainlineAhead = defineOutcome("MAINLINE_AHEAD", {
+  commit: optional("string"),
+  pushed: required("boolean"),
+  promoted: required("stringList"),
+  mainline: required("string"),
+  localOnlyCommits: required("stringList"),
+});
+
+export const policyInvalid = defineOutcome("POLICY_INVALID", {
+  errors: required("stringList"),
 });
 
 export function emit(result: Result): never {

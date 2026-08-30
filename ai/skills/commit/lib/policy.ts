@@ -10,7 +10,12 @@ const PROFILE_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
 
 export type CommitPolicy = Record<string, unknown>;
 
-export type PolicyLookup = { profile?: string; policy?: CommitPolicy; warning?: string };
+export type PolicyLookup = {
+  profile?: string;
+  policy?: CommitPolicy;
+  policyPath?: string;
+  warning?: string;
+};
 
 export function claudeRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -33,14 +38,39 @@ export function readCommitPolicy(root: string = policyRoot()): PolicyLookup {
 
   const policyPath = path.join(root, "profiles", profile, "commit-policy.json");
   if (!fs.existsSync(policyPath)) {
-    return { profile, warning: `no commit policy at ${policyPath}` };
+    return { profile, policyPath, warning: `no commit policy at ${policyPath}` };
   }
 
   try {
-    return { profile, policy: JSON.parse(fs.readFileSync(policyPath, "utf8")) as CommitPolicy };
+    return {
+      profile,
+      policyPath,
+      policy: JSON.parse(fs.readFileSync(policyPath, "utf8")) as CommitPolicy,
+    };
   } catch (error) {
-    return { profile, warning: `could not parse ${policyPath}: ${String(error)}` };
+    return { profile, policyPath, warning: `could not parse ${policyPath}: ${String(error)}` };
   }
+}
+
+export function configuredMainline(policy: CommitPolicy | undefined): unknown {
+  return policy?.mainline ?? "auto";
+}
+
+export function policyValidationErrors(
+  policy: CommitPolicy | undefined,
+  policyPath: string | undefined,
+): string[] {
+  if (!policy) {
+    return [];
+  }
+  const commitBranches = policy.commitBranches as { onForbidden?: unknown } | undefined;
+  if (commitBranches?.onForbidden === "create-feature-branch") {
+    return [];
+  }
+  const source = policyPath ?? "commit-policy.json";
+  return [
+    `${source} commitBranches.onForbidden must be "create-feature-branch", got ${JSON.stringify(commitBranches?.onForbidden)}`,
+  ];
 }
 
 export function forbiddenBranches(policy: CommitPolicy | undefined): string[] {

@@ -5,7 +5,8 @@
       "main",
       "master"
     ],
-    "onForbidden": "switch-to-develop"
+    "onForbidden": "create-feature-branch"
   },
+  "mainline": "auto",
   "afterCommit": "promote"
 }
