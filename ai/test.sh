@@ -71,8 +71,8 @@ check "settings.json is not world readable" bash -c '[[ "$(stat -c %a "$1")" == 
 countSettingsCommand() {
   grep -c -- "$1" "$settingsPath"
 }
-check "the base SessionStart hook reaches the profile" test "$(countSettingsCommand inject-routing.mjs)" -eq 1
-check "the profile SessionStart hook is added, not replaced" test "$(countSettingsCommand caveman-ultra.mjs)" -eq 1
+check "the routing SessionStart hook reaches the profile" test "$(countSettingsCommand inject-routing.mjs)" -eq 1
+check "the caveman ultra hook renders from the base" test "$(countSettingsCommand caveman-ultra.mjs)" -eq 1
 check "the finding scope hook reaches the profile" test "$(countSettingsCommand check-finding-scope.mjs)" -eq 1
 check "the retired sync hook is gone" test "$(countSettingsCommand sync-agents-md.mjs)" -eq 0
 
@@ -183,6 +183,20 @@ renderIntoSandbox || rerunAfterDirectorySidecarStatus=$?
 check "a directory at the sidecar path does not wedge later runs" \
   test "$rerunAfterDirectorySidecarStatus" -eq 0
 check "the destination still holds what the renderer produced" grep -q 'second' "$renderDestination"
+
+# A profile overlay's hooks join the base's for the same event; replacing them would
+# silently drop every hook the base ships, which is how the base earns its hooks.
+hookBase="$renderSandbox/hooks-base.json"
+hookOverlay="$renderSandbox/hooks-overlay.json"
+hookDestination="$renderSandbox/hooks-settings.json"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"node base-only-hook.mjs"}]}]}}\n' \
+  > "$hookBase"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"node overlay-only-hook.mjs"}]}]}}\n' \
+  > "$hookOverlay"
+renderJsonTemplate "hook merge probe" "$repoRoot/ai/render-settings.mjs" \
+  "$hookBase" "$hookOverlay" "$hookDestination" > /dev/null
+check "an overlay hook renders alongside the base hook it shares an event with" \
+  bash -c 'grep -q "base-only-hook.mjs" "$1" && grep -q "overlay-only-hook.mjs" "$1"' _ "$hookDestination"
 
 check "hook behavior tests pass" node --test "$topicDir/hooks/hooks.test.mjs"
 

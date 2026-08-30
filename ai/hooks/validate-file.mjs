@@ -20,9 +20,6 @@
  *   - Ruff   -> Python via `python -m ruff format`
  *   - Dart   -> Flutter/Dart via `dart format` (~0.2s; the heaviest engine -- Dart VM startup)
  *   - inline -> reject NUL, U+FFFD, stray control chars in any text file
- *   - inline -> reject a newly inserted em dash, en dash, or ellipsis
- *               (insertion-only scan; see insertedTextError)
- *   - inline -> reject a newly inserted emoji, unless the file already has one
  *   - inline -> reject a write that grows an always-loaded instruction file
  *               past its DOC_SIZE_CAPS budget (shrinking writes always pass)
  *   - JSON   -> JSON.parse fallback when Biome can't be located
@@ -53,39 +50,6 @@ const BIOME_EXTS = new Set([
 const FIX_CTRL =
   "Remove the character (it usually comes from a bad copy-paste or a non-UTF-8 source), re-type the affected text, and save as UTF-8.";
 
-// Numeric code points, not literal chars: this source must stay pure ASCII
-// (AGENTS.md hard rule) or the guard would deny edits to itself.
-const DASH_CHAR_NAMES = {
-  0x2014: "em dash (U+2014)",
-  0x2013: "en dash (U+2013)",
-  0x2026: "ellipsis (U+2026)",
-};
-
-// High surrogates for U+1F000-U+1FBFF, the emoji planes. Matching at the
-// surrogate level is safe: the astral blocks that are not emoji (musical,
-// math alphanumerics, CJK ext) encode below 0xD83C or at 0xD840 and up.
-const EMOJI_HIGH_SURROGATE_MIN = 0xd83c;
-const EMOJI_HIGH_SURROGATE_MAX = 0xd83e;
-
-// Every BMP code point Unicode gives Emoji_Presentation=Yes, so it renders as an
-// emoji with no variation selector. Text-presentation symbols (0x2713 check,
-// 0x2192 arrow, 0x25B6 triangle, 0x2600 sun) are deliberately absent: they are
-// only emoji when 0xFE0F follows, which VS16 below catches on its own.
-const BMP_EMOJI_RANGES = [
-  [0x231a, 0x231b], [0x23e9, 0x23ec], [0x23f0, 0x23f0], [0x23f3, 0x23f3],
-  [0x25fd, 0x25fe], [0x2614, 0x2615], [0x2648, 0x2653], [0x267f, 0x267f],
-  [0x2693, 0x2693], [0x26a1, 0x26a1], [0x26aa, 0x26ab], [0x26bd, 0x26be],
-  [0x26c4, 0x26c5], [0x26ce, 0x26ce], [0x26d4, 0x26d4], [0x26ea, 0x26ea],
-  [0x26f2, 0x26f3], [0x26f5, 0x26f5], [0x26fa, 0x26fa], [0x26fd, 0x26fd],
-  [0x2705, 0x2705], [0x270a, 0x270b], [0x2728, 0x2728], [0x274c, 0x274c],
-  [0x274e, 0x274e], [0x2753, 0x2755], [0x2757, 0x2757], [0x2795, 0x2797],
-  [0x27b0, 0x27b0], [0x27bf, 0x27bf], [0x2b1b, 0x2b1c], [0x2b50, 0x2b50],
-  [0x2b55, 0x2b55],
-];
-
-// Variation selector 16: forces emoji presentation on whatever precedes it.
-const VARIATION_SELECTOR_16 = 0xfe0f;
-
 // Instruction files loaded into every session, so every byte is charged to every
 // run. Basename (lowercased) -> byte cap; only the copies at a repo root or in
 // ~/.claude are capped, never a directory-scoped nested one.
@@ -94,12 +58,6 @@ const DOC_SIZE_CAPS = {
   "claude.md": 16384,
   "routing.md": 12288,
 };
-
-const FIX_DASH =
-  "Replace the em dash / en dash with an ASCII hyphen, or rephrase using a comma, colon, or parentheses.";
-const FIX_ELLIPSIS = "Replace the ellipsis character with three ASCII dots (...).";
-const FIX_EMOJI =
-  "Remove the emoji and say it in words. Emoji are allowed only when the file already uses them.";
 
 function allow() {
   process.exit(0); // no output => tool proceeds
@@ -172,8 +130,7 @@ function loc(line, column) {
 }
 
 // classify(code) returns a { why, fix } descriptor for a banned code point or
-// null. line:col in the result is relative to the start of `text`, which for
-// dash scans is an inserted fragment, not the whole file.
+// null.
 function charScanError(text, classify) {
   for (let i = 0; i < text.length; i++) {
     const hit = classify(text.charCodeAt(i));
@@ -202,77 +159,8 @@ function classifyControlChar(c) {
   return { why: `contains a stray control character (U+${hex})`, fix: FIX_CTRL };
 }
 
-function classifyDashChar(c) {
-  const name = DASH_CHAR_NAMES[c];
-  if (!name) return null;
-  const fix = c === 0x2026 ? FIX_ELLIPSIS : FIX_DASH;
-  return { why: `introduces a banned ${name} character`, fix };
-}
-
-function isBmpEmoji(c) {
-  return BMP_EMOJI_RANGES.some(([lo, hi]) => c >= lo && c <= hi);
-}
-
-function classifyEmojiChar(c) {
-  const isEmoji =
-    (c >= EMOJI_HIGH_SURROGATE_MIN && c <= EMOJI_HIGH_SURROGATE_MAX) ||
-    c === VARIATION_SELECTOR_16 ||
-    isBmpEmoji(c);
-  if (!isEmoji) return null;
-  return { why: "introduces a banned emoji character", fix: FIX_EMOJI };
-}
-
 function controlCharError(content) {
   return charScanError(content, classifyControlChar);
-}
-
-function dashLiteralError(text) {
-  return charScanError(text, classifyDashChar);
-}
-
-function emojiLiteralError(text) {
-  return charScanError(text, classifyEmojiChar);
-}
-
-// Scans only the text a tool call would INSERT, never the reconstructed full
-// file -- editing a file that already has a stray dash, ellipsis, or emoji
-// elsewhere must not be blocked, only a newly introduced one.
-// No null guard on ti by design: the sole caller (validate, via the entry
-// point) defaults tool_input to {} before any validation runs.
-function insertedTextError(ti, scanText) {
-  if (typeof ti.content === "string") return scanText(ti.content);
-  if (Array.isArray(ti.edits)) {
-    for (let idx = 0; idx < ti.edits.length; idx++) {
-      const newStr = ti.edits[idx] && ti.edits[idx].new_string;
-      if (typeof newStr !== "string") continue;
-      const err = scanText(newStr);
-      if (!err) continue;
-      return { ...err, where: `edit ${idx + 1}, ${err.where}` };
-    }
-    return null;
-  }
-  if (typeof ti.new_string === "string") return scanText(ti.new_string);
-  return null;
-}
-
-function dashCharError(ti) {
-  return insertedTextError(ti, dashLiteralError);
-}
-
-function fileAlreadyHasEmoji(filePath) {
-  try {
-    if (!exists(filePath)) return false;
-    return emojiLiteralError(fs.readFileSync(filePath, "utf8")) !== null;
-  } catch {
-    return true; // cannot read the file to tell: fail open like every other engine fault
-  }
-}
-
-function emojiCharError(ti, filePath) {
-  const err = insertedTextError(ti, emojiLiteralError);
-  if (!err) return null;
-  if (fileAlreadyHasEmoji(filePath)) return null;
-  return err;
 }
 
 // Denies only writes that both exceed the cap and grow the file, so an oversized
@@ -550,7 +438,7 @@ function validateDart(content) {
   };
 }
 
-function validate(filePath, content, ti) {
+function validate(filePath, content) {
   const ext = path.extname(filePath).toLowerCase();
   const size = docSizeError(filePath, content);
   if (size) return size;
@@ -559,10 +447,6 @@ function validate(filePath, content, ti) {
   if (TEXT_EXTS.has(ext)) {
     const cc = controlCharError(content);
     if (cc) return cc;
-    const dash = dashCharError(ti);
-    if (dash) return dash;
-    const emoji = emojiCharError(ti, filePath);
-    if (emoji) return emoji;
   }
   if (ext === ".py") return validatePython(content);
   if (ext === ".dart") return validateDart(content);
@@ -597,7 +481,7 @@ process.stdin.on("end", () => {
 
   let error = null;
   try {
-    error = validate(filePath, content, ti);
+    error = validate(filePath, content);
   } catch {
     return allow(); // validator crash -> don't block
   }

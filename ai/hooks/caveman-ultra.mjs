@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+/**
+ * SessionStart hook that turns on caveman ultra mode.
+ *
+ * Cannot block anything: it prints the ultra mode instruction to stdout and
+ * writes "ultra" to ~/.claude/.caveman-active, the flag the caveman plugin
+ * reads. Fails open on every error (never throws, never exits non-zero).
+ */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -33,6 +40,26 @@ function writeUltraFlag() {
 // The caveman plugin's own SessionStart hook writes "full" to the flag file;
 // hooks race, so wait until that write is observed (or the deadline passes)
 // before overwriting with "ultra" so ultra wins regardless of hook order.
+// Profiles that never enable the plugin have no race to lose, and waiting the
+// full deadline there would stall every session start for nothing. The skip
+// only fires on a settings.json this hook both read and parsed: an unreadable
+// or malformed settings file falls through to the poll, so not knowing the
+// answer costs the deadline rather than the race protection.
+function cavemanPluginKnownDisabled() {
+  let settings;
+  try {
+    const settingsPath = join(homedir(), ".claude", "settings.json");
+    settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+  } catch {
+    return false;
+  }
+  return settings?.enabledPlugins?.["caveman@caveman"] !== true;
+}
+
+if (cavemanPluginKnownDisabled()) {
+  writeUltraFlag();
+}
+
 let elapsedMs = 0;
 const poll = setInterval(() => {
   elapsedMs += pollIntervalMs;

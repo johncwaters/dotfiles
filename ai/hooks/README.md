@@ -54,8 +54,6 @@ the bytes are already on disk and cannot undo them.
 | `.py` | `python -m ruff format` | Syntax/parse errors only — lint is ignored. |
 | `.dart` | `dart format` (Flutter/Dart SDK) | Syntax/parse errors only. Heaviest engine (~0.2s, Dart VM startup). Fails open if no Dart/Flutter SDK is found. |
 | any text file | inline scan | Rejects NUL, U+FFFD, and stray control chars (tab/LF/FF/CR are fine). |
-| any text file | inline scan | Rejects a **newly introduced** em dash (U+2014), en dash (U+2013), or horizontal ellipsis (U+2026). Insertion-only scan (see `insertedTextError` in the source), so a file that already has one elsewhere stays editable. |
-| any text file | inline scan | Rejects a **newly introduced** emoji: the astral emoji planes, Unicode's BMP `Emoji_Presentation=Yes` set, and U+FE0F. Symbols that default to text presentation (check marks, arrows, triangles) pass unless U+FE0F follows. Insertion-only, and skipped entirely when the file on disk already has an emoji, matching the AGENTS.md carve-out. |
 | `AGENTS.md` `CLAUDE.md` `ROUTING.md` | inline size gate | Rejects a write that pushes an always-loaded instruction file past its `DOC_SIZE_CAPS` byte budget. Applies only at a repo root or in `~/.claude`, never to a nested directory-scoped copy. Only growth is denied: a write that shrinks the file always passes, so an oversized file can be edited back down. |
 
 `biome format` / `ruff format` are used as pure syntax gates: they exit non-zero
@@ -127,8 +125,7 @@ echo '{"tool_name":"Write","tool_input":{"file_path":"x.json","content":"{\"a\":
 - **Disable it:** remove the `hooks` block from `~/.claude/settings.json`.
 - **Add a file type to syntax-checking:** add the extension to `BIOME_EXTS`
   (if Biome supports it) — that's all.
-- **Add a file type to the control-char scan only:** add it to `TEXT_EXTS`
-  (this also gates the dash/ellipsis scan, since both share `TEXT_EXTS`).
+- **Add a file type to the control-char scan only:** add it to `TEXT_EXTS`.
 - **Change a deny message:** see `deny()` and the `validate*` functions.
 
 ## Known limitations

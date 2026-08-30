@@ -28,18 +28,6 @@
       }
     }
   },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node {{HOME}}/.claude/hooks/caveman-ultra.mjs"
-          }
-        ]
-      }
-    ]
-  },
   "spinnerTipsEnabled": false,
   "alwaysThinkingEnabled": true,
   "theme": "auto"

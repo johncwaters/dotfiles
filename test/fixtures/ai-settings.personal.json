@@ -25,17 +25,24 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Agent|Task)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/check-finding-scope.mjs"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "node /fixture/home/.claude/hooks/inject-routing.mjs"
-          }
-        ]
-      },
-      {
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "node /fixture/home/.claude/hooks/caveman-ultra.mjs"

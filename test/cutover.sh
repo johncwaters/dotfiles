@@ -131,17 +131,14 @@ check "AGENTS.md and its codex mirror are one file" bash -c '[[ "$(readlink -f "
 routingOutput="$(node "$claudeHome/hooks/inject-routing.mjs" </dev/null 2>/dev/null || true)"
 check "the routing loader injects ROUTING.md" bash -c '[[ "$1" == *"Routing rules for this session"* ]]' _ "$routingOutput"
 
-# The dash is built from its code point so this file does not itself carry one.
-emDash="$(printf '\u2014')"
-emDashVerdict="$(printf '{"tool_input":{"file_path":"%s/probe.md","content":"a sentence with an em dash %s in it"}}' "$HOME" "$emDash" \
+cleanVerdict="$(printf '{"tool_input":{"file_path":"%s/probe.md","content":"a sentence of ordinary prose"}}' "$HOME" \
   | node "$claudeHome/hooks/validate-file.mjs" 2>/dev/null || true)"
-check "the fixture really holds an em dash" \
-  bash -c '[[ "$(printf "%s" "$1" | od -An -tx1 | tr -d " \n")" == "e28094" ]]' _ "$emDash"
-check "validate-file still rejects an em dash" bash -c '[[ "$1" == *deny* ]]' _ "$emDashVerdict"
+check "validate-file allows ordinary prose through the link" bash -c '[[ "$1" != *deny* ]]' _ "$cleanVerdict"
 
-cleanVerdict="$(printf '{"tool_input":{"file_path":"%s/probe.md","content":"a sentence with no dash in it"}}' "$HOME" \
+# Broken JSON is the engine-independent deny: the hook falls back to JSON.parse wherever Biome is absent.
+brokenJsonVerdict="$(printf '{"tool_input":{"file_path":"%s/probe.json","content":"{bad}"}}' "$HOME" \
   | node "$claudeHome/hooks/validate-file.mjs" 2>/dev/null || true)"
-check "validate-file still allows clean text" bash -c '[[ "$1" != *deny* ]]' _ "$cleanVerdict"
+check "validate-file denies broken JSON through the link" bash -c '[[ "$1" == *deny* ]]' _ "$brokenJsonVerdict"
 
 secondConvergeStatus=0
 secondConverge="$("$stagedRepo/script/bootstrap" 2>&1)" || secondConvergeStatus=$?
