@@ -65,7 +65,7 @@ export function policyValidationErrors(
   }
   const commitBranches = policy.commitBranches as { onForbidden?: unknown } | undefined;
   const onForbidden = commitBranches?.onForbidden;
-  if (onForbidden === undefined || typeof onForbidden !== "string") {
+  if (onForbidden === undefined) {
     return [];
   }
   if (onForbidden === "create-feature-branch") {
@@ -86,6 +86,10 @@ export function forbiddenBranches(policy: CommitPolicy | undefined): string[] {
   return forbid.filter((entry): entry is string => typeof entry === "string");
 }
 
-export function isBranchAllowed(branch: string, policy: CommitPolicy | undefined): boolean {
-  return !forbiddenBranches(policy).includes(branch);
+export function isBranchAllowed(
+  branch: string,
+  policy: CommitPolicy | undefined,
+  mainline: string | null = null,
+): boolean {
+  return branch !== mainline && !forbiddenBranches(policy).includes(branch);
 }

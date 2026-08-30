@@ -32,11 +32,13 @@ It answers four things: the outcome (`READY` or a refusal), the current `branch`
 whether `branchAllowed` permits committing on it, the `changed` and `untracked` files that
 will be staged, and the machine's `policy`.
 
-**Branch guard.** `branchAllowed: false` means the profile forbids committing on this
-branch. `policy.commitBranches.onForbidden` permits only `create-feature-branch`: create
+**Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
+committing on this branch. `policy.commitBranches.onForbidden` permits only
+`create-feature-branch`: create
 a branch named for the work item, switch to it, and proceed. `land.ts` repeats this guard
 and returns `BRANCH_FORBIDDEN` before staging or committing if invoked directly on a
-forbidden branch. `POLICY_INVALID` means the profile still names an unsupported remedy;
+forbidden branch or resolved mainline. `POLICY_INVALID` means the profile still names an
+unsupported remedy;
 both entry points stop and name the profile file in `errors`. An absent `commitBranches`
 key uses the fallback `main` and `master` guard without invalidating the policy.
 

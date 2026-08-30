@@ -45,6 +45,17 @@ test("only create-feature-branch is an accepted forbidden-branch remedy", () => 
   assert.match(errors[0] ?? "", /create-feature-branch/);
 });
 
+test("a non-string onForbidden is a policy validation error", () => {
+  for (const onForbidden of [true, 123]) {
+    const errors = policyValidationErrors(
+      { commitBranches: { onForbidden } },
+      "/profiles/personal/commit-policy.json",
+    );
+    assert.match(errors[0] ?? "", /\/profiles\/personal\/commit-policy\.json/);
+    assert.match(errors[0] ?? "", /create-feature-branch/);
+  }
+});
+
 test("a policy without commitBranches uses fallback guards instead of failing validation", () => {
   const policy = { profile: "personal", mainline: "auto", afterCommit: "promote" };
   assert.deepEqual(policyValidationErrors(policy, "/profiles/personal/commit-policy.json"), []);

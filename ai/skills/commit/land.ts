@@ -143,7 +143,8 @@ class Landing {
       return policyInvalid({ errors: validationErrors });
     }
     const branch = this.git.currentBranch();
-    if (!isBranchAllowed(branch, policy)) {
+    const mainline = resolveMainline(this.git, configuredMainline(policy));
+    if (!isBranchAllowed(branch, policy, mainline)) {
       return branchForbidden({ branch });
     }
 

@@ -155,7 +155,7 @@ function preflightResult(paths: string[]): Result {
   return {
     ...ready({
       branch,
-      branchAllowed: isBranchAllowed(branch, policy),
+      branchAllowed: isBranchAllowed(branch, policy, mainline),
       changed: [...changed].sort(),
       untracked,
       ...(profile ? { profile } : {}),

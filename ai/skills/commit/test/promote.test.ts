@@ -177,6 +177,54 @@ test("land refuses a forbidden branch before committing under policy and fallbac
   cleanup(policyRoot, fallbackRoot);
 });
 
+test("committing on a resolved mainline outside the forbid list is BRANCH_FORBIDDEN", () => {
+  const origin = makeBareOrigin();
+  const seed = makeRepo("trunk");
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main", "master"], onForbidden: "create-feature-branch" },
+    mainline: "auto",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(seed, "base.txt", "base\n", "init");
+    runGit(seed, ["remote", "add", "origin", origin]);
+    runGit(seed, ["push", "-q", "-u", "origin", "trunk"]);
+    runGit(origin, ["symbolic-ref", "HEAD", "refs/heads/trunk"]);
+    const local = cloneRepo(origin);
+    try {
+      const headBefore = gitOutput(local, ["rev-parse", "HEAD"]);
+      writeFile(local, "base.txt", "base\ntrunk change\n");
+
+      const preflightResult = runSkillScript(
+        "preflight.ts",
+        local,
+        [],
+        "",
+        { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
+      );
+      const { code, result } = runSkillScript(
+        "land.ts",
+        local,
+        ["--push-retry-delay-ms", "0", "--no-push"],
+        VALID_MESSAGE,
+        { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
+      );
+
+      assert.equal(preflightResult.result.branchAllowed, false);
+      assert.equal(result.outcome, "BRANCH_FORBIDDEN");
+      assert.equal(code, 28);
+      assert.equal(result.branch, "trunk");
+      assert.equal(gitOutput(local, ["rev-parse", "HEAD"]), headBefore);
+      assert.match(gitOutput(local, ["status", "--short"]), /base\.txt/);
+    } finally {
+      cleanup(local);
+    }
+  } finally {
+    cleanup(origin, seed, policyRoot);
+  }
+});
+
 test("no mainline commits and pushes the feature branch with a warning", () => {
   const origin = makeBareOrigin();
   const repo = makeRepo();
