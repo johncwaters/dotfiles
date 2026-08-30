@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  branchForbidden,
   committed,
   denylistedFileStaged,
   detachedHead,
   EXIT_CODES,
   hookFailed,
   mainlineAhead,
+  mainlineUnverified,
   messageInvalid,
   messageValid,
   notARepo,
@@ -40,6 +42,8 @@ test("exit codes keep the numbering the recovery procedures branch on", () => {
     PROMOTE_FAILED: 24,
     MAINLINE_AHEAD: 26,
     POLICY_INVALID: 27,
+    BRANCH_FORBIDDEN: 28,
+    MAINLINE_UNVERIFIED: 29,
   });
 });
 
@@ -66,6 +70,13 @@ test("every outcome constructor round-trips through JSON", () => {
       localOnlyCommits: ["def456"],
     }),
     policyInvalid({ errors: ["bad policy"] }),
+    branchForbidden({ branch: "main" }),
+    mainlineUnverified({
+      commit: "abc123",
+      pushed: true,
+      promoted: [],
+      mainline: "main",
+    }),
   ];
 
   for (const result of results) {

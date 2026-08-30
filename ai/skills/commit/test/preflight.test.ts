@@ -226,6 +226,34 @@ test("a mismatched release integration warns without refusing preflight", () => 
   }
 });
 
+test("the live JSON release profile is preferred when both profile formats exist", () => {
+  const repo = makeRepo();
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "main",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    writeFile(
+      repo,
+      ".claude/release-profile.json",
+      `${JSON.stringify({ git: { integration: "staging" } }, null, 2)}\n`,
+    );
+    writeFile(repo, ".claude/release-profile.yml", "git:\n  integration: retired\n");
+
+    const { result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+    assert.equal(result.outcome, "READY");
+    const warnings = (result.warnings as string[]).join("\n");
+    assert.match(warnings, /release-profile\.json.*staging.*main/);
+    assert.equal(/retired/.test(warnings), false);
+  } finally {
+    cleanup(repo, policyRoot);
+  }
+});
+
 test("an unresolved policy mainline stays READY with a warning", () => {
   const repo = makeRepo();
   const policyRoot = makePolicyRoot("personal", {

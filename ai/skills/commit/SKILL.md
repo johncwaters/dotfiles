@@ -34,16 +34,19 @@ will be staged, and the machine's `policy`.
 
 **Branch guard.** `branchAllowed: false` means the profile forbids committing on this
 branch. `policy.commitBranches.onForbidden` permits only `create-feature-branch`: create
-a branch named for the work item, switch to it, and proceed. `POLICY_INVALID` means the
-profile still names an unsupported remedy; stop and update the profile file named in
-`errors`.
+a branch named for the work item, switch to it, and proceed. `land.ts` repeats this guard
+and returns `BRANCH_FORBIDDEN` before staging or committing if invoked directly on a
+forbidden branch. `POLICY_INVALID` means the profile still names an unsupported remedy;
+both entry points stop and name the profile file in `errors`. An absent `commitBranches`
+key uses the fallback `main` and `master` guard without invalidating the policy.
 
 `policy.resolved.mainline` is the destination for promotion. With `mainline: "auto"`,
 preflight checks the `origin/HEAD` target, then `main`, then `master`. A literal policy
 value selects that branch. An unresolved mainline warns but does not refuse preflight;
 landing then commits and pushes the feature branch without promotion. A repository
-`.claude/release-profile.yml` whose `git.integration` differs from the resolved mainline
-also warns without refusing.
+`.claude/release-profile.json`, or the retired `.claude/release-profile.yml` when JSON is
+absent, whose `git.integration` differs from the resolved mainline also warns without
+refusing. JSON is authoritative when both exist.
 
 **No policy.** A missing `policy` field (the warning names the reason) means the machine
 profile has not been applied. `main` and `master` are still guarded, so `branchAllowed`
@@ -160,10 +163,13 @@ Flags:
   way stops the run outright rather than riding along, as `DENYLISTED_FILE_STAGED`.
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
-  mainline, and pushing mainline. Omit it when the user asked for commit-only ("commit
-  only", "don't merge"), when `policy.afterCommit` is `pull-request`, or when there is no
-  policy.
-- `--no-push`: only when the user asks for a local commit.
+  mainline, and pushing mainline. When origin has the mainline but no local branch, it
+  materializes a local tracking branch from `origin/<mainline>` first. Omit it when the
+  user asked for commit-only ("commit only", "don't merge"), when `policy.afterCommit`
+  is `pull-request`, or when there is no policy.
+- `--no-push`: only when the user asks for local-only work. It suppresses every push,
+  including feature, mainline, safety, and remote branch deletion pushes. Promotion may
+  still update local mainline; `warnings` names a locally promoted mainline left unpushed.
 
 ## Outcomes
 
@@ -183,22 +189,24 @@ finding fixed. Expand only on failures.
 | `PROMOTE_FAILED` | 24 | The commit exists; promotion stopped for a non-conflict reason named in `warnings`, and `promoted` says which branches did update. Recover below |
 | `MAINLINE_AHEAD` | 26 | Local mainline has commits absent from origin. `localOnlyCommits` lists their SHAs. Push or drop them by hand, then re-run; the skill never publishes them implicitly |
 | `POLICY_INVALID` | 27 | The applied profile uses unsupported commit policy vocabulary. Update the profile file named in `errors`, then re-run preflight |
+| `BRANCH_FORBIDDEN` | 28 | `land.ts` was invoked on the guarded `branch` and wrote nothing. Create and switch to a feature branch, then re-run preflight |
+| `MAINLINE_UNVERIFIED` | 29 | Origin exists, but fetch failed or `origin/<mainline>` is missing, so promotion refused. `warnings` carries the verification detail. Restore remote verification, then re-run |
 | `NOT_A_REPO` | 10 | Stop and relay |
 | `DETACHED_HEAD` | 11 | Stop and relay |
 | `OPERATION_IN_PROGRESS` | 12 | A merge, rebase, or cherry-pick is in flight (`operation`). Stop and relay |
 
 With `--promote` the feature-branch push is deferred until promotion determines whether
-mainline absorbed it, so `pushed` can be false on a promote failure even though the commit
-exists.
+mainline absorbed it. When origin exists and `--no-push` is absent, `PROMOTE_FAILED`,
+`MAINLINE_UNVERIFIED`, `MAINLINE_AHEAD`, and `PROMOTE_CONFLICT` all attempt a feature-branch
+safety push. `pushed` reports whether that safety push succeeded. A safety-push failure is
+added to `warnings` without replacing the original outcome.
 
-Promoting to mainline does not push the feature branch at all: it fast-forwards into
+Successful promotion to mainline does not push the feature branch: it fast-forwards into
 mainline, so pushing it too would only leave a dead remote branch. `pushed: false` on a
 `COMMITTED` mainline promotion is therefore normal, not a failure. Two consequences: a
-merged remote branch named `glissa/*` is deleted once mainline carries it, listed in
-`deletedRemoteBranches` (a refused deletion is a warning, never an outcome change), and a
-`PROMOTE_FAILED` mainline run pushes the feature branch on its own so the work is not
-stranded locally. A missing mainline also pushes the feature branch and reports the skip
-in `warnings`.
+merged remote branch named `glissa/*` is deleted once pushed mainline carries it, listed in
+`deletedRemoteBranches` (a refused deletion is a warning, never an outcome change). A
+missing mainline also pushes the feature branch and reports the skip in `warnings`.
 
 ## Conflict resolution
 

@@ -45,6 +45,12 @@ test("only create-feature-branch is an accepted forbidden-branch remedy", () => 
   assert.match(errors[0] ?? "", /create-feature-branch/);
 });
 
+test("a policy without commitBranches uses fallback guards instead of failing validation", () => {
+  const policy = { profile: "personal", mainline: "auto", afterCommit: "promote" };
+  assert.deepEqual(policyValidationErrors(policy, "/profiles/personal/commit-policy.json"), []);
+  assert.deepEqual(forbiddenBranches(policy), ["main", "master"]);
+});
+
 test("no policy still guards mainline and still allows ordinary branches", () => {
   assert.deepEqual(forbiddenBranches(undefined), ["main", "master"]);
   assert.equal(isBranchAllowed("master", undefined), false);

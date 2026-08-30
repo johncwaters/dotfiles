@@ -85,6 +85,10 @@ export class Git {
     return this.run(["fetch", ".", `${src}:${dst}`]);
   }
 
+  createTrackingBranch(branch: string, remoteRef: string): GitResult {
+    return this.run(["branch", "--track", branch, remoteRef]);
+  }
+
   worktreeListPorcelain(): GitResult {
     return this.run(["worktree", "list", "--porcelain"]);
   }

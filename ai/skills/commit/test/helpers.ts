@@ -23,10 +23,10 @@ export function gitOutput(repo: string, args: string[]): string {
   return runGit(repo, args).stdout.trim();
 }
 
-export function makeRepo(): string {
+export function makeRepo(initialBranch = "main"): string {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-"));
   runGit(repo, ["init", "-q"]);
-  runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+  runGit(repo, ["symbolic-ref", "HEAD", `refs/heads/${initialBranch}`]);
   runGit(repo, ["config", "user.name", "Test User"]);
   runGit(repo, ["config", "user.email", "test@example.com"]);
   runGit(repo, ["config", "commit.gpgsign", "false"]);

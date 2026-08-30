@@ -9,8 +9,10 @@ import {
   gitOutput,
   land,
   makeBareOrigin,
+  makePolicyRoot,
   makeRepo,
   runGit,
+  runSkillScript,
   VALID_MESSAGE,
   writeFile,
 } from "./helpers.ts";
@@ -49,7 +51,7 @@ function writeFlakyHook(repo: string, name: string, failingAttempts: number): vo
 }
 
 test("a real commit is created from the message on stdin", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     writeFile(repo, "a.txt", "two\n");
@@ -67,8 +69,39 @@ test("a real commit is created from the message on stdin", () => {
   }
 });
 
+test("land refuses a stale forbidden-branch remedy before committing", () => {
+  const repo = makeRepo("feature");
+  const policyRoot = makePolicyRoot("legacy", {
+    profile: "legacy",
+    commitBranches: { forbid: ["main"], onForbidden: "switch-to-develop" },
+    mainline: "main",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    const headBefore = gitOutput(repo, ["rev-parse", "HEAD"]);
+    writeFile(repo, "a.txt", "two\n");
+
+    const { code, result } = runSkillScript(
+      "land.ts",
+      repo,
+      ["--push-retry-delay-ms", "0", "--promote"],
+      VALID_MESSAGE,
+      { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
+    );
+
+    assert.equal(result.outcome, "POLICY_INVALID");
+    assert.equal(code, 27);
+    assert.equal(gitOutput(repo, ["rev-parse", "HEAD"]), headBefore);
+    assert.match(gitOutput(repo, ["status", "--short"]), /a\.txt/);
+    assert.match((result.errors as string[]).join("\n"), /profiles\/legacy\/commit-policy\.json/);
+  } finally {
+    cleanup(repo, policyRoot);
+  }
+});
+
 test("a clean tree without promotion is NOTHING_TO_COMMIT", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     const { code, result } = land(repo, ["--no-push"], VALID_MESSAGE);
@@ -80,7 +113,7 @@ test("a clean tree without promotion is NOTHING_TO_COMMIT", () => {
 });
 
 test("an invalid message is MESSAGE_INVALID and commits nothing", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     writeFile(repo, "a.txt", "two\n");
@@ -97,7 +130,7 @@ test("an invalid message is MESSAGE_INVALID and commits nothing", () => {
 });
 
 test("a rejecting commit hook is HOOK_FAILED and keeps the hook stderr", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     writeFile(repo, "a.txt", "two\n");
@@ -114,7 +147,7 @@ test("a rejecting commit hook is HOOK_FAILED and keeps the hook stderr", () => {
 });
 
 test("--paths leaves an out-of-scope change dirty", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     commitFile(repo, "b.txt", "one\n");
@@ -132,7 +165,7 @@ test("--paths leaves an out-of-scope change dirty", () => {
 });
 
 test("--paths matching nothing dirty is NOTHING_TO_COMMIT", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     commitFile(repo, "b.txt", "one\n");
@@ -150,6 +183,7 @@ test("a push advances the origin ref and reports pushed", () => {
   const origin = makeBareOrigin();
   const repo = cloneRepo(origin);
   try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
     commitFile(repo, "a.txt", "one\n");
     runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
     writeFile(repo, "a.txt", "two\n");
@@ -166,7 +200,7 @@ test("a push advances the origin ref and reports pushed", () => {
 });
 
 test("a repo with no origin commits and warns instead of pushing", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     writeFile(repo, "a.txt", "two\n");
@@ -186,6 +220,7 @@ test("a rejected push is PUSH_FAILED with the commit already made", () => {
   const repo = cloneRepo(origin);
   const other = cloneRepo(origin);
   try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
     commitFile(repo, "a.txt", "one\n");
     runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
     const branch = gitOutput(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -211,6 +246,7 @@ test("a flaky pre-push hook is retried until it passes", () => {
   const origin = makeBareOrigin();
   const repo = cloneRepo(origin);
   try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
     commitFile(repo, "a.txt", "one\n");
     runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
     writeFile(repo, "a.txt", "two\n");
@@ -230,6 +266,7 @@ test("a pre-push hook that never passes exhausts the retries", () => {
   const origin = makeBareOrigin();
   const repo = cloneRepo(origin);
   try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
     commitFile(repo, "a.txt", "one\n");
     runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
     writeFile(repo, "a.txt", "two\n");
@@ -246,7 +283,7 @@ test("a pre-push hook that never passes exhausts the retries", () => {
 });
 
 test("a nested denylisted file is not staged through its parent directory", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     writeFile(repo, "feature/index.ts", "export const x = 1;\n");
@@ -266,7 +303,7 @@ test("a nested denylisted file is not staged through its parent directory", () =
 });
 
 test("a file staged outside --paths is unstaged and excluded from the commit", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     commitFile(repo, "b.txt", "one\n");
@@ -288,7 +325,7 @@ test("a file staged outside --paths is unstaged and excluded from the commit", (
 });
 
 test("a staged denylisted addition stops the run instead of riding along", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
     writeFile(repo, "a.txt", "two\n");
@@ -312,7 +349,7 @@ test("a staged denylisted addition stops the run instead of riding along", () =>
 });
 
 test("the gate refuses additions only, so a tracked denylisted file stays editable", () => {
-  const repo = makeRepo();
+  const repo = makeRepo("feature");
   try {
     commitFile(repo, ".env.example", "TOKEN=replace-me\n");
     writeFile(repo, ".env.example", "TOKEN=replace-me\nREGION=us-east-1\n");

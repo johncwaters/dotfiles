@@ -64,12 +64,16 @@ export function policyValidationErrors(
     return [];
   }
   const commitBranches = policy.commitBranches as { onForbidden?: unknown } | undefined;
-  if (commitBranches?.onForbidden === "create-feature-branch") {
+  const onForbidden = commitBranches?.onForbidden;
+  if (onForbidden === undefined || typeof onForbidden !== "string") {
+    return [];
+  }
+  if (onForbidden === "create-feature-branch") {
     return [];
   }
   const source = policyPath ?? "commit-policy.json";
   return [
-    `${source} commitBranches.onForbidden must be "create-feature-branch", got ${JSON.stringify(commitBranches?.onForbidden)}`,
+    `${source} commitBranches.onForbidden must be "create-feature-branch", got ${JSON.stringify(onForbidden)}`,
   ];
 }
 

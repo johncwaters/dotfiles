@@ -22,6 +22,12 @@ import { computeScope, resolveMainline } from "./lib/workspace.ts";
 
 type Arguments = { paths: string[]; checkMessage: boolean };
 
+type ReleaseIntegrationLookup = {
+  profilePath?: string;
+  integration?: string;
+  warning?: string;
+};
+
 function parseArguments(argv: string[]): Arguments {
   const parsed: Arguments = { paths: [], checkMessage: false };
   let collectingPaths = false;
@@ -54,11 +60,21 @@ function checkMessageResult(message: string): Result {
   return messageValid({});
 }
 
-function releaseProfileIntegration(repo: string): string | null {
-  const profilePath = path.join(repo, ".claude", "release-profile.yml");
-  if (!fs.existsSync(profilePath)) {
-    return null;
+function jsonReleaseProfileIntegration(profilePath: string): ReleaseIntegrationLookup {
+  try {
+    const profile = JSON.parse(fs.readFileSync(profilePath, "utf8")) as Record<string, unknown>;
+    const git = profile.git as Record<string, unknown> | undefined;
+    const integration = git?.integration;
+    if (typeof integration !== "string") {
+      return {};
+    }
+    return { profilePath, integration };
+  } catch (error) {
+    return { warning: `could not parse ${profilePath} while checking git.integration: ${String(error)}` };
   }
+}
+
+function yamlReleaseProfileIntegration(profilePath: string): ReleaseIntegrationLookup {
   const lines = fs.readFileSync(profilePath, "utf8").split(/\r?\n/);
   let gitIndent: number | null = null;
   for (const line of lines) {
@@ -72,18 +88,31 @@ function releaseProfileIntegration(repo: string): string | null {
       continue;
     }
     if (content !== "" && indent <= gitIndent) {
-      return null;
+      return {};
     }
     const match = /^integration:\s*["']?([^"'#\s]+)["']?\s*(?:#.*)?$/.exec(content);
     const integration = match?.[1];
     if (integration === "null" || integration === "~") {
-      return null;
+      return {};
     }
     if (integration) {
-      return integration;
+      return { profilePath, integration };
     }
   }
-  return null;
+  return {};
+}
+
+function releaseProfileIntegration(repo: string): ReleaseIntegrationLookup {
+  const jsonProfilePath = path.join(repo, ".claude", "release-profile.json");
+  if (fs.existsSync(jsonProfilePath)) {
+    return jsonReleaseProfileIntegration(jsonProfilePath);
+  }
+
+  const profilePath = path.join(repo, ".claude", "release-profile.yml");
+  if (!fs.existsSync(profilePath)) {
+    return {};
+  }
+  return yamlReleaseProfileIntegration(profilePath);
 }
 
 function preflightResult(paths: string[]): Result {
@@ -108,9 +137,17 @@ function preflightResult(paths: string[]): Result {
     warnings.push("could not resolve the policy mainline; promotion will be skipped");
   }
   const releaseIntegration = releaseProfileIntegration(process.cwd());
-  if (mainline !== null && releaseIntegration !== null && releaseIntegration !== mainline) {
+  if (releaseIntegration.warning) {
+    warnings.push(releaseIntegration.warning);
+  }
+  if (
+    mainline !== null &&
+    releaseIntegration.integration !== undefined &&
+    releaseIntegration.integration !== mainline
+  ) {
+    const profilePath = (releaseIntegration.profilePath ?? "").replace(`${process.cwd()}/`, "");
     warnings.push(
-      `.claude/release-profile.yml git.integration names ${releaseIntegration}, but commit policy resolves mainline to ${mainline}`,
+      `${profilePath} git.integration names ${releaseIntegration.integration}, but commit policy resolves mainline to ${mainline}`,
     );
   }
   const resolvedPolicy = policy ? { ...policy, resolved: { mainline } } : undefined;

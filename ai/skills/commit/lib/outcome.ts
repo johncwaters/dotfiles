@@ -13,6 +13,8 @@ export const EXIT_CODES = {
   PROMOTE_FAILED: 24,
   MAINLINE_AHEAD: 26,
   POLICY_INVALID: 27,
+  BRANCH_FORBIDDEN: 28,
+  MAINLINE_UNVERIFIED: 29,
 } as const;
 
 export type OutcomeName = keyof typeof EXIT_CODES;
@@ -170,6 +172,17 @@ export const mainlineAhead = defineOutcome("MAINLINE_AHEAD", {
 
 export const policyInvalid = defineOutcome("POLICY_INVALID", {
   errors: required("stringList"),
+});
+
+export const branchForbidden = defineOutcome("BRANCH_FORBIDDEN", {
+  branch: required("string"),
+});
+
+export const mainlineUnverified = defineOutcome("MAINLINE_UNVERIFIED", {
+  commit: optional("string"),
+  pushed: required("boolean"),
+  promoted: required("stringList"),
+  mainline: required("string"),
 });
 
 export function emit(result: Result): never {

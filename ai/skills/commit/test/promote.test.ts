@@ -143,21 +143,38 @@ test("promotion does not create an absent intermediate branch", () => {
   }
 });
 
-test("a commit on mainline warns and skips promotion", () => {
-  const { origin, seed, local } = seedOrigin();
-  try {
-    runGit(local, ["checkout", "-q", "main"]);
-    const originBefore = gitOutput(origin, ["rev-parse", "main"]);
-    writeFile(local, "base.txt", "base\nmain change\n");
-    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+test("land refuses a forbidden branch before committing under policy and fallback guards", () => {
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "main",
+    afterCommit: "promote",
+  });
+  const fallbackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-no-policy-"));
+  for (const root of [policyRoot, fallbackRoot]) {
+    const repo = makeRepo();
+    try {
+      commitFile(repo, "base.txt", "base\n", "init");
+      const mainBefore = gitOutput(repo, ["rev-parse", "main"]);
+      writeFile(repo, "base.txt", "base\nmain change\n");
+      const { code, result } = runSkillScript(
+        "land.ts",
+        repo,
+        ["--push-retry-delay-ms", "0", "--promote"],
+        VALID_MESSAGE,
+        { CLAUDE_COMMIT_POLICY_ROOT: root },
+      );
 
-    assert.equal(result.outcome, "COMMITTED");
-    assert.deepEqual(result.promoted, []);
-    assert.equal(gitOutput(origin, ["rev-parse", "main"]), originBefore);
-    assert.match((result.warnings as string[]).join("\n"), /landed directly on main/);
-  } finally {
-    cleanup(origin, seed, local);
+      assert.equal(result.outcome, "BRANCH_FORBIDDEN");
+      assert.equal(code, 28);
+      assert.equal(result.branch, "main");
+      assert.equal(gitOutput(repo, ["rev-parse", "main"]), mainBefore);
+      assert.match(gitOutput(repo, ["status", "--short"]), /base\.txt/);
+    } finally {
+      cleanup(repo);
+    }
   }
+  cleanup(policyRoot, fallbackRoot);
 });
 
 test("no mainline commits and pushes the feature branch with a warning", () => {
@@ -266,7 +283,55 @@ test("a behind mainline is fast-forwarded from origin before the feature rebase"
   }
 });
 
-test("an ahead mainline returns MAINLINE_AHEAD with local-only commits and changes no refs", () => {
+test("a remote-only mainline is materialized as a local tracking branch before promotion", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(local, ["branch", "-D", "main"]);
+    assert.notEqual(tryGit(local, ["rev-parse", "-q", "--verify", "refs/heads/main"]), 0);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.equal(gitOutput(local, ["rev-parse", "main"]), result.commit);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
+    assert.equal(
+      gitOutput(local, ["for-each-ref", "--format=%(upstream:short)", "refs/heads/main"]),
+      "origin/main",
+    );
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a failed mainline fetch returns MAINLINE_UNVERIFIED and never creates origin mainline", () => {
+  const origin = makeBareOrigin();
+  const repo = makeRepo();
+  try {
+    commitFile(repo, "base.txt", "base\n", "init");
+    const localMainBefore = gitOutput(repo, ["rev-parse", "main"]);
+    runGit(repo, ["checkout", "-q", "-b", "feature"]);
+    runGit(repo, ["remote", "add", "origin", origin]);
+    runGit(repo, ["push", "-q", "-u", "origin", "feature"]);
+    writeFile(repo, "base.txt", "base\nfeature change\n");
+
+    const { code, result } = land(repo, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "MAINLINE_UNVERIFIED");
+    assert.equal(code, 29);
+    assert.equal(result.mainline, "main");
+    assert.equal(result.pushed, true);
+    assert.equal(gitOutput(repo, ["rev-parse", "main"]), localMainBefore);
+    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "refs/heads/main"]), 0);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
+    assert.match((result.warnings as string[]).join("\n"), /could not verify origin\/main/);
+  } finally {
+    cleanup(origin, repo);
+  }
+});
+
+test("an ahead mainline preserves mainline refs and safety-pushes the feature", () => {
   const { origin, seed, local } = seedOrigin();
   try {
     runGit(local, ["checkout", "-q", "main"]);
@@ -274,24 +339,24 @@ test("an ahead mainline returns MAINLINE_AHEAD with local-only commits and chang
     const localOnlyCommit = gitOutput(local, ["rev-parse", "main"]);
     runGit(local, ["checkout", "-q", "feature"]);
     const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
-    const originFeatureBefore = gitOutput(origin, ["rev-parse", "feature"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
     const { code, result } = land(local, ["--promote"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "MAINLINE_AHEAD");
     assert.equal(code, 26);
     assert.equal(result.mainline, "main");
+    assert.equal(result.pushed, true);
     assert.deepEqual(result.localOnlyCommits, [localOnlyCommit]);
     assert.equal(gitOutput(local, ["rev-parse", "main"]), localOnlyCommit);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
-    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), originFeatureBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
     assert.equal(gitOutput(local, ["rev-parse", "--abbrev-ref", "HEAD"]), "feature");
   } finally {
     cleanup(origin, seed, local);
   }
 });
 
-test("a diverged mainline returns PROMOTE_CONFLICT and changes no promotion refs", () => {
+test("a diverged mainline preserves mainline refs and safety-pushes the feature", () => {
   const { origin, seed, local } = seedOrigin();
   try {
     runGit(local, ["checkout", "-q", "main"]);
@@ -302,16 +367,16 @@ test("a diverged mainline returns PROMOTE_CONFLICT and changes no promotion refs
     commitFile(seed, "remote-only.txt", "remote only\n", "remote only");
     runGit(seed, ["push", "-q", "origin", "main"]);
     const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
-    const originFeatureBefore = gitOutput(origin, ["rev-parse", "feature"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
     const { code, result } = land(local, ["--promote"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "PROMOTE_CONFLICT");
     assert.equal(code, 23);
     assert.deepEqual(result.conflicts, []);
+    assert.equal(result.pushed, true);
     assert.equal(gitOutput(local, ["rev-parse", "main"]), localMainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
-    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), originFeatureBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
   } finally {
     cleanup(origin, seed, local);
   }
@@ -392,10 +457,54 @@ test("a mainline checked out in a dirty worktree stops promotion", () => {
     const { result } = land(session, ["--promote"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "PROMOTE_FAILED");
+    assert.equal(result.pushed, true);
     assert.equal(gitOutput(holder, ["rev-parse", "main"]), mainBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
     assert.match((result.warnings as string[]).join("\n"), /has uncommitted changes/);
   } finally {
     cleanup(origin, seed, path.dirname(holder));
+  }
+});
+
+test("--promote --no-push updates local mainline without pushing any ref", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
+    const originFeatureBefore = gitOutput(origin, ["rev-parse", "feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(result.pushed, false);
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.equal(gitOutput(local, ["rev-parse", "main"]), result.commit);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), originFeatureBefore);
+    assert.match((result.warnings as string[]).join("\n"), /--no-push left main unpushed/);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("--no-push suppresses the feature safety push on a mainline refusal", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(local, ["checkout", "-q", "main"]);
+    commitFile(local, "local-only.txt", "local only\n", "local only");
+    runGit(local, ["checkout", "-q", "feature"]);
+    const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
+    const originFeatureBefore = gitOutput(origin, ["rev-parse", "feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "MAINLINE_AHEAD");
+    assert.equal(result.pushed, false);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), originFeatureBefore);
+  } finally {
+    cleanup(origin, seed, local);
   }
 });
 

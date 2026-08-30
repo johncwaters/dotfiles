@@ -2,19 +2,27 @@ import { Git, type PushRefResult, type PushResult } from "./lib/git.ts";
 import { repositoryGuard } from "./lib/guard.ts";
 import { normalizeMessage, validateMessage } from "./lib/message.ts";
 import {
+  branchForbidden,
   committed,
   denylistedFileStaged,
   emit,
   hookFailed,
   mainlineAhead,
+  mainlineUnverified,
   messageInvalid,
   nothingToCommit,
   promoteConflict,
   promoteFailed,
+  policyInvalid,
   pushFailed,
   type Result,
 } from "./lib/outcome.ts";
-import { configuredMainline, readCommitPolicy } from "./lib/policy.ts";
+import {
+  configuredMainline,
+  isBranchAllowed,
+  policyValidationErrors,
+  readCommitPolicy,
+} from "./lib/policy.ts";
 import { readStdin } from "./lib/stdio.ts";
 import {
   computeScope,
@@ -32,7 +40,15 @@ type FailureOutcome =
   | "PUSH_FAILED"
   | "PROMOTE_CONFLICT"
   | "PROMOTE_FAILED"
-  | "MAINLINE_AHEAD";
+  | "MAINLINE_AHEAD"
+  | "MAINLINE_UNVERIFIED";
+
+const SAFETY_PUSH_OUTCOMES = new Set<FailureOutcome>([
+  "PROMOTE_FAILED",
+  "PROMOTE_CONFLICT",
+  "MAINLINE_AHEAD",
+  "MAINLINE_UNVERIFIED",
+]);
 
 type PendingPushRef = { branch: string; kind: "feature" | "promote" };
 
@@ -121,6 +137,16 @@ class Landing {
       return guard;
     }
 
+    const { policy, policyPath } = readCommitPolicy();
+    const validationErrors = policyValidationErrors(policy, policyPath);
+    if (validationErrors.length > 0) {
+      return policyInvalid({ errors: validationErrors });
+    }
+    const branch = this.git.currentBranch();
+    if (!isBranchAllowed(branch, policy)) {
+      return branchForbidden({ branch });
+    }
+
     const messageErrors = validateMessage(message);
     if (messageErrors.length > 0) {
       return messageInvalid({ errors: messageErrors });
@@ -198,6 +224,12 @@ class Landing {
         ...state,
         mainline: this.mainline ?? "",
         localOnlyCommits: this.localOnlyCommits,
+      });
+    }
+    if (outcome === "MAINLINE_UNVERIFIED") {
+      return mainlineUnverified({
+        ...state,
+        mainline: this.mainline ?? "",
       });
     }
     if (outcome === "NOTHING_TO_COMMIT") {
@@ -310,12 +342,14 @@ class Landing {
     if (originExists) {
       const syncOutcome = this.syncMainlineWithOrigin(mainline);
       if (syncOutcome) {
+        this.pushFeatureAfterFailedMainlinePromotion(featureBranch, syncOutcome);
         return syncOutcome;
       }
     }
 
     const promoteOutcome = this.promoteHop(current, mainline);
     if (promoteOutcome) {
+      this.pushFeatureAfterFailedMainlinePromotion(featureBranch, promoteOutcome);
       return promoteOutcome;
     }
 
@@ -332,6 +366,9 @@ class Landing {
     }
 
     this.promoted.push(mainline);
+    if (this.config.noPush) {
+      return null;
+    }
     this.deleteMergedRemoteFeatureBranch(featureBranch, mainline);
     return null;
   }
@@ -373,7 +410,7 @@ class Landing {
     featureBranch: string | null,
     outcome: FailureOutcome,
   ): void {
-    if (outcome !== "PROMOTE_FAILED" || !featureBranch) {
+    if (!SAFETY_PUSH_OUTCOMES.has(outcome) || !featureBranch || this.config.noPush) {
       return;
     }
 
@@ -457,17 +494,28 @@ class Landing {
     const fetch = this.git.fetch("origin", mainline);
     if (fetch.code !== 0) {
       this.warnings.push(
-        `could not fetch origin ${mainline}; continuing with local state: ${fetch.stderr.trim()}`,
+        `could not verify origin/${mainline}; fetch failed: ${fetch.stderr.trim()}`,
       );
-      return null;
+      return "MAINLINE_UNVERIFIED";
     }
 
     const localRef = `refs/heads/${mainline}`;
     const remoteRef = `refs/remotes/origin/${mainline}`;
     const localTip = this.git.revParseRef(localRef);
     const remoteTip = this.git.revParseRef(remoteRef);
-    if (localTip === null || remoteTip === null) {
-      this.warnings.push(`local or remote ${mainline} ref is missing; promotion stopped`);
+    if (remoteTip === null) {
+      this.warnings.push(`could not verify origin/${mainline}; remote-tracking ref is missing`);
+      return "MAINLINE_UNVERIFIED";
+    }
+    if (localTip === null) {
+      const create = this.git.createTrackingBranch(mainline, `origin/${mainline}`);
+      if (create.code === 0) {
+        this.warnings.push(`materialized local ${mainline} from origin/${mainline}`);
+        return null;
+      }
+      this.warnings.push(
+        `could not materialize local ${mainline} from origin/${mainline}; promotion stopped: ${create.stderr.trim()}`,
+      );
       return "PROMOTE_FAILED";
     }
     if (localTip === remoteTip) {
@@ -550,6 +598,10 @@ class Landing {
 
   private pushMainline(mainline: string): FailureOutcome | null {
     if (this.originRefIsUpToDate(mainline)) {
+      return null;
+    }
+    if (this.config.noPush) {
+      this.warnings.push(`--no-push left ${mainline} unpushed after local promotion`);
       return null;
     }
     return this.pushPendingRefs(
