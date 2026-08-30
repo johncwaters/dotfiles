@@ -134,7 +134,7 @@ Not-tested: ...
 optional as a block, but a message that carries any trailer must carry `Confidence` and
 must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested` are
 included only when they apply. Omit the whole trailer block only for a genuinely trivial change (a
-version bump with no logic change). Never an em dash, en dash, or emoji anywhere.
+version bump with no logic change).
 
 Check a draft before landing with `node "$HOME/.claude/skills/commit/preflight.ts"
 --check-message` and the message on stdin. `land.ts` runs the same validation and refuses

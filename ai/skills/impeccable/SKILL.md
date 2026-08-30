@@ -95,7 +95,6 @@ Match-and-refuse. If you're about to write any of these, rewrite the element wit
 ### Copy
 
 - Every word earns its place. No restated headings, no intros that repeat the title.
-- **No em dashes.** Use commas, colons, semicolons, periods, or parentheses. Also not `--`.
 
 ### The AI slop test
 

@@ -29,43 +29,9 @@ const TRAILER_VALUES: Record<string, readonly string[]> = {
 
 const MAX_DESCRIPTION_LENGTH = 72;
 
-// Numeric code points, not literal characters: this source stays ASCII so the
-// repo format guard does not deny edits to the file that bans the dashes.
-const EM_DASH = String.fromCodePoint(0x2014);
-const EN_DASH = String.fromCodePoint(0x2013);
-
-const EMOJI_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [0x1f300, 0x1faff],
-  [0x2600, 0x26ff],
-  [0x2700, 0x27bf],
-  [0x1f1e6, 0x1f1ff],
-  [0xfe00, 0xfe0f],
-];
-
 const HEADER_PATTERN = /^(?<type>[a-z]+)(?:\((?<scope>[^()]+)\))?: (?<description>.*)$/;
 
 const TRAILER_PATTERN = /^(?<label>[A-Z][A-Za-z-]*): (?<value>.+)$/;
-
-function isEmoji(codePoint: number): boolean {
-  return EMOJI_RANGES.some(([low, high]) => codePoint >= low && codePoint <= high);
-}
-
-export function findBannedChars(text: string): string[] {
-  const found = new Set<string>();
-  if (text.includes(EM_DASH)) {
-    found.add("em dash");
-  }
-  if (text.includes(EN_DASH)) {
-    found.add("en dash");
-  }
-  for (const character of text) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (isEmoji(codePoint)) {
-      found.add(`emoji ${JSON.stringify(character)}`);
-    }
-  }
-  return [...found].sort();
-}
 
 function startsWithKnownTrailer(line: string): boolean {
   return TRAILER_LABELS.some((label) => line.startsWith(`${label}:`));
@@ -159,11 +125,6 @@ export function validateMessage(message: string): string[] {
   }
 
   validateTrailers(trailerBlockLines(lines), errors);
-
-  const banned = findBannedChars(message);
-  if (banned.length > 0) {
-    errors.push(`message contains banned characters: ${banned.join(", ")}`);
-  }
 
   return errors;
 }

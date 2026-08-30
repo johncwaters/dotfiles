@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findBannedChars, normalizeMessage, validateMessage } from "../lib/message.ts";
+import { normalizeMessage, validateMessage } from "../lib/message.ts";
 
 const EM_DASH = String.fromCodePoint(0x2014);
-const EN_DASH = String.fromCodePoint(0x2013);
-const SPARKLES = String.fromCodePoint(0x2728);
 
 const VALID = ["feat(commit): land the change", "", "Body paragraph.", "", "Confidence: high", "Scope-risk: narrow"].join(
   "\n",
@@ -68,27 +66,12 @@ test("a body line shaped like a trailer does not become the trailer block", () =
   assert.deepEqual(validateMessage(message), []);
 });
 
-test("an em dash is rejected", () => {
-  const errors = validateMessage(`feat: add a thing\n\nBody ${EM_DASH} more body.`);
-  assert.ok(errors.some((error) => error.includes("em dash")));
-});
-
-test("an en dash is rejected", () => {
-  const errors = validateMessage(`feat: add a thing\n\nBody ${EN_DASH} more body.`);
-  assert.ok(errors.some((error) => error.includes("en dash")));
-});
-
-test("an emoji is rejected", () => {
-  const errors = validateMessage(`feat: add a thing ${SPARKLES}`);
-  assert.ok(errors.some((error) => error.includes("emoji")));
+test("an em dash in the body is allowed", () => {
+  assert.deepEqual(validateMessage(`feat: add a thing\n\nBody ${EM_DASH} more body.`), []);
 });
 
 test("an empty message is rejected", () => {
   assert.deepEqual(validateMessage("   \n"), ["message must not be empty"]);
-});
-
-test("findBannedChars reports each banned class once, sorted", () => {
-  assert.deepEqual(findBannedChars(`a ${EM_DASH} b ${EM_DASH} c ${EN_DASH}`), ["em dash", "en dash"]);
 });
 
 test("normalizeMessage collapses trailing newlines to exactly one", () => {
