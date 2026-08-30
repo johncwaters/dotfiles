@@ -167,6 +167,8 @@ trap 'rm -f -- "$countsFile"' EXIT
 seedCountsFile
 export DOTFILES_COUNTS_NONCE="$countsNonce"
 export DOTFILES_PROFILE="$profileName"
+# Topics that restart the service hosting this run wait for this pid instead of killing it.
+export DOTFILES_BOOTSTRAP_PID="$$"
 
 writeSection "Profile $profileName"
 ensureDotfilesAlias

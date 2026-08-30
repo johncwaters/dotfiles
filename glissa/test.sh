@@ -86,6 +86,13 @@ exit 0
 STUB
 provideCommand systemctl
 
+writeStub systemd-run <<'STUB'
+#!/usr/bin/env bash
+printf 'systemd-run %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+exit 0
+STUB
+provideCommand systemd-run
+
 writeStub loginctl <<'STUB'
 #!/usr/bin/env bash
 printf 'loginctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -246,6 +253,10 @@ makeGlissaApp() {
   printf '{}\n' > "$machineHome/Projects/glissa/package.json"
 }
 
+# The suite may itself be running under glissa.service, and the real cgroup must never decide what a sandboxed run does.
+outsideServiceCgroup="$sandboxTemp/outside-glissa.cgroup"
+printf '0::/user.slice/user-1000.slice/session-1.scope\n' > "$outsideServiceCgroup"
+
 runInstall() {
   local machineHome="$1"
   local machineProfile="$2"
@@ -259,6 +270,7 @@ runInstall() {
     DOTFILES_MARKER_PATH="$machineHome/.machine-profile" \
     DOTFILES_TEST_MACHINE="$(basename -- "$machineHome")" \
     DOTFILES_TEST_REAL_NODE="$realNodePath" \
+    DOTFILES_CGROUP_FILE="${DOTFILES_CGROUP_FILE:-$outsideServiceCgroup}" \
     NO_COLOR=1 \
     bash "$topicDir/install.sh" < "$stdinPath"
 }
@@ -539,6 +551,28 @@ check "a config edited by hand leaves the unit file alone" \
   test "$unitFingerprintAfterFirstRun" = "$(cksum < "$serverUnitPath")"
 check "the restart for a changed config is reported" \
   outputMatches "$editedConfigOutput" '\[ ok \].*glissa service.*restarted'
+
+"$realNodePath" -e '
+const fs = require("fs");
+const configPath = process.argv[1];
+const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+config.editorCommand = "a second edit, converged from inside the service";
+fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+' "$serverHome/.glissa/config.json"
+insideServiceCgroup="$sandboxTemp/inside-glissa.cgroup"
+printf '0::/user.slice/user-1000.slice/user@1000.service/app.slice/glissa.service\n' > "$insideServiceCgroup"
+: > "$commandLog"
+insideServiceOutput="$(DOTFILES_CGROUP_FILE="$insideServiceCgroup" DOTFILES_BOOTSTRAP_PID=424242 \
+  runInstall "$serverHome" server)"
+check "a run hosted by the service never restarts it directly" logLacks "systemctl --user restart glissa"
+check "a run hosted by the service hands the restart to a detached unit" \
+  logHas "systemd-run --user --quiet --collect --unit dotfiles-restart-glissa"
+check "the detached restart waits for the bootstrap pid" logHas "424242 glissa"
+check "the deferred restart is reported" \
+  outputMatches "$insideServiceOutput" '\[ ok \].*glissa service.*restart deferred'
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+check "a deferred restart is not owed again on the next run" logLacks "restart glissa"
 
 printf 'a11a11a11a11a11a11a11a11a11a11a11a11a11a\n' > "$stubState/$(basename -- "$serverHome")/app-head"
 serverDepsPendingStateName="$(HOME="$serverHome" \
