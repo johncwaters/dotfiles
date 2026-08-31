@@ -10,7 +10,11 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
   someone reruns the installer; a link cannot drift. Render only what a profile varies.
   Files that tools append to in place (`~/.gitconfig`, `~/.bashrc`, `~/.bash_profile`) are
   small stubs including the repo copy, since a link there makes `git config --global` and
-  installer hooks write into the tracked file.
+  installer hooks write into the tracked file. `~/.claude/CLAUDE.md` is copied verbatim
+  instead: Claude Code drops every `@import` in a memory file that is itself a symlink, and
+  a stub cannot serve because the nested `@AGENTS.md` must resolve in `~/.claude`, beside
+  the AGENTS.md link, not beside the profile file; the copy converges by rerunning the
+  installer.
 - Installers are idempotent. A machine is converged by running everything, not by
   remembering what already ran.
 - Removals converge too. Retiring a tool means adding it to a removal list, so machines

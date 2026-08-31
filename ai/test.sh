@@ -30,7 +30,7 @@ check "install says what it did" test -n "$firstRunOutput"
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
   ".claude/agents" ".claude/commands" ".claude/hooks" ".claude/hud" ".claude/skills"
-  ".claude/CLAUDE.md" ".codex/AGENTS.md"
+  ".codex/AGENTS.md"
 )
 
 for destination in "${linkedDestinations[@]}"; do
@@ -53,6 +53,13 @@ for destination in "${linkedDestinations[@]}"; do
   fi
   pass "$destination linked through the alias"
 done
+
+# Claude Code drops every @import in a symlinked CLAUDE.md, so this one entry is a copy.
+claudeMdPath="$sandbox/.claude/CLAUDE.md"
+check "CLAUDE.md is a plain file, never a symlink" \
+  bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$claudeMdPath"
+check "CLAUDE.md matches the profile copy" \
+  cmp -s "$claudeMdPath" "$repoRoot/profiles/personal/CLAUDE.md"
 
 check "runtime project state survives" test -f "$sandbox/.claude/projects/live-work/state.json"
 check "credentials survive" test -f "$sandbox/.claude/.credentials.json"
@@ -82,6 +89,23 @@ runInstall > /dev/null
 check "a later displaced file gets its own backup" test -f "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak.2"
 check "the later backup holds the later content" grep -q 'later hand written notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak.2"
 check "the first backup is untouched" grep -q 'pre-existing user notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak"
+
+# A machine converged before the copy switch still holds the old CLAUDE.md symlink;
+# it is ours, so the rerun replaces it with the copy and leaves no backup behind.
+rm -f "$claudeMdPath"
+ln -s "$sandbox/.dotfiles/profiles/personal/CLAUDE.md" "$claudeMdPath"
+runInstall > /dev/null
+check "an old CLAUDE.md symlink converges to a plain file" \
+  bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$claudeMdPath"
+check "converging the old symlink leaves no backup" \
+  bash -c '! ls "$1".pre-dotfiles.bak* >/dev/null 2>&1' _ "$claudeMdPath"
+
+printf 'hand edited claude memory\n' > "$claudeMdPath"
+runInstall > /dev/null
+check "a hand edited CLAUDE.md is backed up before the copy returns" \
+  grep -qs 'hand edited claude memory' "$claudeMdPath".pre-dotfiles.bak*
+check "the copy wins over the hand edit" \
+  cmp -s "$claudeMdPath" "$repoRoot/profiles/personal/CLAUDE.md"
 
 checkRerunIsQuiet "second run reports no changes" "$(runInstall)"
 

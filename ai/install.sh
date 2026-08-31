@@ -27,7 +27,10 @@ if [[ -z "${profileName:-}" ]]; then
   finishTopic
 fi
 
-linkEntry "CLAUDE.md" "profiles/$profileName/CLAUDE.md" "$claudeHome/CLAUDE.md"
+# Claude Code silently drops every @import in a memory file that is itself a symlink,
+# so CLAUDE.md is the one entry copied real; the @AGENTS.md inside it still resolves
+# through the AGENTS.md link above, which imports do follow.
+copyEntry "CLAUDE.md" "profiles/$profileName/CLAUDE.md" "$claudeHome/CLAUDE.md"
 renderJsonTemplate "settings.json" \
   "$dotfilesRepo/ai/render-settings.mjs" \
   "$dotfilesRepo/ai/settings.base.json" \

@@ -84,6 +84,49 @@ commitRenderedFile() {
   recordRenderedCopy "$label" "$destination"
 }
 
+# The tail every engine shares: put the staged file in place, lock it down, and report
+# whether this run moved the destination or found it already converged.
+commitStagedFile() {
+  local label="$1"
+  local stagedPath="$2"
+  local destination="$3"
+  local appliedVerb="$4"
+  local destinationChanged=0
+  if commitRenderedFile "$label" "$stagedPath" "$destination"; then
+    destinationChanged=1
+  fi
+  chmod 600 -- "$destination"
+  if ((destinationChanged == 1)); then
+    noteApplied "$label" "$appliedVerb"
+    return 0
+  fi
+  notePresent "$label" "up to date"
+}
+
+# Places a byte-for-byte copy of a repo file where a symlink cannot serve, converging
+# like any render: our own link is replaced silently, a hand edit earns a backup.
+copyEntry() {
+  local label="$1"
+  local repoRelativeSource="$2"
+  local destination="$3"
+  local sourcePath="$dotfilesRepo/$repoRelativeSource"
+  if [[ ! -f "$sourcePath" ]]; then
+    noteWarned "$label" "not in repo: $repoRelativeSource"
+    return 0
+  fi
+  mkdir -p -- "$(dirname -- "$destination")"
+  if pathIsLinkIntoThisRepo "$destination"; then
+    rm -f -- "$destination"
+  fi
+  if ! clearDestinationIfNotPlainFile "$label" "$destination"; then
+    return 0
+  fi
+  local stagedPath
+  stagedPath="$(mktemp "$(dirname -- "$destination")/.dotfiles-copy.XXXXXX")"
+  cp -f -- "$sourcePath" "$stagedPath"
+  commitStagedFile "$label" "$stagedPath" "$destination" "copied"
+}
+
 renderJsonTemplate() {
   local label="$1"
   local rendererPath="$2"
@@ -118,14 +161,5 @@ renderJsonTemplate() {
     rm -f -- "$renderedPath"
     return 0
   fi
-  local destinationChanged=0
-  if commitRenderedFile "$label" "$renderedPath" "$destination"; then
-    destinationChanged=1
-  fi
-  chmod 600 -- "$destination"
-  if ((destinationChanged == 1)); then
-    noteApplied "$label" "rendered"
-    return 0
-  fi
-  notePresent "$label" "up to date"
+  commitStagedFile "$label" "$renderedPath" "$destination" "rendered"
 }
