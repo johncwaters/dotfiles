@@ -16,6 +16,7 @@ so the agent can correct it immediately instead of guessing.
 |------|---------|
 | `validate-file.mjs` | The validator. Reads the hook payload on stdin, reconstructs the resulting file content, validates it, prints a `deny` decision (or nothing = allow). |
 | `enforce-spawn-model.mjs` | Spawn guard that denies Agent/Task calls missing an explicit model or the required scope markers. |
+| `challenge-plan.mjs` | PreToolUse guard that denies ExitPlanMode until the plan carries the `CHALLENGE:` stamp the plan-challenge skill appends after its two challengers argued every step. |
 | `check-finding-scope.mjs` | PostToolUse guard that warns when Agent/Task structured findings name files outside the current diff. |
 | `hook-io.mjs` | Shared stdin payload, allow, and spawn-tool helpers for the spawn hooks. |
 | `inject-routing.mjs` | Routing loader (separate hook, own header docs). On `SessionStart` it prints `~/.claude/ROUTING.md` into the session. SessionStart never fires for subagents, so main-loop-only routing rules stay out of every spawn and out of the Codex mirror. |

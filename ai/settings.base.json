@@ -23,6 +23,15 @@
             "command": "node {{HOME}}/.claude/hooks/enforce-spawn-model.mjs"
           }
         ]
+      },
+      {
+        "matcher": "^ExitPlanMode$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/challenge-plan.mjs"
+          }
+        ]
       }
     ],
     "PostToolUse": [

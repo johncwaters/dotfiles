@@ -81,6 +81,7 @@ countSettingsCommand() {
 check "the routing SessionStart hook reaches the profile" test "$(countSettingsCommand inject-routing.mjs)" -eq 1
 check "the caveman ultra hook renders from the base" test "$(countSettingsCommand caveman-ultra.mjs)" -eq 1
 check "the finding scope hook reaches the profile" test "$(countSettingsCommand check-finding-scope.mjs)" -eq 1
+check "the plan challenge hook reaches the profile" test "$(countSettingsCommand challenge-plan.mjs)" -eq 1
 check "the retired sync hook is gone" test "$(countSettingsCommand sync-agents-md.mjs)" -eq 0
 
 rm -f "$sandbox/.claude/AGENTS.md"
