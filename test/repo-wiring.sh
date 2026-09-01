@@ -48,6 +48,31 @@ for installableTopic in $(topicDirectoriesWithAnInstaller); do
     grep -qF "| \`$installableTopic\` |" "$repoRoot/README.md"
 done
 
+checkProfileClaudeSettings() {
+  local profileName="$1"
+  local profileOverlayPath="$2"
+  if [[ ! -f "$profileOverlayPath" ]]; then
+    fail "$profileName has Claude settings for its ai topic"
+    return
+  fi
+  pass "$profileName has Claude settings for its ai topic"
+  local renderedProfileSettingsPath="$sandbox/rendered-ai-settings.$profileName.json"
+  HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
+    "$repoRoot/ai/settings.base.json" "$profileOverlayPath" \
+    "$renderedProfileSettingsPath" /fixture/home
+  check "the $profileName profile defaults caveman to ultra" \
+    grep -qF '"CAVEMAN_DEFAULT_MODE": "ultra"' "$renderedProfileSettingsPath"
+  check "the $profileName profile enables the caveman plugin" \
+    grep -qF '"caveman@caveman": true' "$renderedProfileSettingsPath"
+  check "the $profileName profile runs the caveman ultra hook" \
+    grep -qF 'caveman-ultra.mjs' "$renderedProfileSettingsPath"
+  local profileSettingsFixturePath="$repoRoot/test/fixtures/ai-settings.$profileName.json"
+  if [[ -f "$profileSettingsFixturePath" ]]; then
+    check "the shared merger keeps the prior $profileName ai settings bytes" \
+      cmp -s "$profileSettingsFixturePath" "$renderedProfileSettingsPath"
+  fi
+}
+
 for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
   profileDirectoryPath="$(dirname -- "$profileJsonPath")"
   profileTopics="$(readProfileTopics "$profileJsonPath")"
@@ -62,6 +87,10 @@ for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
   if grep -qx vscodium <<< "$profileTopics"; then
     check "$(basename -- "$profileDirectoryPath") has vscodium settings for its vscodium topic" \
       test -f "$profileDirectoryPath/vscodium.json"
+  fi
+  if grep -qx ai <<< "$profileTopics"; then
+    checkProfileClaudeSettings "$(basename -- "$profileDirectoryPath")" \
+      "$profileDirectoryPath/settings.overlay.json"
   fi
 done
 
@@ -128,13 +157,10 @@ check "the repository map names the shared JSON merger" \
 check "the repository map names cross-cutting suites" \
   grep -qF 'cross-cutting suites listed in `test/run-all.sh`' "$repoRoot/AGENTS.md"
 
-renderedAiSettingsPath="$sandbox/rendered-ai-settings.json"
-HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
-  "$repoRoot/ai/settings.base.json" \
-  "$repoRoot/profiles/personal/settings.overlay.json" \
-  "$renderedAiSettingsPath" \
-  /fixture/home
-check "the shared merger keeps the prior ai settings bytes" \
-  cmp -s "$repoRoot/test/fixtures/ai-settings.personal.json" "$renderedAiSettingsPath"
+check "the personal ai settings golden fixture exists" \
+  test -f "$repoRoot/test/fixtures/ai-settings.personal.json"
+
+check "no profile overlay owns caveman" \
+  bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 
 reportTopicResults "repo wiring"

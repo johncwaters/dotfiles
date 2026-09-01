@@ -139,6 +139,19 @@ renderDestination="$renderSandbox/settings.json"
 printf '{"model":"first"}\n' > "$renderBase"
 printf '{}\n' > "$renderOverlay"
 
+renderHookBase="$renderSandbox/hook-base.json"
+renderHookOverlay="$renderSandbox/hook-overlay.json"
+renderHookDestination="$renderSandbox/hook-settings.json"
+printf '%s\n' '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"base-session-start.mjs"}]}]}}' \
+  > "$renderHookBase"
+printf '%s\n' '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"overlay-session-start.mjs"}]}]}}' \
+  > "$renderHookOverlay"
+HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
+  "$renderHookBase" "$renderHookOverlay" "$renderHookDestination" /fixture/home
+check "an overlay SessionStart hook is appended to the base hooks" \
+  bash -c 'grep -qF base-session-start.mjs "$1" && grep -qF overlay-session-start.mjs "$1"' \
+  _ "$renderHookDestination"
+
 renderIntoSandbox() {
   renderJsonTemplate "render probe" "$repoRoot/ai/render-settings.mjs" \
     "$renderBase" "$renderOverlay" "$renderDestination" > /dev/null

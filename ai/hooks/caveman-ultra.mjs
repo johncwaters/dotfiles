@@ -6,7 +6,7 @@
  * writes "ultra" to ~/.claude/.caveman-active, the flag the caveman plugin
  * reads. Fails open on every error (never throws, never exits non-zero).
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -17,11 +17,20 @@ process.stdout.write(message);
 
 const cavemanFlagPath = join(homedir(), ".claude", ".caveman-active");
 const pollIntervalMs = 100;
-const pollDeadlineMs = 5000;
+const pollDeadlineMs = 4000;
 
-function flagContent() {
+function readFlagContent() {
   try {
     return readFileSync(cavemanFlagPath, "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+function readFlagWriteIdentity() {
+  try {
+    const flagStats = statSync(cavemanFlagPath);
+    return `${flagStats.ino}:${flagStats.mtimeMs}`;
   } catch {
     return null;
   }
@@ -37,34 +46,20 @@ function writeUltraFlag() {
   process.exit(0);
 }
 
-// The caveman plugin's own SessionStart hook writes "full" to the flag file;
-// hooks race, so wait until that write is observed (or the deadline passes)
-// before overwriting with "ultra" so ultra wins regardless of hook order.
-// Profiles that never enable the plugin have no race to lose, and waiting the
-// full deadline there would stall every session start for nothing. The skip
-// only fires on a settings.json this hook both read and parsed: an unreadable
-// or malformed settings file falls through to the poll, so not knowing the
-// answer costs the deadline rather than the race protection.
-function cavemanPluginKnownDisabled() {
-  let settings;
-  try {
-    const settingsPath = join(homedir(), ".claude", "settings.json");
-    settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-  } catch {
-    return false;
-  }
-  return settings?.enabledPlugins?.["caveman@caveman"] !== true;
-}
+// The racing caveman plugin rewrites the same bytes it already wrote, so only a new inode or mtime proves its write landed and that "ultra" gets the last word.
+const flagWriteIdentityBeforePoll = readFlagWriteIdentity();
 
-if (cavemanPluginKnownDisabled()) {
-  writeUltraFlag();
-}
+const willPluginResolveUltraToo =
+  readFlagContent() === "ultra" && process.env.CAVEMAN_DEFAULT_MODE === "ultra";
+if (willPluginResolveUltraToo) writeUltraFlag();
 
 let elapsedMs = 0;
 const poll = setInterval(() => {
   elapsedMs += pollIntervalMs;
   const isDeadlineReached = elapsedMs >= pollDeadlineMs;
-  if (flagContent() !== "full" && !isDeadlineReached) return;
+  const hasFlagBeenRewrittenSincePollStart =
+    readFlagWriteIdentity() !== flagWriteIdentityBeforePoll;
+  if (!hasFlagBeenRewrittenSincePollStart && !isDeadlineReached) return;
   clearInterval(poll);
   writeUltraFlag();
 }, pollIntervalMs);

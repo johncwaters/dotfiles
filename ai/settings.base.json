@@ -1,9 +1,21 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_COMMIT_POLICY_ROOT": "{{HOME}}/.dotfiles"
+    "CLAUDE_COMMIT_POLICY_ROOT": "{{HOME}}/.dotfiles",
+    "CAVEMAN_DEFAULT_MODE": "ultra"
   },
   "model": "claude-fable-5[1m]",
+  "enabledPlugins": {
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    }
+  },
   "hooks": {
     "PreToolUse": [
       {

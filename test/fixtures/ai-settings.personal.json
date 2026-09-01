@@ -1,9 +1,31 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_COMMIT_POLICY_ROOT": "/fixture/home/.dotfiles"
+    "CLAUDE_COMMIT_POLICY_ROOT": "/fixture/home/.dotfiles",
+    "CAVEMAN_DEFAULT_MODE": "ultra"
   },
   "model": "claude-fable-5[1m]",
+  "enabledPlugins": {
+    "caveman@caveman": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "posthog@claude-plugins-official": false,
+    "github@claude-plugins-official": false,
+    "postiz@skills-dir": false
+  },
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "claude-community": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-community"
+      }
+    }
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -76,27 +98,6 @@
       "WebFetch(domain:unpkg.com)"
     ],
     "defaultMode": "auto"
-  },
-  "enabledPlugins": {
-    "caveman@caveman": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "posthog@claude-plugins-official": false,
-    "github@claude-plugins-official": false,
-    "postiz@skills-dir": false
-  },
-  "extraKnownMarketplaces": {
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
-      }
-    },
-    "claude-community": {
-      "source": {
-        "source": "github",
-        "repo": "anthropics/claude-plugins-community"
-      }
-    }
   },
   "spinnerTipsEnabled": false,
   "alwaysThinkingEnabled": true,
