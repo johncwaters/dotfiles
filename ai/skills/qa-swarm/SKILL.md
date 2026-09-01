@@ -9,7 +9,7 @@ Find, converge, return. Every lane emits the same structured format so the merge
 
 ## Contract with the caller
 
-**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, and 2 to 4 sentences of context the lanes cannot derive from the diff. Optionally a scope restriction (`-- <paths>`), and two separate lists from an earlier round: findings already settled as `NIT` or `AMBIGUOUS`, which lanes are told not to re-report, and findings a writer claims to have fixed, which lanes are told to **check specifically**. Those two lists must never be merged into one: telling a lane to skip a finding somebody claims to have fixed is how an unverified fix becomes an approval.
+**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, and 2 to 4 sentences of context the lanes cannot derive from the diff. Optionally a scope restriction (`-- <paths>`), and, from an earlier round: three separate lists — findings already settled as `NIT` or `AMBIGUOUS`, which lanes are told not to re-report; findings a writer claims to have fixed, which lanes are told to **check specifically** and to report again at whatever severity if the defect is still there, exempt from any reporting bar; and findings a writer declined, which lanes are told to report again if still present, likewise exempt from any bar — plus, when the caller sends round state, the round number, the caller-computed touched-file set, and the caller's reporting bar for this round. The three lists must never be merged: telling a lane to skip a finding somebody claims to have fixed is how an unverified fix becomes an approval, and a declined finding is neither settled nor claimed fixed, so folding it into either list buries a live defect the writer refused to touch.
 
 **No `REVIEW_CMD`, no run.** Say so and stop. Pinning scope is `code-review`'s job, and computing a second pin here would let two layers review two different trees while believing they reviewed one.
 
@@ -68,7 +68,9 @@ Definition of done: <this lane's required structured output>
 - the repo path and the exact `REVIEW_CMD` (plus any `-- <paths>` restriction for this lane)
 - the caller's context, verbatim
 - facts already verified live, and the settled `NIT` and `AMBIGUOUS` list, so the lane does not re-flag settled ground
-- the claimed-fixed list as explicit regression checks, phrased as "confirm each of these is actually gone", never as "skip these"
+- the claimed-fixed list as explicit regression checks, phrased as "confirm each of these is actually gone", never as "skip these", each reported again at its own severity when it is still present, exempt from any reporting bar the caller supplies, since a bar that silences a failed regression check turns a false `FIXED` into an approval
+- the declined list, phrased as "report each of these again if it is still present", exempt from any reporting bar the caller supplies
+- when the caller sends round state: the round number, its touched-file set, the instruction to focus on those files and on the regression and declined checks, and the caller's reporting bar relayed verbatim. The bar is the caller's rule to write and to arm; this skill states no severity threshold of its own, because a second copy here drifts from the owner's the first time the rule is tuned. The full `REVIEW_CMD` sweep stays regardless; only what is worth reporting on settled ground moves
 - the router's danger and complexity ratings and which files it classified into this lane
 - the ask: real defects with a concrete failure scenario, severity-tagged, with LOW as the minimum and never NIT
 - the reviewer output format below
@@ -116,6 +118,8 @@ Lanes emit LOW at minimum and never `NIT`. Only code-review may use `NIT` as a d
 - Codex `external` unavailable: run without it and say so in the summary. A concern the router routed there re-routes to `code` or `security`. If no lane can safely cover it, emit it as a HIGH finding naming the lane that was unavailable
 - `tiebreak` unavailable: a contradiction is one defect claim plus one lane's verified-safe position, and only the claim is a finding, so there is no second finding to return. Emit the asserting lane's finding once, tagged `contested: <asserting lane> vs <disputing lane>`, with the disputing lane's reasoning in its body and `Confidence: low, tiebreak unavailable` at the end. That guarantees the caller triages it `AMBIGUOUS` rather than acting on a disputed claim
 
+**Lane overflow.** Every agent lane caps itself at 10 findings and reports what it dropped as one sentence in its own summary. Read each lane's summary for that sentence and carry the lanes that capped into this skill's `OVERALL_SUMMARY`. Left as prose it dies here, and the caller's late-finding ratchet, which exists to give dropped overflow its first look, stays armed on a diff nobody finished sweeping.
+
 **Deduplication.** First compute the changed-file set with `git diff --name-only` for the review range. Drop any finding whose `file` is outside that set and mention all such drops in at most one summary sentence. Then merge findings that name the same file within 5 lines of each other, or are plainly the same concern in different words. Merged findings carry the tag `convergent: <tag> + <tag>`. Convergence means independent lanes reached the same conclusion, so it promotes confidence: a merged finding counts as confirmed even when one lane marked it low-confidence. It does **not** by itself raise severity; keep the highest severity any lane assigned and name that lane in the body.
 
 **Contradiction.** One lane asserts a defect and another explicitly verified it as safe: that is a `tiebreak` case, not a merge. Dispatch the Grok lane on those findings alone, with both positions in the prompt, and keep whichever finding its ruling supports.
@@ -124,7 +128,7 @@ Lanes emit LOW at minimum and never `NIT`. Only code-review may use `NIT` as a d
 
 Emit the converged block and stop. No verdict line, no recommendation, no next step. The caller decides what any of it means.
 
-The summary paragraph says: how many findings survived convergence, which lanes ran and which were skipped or degraded, and the router's danger and complexity ratings. Those are facts the caller needs and cannot recover.
+The summary paragraph says: how many findings survived convergence, which lanes ran and which were skipped or degraded, the router's danger and complexity ratings, and the lanes that hit their own cap, written as the fixed phrase `truncated lanes: <comma-separated lane tags or none>`. Those are facts the caller needs and cannot recover. That one phrase is worded verbatim, always present, and `none` when nothing capped, because the caller parses it rather than reads it.
 
 ## Token discipline
 

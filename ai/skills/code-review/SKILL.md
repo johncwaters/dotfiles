@@ -11,9 +11,9 @@ One pass. Pin, find, triage, judge, return. Every cycle in the review ladder liv
 
 **Required input.** A target, in one of three forms: `staged`, `working` (a local tree), or a base and head ref (a branch or a pull request); the changed-file set as `-- <paths>`; and 2 to 4 sentences of context that the diff does not carry. If the caller omits paths, derive the set with `git diff --name-only` from the target diff and state the derived set in the output.
 
-**Optional input.** The previous round's findings block plus the writer's receipt, so this pass can tell settled ground from ground that was supposedly repaired.
+**Optional input.** The previous round's findings block plus the writer's receipt, so this pass can tell settled ground from ground that was supposedly repaired; that round's `TRUNCATED` line; and the round number plus the round-1 pin — the tree SHA or `base..head` range the first round's summary reported — which arm the late-finding rule in triage. The round number counts `/commit` writer rounds only: the first call is round 1, the call after the first `finding-fixer` dispatch is round 2. The writer-touched set is never self-reported: this pass computes it as `git diff --name-only <round-1 pin> <this round's pin>` restricted to the changed-file set, which is mechanical, immune to a writer misspelling or omitting a path, and cumulative across every writer round so far, so a round-3 rediscovery of a round-1 defect is not mistaken for late. The rule is armed only when the round number, the round-1 pin, and the previous round's `TRUNCATED` line are all present and the pin resolves — round 1 carries no such line, having no previous round; otherwise it is disarmed and this pass behaves as round 1, since a rule that fires on half its inputs suppresses real defects.
 
-**Guaranteed output.** A `VERDICT` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
+**Guaranteed output.** A `VERDICT` line, an `ACTIONABLE` line, a `TRUNCATED` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
 
 **Never.** No file edits. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/pr-review`). No second round: this skill has no opinion about whether it should run again, and a caller that wants another pass invokes it again with the previous findings in hand.
 
@@ -44,7 +44,9 @@ Record the changed-file set, file count, changed-line count, and touched subsyst
 
 ## Step 2: Call qa-swarm
 
-Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and any findings already dispositioned in an earlier round.
+Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and every piece of carried state named separately, never collapsed into one "already dispositioned" list: the findings settled as `NIT` or `AMBIGUOUS`, which lanes must not re-report; the findings the writer's receipt claims `FIXED`, as regression checks; and the findings the writer `DECLINED`, which lanes report if still present. Forwarding a claimed fix as settled ground is how an unverified fix becomes an approval.
+
+Add, and only when the late-finding rule is armed: the round number, the touched-file set computed from the round-1 pin and this round's pin, and the reporting bar that rule imposes this round, written out for the lanes to apply verbatim. `qa-swarm` states no bar of its own, so a disarmed round forwards no round state at all and its lanes sweep at full sensitivity.
 
 Do not spawn a reviewer agent directly from here. All finding goes through `qa-swarm`, so there is exactly one place that knows which lanes exist and when they trigger.
 
@@ -54,7 +56,7 @@ Do not spawn a reviewer agent directly from here. All finding goes through `qa-s
 
 Every finding leaves this step with exactly one disposition. A finding with none is a bug in the run, not an acceptable outcome.
 
-Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. Mention all such removals in at most one sentence in `OVERALL_SUMMARY`, never in `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then keep at most 10 findings per lane, highest severity first, and summarize overflow in one sentence.
+Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. Mention all such removals in at most one sentence in `OVERALL_SUMMARY`, never in `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then keep at most 10 findings per lane, highest severity first, and set the `TRUNCATED` line of the return to the union of the lanes `qa-swarm`'s `truncated lanes:` phrase names and the lanes this cap dropped findings from, so the next round can tell a swept diff from a capped one. The union is what makes the line true: every agent lane caps itself at 10 before its findings reach here, so this cap firing on those lanes is the rare case, and reading `TRUNCATED` off it alone reports `none` for the swarm's own overflow.
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
@@ -68,6 +70,7 @@ Rules that decide the hard cases:
 - A `convergent:` finding is `ACTIONABLE` if its fix is bounded, even when one contributing lane was low-confidence. Independent agreement is what clears the confidence bar.
 - A CRITICAL or HIGH finding is never `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
 - A LOW finding is recorded as `NIT`, never `ACTIONABLE`, and never triggers another review round. A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
+- **Late-finding rule, round 2 and later.** A first-time finding — one matching nothing in the previous round's block, the only block this pass is given — whose `file` is outside the computed touched-file set is late. That round swept the whole diff; a late finding is this round's lane noticing what last round's lane missed by chance, not new work to verify, and without this rule the loop re-litigates settled ground forever. Late at MEDIUM or LOW: `NIT`, named as late in its body. HIGH and CRITICAL are exempt and follow the normal rules whatever the round. Two things are never late: a finding in a writer-touched file, since the writer's edits are fresh surface; and a finding whose body attributes the defect to a change in a writer-touched file, wherever it sits, since a fix that breaks a caller elsewhere is new work. A previous round whose `TRUNCATED` line named any lane disarms this rule for the whole of this round, since the overflow it dropped never got its first look.
 
 Carried-in findings are handled by disposition, not uniformly:
 
@@ -98,6 +101,7 @@ A fifth value, `FAILED`, means the review could not be completed: `qa-swarm` rep
 ```
 VERDICT: <APPROVE|APPROVE WITH NITS|REQUEST CHANGES|BLOCKED|FAILED>
 ACTIONABLE: <count>
+TRUNCATED: <lane list or "none">
 
 STRUCTURED_FINDINGS:
 - file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM|LOW> | reviewer: <tag> | disposition: <ACTIONABLE|NIT|AMBIGUOUS> | body: <the review comment text>
@@ -111,6 +115,7 @@ Nothing found:
 ```
 VERDICT: APPROVE
 ACTIONABLE: 0
+TRUNCATED: none
 
 STRUCTURED_FINDINGS:
 (none)
@@ -119,7 +124,7 @@ OVERALL_SUMMARY:
 <one paragraph>
 ```
 
-`VERDICT` and `ACTIONABLE` come first so a caller can gate on two lines without parsing the block. A looping caller gates on `ACTIONABLE`; a landing caller gates on `VERDICT`; both are needed because they can disagree.
+`VERDICT` and `ACTIONABLE` come first so a caller can gate on two lines without parsing the block. A looping caller gates on `ACTIONABLE`; a landing caller gates on `VERDICT`; both are needed because they can disagree. `TRUNCATED` names every lane whose findings a cap dropped, its own or the lane's, or `none`, and it is machine-readable rather than a summary sentence because the caller must carry it into the next round, where it disarms the late-finding rule.
 
 The summary states: the pinned tree or SHA range, changed-file set, file and line counts, which lanes ran and which degraded, the count per severity, and the count per disposition. Then stop. No recommendation about what to do next, and no offer to fix anything.
 

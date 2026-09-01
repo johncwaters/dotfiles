@@ -69,7 +69,7 @@ gate.
    Always `working`, never `staged`: `land.ts` stages every tracked
    modification in scope plus the scoped untracked files, so a `staged` review would
    approve a subset of what gets committed.
-2. Read its first two lines, `VERDICT` and `ACTIONABLE`, and act:
+2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
    - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
      and report; never treat a failed review as a passed one.
    - Any `AMBIGUOUS` finding at MEDIUM or higher, at any verdict: stop and put it to the
@@ -93,11 +93,23 @@ The loop exits when no `ACTIONABLE` finding of MEDIUM or higher remains, not on 
 verdict: a MEDIUM finding dispositioned `ACTIONABLE` is a verified defect with a bounded
 fix and still maps to a passing verdict. LOW never triggers another round.
 
-Carry two separate lists into the next `/code-review` call, never merged: the findings
-settled as `NIT` or `AMBIGUOUS`, and the `finding-fixer` receipt. The first suppresses
-re-reporting; the second becomes a regression check, because a `FIXED` receipt is a claim
-and the next round is what verifies it. A round where `finding-fixer` declines every
-finding it was handed is a stop, not a retry.
+Carry three separate lists into the next `/code-review` call, never merged: the findings
+settled as `NIT` or `AMBIGUOUS`, the receipt's `FIXED` findings, and the receipt's
+`DECLINED` ones. The first suppresses re-reporting; the second becomes a regression check,
+because a `FIXED` receipt is a claim and the next round is what verifies it; the third is a
+live defect nobody fixed and nobody settled, so the next round must see it again if it is
+still there. A round where `finding-fixer` declines every finding it was handed is a stop,
+not a retry.
+
+Also carry, verbatim, the round number, the pin round 1's `/code-review` summary reported,
+and the previous round's `TRUNCATED` line. The number counts rounds of this loop: the first
+`/code-review` call is round 1, the call after the first `finding-fixer` dispatch is round
+2. All three — the number, the round-1 pin, and that `TRUNCATED` line — arm `/code-review`'s
+late-finding rule, which is what makes this loop converge instead of finding one more thing
+forever; that rule's mechanics are its own to state, not this skill's. Omit any one of them
+and it stays disarmed. A previous round
+whose `TRUNCATED` line named a lane leaves the next round un-ratcheted on purpose, so carry
+that line even when it says `none`.
 
 `/code-review` is the only review on this path. Do not spawn a reviewer agent yourself and
 do not invoke `/qa-swarm` directly.
