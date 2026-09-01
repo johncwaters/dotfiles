@@ -9,7 +9,7 @@ Models, rated 1 (low) to 5 (high) on intelligence and speed, 1 (cheap) to 5 (exp
 |---|---|---|---|---|---|
 | `opus` (claude-opus-5) | 5 | 2 | 4 | Agent `model=opus` | Default Claude tier per rule 2 |
 | `sonnet` (claude-sonnet-5) | 4 | 3 | 3 | Agent `model=sonnet` | Opt-in downgrade per rule 2 only |
-| `fable` (claude-fable-5) | 5 (Mythos-class, above opus) | 4 | 5 | Session model, and Agent `model=fable` | Main-loop orchestration, plus the spawned slices where the highest-stakes judgment beats the cost: security review is pinned here |
+| `fable` (claude-fable-5-1) | 5 (Mythos-class, above opus) | 4 | 5 | Session model, and Agent `model=fable` | Main-loop orchestration, plus the spawned slices where the highest-stakes judgment beats the cost: security review is pinned here |
 | `gpt-5.6-sol` (Codex CLI, frontier) | 5 | 2 | 2 | `codex exec ... -m gpt-5.6-sol -c model_reasoning_effort="high"` | Rule 1 hard slices: debugging, cross-file refactors, second opinions on large or risky diffs. Default effort is `low`, so always pass `high` (or `xhigh`/`max` for the hardest) |
 | `gpt-5.6-terra` (Codex CLI, balanced) | 4 | 3 | 1 | `codex exec ... -m gpt-5.6-terra` | Rule 0 PC control and the rule 1 default executor: ordinary coding slices, tests, boilerplate |
 | `gpt-5.6-luna` (Codex CLI, fast) | 3 | 5 | 1 | `codex exec ... -m gpt-5.6-luna` | Rule 1 trivial mechanical slices: formulaic single-file edits, renames, lookups, scripted sweeps |

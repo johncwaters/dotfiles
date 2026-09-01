@@ -4,7 +4,7 @@
     "CLAUDE_COMMIT_POLICY_ROOT": "/fixture/home/.dotfiles",
     "CAVEMAN_DEFAULT_MODE": "ultra"
   },
-  "model": "claude-fable-5[1m]",
+  "model": "claude-fable-5-1[1m]",
   "enabledPlugins": {
     "caveman@caveman": true,
     "typescript-lsp@claude-plugins-official": true,
