@@ -6,7 +6,17 @@
  * writes "ultra" to ~/.claude/.caveman-active, the flag the caveman plugin
  * reads. Fails open on every error (never throws, never exits non-zero).
  */
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -36,17 +46,33 @@ function readFlagWriteIdentity() {
   }
 }
 
+// A symlink planted at the predictable flag path would redirect a plain write, so build the flag beside it and rename over it, the way the plugin's own safeWriteFlag does.
 function writeUltraFlag() {
+  const temporaryFlagPath = `${cavemanFlagPath}.${process.pid}`;
   try {
     mkdirSync(dirname(cavemanFlagPath), { recursive: true });
-    writeFileSync(cavemanFlagPath, "ultra");
+    const flagDescriptor = openSync(
+      temporaryFlagPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      writeSync(flagDescriptor, "ultra");
+    } finally {
+      closeSync(flagDescriptor);
+    }
+    renameSync(temporaryFlagPath, cavemanFlagPath);
   } catch (error) {
     process.stderr.write(`caveman-ultra: flag write failed: ${error.message}\n`);
+  }
+  try {
+    rmSync(temporaryFlagPath, { force: true });
+  } catch {
+    process.stderr.write("caveman-ultra: leftover temporary flag could not be removed\n");
   }
   process.exit(0);
 }
 
-// The racing caveman plugin rewrites the same bytes it already wrote, so only a new inode or mtime proves its write landed and that "ultra" gets the last word.
 const flagWriteIdentityBeforePoll = readFlagWriteIdentity();
 
 const willPluginResolveUltraToo =
