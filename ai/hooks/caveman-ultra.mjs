@@ -57,9 +57,9 @@ let elapsedMs = 0;
 const poll = setInterval(() => {
   elapsedMs += pollIntervalMs;
   const isDeadlineReached = elapsedMs >= pollDeadlineMs;
-  const hasFlagBeenRewrittenSincePollStart =
-    readFlagWriteIdentity() !== flagWriteIdentityBeforePoll;
-  if (!hasFlagBeenRewrittenSincePollStart && !isDeadlineReached) return;
+  const hasPluginLandedUltra =
+    readFlagWriteIdentity() !== flagWriteIdentityBeforePoll || readFlagContent() === "ultra";
+  if (!hasPluginLandedUltra && !isDeadlineReached) return;
   clearInterval(poll);
   writeUltraFlag();
 }, pollIntervalMs);
