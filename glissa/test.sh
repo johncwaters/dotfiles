@@ -248,8 +248,11 @@ done
 
 makeGlissaApp() {
   local machineHome="$1"
-  mkdir -p "$machineHome/Projects/glissa/.git"
-  : > "$machineHome/Projects/glissa/server.js"
+  mkdir -p "$machineHome/Projects/glissa/.git" \
+    "$machineHome/Projects/glissa/server" \
+    "$machineHome/Projects/glissa/dist/server"
+  : > "$machineHome/Projects/glissa/server/main.ts"
+  : > "$machineHome/Projects/glissa/dist/server/index.js"
   printf '{}\n' > "$machineHome/Projects/glissa/package.json"
 }
 
@@ -436,6 +439,18 @@ check "an arbitrary app directory is rejected as an invalid checkout" \
   outputHas "$invalidAppOutput" "is not a Glissa checkout"
 check "an arbitrary app directory starts no service" logLacks "systemctl "
 
+makeGlissaApp "$invalidAppHome"
+rm -f "$invalidAppHome/Projects/glissa/server/main.ts" \
+  "$invalidAppHome/Projects/glissa/dist/server/index.js"
+: > "$invalidAppHome/Projects/glissa/server.js"
+legacyAppOutput="$(runInstall "$invalidAppHome" server)" || true
+check "a checkout from before the TypeScript migration is still a Glissa checkout" \
+  outputMatches "$legacyAppOutput" '\[ -- \].*glissa app.*~/Projects/glissa'
+check "a pre-migration checkout is told to update the checkout" \
+  outputMatches "$legacyAppOutput" '\[warn\].*~/Projects/glissa predates the TypeScript migration'
+check "a pre-migration checkout is never sent to npm install" \
+  outputLacks "$legacyAppOutput" "run npm install there"
+
 : > "$commandLog"
 makeGlissaApp "$serverHome"
 rm -rf "$serverHome/Projects/glissa/.git"
@@ -462,7 +477,9 @@ check "no CHANGEME survives on a server" \
 serverUnitPath="$serverHome/.config/systemd/user/glissa.service"
 check "the user unit is installed" test -f "$serverUnitPath"
 check "the unit runs the node from the fixed candidate list, not the shell's" \
-  grep -q "^ExecStart=$serverHome/.local/bin/node server.js\$" "$serverUnitPath"
+  grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
+check "the unit skips itself rather than crash-looping on a wiped build" \
+  grep -q "^ConditionPathExists=$serverHome/Projects/glissa/dist/server/index.js\$" "$serverUnitPath"
 check "the unit works out of this home" grep -q "^WorkingDirectory=$serverHome/Projects/glissa\$" "$serverUnitPath"
 check "the unit carries a rendered PATH" grep -q "^Environment=PATH=.\+\$" "$serverUnitPath"
 check "no placeholder survives the render" \
@@ -485,6 +502,18 @@ check "a checklist item keeps the topic non-zero" test "$serverStatus" -eq 1
 check "the dashboard clone is never cloned here" logLacks "git clone"
 check "the dashboard is never built here" logLacks "npm "
 check "no pairing url is minted" logLacks "glissa pair"
+
+mv "$serverHome/Projects/glissa/dist/server/index.js" "$serverHome/Projects/glissa/dist-index.parked"
+# A freshly installed unit is what makes this run want to activate, so only the guard can stop it.
+rm -f "$serverUnitPath" "$serverUnitPath.pre-dotfiles.rendered"
+: > "$commandLog"
+unbuiltOutput="$(runInstall "$serverHome" server)" || true
+check "a checkout without a built dist warns instead of starting" \
+  outputMatches "$unbuiltOutput" '\[warn\].*no built dist/server/index.js'
+check "a checkout without a built dist enables nothing" logLacks "enable --now"
+check "a checkout without a built dist reloads nothing" logLacks "daemon-reload"
+check "a checkout without a built dist restarts nothing" logLacks "restart glissa"
+mv "$serverHome/Projects/glissa/dist-index.parked" "$serverHome/Projects/glissa/dist/server/index.js"
 
 unitFingerprintAfterFirstRun="$(cksum < "$serverUnitPath")"
 localhostBackendState="$stubState/$(basename -- "$serverHome")/serve-localhost-backend"
@@ -653,7 +682,9 @@ check "a hand edited unit is backed up" \
 check "the backup keeps what was there" \
   bash -c 'grep -q "hand written" "$1".pre-dotfiles.bak' _ "$serverUnitPath"
 check "the rendered unit replaces the hand edit" \
-  grep -q "^ExecStart=$serverHome/.local/bin/node server.js\$" "$serverUnitPath"
+  grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
+check "the re-rendered unit keeps its build-exists condition" \
+  grep -q "^ConditionPathExists=$serverHome/Projects/glissa/dist/server/index.js\$" "$serverUnitPath"
 check "replacing the unit restarts the service" outputMatches "$handEditOutput" '\[ ok \].*glissa service.*restarted'
 
 : > "$commandLog"

@@ -1,11 +1,13 @@
 [Unit]
 Description=Glissa dashboard
 After=network.target
+# dist/ is gitignored build output; without this, a wiped build crash-loops on Restart=on-failure forever.
+ConditionPathExists=__APP_DIR__/dist/server/index.js
 
 [Service]
 Type=simple
 WorkingDirectory=__APP_DIR__
-ExecStart=__NODE__ server.js
+ExecStart=__NODE__ dist/server/index.js
 Environment=PATH=__PATH__
 KillMode=control-group
 TimeoutStopSec=10

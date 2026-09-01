@@ -171,7 +171,8 @@ protectGlissaConfig() {
 }
 
 requireGlissaApp() {
-  if [[ -f "$glissaAppDirectory/server.js" && -f "$glissaAppDirectory/package.json" \
+  if [[ ( -f "$glissaAppDirectory/server/main.ts" || -f "$glissaAppDirectory/server.js" ) \
+    && -f "$glissaAppDirectory/package.json" \
     && ( -d "$glissaAppDirectory/.git" || -f "$glissaAppDirectory/.git" ) ]]; then
     notePresent "glissa app" "$glissaAppDisplayPath"
     return 0
@@ -502,6 +503,17 @@ startGlissaService() {
   if glissaAppDepsArePending; then
     noteWarned "$label" \
       "dependencies or build are pending for $glissaAppDisplayPath, run the repos topic before starting it"
+    return 1
+  fi
+  # A pre-migration checkout builds only dist/client, so npm install there can never produce this file.
+  if [[ ! -f "$glissaAppDirectory/dist/server/index.js" && ! -f "$glissaAppDirectory/server/main.ts" ]]; then
+    noteWarned "$label" \
+      "$glissaAppDisplayPath predates the TypeScript migration, update the checkout (git pull) before starting it"
+    return 1
+  fi
+  if [[ ! -f "$glissaAppDirectory/dist/server/index.js" ]]; then
+    noteWarned "$label" \
+      "no built dist/server/index.js in $glissaAppDisplayPath, run npm install there before starting it"
     return 1
   fi
   if ! userServiceManagerIsReachable; then
