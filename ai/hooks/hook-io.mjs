@@ -13,3 +13,16 @@ export function readPayload() {
     return null;
   }
 }
+
+export function denyPreToolUse(reason) {
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: reason,
+      },
+    }),
+  );
+  process.exit(0);
+}

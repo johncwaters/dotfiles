@@ -310,6 +310,15 @@ const expected = {
   cursorBlink: false,
   debugMode: false,
   teams: [],
+  hooks: [{
+    id: "a2ef51b3-f8f3-4d9a-ac4b-785965a85560",
+    name: "Block new code comments",
+    event: "PreToolUse",
+    type: "command",
+    enabled: true,
+    matcher: "Write|Edit|MultiEdit",
+    command: `node ${home}/.claude/hooks/block-comments.mjs`
+  }],
   editorCommand: "",
   headroomEasyStart: false,
   proxyBaseUrl: "http://127.0.0.1:8787",

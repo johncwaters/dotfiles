@@ -18,7 +18,8 @@ so the agent can correct it immediately instead of guessing.
 | `enforce-spawn-model.mjs` | Spawn guard that denies Agent/Task calls missing an explicit model or the required scope markers. |
 | `challenge-plan.mjs` | PreToolUse guard that denies ExitPlanMode until the plan carries the `CHALLENGE:` stamp the plan-challenge skill appends after its two challengers argued every step. |
 | `check-finding-scope.mjs` | PostToolUse guard that warns when Agent/Task structured findings name files outside the current diff. |
-| `hook-io.mjs` | Shared stdin payload, allow, and spawn-tool helpers for the spawn hooks. |
+| `block-comments.mjs` | PreToolUse guard that denies a Write/Edit/MultiEdit adding net-new comment lines to a code file (JSDoc `@tag` blocks and shebangs exempt). Seeded into `~/.glissa/config.json` from `glissa/config.example.json`, tuned per-session in the Glissa Hooks tab, not settings.json. |
+| `hook-io.mjs` | Shared stdin payload, allow, PreToolUse deny, and spawn-tool helpers for the guard hooks. |
 | `inject-routing.mjs` | Routing loader (separate hook, own header docs). On `SessionStart` it prints `~/.claude/ROUTING.md` into the session. SessionStart never fires for subagents, so main-loop-only routing rules stay out of every spawn and out of the Codex mirror. |
 | `README.md` | This file. |
 | `AGENTS.md` | Instructions for an AI agent editing anything in this directory. |
