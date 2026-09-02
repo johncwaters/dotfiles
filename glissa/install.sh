@@ -221,7 +221,7 @@ try {
 }
 requireObject(config);
 const remote = config.remote === undefined ? {} : requireObject(config.remote);
-process.stdout.write(remote.enabled === false ? "disabled" : "enabled");
+process.stdout.write(remote.enabled === true ? "enabled" : "disabled");
 ' "$glissaConfigPath" 2>/dev/null)"; then
     printf 'unreadable\n'
     return 0
@@ -332,9 +332,6 @@ try {
 
 config.port = Number(localPortText);
 config.remote = config.remote && typeof config.remote === "object" ? config.remote : {};
-if (config.remote.enabled === undefined) {
-  config.remote.enabled = true;
-}
 config.remote.port = Number(remotePortText);
 config.remote.publicHost = publicHost;
 config.remote.allowedOrigins = [`https://${publicHost}`];
@@ -703,6 +700,25 @@ glissaServeWithdrawalIsPending() {
   dotfilesStateIsPending "$glissaServeWithdrawalStateName"
 }
 
+glissaServeWithdrawalIsOwed() {
+  if glissaServeWithdrawalIsPending; then
+    return 0
+  fi
+  isValidGlissaPort "$(glissaServeOwnedPort)"
+}
+
+# A tailnet this run cannot ask is not evidence of a route: with nothing recorded as published and nothing already owed, there is nothing to withdraw and nothing to warn about.
+reportGlissaServeUncheckedRoute() {
+  local label="$1"
+  local reason="$2"
+  if ! glissaServeWithdrawalIsOwed; then
+    notePresent "$label" "skipped, glissa remote disabled"
+    return 0
+  fi
+  markDotfilesStatePending "$glissaServeWithdrawalStateName"
+  noteWarned "$label" "$reason"
+}
+
 attemptGlissaServeWithdrawal() {
   local label="$1"
   markDotfilesStatePending "$glissaServeWithdrawalStateName"
@@ -722,15 +738,13 @@ withdrawGlissaServe() {
   local backends
   local queryStatus=0
   if ! isTailscaleAuthed; then
-    markDotfilesStatePending "$glissaServeWithdrawalStateName"
-    noteWarned "$label" \
+    reportGlissaServeUncheckedRoute "$label" \
       "tailscale is not authenticated, so the route on $glissaServeHttpsPort cannot be checked before withdrawal; run sudo tailscale up, then tailscale serve --https=$glissaServeHttpsPort off"
     return 0
   fi
   backends="$(glissaServeBackendsOnHttpsPort)" || queryStatus=$?
   if ((queryStatus != 0)); then
-    markDotfilesStatePending "$glissaServeWithdrawalStateName"
-    noteWarned "$label" \
+    reportGlissaServeUncheckedRoute "$label" \
       "$(glissaServeQueryFailureReason "$queryStatus"), run: tailscale serve --https=$glissaServeHttpsPort off"
     return 0
   fi
@@ -805,6 +819,7 @@ publishGlissaServe() {
     return 0
   fi
   if everyBackendTargetsPort "$backends" "$resolvedRemotePort"; then
+    clearDotfilesState "$glissaServeWithdrawalStateName"
     tailnetServeStarted=1
     notePresent "$label" "remote port $resolvedRemotePort"
     return 0
@@ -818,13 +833,14 @@ publishGlissaServe() {
     noteWarned "$label" "timeout not on PATH, run: tailscale serve --bg $resolvedRemotePort"
     return 0
   fi
+  # A failed serve --bg does not prove the route was not applied, so the withdrawal is owed from before the command runs until ownership is recorded.
+  markDotfilesStatePending "$glissaServeWithdrawalStateName"
   if ! publishGlissaServeRoute "$resolvedRemotePort"; then
     noteWarned "$label" "run: tailscale serve --bg $resolvedRemotePort"
     return 0
   fi
   recordGlissaServeOwnership "$resolvedRemotePort"
   if [[ "$(glissaServeOwnedPort)" != "$resolvedRemotePort" ]]; then
-    markDotfilesStatePending "$glissaServeWithdrawalStateName"
     if ! tailscale serve --https="$glissaServeHttpsPort" off >/dev/null 2>&1; then
       noteWarned "$label" \
         "published route is live because its ownership record and withdrawal failed, run: tailscale serve --https=$glissaServeHttpsPort off"
@@ -834,6 +850,7 @@ publishGlissaServe() {
     noteWarned "$label" "published route was withdrawn because its ownership record could not be written"
     return 0
   fi
+  clearDotfilesState "$glissaServeWithdrawalStateName"
   tailnetServeStarted=1
   noteApplied "$label" "remote port $resolvedRemotePort"
 }
@@ -866,7 +883,6 @@ configureGlissaServe() {
     return 0
   fi
   if [[ "$remoteState" == "enabled" ]]; then
-    clearDotfilesState "$glissaServeWithdrawalStateName"
     publishGlissaServe "$label"
     return 0
   fi

@@ -179,6 +179,9 @@ if [[ "${1:-}" == "serve" && "${2:-}" == "--bg" ]]; then
   if IFS= read -r -t 1 consentLine; then
     printf 'serve read stdin %s\n' "$consentLine" >> "$DOTFILES_TEST_LOG"
   fi
+  if [[ -f "$stateDir/serve-bg-fails" ]]; then
+    exit 1
+  fi
 fi
 if [[ "${1:-}" == "serve" && "${*: -1}" == "off" ]]; then
   if [[ -f "$stateDir/serve-off-fails" ]]; then
@@ -343,6 +346,10 @@ NODE
 
 printf '\nglissa topic\n'
 
+makeGlissaApp "$personalHome"
+mkdir -p "$personalHome/.claude"
+printf '{}\n' > "$personalHome/.claude/.credentials.json"
+: > "$commandLog"
 personalStatus=0
 personalOutput="$(runInstall "$personalHome" personal)" || personalStatus=$?
 
@@ -360,19 +367,43 @@ check "the config directory is owner only" \
   test "$(stat -c '%a' "$personalHome/.glissa")" = "700"
 check "the config file is owner only" \
   test "$(stat -c '%a' "$personalHome/.glissa/config.json")" = "600"
-check "a personal machine installs no unit" test ! -e "$personalHome/.config/systemd/user/glissa.service"
-check "a personal machine never touches systemd" logLacks "systemctl "
-check "a personal machine never touches Tailscale" logLacks "tailscale "
-check "a profile that does not serve glissa says the service was skipped" \
-  outputMatches "$personalOutput" '\[ -- \].*glissa service.*skipped, profile does not serve glissa'
+check "a personal machine installs the unit" test -f "$personalHome/.config/systemd/user/glissa.service"
+check "a personal machine enables the service" logHas "systemctl --user enable --now glissa"
+check "a config without a remote block is remote-disabled" \
+  outputHas "$personalOutput" 'remote access disabled'
+check "a personal machine publishes nothing on the tailnet" logLacks "serve --bg"
+check "a personal machine probes only the local listener" logHas "http://127.0.0.1:3000/"
+check "a personal machine never probes the remote listener" logLacks "http://127.0.0.1:3001/"
 
-printf '{ "port": 3000, "editorCommand": "hand-edited" }\n' > "$personalHome/.glissa/config.json"
 personalRerunStatus=0
 personalRerunOutput="$(runInstall "$personalHome" personal)" || personalRerunStatus=$?
 check "a second personal run reports no change" reportsNoChanges "$personalRerunOutput"
 check "a second personal run exits clean" test "$personalRerunStatus" -eq 0
+
+printf '{ "port": 3000, "editorCommand": "hand-edited" }\n' > "$personalHome/.glissa/config.json"
+runInstall "$personalHome" personal > /dev/null || true
 check "an existing config is never overwritten" \
   test "$(configValue "$personalHome" 'require(process.argv[1]).editorCommand')" = "hand-edited"
+
+printf '%s\n' '{ "port": 3000, "remote": { "port": 3001, "publicHost": "testbox.tailnet-name.ts.net" } }' \
+  > "$personalHome/.glissa/config.json"
+: > "$commandLog"
+keylessRemoteOutput="$(runInstall "$personalHome" personal)" || true
+check "a remote block with no enabled key reads as disabled" \
+  outputHas "$keylessRemoteOutput" 'remote access disabled'
+check "a remote block with no enabled key publishes nothing on the tailnet" logLacks "serve --bg"
+
+startSandboxHome "glissa-work"
+workHome="$sandbox"
+mkdir -p "$workHome/.local/bin"
+ln -sf "$stubBin/node" "$workHome/.local/bin/node"
+makeGlissaApp "$workHome"
+: > "$commandLog"
+workOutput="$(runInstall "$workHome" work)" || true
+check "a profile that does not serve glissa says the service was skipped" \
+  outputMatches "$workOutput" '\[ -- \].*glissa service.*skipped, profile does not serve glissa'
+check "a non-serving machine installs no unit" test ! -e "$workHome/.config/systemd/user/glissa.service"
+check "a non-serving machine never touches systemd" logLacks "systemctl "
 
 unresolvedProfileStatus=0
 unresolvedProfileOutput="$(runInstall "$unresolvedProfileHome" "")" || unresolvedProfileStatus=$?
@@ -727,14 +758,30 @@ check "an opt out keeps the host its owner wrote" \
 check "an opt out publishes nothing on the tailnet" logLacks "serve --bg"
 check "an unauthenticated opt out withdraws no route it could not check first" \
   logLacks "serve --https=443 off"
-check "an unauthenticated withdrawal says the tailnet could not be asked" \
-  outputMatches "$optOutOutput" '\[warn\].*tailscale is not authenticated'
+check "an unauthenticated run owing no withdrawal never says the tailnet could not be asked" \
+  outputLacks "$optOutOutput" "cannot be checked before withdrawal"
+check "an unauthenticated run owing no withdrawal reports the serve step as skipped" \
+  outputHas "$optOutOutput" "skipped, glissa remote disabled"
 check "the route an unauthenticated run could not check survives" \
   test -f "$optOutState/serve-port"
 optOutPendingState="$optOutHome/.local/state/dotfiles/glissa-serve-withdrawal-pending"
-check "a withdrawal the tailnet could not confirm stays pending" test -f "$optOutPendingState"
+optOutOwnedRecord="$optOutHome/.local/state/dotfiles/glissa-serve-owned"
+check "a withdrawal of a route this topic never published is never marked pending" \
+  test ! -e "$optOutPendingState"
 check "an opt out is never probed over TLS" logLacks "https://"
 check "an opt out never probes the remote listener" logLacks "http://127.0.0.1:3001/"
+
+mkdir -p "$(dirname -- "$optOutOwnedRecord")"
+printf '3001\n' > "$optOutOwnedRecord"
+: > "$commandLog"
+owedUnauthedOutput="$(runInstall "$optOutHome" server)" || true
+check "an unauthenticated withdrawal this topic owes says the tailnet could not be asked" \
+  outputMatches "$owedUnauthedOutput" '\[warn\].*tailscale is not authenticated'
+check "a withdrawal the tailnet could not confirm stays pending" test -f "$optOutPendingState"
+check "an owed withdrawal takes down no route it could not check first" \
+  logLacks "serve --https=443 off"
+check "the route an owed withdrawal could not check survives" \
+  test -f "$optOutState/serve-port"
 
 printf '%s\n' '{ "port": 3000, "remote": { "enabled": false } }' \
   > "$optOutHome/.glissa/config.json"
@@ -747,7 +794,7 @@ check "a disabled remote is never asked for a remote.port" \
 printf '%s\n' '{ "port": 3000, "remote": { "enabled": false, "port": 3001, "publicHost": "CHANGEME.ts.net" } }' \
   > "$optOutHome/.glissa/config.json"
 
-rm -f "$optOutState/tailscale-unauthed"
+rm -f "$optOutState/tailscale-unauthed" "$optOutOwnedRecord"
 : > "$commandLog"
 runInstall "$optOutHome" server > /dev/null || true
 check "authentication does not let a pending withdrawal bypass ownership" \
@@ -935,6 +982,19 @@ badStatusState="$stubState/$(basename -- "$badStatusHome")"
 mkdir -p "$badStatusState"
 printf '3001\n' > "$badStatusState/serve-port"
 touch "$badStatusState/serve-malformed-status"
+badStatusPendingState="$badStatusHome/.local/state/dotfiles/glissa-serve-withdrawal-pending"
+badStatusOwnedRecord="$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
+: > "$commandLog"
+unowedStatusOutput="$(runInstall "$badStatusHome" server)" || true
+check "a status query that fails marks nothing pending for a route this topic never published" \
+  test ! -e "$badStatusPendingState"
+check "a status query that fails is not reported when no withdrawal is owed" \
+  outputLacks "$unowedStatusOutput" "serve status --json failed"
+check "the route an unowed failed query could not check survives" \
+  test -f "$badStatusState/serve-port"
+
+mkdir -p "$(dirname -- "$badStatusOwnedRecord")"
+printf '3001\n' > "$badStatusOwnedRecord"
 : > "$commandLog"
 malformedStatusOutput="$(runInstall "$badStatusHome" server)" || true
 check "a serve status that will not parse is reported as a failed query" \
@@ -942,8 +1002,8 @@ check "a serve status that will not parse is reported as a failed query" \
 check "a serve status that will not parse never reads as an absent route" \
   outputLacks "$malformedStatusOutput" "skipped, glissa remote disabled"
 check "a serve status that will not parse leaves the route up" logLacks "serve --https"
-badStatusPendingState="$badStatusHome/.local/state/dotfiles/glissa-serve-withdrawal-pending"
-check "a serve status that will not parse keeps the withdrawal pending" test -f "$badStatusPendingState"
+check "a serve status that will not parse keeps an owed withdrawal pending" \
+  test -f "$badStatusPendingState"
 
 rm -f "$badStatusState/serve-malformed-status" "$badStatusPendingState"
 touch "$badStatusState/serve-empty-status"
@@ -973,7 +1033,7 @@ check "a serve status query that fails never republishes the route" logLacks "se
 check "a serve status query that fails says which command failed" \
   outputMatches "$failedStatusOutput" '\[warn\].*serve status --json failed'
 
-rm -f "$badStatusState/serve-status-fails" "$badStatusState/serve-port"
+rm -f "$badStatusState/serve-status-fails" "$badStatusState/serve-port" "$badStatusOwnedRecord"
 rm -f "$coreBin/timeout"
 : > "$commandLog"
 noTimeoutOutput="$(runInstall "$badStatusHome" server)" || true
@@ -1017,6 +1077,7 @@ check "publishing the route reaches the tailnet" logHas "tailscale serve --bg 30
 check "publishing the route never reads the converge's stdin" logLacks "serve read stdin"
 check "publishing the route records what this topic owns" \
   test "$(cat "$badStatusHome/.local/state/dotfiles/glissa-serve-owned")" = "3001"
+check "a recorded publication owes no withdrawal" test ! -e "$badStatusPendingState"
 
 writeRemoteConfig "$badStatusHome" false
 : > "$commandLog"
@@ -1028,6 +1089,35 @@ check "a withdrawn route leaves no ownership record behind" \
   test ! -e "$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
 
 writeRemoteConfig "$badStatusHome" true
+: > "$badStatusState/serve-bg-fails"
+: > "$commandLog"
+failedPublishOutput="$(runInstall "$badStatusHome" server)" || true
+check "a publication that fails names the command to run by hand" \
+  outputMatches "$failedPublishOutput" '\[warn\].*run: tailscale serve --bg 3001'
+check "a publication that fails records no ownership" \
+  test ! -e "$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
+check "a publication that fails keeps the withdrawal it cannot disprove pending" \
+  test -f "$badStatusPendingState"
+rm -f "$badStatusState/serve-bg-fails"
+
+touch "$badStatusState/tailscale-unauthed"
+: > "$commandLog"
+unauthedAfterFailedPublishOutput="$(runInstall "$badStatusHome" server)" || true
+check "an enabled converge that cannot ask the tailnet keeps the marker a failed publish left" \
+  test -f "$badStatusPendingState"
+check "an enabled converge that cannot ask the tailnet publishes nothing" logLacks "serve --bg"
+check "an enabled converge that cannot ask the tailnet says so" \
+  outputMatches "$unauthedAfterFailedPublishOutput" '\[warn\].*run sudo tailscale up once'
+rm -f "$badStatusState/tailscale-unauthed"
+
+: > "$commandLog"
+runInstall "$badStatusHome" server > /dev/null || true
+check "a converge that publishes the route clears the marker its failed publish left" \
+  test ! -e "$badStatusPendingState"
+check "the converge that cleared the marker owns the route it published" \
+  test "$(cat "$badStatusHome/.local/state/dotfiles/glissa-serve-owned")" = "3001"
+
+writeRemoteConfig "$badStatusHome" true
 : > "$commandLog"
 runInstall "$badStatusHome" server "" "$consentInputPath" > /dev/null || true
 check "the route is published again before a stale marker is planted" \
@@ -1037,7 +1127,8 @@ check "the route is published again before a stale marker is planted" \
 stalePendingOutput="$(runInstall "$badStatusHome" server)" || true
 check "an enabled config never acts on a withdrawal marker left by an earlier run" \
   logLacks "serve --https"
-check "an enabled config clears the stale withdrawal marker" test ! -e "$badStatusPendingState"
+check "an enabled config that finds the live route already matching clears the stale marker" \
+  test ! -e "$badStatusPendingState"
 check "a live route is left up rather than torn down and republished" logLacks "serve --bg"
 check "the live route survives the stale marker" test -f "$badStatusState/serve-port"
 check "the run that cleared the stale marker reports the route as it found it" \
