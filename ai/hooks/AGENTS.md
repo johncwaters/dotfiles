@@ -12,7 +12,7 @@ of them as production and follow the shared rule below before editing any hook.
 | `validate-file.mjs` | `PreToolUse` (Write/Edit/MultiEdit) | Yes, denies malformed writes | `README.md`, this file |
 | `enforce-spawn-model.mjs` | `PreToolUse` (Agent/Task) | Yes, denies spawns missing a model or scope markers | Header comment in the script |
 | `challenge-plan.mjs` | `PreToolUse` (ExitPlanMode) | Yes, denies a plan missing the plan-challenge `CHALLENGE:` stamp | Header comment in the script |
-| `check-finding-scope.mjs` | `PostToolUse` (Agent/Task) | No, warns on findings outside the current diff | `README.md` |
+| `check-finding-scope.mjs` | `PostToolUse` (Agent/Task) | No, warns on findings outside the current diff or on unchanged lines inside it | `README.md` |
 | `inject-routing.mjs` | `SessionStart` | No, prints context or nothing | `README.md` |
 | `caveman-ultra.mjs` | `SessionStart` | No, prints the ultra mode instruction and writes `~/.claude/.caveman-active` | Header comment in the script |
 | `block-comments.mjs` | `PreToolUse` (Write/Edit/MultiEdit) | Yes, denies writes adding net-new comment lines. Seeded from `glissa/config.example.json` into config.json `hooks` and tuned per-session in the Glissa Hooks tab, NOT settings.json | Header comment in the script |

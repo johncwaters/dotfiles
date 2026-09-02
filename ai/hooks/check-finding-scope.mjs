@@ -34,7 +34,7 @@ function fieldValue(fields, label) {
   return field.trim().slice(prefix.length).trim();
 }
 
-function findingFilePath(line) {
+function parseFinding(line) {
   const trimmedLine = line.trim();
   if (!trimmedLine.startsWith("-")) {
     return null;
@@ -48,10 +48,12 @@ function findingFilePath(line) {
   if (!filePath || filePath === "(none)" || /^<.*>$/.test(filePath)) {
     return null;
   }
-  return filePath;
+  const side = (fieldValue(fields, "side") ?? "RIGHT").toUpperCase() === "LEFT" ? "LEFT" : "RIGHT";
+  const lineNumber = /^\d+/.test(lineValue) ? Number(lineValue.match(/^\d+/)[0]) : null;
+  return { filePath, lineNumber, side };
 }
 
-function findingFiles(toolResponse) {
+function findings(toolResponse) {
   const collectedText = [];
   collectText(toolResponse, collectedText);
   const lines = collectedText.join("\n").split(/\r?\n/);
@@ -60,18 +62,18 @@ function findingFiles(toolResponse) {
     return [];
   }
 
-  const files = [];
+  const parsedFindings = [];
   for (const line of lines.slice(blockStart + 1)) {
     if (line.trim() === "OVERALL_SUMMARY:") {
       break;
     }
-    const filePath = findingFilePath(line);
-    if (filePath === null) {
+    const finding = parseFinding(line);
+    if (finding === null) {
       continue;
     }
-    files.push(filePath);
+    parsedFindings.push(finding);
   }
-  return files;
+  return parsedFindings;
 }
 
 function normalizeFilePath(filePath, workingDirectory) {
@@ -82,8 +84,8 @@ function normalizeFilePath(filePath, workingDirectory) {
   return relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
-function gitPaths(workingDirectory, argumentsList) {
-  const processResult = spawnSync("git", [...argumentsList, "-z"], {
+function runGit(workingDirectory, argumentsList) {
+  const processResult = spawnSync("git", argumentsList, {
     cwd: workingDirectory,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
@@ -91,18 +93,116 @@ function gitPaths(workingDirectory, argumentsList) {
   if (processResult.error || processResult.status !== 0) {
     throw processResult.error ?? new Error(processResult.stderr || "git command failed");
   }
-  return (processResult.stdout ?? "").split("\0").filter(Boolean);
+  return processResult.stdout ?? "";
 }
 
-function warn(outOfScopeFiles) {
+function gitPaths(workingDirectory, argumentsList) {
+  return runGit(workingDirectory, [...argumentsList, "-z"]).split("\0").filter(Boolean);
+}
+
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+
+function pushHunkRange(sideRanges, start, count) {
+  if (count === 0) {
+    return;
+  }
+  sideRanges.push([start, start + count - 1]);
+}
+
+const DIFF_ARGUMENTS = [
+  "diff",
+  "-U0",
+  "--no-color",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--inter-hunk-context=0",
+  "HEAD",
+];
+
+function changedLineRanges(workingDirectory, filePath) {
+  const ranges = { LEFT: [], RIGHT: [] };
+  const diffOutput = runGit(workingDirectory, [...DIFF_ARGUMENTS, "--", filePath]);
+  let headerCount = 0;
+  for (const line of diffOutput.split(/\r?\n/)) {
+    const header = HUNK_HEADER.exec(line);
+    if (header === null) {
+      continue;
+    }
+    headerCount += 1;
+    pushHunkRange(ranges.LEFT, Number(header[1]), header[2] === undefined ? 1 : Number(header[2]));
+    pushHunkRange(ranges.RIGHT, Number(header[3]), header[4] === undefined ? 1 : Number(header[4]));
+  }
+  if (headerCount === 0) {
+    return null;
+  }
+  return ranges;
+}
+
+function isWithinRanges(ranges, lineNumber) {
+  return ranges.some(([start, end]) => lineNumber >= start && lineNumber <= end);
+}
+
+function describeScopeGaps(workingDirectory, parsedFindings) {
+  const changedFiles = new Set(gitPaths(workingDirectory, ["diff", "--name-only", "HEAD"]));
+  const untrackedFiles = new Set(
+    gitPaths(workingDirectory, ["ls-files", "--others", "--exclude-standard"])
+  );
+  const rangesByFile = new Map();
+  const outOfScopeFiles = new Set();
+  const unchangedLines = new Set();
+
+  for (const finding of parsedFindings) {
+    const filePath = normalizeFilePath(finding.filePath, workingDirectory);
+    if (untrackedFiles.has(filePath)) {
+      continue;
+    }
+    if (!changedFiles.has(filePath)) {
+      outOfScopeFiles.add(filePath);
+      continue;
+    }
+    if (finding.lineNumber === null) {
+      continue;
+    }
+    if (!rangesByFile.has(filePath)) {
+      rangesByFile.set(filePath, changedLineRanges(workingDirectory, filePath));
+    }
+    const rangesForFile = rangesByFile.get(filePath);
+    if (rangesForFile === null) {
+      continue;
+    }
+    if (isWithinRanges(rangesForFile[finding.side], finding.lineNumber)) {
+      continue;
+    }
+    unchangedLines.add(`${filePath}:${finding.lineNumber} (${finding.side})`);
+  }
+
+  return {
+    outOfScopeFiles: [...outOfScopeFiles].sort(),
+    unchangedLines: [...unchangedLines].sort(),
+  };
+}
+
+function warn({ outOfScopeFiles, unchangedLines }) {
+  const sentences = ["Scope check:"];
+  if (outOfScopeFiles.length > 0) {
+    sentences.push(
+      "STRUCTURED_FINDINGS referenced files outside the current diff: " +
+        `${outOfScopeFiles.join(", ")}. These files are not present in the working tree, ` +
+        "staged diff, or untracked file list."
+    );
+  }
+  if (unchangedLines.length > 0) {
+    sentences.push(
+      "STRUCTURED_FINDINGS anchored to lines the diff did not change: " +
+        `${unchangedLines.join(", ")}. A finding on an unchanged line is out of scope unless ` +
+        "its body attributes the defect to a changed line."
+    );
+  }
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PostToolUse",
-        additionalContext:
-          "Scope check: STRUCTURED_FINDINGS referenced files outside the current diff: " +
-          `${outOfScopeFiles.join(", ")}. These files are not present in the working tree, ` +
-          "staged diff, or untracked file list.",
+        additionalContext: sentences.join(" "),
       },
     })
   );
@@ -114,24 +214,14 @@ function main() {
   if (!payload || typeof payload !== "object") allow();
   if (!SPAWN_TOOLS.has(payload.tool_name)) allow();
 
-  const files = findingFiles(payload.tool_response);
-  if (files.length === 0) allow();
+  const parsedFindings = findings(payload.tool_response);
+  if (parsedFindings.length === 0) allow();
 
   const workingDirectory =
     typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : process.cwd();
-  const changedFiles = new Set([
-    ...gitPaths(workingDirectory, ["diff", "--name-only", "HEAD"]),
-    ...gitPaths(workingDirectory, ["ls-files", "--others", "--exclude-standard"]),
-  ]);
-  const outOfScopeFiles = [
-    ...new Set(
-      files
-        .map((filePath) => normalizeFilePath(filePath, workingDirectory))
-        .filter((filePath) => !changedFiles.has(filePath))
-    ),
-  ].sort();
-  if (outOfScopeFiles.length === 0) allow();
-  warn(outOfScopeFiles);
+  const scopeGaps = describeScopeGaps(workingDirectory, parsedFindings);
+  if (scopeGaps.outOfScopeFiles.length === 0 && scopeGaps.unchangedLines.length === 0) allow();
+  warn(scopeGaps);
 }
 
 try {

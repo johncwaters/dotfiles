@@ -61,7 +61,7 @@ Every delegation prompt carries, per the delegation contract in `~/.claude/ROUTI
 
 ```
 Scope: <changed-file set and REVIEW_CMD range for this lane>
-Out of scope: Pre-existing issues outside that set
+Out of scope: Pre-existing issues outside that set; unchanged lines inside it are read, never anchored
 Definition of done: <this lane's required structured output>
 ```
 
@@ -72,7 +72,7 @@ Definition of done: <this lane's required structured output>
 - the declined list, phrased as "report each of these again if it is still present", exempt from any reporting bar the caller supplies
 - when the caller sends round state: the round number, its touched-file set, the instruction to focus on those files and on the regression and declined checks, and the caller's reporting bar relayed verbatim. The bar is the caller's rule to write and to arm; this skill states no severity threshold of its own, because a second copy here drifts from the owner's the first time the rule is tuned. The full `REVIEW_CMD` sweep stays regardless; only what is worth reporting on settled ground moves
 - the router's danger and complexity ratings and which files it classified into this lane
-- the ask: real defects with a concrete failure scenario, severity-tagged, with LOW as the minimum and never NIT
+- the ask: real defects with a concrete failure scenario, severity-tagged, with LOW as the minimum and never NIT, each anchored to a line the diff adds or removes, or to `general` when the defect is file-level
 - the reviewer output format below
 
 Hand over the command, never the diff text. Do not restate standing rules from AGENTS.md; every target already reads them.

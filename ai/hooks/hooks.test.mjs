@@ -33,26 +33,34 @@ function runGit(repository, argumentsList) {
   return (processResult.stdout ?? "").trim();
 }
 
-function makeRepository() {
+function makeRepository(committedContent = "one\n", workingContent = "two\n") {
   const repository = fs.mkdtempSync(path.join(os.tmpdir(), "finding-scope-hook-"));
   runGit(repository, ["init", "-q"]);
   runGit(repository, ["config", "user.name", "Test User"]);
   runGit(repository, ["config", "user.email", "test@example.com"]);
-  fs.writeFileSync(path.join(repository, "a.txt"), "one\n", "utf8");
+  fs.writeFileSync(path.join(repository, "a.txt"), committedContent, "utf8");
   runGit(repository, ["add", "--", "a.txt"]);
   runGit(repository, ["commit", "-q", "-m", "init"]);
-  fs.writeFileSync(path.join(repository, "a.txt"), "two\n", "utf8");
+  fs.writeFileSync(path.join(repository, "a.txt"), workingContent, "utf8");
   return repository;
 }
 
-function findingsFor(filePath) {
+function findingAt(filePath, line, side) {
   return [
     "STRUCTURED_FINDINGS:",
-    `- file: ${filePath} | line: 1 | side: RIGHT | severity: LOW | reviewer: code/logic | body: example`,
+    `- file: ${filePath} | line: ${line} | side: ${side} | severity: LOW | reviewer: code/logic | body: example`,
     "",
     "OVERALL_SUMMARY:",
     "Example summary.",
   ].join("\n");
+}
+
+function findingsFor(filePath) {
+  return findingAt(filePath, 1, "RIGHT");
+}
+
+function makeMultiLineRepository() {
+  return makeRepository("one\ntwo\nthree\nfour\nfive\n", "one\ntwo\nTHREE\nfive\n");
 }
 
 test("spawn prompt missing scope markers is denied", () => {
@@ -301,6 +309,112 @@ test("finding scope ignores placeholder file entries", () => {
 
     assert.equal(processResult.status, 0);
     assert.equal(processResult.stdout, "");
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+function scopeContextFor(repository, toolResponse) {
+  const processResult = runHook("check-finding-scope.mjs", {
+    cwd: repository,
+    tool_name: "Agent",
+    tool_response: toolResponse,
+  });
+  assert.equal(processResult.status, 0);
+  if (processResult.stdout === "") {
+    return "";
+  }
+  return JSON.parse(processResult.stdout).hookSpecificOutput.additionalContext;
+}
+
+test("finding scope warns for a changed file when the line is outside every hunk", () => {
+  const repository = makeMultiLineRepository();
+  try {
+    assert.equal(scopeContextFor(repository, findingAt("a.txt", 3, "RIGHT")), "");
+    assert.equal(scopeContextFor(repository, findingAt("a.txt", 4, "LEFT")), "");
+    assert.equal(scopeContextFor(repository, findingAt("a.txt", "general", "RIGHT")), "");
+
+    const unchangedLineContext = scopeContextFor(repository, findingAt("a.txt", 1, "RIGHT"));
+    assert.match(unchangedLineContext, /lines the diff did not change: a\.txt:1 \(RIGHT\)/);
+    assert.doesNotMatch(unchangedLineContext, /outside the current diff/);
+
+    const wrongSideContext = scopeContextFor(repository, findingAt("a.txt", 4, "RIGHT"));
+    assert.match(wrongSideContext, /a\.txt:4 \(RIGHT\)/);
+
+    fs.writeFileSync(path.join(repository, "new.txt"), "a\nb\nc\n", "utf8");
+    assert.equal(scopeContextFor(repository, findingAt("new.txt", 3, "RIGHT")), "");
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("finding scope reports out-of-diff files and unchanged lines together", () => {
+  const repository = makeMultiLineRepository();
+  try {
+    const context = scopeContextFor(repository, [
+      "STRUCTURED_FINDINGS:",
+      "- file: b.txt | line: 1 | side: RIGHT | severity: LOW | reviewer: code/logic | body: x",
+      "- file: a.txt | line: 5 | side: RIGHT | severity: LOW | reviewer: code/logic | body: y",
+      "- file: a.txt | line: 3 | side: RIGHT | severity: LOW | reviewer: code/logic | body: z",
+      "",
+      "OVERALL_SUMMARY:",
+    ].join("\n"));
+    assert.match(context, /outside the current diff: b\.txt\./);
+    assert.match(context, /did not change: a\.txt:5 \(RIGHT\)\./);
+    assert.doesNotMatch(context, /a\.txt:3/);
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("a deletion-only hunk anchors nothing on the right side", () => {
+  const repository = makeRepository("one\ntwo\nthree\nfour\nfive\n", "one\nfour\nfive\n");
+  try {
+    assert.equal(scopeContextFor(repository, findingAt("a.txt", 2, "LEFT")), "");
+    assert.equal(scopeContextFor(repository, findingAt("a.txt", 3, "LEFT")), "");
+    assert.match(
+      scopeContextFor(repository, findingAt("a.txt", 1, "RIGHT")),
+      /did not change: a\.txt:1 \(RIGHT\)/,
+    );
+    assert.match(
+      scopeContextFor(repository, findingAt("a.txt", 2, "RIGHT")),
+      /did not change: a\.txt:2 \(RIGHT\)/,
+    );
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("an insertion-only hunk anchors nothing on the left side", () => {
+  const repository = makeRepository("one\ntwo\nthree\n", "one\ntwo\nNEW\nthree\n");
+  try {
+    assert.equal(scopeContextFor(repository, findingAt("a.txt", 3, "RIGHT")), "");
+    assert.match(
+      scopeContextFor(repository, findingAt("a.txt", 2, "LEFT")),
+      /did not change: a\.txt:2 \(LEFT\)/,
+    );
+    assert.match(
+      scopeContextFor(repository, findingAt("a.txt", 3, "LEFT")),
+      /did not change: a\.txt:3 \(LEFT\)/,
+    );
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("an external diff driver does not turn a changed line into an unchanged one", () => {
+  const repository = makeMultiLineRepository();
+  try {
+    const driverPath = path.join(repository, "diff-driver.sh");
+    fs.writeFileSync(driverPath, "#!/bin/sh\necho 'files differ'\n", "utf8");
+    fs.chmodSync(driverPath, 0o755);
+    runGit(repository, ["config", "diff.external", driverPath]);
+
+    assert.equal(scopeContextFor(repository, findingAt("a.txt", 3, "RIGHT")), "");
+    assert.match(
+      scopeContextFor(repository, findingAt("a.txt", 1, "RIGHT")),
+      /lines the diff did not change: a\.txt:1 \(RIGHT\)/,
+    );
   } finally {
     fs.rmSync(repository, { recursive: true, force: true });
   }

@@ -72,22 +72,51 @@ gate.
 2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
    - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
      and report; never treat a failed review as a passed one.
-   - Any `AMBIGUOUS` finding at MEDIUM or higher, at any verdict: stop and put it to the
-     carbon unit with both readings stated. Carry the answer into the next `/code-review`
+   - Any `AMBIGUOUS` finding at MEDIUM or higher on round 1 or 2, at any verdict: stop and
+     put it to the carbon unit with both readings stated. Carry the answer into the next `/code-review`
      call as a stated decision so the finding is re-dispositioned; an `AMBIGUOUS` finding
      that survives an answer means the answer never reached the next round. Report lower
      severity `AMBIGUOUS` findings without interrupting.
-   - `ACTIONABLE` at MEDIUM or higher and rounds remaining: hand exactly those findings
+   - `ACTIONABLE` at MEDIUM or higher on round 1 or 2: hand exactly those findings
      plus the changed-file list to the `finding-fixer` agent in a single spawn, and state
      that `Scope:` is that list, `Out of scope:` is pre-existing issues outside it, and
      `Definition of done:` is its finding-fixer receipt. Then go back to step 1. LOW findings are
      listed in the commit report and left alone.
-   - Any `ACTIONABLE` finding at MEDIUM or higher on the last permitted round: stop
-     without dispatching the writer. Fixing after the final review leaves an unverified
-     edit.
+   - Round 3 never asks and never stops, whatever the verdict, FAILED excepted: a failed
+     review keeps its own rule on every round, so a round-3 `VERDICT: FAILED` re-runs once
+     and then stops rather than landing a review that never completed. Hand every surviving
+     `ACTIONABLE` finding at MEDIUM or higher to `finding-fixer` the same way. Decide each
+     surviving `AMBIGUOUS` finding at MEDIUM or higher yourself, from the caller context and
+     the code: one with a bounded fix inside the changed-file list is re-dispositioned
+     `ACTIONABLE`, with the reading you chose written into its body, before it joins the
+     writer's batch, since a finding still marked `AMBIGUOUS` when it arrives is declined on
+     sight; a MEDIUM one without such a fix is recorded as a NIT with the reading you chose;
+     and a HIGH or CRITICAL one without such a fix is recorded with its reading in the commit
+     message body. When the receipt is back, go to **Step 3: write the message**; no fourth
+     review runs. Every finding that receipt marks `FIXED` goes in the message's `Not-tested`
+     trailer, because the last review never saw those edits, and `Confidence` cannot be
+     `high` while that trailer names one. A receipt that never arrives, does not parse, or
+     omits a finding it was handed counts every finding missing from it as `DECLINED`, and
+     puts every change to the tree since that dispatch in the `Not-tested` trailer, because a
+     spawn that died mid-edit leaves work no review and no receipt accounts for. `DECLINED`
+     findings and the `AMBIGUOUS` calls you made go in the commit report.
+   - Round 3 always commits, FAILED excepted, and what it withholds instead is promotion.
+     A HIGH or CRITICAL finding it never got verified fixed — `DECLINED` by the writer,
+     handed over but absent from the receipt, `AMBIGUOUS` and recorded rather than fixed,
+     or claimed `FIXED` with no review after it, which is every HIGH or CRITICAL finding the
+     `Not-tested` trailer names — means running `land.ts` without `--promote`, so the
+     feature branch is pushed and mainline is untouched, and naming each such finding in the
+     commit message body, so the decision is visible in history rather than only in the chat
+     report. The commit and its trailer stay as written either way. Where
+     `policy.afterCommit` is `promote`, say in the report that a later plain re-run with
+     `--promote` carries the commit onto mainline once a carbon unit has looked at those
+     findings; under any other policy **Step 4: land** already omits the flag, so the round
+     lands exactly as that step says and nothing is withheld.
    - No `ACTIONABLE` finding at MEDIUM or higher, with a verdict of `APPROVE` or `APPROVE WITH NITS`: leave the loop.
-3. At most **three** rounds. Still not passing after the third: stop, report the surviving
-   findings and the round count, and do not run `land.ts`.
+3. At most **three** rounds, and the third always ends in **Step 3: write the message**,
+   FAILED excepted. Three sweeps have had their look; a fourth costs more than the
+   unverified edit it would catch, and a stop here only hands the carbon unit the same
+   decision this loop just made.
 
 The loop exits when no `ACTIONABLE` finding of MEDIUM or higher remains, not on the
 verdict: a MEDIUM finding dispositioned `ACTIONABLE` is a verified defect with a bounded
@@ -98,8 +127,9 @@ settled as `NIT` or `AMBIGUOUS`, the receipt's `FIXED` findings, and the receipt
 `DECLINED` ones. The first suppresses re-reporting; the second becomes a regression check,
 because a `FIXED` receipt is a claim and the next round is what verifies it; the third is a
 live defect nobody fixed and nobody settled, so the next round must see it again if it is
-still there. A round where `finding-fixer` declines every finding it was handed is a stop,
-not a retry.
+still there. A round 1 or 2 where `finding-fixer` declines every finding it was handed is
+a stop, not a retry; on round 3 it lands, since the tree the last review saw is unchanged,
+and lands without promotion when any of those declined findings is HIGH or CRITICAL.
 
 Also carry, verbatim, the round number, the pin round 1's `/code-review` summary reported,
 and the previous round's `TRUNCATED` line. The number counts rounds of this loop: the first
