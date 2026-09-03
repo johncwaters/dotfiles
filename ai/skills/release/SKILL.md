@@ -7,7 +7,7 @@ description: Execute a versioned release for the current repo using its .claude/
 
 Profile-driven release runbook. All repo-specific knowledge lives in one tracked file per repo: `.claude/release-profile.json`. This skill never invents missing facts: a required field that is absent or contradicts the repo state stops the release.
 
-The profile checks below are read and applied by you, not by a program: the Python linter that used to enforce them was deleted with the rest of the Python in this repo, and no replacement has landed. Treat every check as blocking anyway.
+No program enforces the profile checks below; you apply them, and every check is blocking.
 
 ## Phase 0 — Load or derive the profile
 

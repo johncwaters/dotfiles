@@ -18,7 +18,7 @@ Main loop only; never loaded for subagents or externally dispatched CLIs. Full r
 </routing>
 
 <execution>
-Broad or vague requests: explore first, then plan, then implement. Run builds, test suites, and installs with run_in_background instead of blocking the loop.
+Run builds, test suites, and installs with run_in_background instead of blocking the loop.
 Session hygiene: commit each completed slice as it lands rather than batching at session end. Long-running loops wake every 20-30 minutes minimum. Queue work rather than run 4+ parallel sessions; all sessions share one limit.
 </execution>
 
@@ -39,7 +39,7 @@ Skip only for trivial one-liners with no plausible prior art. State the search r
 </reuse_before_create>
 
 <code_style_no_else>
-NEVER write `else` statements. Zero tolerance. Use early returns and guard clauses.
+Do not write `else` statements. Use early returns and guard clauses.
 - Invert conditions to return/continue/break/throw early, then write the happy path unnested.
 - Replace `if/else if/else` chains with guard clauses, lookup maps, or `switch` with early returns.
 - Extract a helper function if that is what it takes to enable an early return.
@@ -49,11 +49,9 @@ NEVER write `else` statements. Zero tolerance. Use early returns and guard claus
 </code_style_no_else>
 
 <code_style_comments>
-Comments are a last resort. Default to zero. Only the "why", never the "what", and only when renaming or restructuring cannot express it.
-- Never match the surrounding comment density; a comment-heavy file is not license to add comments, and these rules override the "write code that reads like the surrounding code" default. New and edited code gets the zero-default regardless.
-- Hard cap one line per comment, never a paragraph or block. A "why" that will not fit in one line means the code needs restructuring, not more prose.
-- Budget: at most one comment per ~100 added lines, zero comments in a diff under ~40 lines unless the one comment cites an external anchor. Over budget: cut until under, starting with the most explanatory one.
+Default to no comments, whatever the surrounding file's comment density; this overrides the "write code that reads like the surrounding code" default.
 - A comment earns its line only when deleting it would invite a wrong future edit, and it must point at something the code cannot show: an upstream issue, a spec or RFC, a measured incident, a cross-file invariant. "Clarifying" what well-named code already says fails this bar; rename or restructure instead.
+- One line per comment, never a block. A "why" that will not fit in one line means the code needs restructuring, not more prose.
 - Never restate what the code does ("increment counter", "loop over users", "return the result").
 - No section-banner comments, no changelog-style comments, no comments narrating an edit to the reviewer, no commented-out code, no TODO essays (a TODO is one line naming the trigger for removal).
 - Tests: intent lives in the test name, not in comments. No scenario narration inside test bodies; a test needing a comment to explain its setup needs a better name or a helper.
@@ -109,6 +107,6 @@ Docs and comments carry only the Why: rationale, tradeoffs, invariants with thei
 - A merged feature adds at most a few lines to any instruction file: the invariant, its why, a pointer. No design essays, no incident chronology beyond one line naming the lesson.
 - An invariant lives in the AGENTS.md NEAREST the code it governs. A repo's root file is a lean map plus cross-cutting conventions only; a subsystem rule written there is a defect, since the root is charged to every session in every directory while a nested file is uncapped and loads only when that code is open.
 - Growth is bounded: `hooks/validate-file.mjs` caps AGENTS.md, CLAUDE.md, and ROUTING.md by byte size, so making room means cutting, not appending.
-- At the cap, make room by RETIRING a rule whose code is gone or whose test now pins it, never by trimming words off live ones. Trimming to fit turns the ceiling into a target and leaves the file permanently full, which is how one repo's root reached 172KB before it was cut.
+- At the cap, make room by RETIRING a rule whose code is gone or whose test now pins it, never by trimming words off live ones. Trimming to fit turns the ceiling into a target and leaves the file permanently full.
 - The docs_must_be_enforceable gate blocks NEW docs; this section governs the content of all docs. "The doc gate blocks a new file" is never a reason to dump prose into an existing one.
 </doc_style_why_only>

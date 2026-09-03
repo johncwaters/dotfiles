@@ -217,9 +217,9 @@ Flags:
 
 ## Outcomes
 
-Exit code carries the outcome; the JSON carries the detail. Report in as few words as
-possible: one line with outcome, short hash, and message subject, then one short line per
-finding fixed. Expand only on failures.
+Exit code carries the outcome; the JSON carries the detail. Report one line with the
+outcome, short hash, and message subject, then one line per finding fixed. Expand only on
+failures.
 
 | Outcome | Exit | What to do |
 |---|---|---|

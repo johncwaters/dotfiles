@@ -27,13 +27,10 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 
 - Preserve behavior unless the user explicitly asks for behavior changes.
 - Lock behavior with focused regression tests first whenever practical.
-- Write a cleanup plan before editing code.
 - Prefer deletion over addition.
 - Reuse existing utilities and patterns before introducing new ones.
 - Avoid new dependencies unless the user explicitly requests them.
 - Keep diffs small, reversible, and smell-focused.
-- Stay concise and evidence-dense: inspect, edit, verify, and report.
-- Treat new user instructions as local scope updates without dropping earlier non-conflicting constraints.
 
 ## Scoped File-List Usage
 
@@ -50,12 +47,12 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
 `--review` is a reviewer-only pass after cleanup work is drafted. It preserves explicit writer/reviewer separation for anti-slop work.
 
 - **Writer pass**: make the cleanup changes with behavior locked by tests.
-- **Reviewer pass**: inspect the cleanup plan, changed files, and verification evidence.
+- **Reviewer pass**: inspect the changed files, verification evidence, and regression coverage.
 - The same pass must not both write and self-approve high-impact cleanup without a separate review step.
 
 In review mode:
 1. Do **not** start by editing files.
-2. Review the cleanup plan, changed files, and regression coverage.
+2. Review the changed files, verification evidence, and regression coverage.
 3. Check specifically for:
    - leftover dead code or unused exports
    - duplicate logic that should have been consolidated
@@ -72,9 +69,8 @@ In review mode:
    - Add or run the narrowest regression tests needed before editing. From /commit, run existing tests only and do not add files.
    - If tests cannot come first, record the verification plan explicitly before touching code.
 
-2. **Write a cleanup plan before code**
-   - Bound the pass to the requested files or feature area.
-   - List the concrete smells to remove.
+2. **Bound the pass**
+   - Stay inside the requested files or feature area.
    - Order the work from safest deletion to riskier consolidation.
 
 3. **Classify the slop before editing**

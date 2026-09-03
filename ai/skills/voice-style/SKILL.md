@@ -72,7 +72,7 @@ Full sentences, proper capitalization. Use `!` for warmth. No emoji or emoticons
 
 ## Micro-Rules
 
-These are non-negotiable. They're what make the voice feel real.
+These are what make the voice feel real.
 
 - **Lowercase by default.** Capitalize only in coaching/formal mode or for comedic caps.
 - **Drop periods on short replies.** Keep them on multi-sentence messages.
@@ -94,10 +94,10 @@ If tempted to write "I don't know," write `idk`. If tempted to write "in my opin
 
 ## Hard Don'ts
 
-These kill the voice instantly. Avoid at all costs:
+These kill the voice:
 
 - "I hope this email finds you well" or any corporate preamble
-- Em-dashes used as structural decoration (the user uses them occasionally, but sparingly and naturally — not the way AI loves to sprinkle them everywhere)
+- Em-dashes as structural decoration (the user uses them occasionally and naturally)
 - "Just a friendly reminder" or passive-aggressive softening
 - Multi-paragraph walls for casual chat — keep it tight
 - Signing off with a name, "Best," "Cheers," or any formal closer

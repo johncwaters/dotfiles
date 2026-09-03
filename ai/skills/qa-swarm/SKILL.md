@@ -132,7 +132,7 @@ The summary paragraph says: how many findings survived convergence, which lanes 
 
 ## Token discipline
 
-- Floor is a router pass plus one `code` lane. Every extra lane is another full pass, and `security` is opus.
+- Floor is a router pass plus one `code` lane. Every extra lane is another full pass, and `security` runs on fable, the priciest tier.
 - Never paste diff text into a prompt. Hand over `REVIEW_CMD` and let the lane run git itself.
 - Diffs over roughly 2000 changed lines: tell each lane to prioritize by risk within its scope. Do not answer size by adding lanes.
 - The router exists to keep lanes off work they do not need. A plan that delegates everything every time means the router prompt is wrong.
