@@ -51,20 +51,11 @@ recordLinkedUnitContent() {
   writeDotfilesState "$(linkedUnitContentStateName "$unitPath")" "$(< "$unitPath")"
 }
 
-# A restart issued from inside the unit's own cgroup kills the converge that issued it (KillMode=control-group), so it is handed to a detached transient unit that waits for the run to finish.
+# A restart from inside the unit's own cgroup kills the converge and the session hosting it (KillMode=control-group), so the restart stays owed as pending state until a run from outside.
 runningInsideUserService() {
   local unitName="$1"
   local cgroupFile="${DOTFILES_CGROUP_FILE:-/proc/self/cgroup}"
   [[ -r "$cgroupFile" ]] && grep -q -- "/$unitName.service" "$cgroupFile"
-}
-
-deferUserServiceRestart() {
-  local unitName="$1"
-  local waitForPid="${DOTFILES_BOOTSTRAP_PID:-$$}"
-  command -v systemd-run >/dev/null 2>&1 || return 1
-  systemd-run --user --quiet --collect --unit "dotfiles-restart-$unitName" \
-    bash -c 'while kill -0 "$1" 2>/dev/null; do sleep 1; done; exec systemctl --user restart "$2"' \
-    _ "$waitForPid" "$unitName" >/dev/null 2>&1
 }
 
 # is-enabled before is-active: a unit running but never enabled is one reboot from gone, and checking activity first would call it done.
@@ -97,12 +88,7 @@ enableUserService() {
   # enable --now starts a dead unit off the current file but leaves a live one on the old one.
   if ((unitChanged == 1)) && ((wasActive == 1)); then
     if runningInsideUserService "$unitName"; then
-      if ! deferUserServiceRestart "$unitName"; then
-        noteWarned "$label" "this run is inside $unitName, deferred restart failed, run: systemctl --user restart $unitName"
-        return 1
-      fi
-      clearUserServicePending "$unitName"
-      noteApplied "$label" "restart deferred until this run exits (it hosts this run)"
+      noteApplied "$label" "restart owed, this run is hosted by $unitName; the next run from outside it restarts"
       return 0
     fi
     if ! systemctl --user restart "$unitName" >/dev/null 2>&1; then

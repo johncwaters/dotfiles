@@ -202,9 +202,18 @@ writeStub curl <<'STUB'
 #!/usr/bin/env bash
 printf 'curl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 probedUrl="${*: -1}"
+stateDir="$DOTFILES_TEST_STATE/$DOTFILES_TEST_MACHINE"
+# A port the config names while a restart is still owed is one the running process has no listener on.
+if [[ -f "$stateDir/ports-with-no-listener" ]] && grep -qxF -- "$probedUrl" "$stateDir/ports-with-no-listener"; then
+  printf '000'
+  exit 0
+fi
 case "$probedUrl" in
   http://127.0.0.1:3000/) printf '200' ;;
   http://127.0.0.1:3001/) printf '401' ;;
+  http://127.0.0.1:3010/) printf '200' ;;
+  http://127.0.0.1:3020/) printf '200' ;;
+  http://127.0.0.1:3021/) printf '401' ;;
   https://*) printf '200' ;;
   *) printf '000' ;;
 esac
@@ -615,33 +624,89 @@ fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 ' "$serverHome/.glissa/config.json"
 : > "$commandLog"
 editedConfigOutput="$(runInstall "$serverHome" server)"
-check "a config edited by hand restarts the service" logHas "systemctl --user restart glissa"
+check "a config edited by hand restarts nothing" logLacks "restart glissa"
 check "a config edited by hand leaves the unit file alone" \
   test "$unitFingerprintAfterFirstRun" = "$(cksum < "$serverUnitPath")"
-check "the restart for a changed config is reported" \
-  outputMatches "$editedConfigOutput" '\[ ok \].*glissa service.*restarted'
+check "a config edited by hand reports no change" reportsNoChanges "$editedConfigOutput"
 
 "$realNodePath" -e '
 const fs = require("fs");
 const configPath = process.argv[1];
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-config.editorCommand = "a second edit, converged from inside the service";
+config.port = 3010;
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 ' "$serverHome/.glissa/config.json"
-insideServiceCgroup="$sandboxTemp/inside-glissa.cgroup"
-printf '0::/user.slice/user-1000.slice/user@1000.service/app.slice/glissa.service\n' > "$insideServiceCgroup"
 : > "$commandLog"
-insideServiceOutput="$(DOTFILES_CGROUP_FILE="$insideServiceCgroup" DOTFILES_BOOTSTRAP_PID=424242 \
-  runInstall "$serverHome" server)"
-check "a run hosted by the service never restarts it directly" logLacks "systemctl --user restart glissa"
-check "a run hosted by the service hands the restart to a detached unit" \
-  logHas "systemd-run --user --quiet --collect --unit dotfiles-restart-glissa"
-check "the detached restart waits for the bootstrap pid" logHas "424242 glissa"
-check "the deferred restart is reported" \
-  outputMatches "$insideServiceOutput" '\[ ok \].*glissa service.*restart deferred'
+bootOnlyEditOutput="$(runInstall "$serverHome" server)"
+check "a hand edited boot only key restarts the service" logHas "systemctl --user restart glissa"
+check "the boot only restart is reported" \
+  outputMatches "$bootOnlyEditOutput" '\[ ok \].*glissa service.*restarted'
 : > "$commandLog"
 runInstall "$serverHome" server > /dev/null
-check "a deferred restart is not owed again on the next run" logLacks "restart glissa"
+check "a settled boot only key restarts nothing" logLacks "restart glissa"
+
+serverStubState="$stubState/$(basename -- "$serverHome")"
+printf 'b22b22b22b22b22b22b22b22b22b22b22b22b22b\n' > "$serverStubState/app-head"
+insideServiceCgroup="$sandboxTemp/inside-glissa.cgroup"
+printf '0::/user.slice/user-1000.slice/user@1000.service/app.slice/glissa.service\n' > "$insideServiceCgroup"
+serviceRestartPendingMarker="$serverHome/.local/state/dotfiles/systemd-glissa-pending"
+serveOwnershipRecord="$serverHome/.local/state/dotfiles/glissa-serve-owned"
+check "the hosted run starts from a route on the old remote port" \
+  grep -qx '3001' "$serverStubState/serve-port"
+"$realNodePath" -e '
+const fs = require("fs");
+const configPath = process.argv[1];
+const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+config.port = 3020;
+config.remote.port = 3021;
+fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+' "$serverHome/.glissa/config.json"
+printf 'http://127.0.0.1:3020/\nhttp://127.0.0.1:3021/\n' > "$serverStubState/ports-with-no-listener"
+: > "$commandLog"
+insideServiceStatus=0
+insideServiceOutput="$(DOTFILES_CGROUP_FILE="$insideServiceCgroup" runInstall "$serverHome" server)" \
+  || insideServiceStatus=$?
+check "a run hosted by the service never restarts it" logLacks "restart glissa"
+check "a run hosted by the service hands nothing to a detached unit" logLacks "systemd-run"
+check "the owed restart is reported" \
+  outputMatches "$insideServiceOutput" '\[ ok \].*glissa service.*restart owed'
+check "the owed restart is recorded as pending state" test -f "$serviceRestartPendingMarker"
+check "a run hosted by the service probes no port the owed restart has yet to open" \
+  logLacks "http://127.0.0.1:3020/"
+check "a run hosted by the service probes no remote port the owed restart has yet to open" \
+  logLacks "http://127.0.0.1:3021/"
+check "the skipped probe is reported on the health label" \
+  outputMatches "$insideServiceOutput" '\[ -- \].*glissa health.*waits on the owed glissa restart'
+check "a skipped probe blames the service for no missing local listener" \
+  outputLacks "$insideServiceOutput" "no HTTP 200 from"
+check "a skipped probe blames the service for no missing remote listener" \
+  outputLacks "$insideServiceOutput" "no HTTP 401 from"
+check "a run hosted by the service publishes no route" logLacks "serve --bg"
+check "a route stranded on the old remote port is withdrawn" logHas "tailscale serve --https=443 off"
+check "the stranded route withdrawal names the owed restart" \
+  outputHas "$insideServiceOutput" 'route removed, the glissa restart is owed'
+check "the withdrawn route is gone from serve status" test ! -f "$serverStubState/serve-port"
+check "the withdrawn route leaves no ownership record behind" test ! -e "$serveOwnershipRecord"
+check "the withheld route names the owed restart" \
+  outputMatches "$insideServiceOutput" '\[warn\].*Tailscale serve.*owed'
+check "the withheld route sends its owner to a run from outside the service" \
+  outputHas "$insideServiceOutput" "run dot from outside the service rather than systemctl --user restart glissa"
+check "a withheld route exits non-zero" test "$insideServiceStatus" -eq 1
+rm -f "$serverStubState/ports-with-no-listener"
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+check "the next run from outside the service pays the owed restart" \
+  logHas "systemctl --user restart glissa"
+check "a paid restart clears the pending state" test ! -e "$serviceRestartPendingMarker"
+check "the run that pays the owed restart probes the local listener" \
+  logHas "http://127.0.0.1:3020/"
+check "the run that pays the owed restart probes the remote listener" \
+  logHas "http://127.0.0.1:3021/"
+check "the run that pays the owed restart publishes the route" \
+  logHas "tailscale serve --bg 3021"
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+check "a paid restart is not owed again on the next run" logLacks "restart glissa"
 
 printf 'a11a11a11a11a11a11a11a11a11a11a11a11a11a\n' > "$stubState/$(basename -- "$serverHome")/app-head"
 serverDepsPendingStateName="$(HOME="$serverHome" \

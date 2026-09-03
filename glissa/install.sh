@@ -465,17 +465,32 @@ enableGlissaLinger() {
   noteWarned "$label" "run: loginctl enable-linger $accountName"
 }
 
-# The server reads its config and the app code only at boot, and neither changes the unit file.
-glissaServiceInputsToken() {
-  local configToken="absent"
-  local checkoutToken="absent"
-  if [[ -f "$glissaConfigPath" ]]; then
-    configToken="$(cksum < "$glissaConfigPath")"
+readGlissaBootOnlySettings() {
+  local nodePath
+  local renderedSettings
+  if [[ ! -f "$glissaConfigPath" ]]; then
+    printf 'absent\n'
+    return 0
   fi
+  if ! nodePath="$(resolveGlissaNodePath)"; then
+    printf 'unreadable\n'
+    return 0
+  fi
+  renderedSettings="$("$nodePath" -p 'JSON.stringify((function canonical(value) { return Array.isArray(value) ? value.map(canonical) : (value !== null && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value); })({ port: (require(process.argv[1]) || {}).port, remote: (require(process.argv[1]) || {}).remote }))' "$glissaConfigPath" 2>/dev/null)" || renderedSettings=""
+  if [[ -z "$renderedSettings" ]]; then
+    printf 'unreadable\n'
+    return 0
+  fi
+  printf '%s\n' "$renderedSettings"
+}
+
+# The server hot-reloads most of config.json and rewrites it on every session event; the app checkout and the keys glissa reads once at boot are what a restart is owed for.
+glissaServiceInputsToken() {
+  local checkoutToken="absent"
   if command -v git >/dev/null 2>&1; then
     checkoutToken="$(git -C "$glissaAppDirectory" rev-parse HEAD 2>/dev/null || true)"
   fi
-  printf 'config %s\ncheckout %s\n' "$configToken" "$checkoutToken"
+  printf 'checkout %s\nboot-only %s\n' "$checkoutToken" "$(readGlissaBootOnlySettings)"
 }
 
 glissaServiceInputsChanged() {
@@ -560,7 +575,7 @@ installGlissaService() {
   if ! startGlissaService "$unitChanged"; then
     return 0
   fi
-  probeGlissaServiceHealth
+  probeGlissaServiceHealthUnlessRestartIsOwed
   enableGlissaLinger
 }
 
@@ -603,6 +618,15 @@ probeGlissaServiceHealth() {
     return 0
   fi
   probeGlissaHttp "glissa remote health" "http://127.0.0.1:$resolvedRemotePort/" "401" "remote listener auth-gated"
+}
+
+# The old process keeps the ports the config held before this run edited them, so probing the edited ports now polls a listener nobody answers on and blames a healthy service.
+probeGlissaServiceHealthUnlessRestartIsOwed() {
+  if userServiceActivationIsPending "glissa"; then
+    notePresent "glissa health" "probe waits on the owed glissa restart"
+    return 0
+  fi
+  probeGlissaServiceHealth
 }
 
 # The text status gives no way to tell which https port a handler belongs to, and an exit status is the only way to tell an empty route from a question this run could not ask.
@@ -721,15 +745,16 @@ reportGlissaServeUncheckedRoute() {
 
 attemptGlissaServeWithdrawal() {
   local label="$1"
+  local reason="$2"
   markDotfilesStatePending "$glissaServeWithdrawalStateName"
   if ! tailscale serve --https="$glissaServeHttpsPort" off >/dev/null 2>&1; then
     noteWarned "$label" \
-      "remote is disabled but the route could not be withdrawn, run: tailscale serve --https=$glissaServeHttpsPort off"
+      "$reason but the route could not be withdrawn, run: tailscale serve --https=$glissaServeHttpsPort off"
     return 1
   fi
   clearDotfilesState "$glissaServeWithdrawalStateName"
   clearDotfilesState "$glissaServeOwnedStateName"
-  noteApplied "$label" "route removed, glissa remote disabled"
+  noteApplied "$label" "route removed, $reason"
 }
 
 # A route left up keeps every paired device's tailnet access whatever backend port it names now, so only a status this run actually parsed authorises taking one down; "serve --https=<port> off" is the CLI's own name for this.
@@ -763,7 +788,7 @@ withdrawGlissaServe() {
     noteWarned "$label" "$(glissaServeNotOursReason)"
     return 0
   fi
-  attemptGlissaServeWithdrawal "$label" || true
+  attemptGlissaServeWithdrawal "$label" "glissa remote disabled" || true
 }
 
 # Without HTTPS enabled on the tailnet this asks for consent on stdin, and a converge has nobody to answer it; unbounded, it would hang the whole run instead.
@@ -865,6 +890,45 @@ noteGlissaServeUnreadableConfig() {
   noteWarned "$label" "cannot read $glissaConfigDisplayPath, leaving the route as it is"
 }
 
+# The route a previous run published still names the old remote port, which the restarted service answers on as its unauthenticated local listener whenever the ports moved by one.
+withdrawGlissaServeStrandedByOwedRestart() {
+  local label="$1"
+  local backends
+  local queryStatus=0
+  if ! resolveGlissaPorts; then
+    return 0
+  fi
+  if ! isTailscaleAuthed; then
+    return 0
+  fi
+  backends="$(glissaServeBackendsOnHttpsPort)" || queryStatus=$?
+  if ((queryStatus != 0)); then
+    return 0
+  fi
+  if [[ -z "$backends" ]]; then
+    return 0
+  fi
+  if everyBackendTargetsPort "$backends" "$resolvedRemotePort"; then
+    return 0
+  fi
+  if ! glissaServeRouteIsOursToReplace "$backends"; then
+    return 0
+  fi
+  attemptGlissaServeWithdrawal "$label" "the glissa restart is owed" || true
+}
+
+# A run hosted by glissa.service leaves the restart owed, so the old process still holds its old listeners and a route published now would proxy the tailnet at whatever those answer on.
+publishGlissaServeUnlessRestartIsOwed() {
+  local label="$1"
+  if userServiceActivationIsPending "glissa"; then
+    withdrawGlissaServeStrandedByOwedRestart "$label"
+    noteWarned "$label" \
+      "the route waits on the owed glissa restart, run dot from outside the service rather than systemctl --user restart glissa, so the restart and the route move together"
+    return 0
+  fi
+  publishGlissaServe "$label"
+}
+
 # One state machine: what the config says, then what the tailnet says, then publish, withdraw, or leave it alone.
 configureGlissaServe() {
   local label="Tailscale serve"
@@ -883,7 +947,7 @@ configureGlissaServe() {
     return 0
   fi
   if [[ "$remoteState" == "enabled" ]]; then
-    publishGlissaServe "$label"
+    publishGlissaServeUnlessRestartIsOwed "$label"
     return 0
   fi
   noteGlissaServeUnreadableConfig "$label"
