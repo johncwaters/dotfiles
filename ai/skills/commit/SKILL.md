@@ -223,7 +223,7 @@ failures.
 
 | Outcome | Exit | What to do |
 |---|---|---|
-| `COMMITTED` | 0 | `pushed` says whether the feature branch was pushed, `promoted` lists the branches promotion carried the commit into, and `deletedRemoteBranches` lists any merged `glissa/` branch that was pruned. Report |
+| `COMMITTED` | 0 | `pushed` says whether the feature branch was pushed, `promoted` lists the branches promotion carried the commit into, and `deletedRemoteBranches` lists any non-mainline remote feature branch proven merged by ancestry or patch equivalence that was pruned. Report |
 | `NOTHING_TO_COMMIT` | 13 | With `--promote`, promotion still ran: report what `promoted` says. Without it, stop and relay |
 | `MESSAGE_INVALID` | 20 | `errors` names each violation. Fix the message and re-run `land.ts` |
 | `HOOK_FAILED` | 21 | A commit hook rejected the commit; its stderr is in `warnings`. Fix the cause, then re-run |
@@ -248,7 +248,8 @@ added to `warnings` without replacing the original outcome.
 Successful promotion to mainline does not push the feature branch: it fast-forwards into
 mainline, so pushing it too would only leave a dead remote branch. `pushed: false` on a
 `COMMITTED` mainline promotion is therefore normal, not a failure. Two consequences: a
-merged remote branch named `glissa/*` is deleted once pushed mainline carries it, listed in
+merged remote feature branch other than mainline, `main`, `master`, or `develop` is deleted
+once ancestry or patch equivalence proves pushed mainline carries it, listed in
 `deletedRemoteBranches` (a refused deletion is a warning, never an outcome change). A
 missing mainline also pushes the feature branch and reports the skip in `warnings`.
 

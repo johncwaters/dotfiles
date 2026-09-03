@@ -93,7 +93,6 @@ test("findWorktreeForBranch skips detached and bare blocks", () => {
 test("promotion rebases a feature branch onto main and pushes one mainline ref", () => {
   const { origin, seed, local } = seedOrigin();
   try {
-    const remoteFeatureBefore = gitOutput(origin, ["rev-parse", "feature"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
     const { result } = land(local, ["--promote"], VALID_MESSAGE);
 
@@ -102,7 +101,7 @@ test("promotion rebases a feature branch onto main and pushes one mainline ref",
     assert.equal(result.pushed, false);
     assert.equal(gitOutput(local, ["rev-parse", "main"]), result.commit);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
-    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), remoteFeatureBefore);
+    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
     assert.equal(gitOutput(local, ["rev-parse", "--abbrev-ref", "HEAD"]), "feature");
   } finally {
     cleanup(origin, seed, local);
@@ -603,17 +602,87 @@ test("a refused glissa branch deletion is only a warning", () => {
   }
 });
 
-test("a non-glissa feature branch is never deleted after promotion", () => {
+test("a feature branch is deleted after promotion whatever its name", () => {
   const { origin, seed, local } = seedOrigin();
   try {
     writeFile(local, "base.txt", "base\nfeature change\n");
     const { result } = land(local, ["--promote"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.equal("deletedRemoteBranches" in result, false);
-    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+    assert.deepEqual(result.deletedRemoteBranches, ["feature"]);
+    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
   } finally {
     cleanup(origin, seed, local);
+  }
+});
+
+test("a rebased landing still deletes the remote feature branch", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "remote.txt", "remote advance\n", "remote advance");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.deletedRemoteBranches, ["feature"]);
+    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a remote feature branch with absent changes survives with a warning", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "feature"]);
+    commitFile(seed, "remote-only.txt", "remote only\n", "remote only");
+    runGit(seed, ["push", "-q", "origin", "feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal("deletedRemoteBranches" in result, false);
+    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+    assert.match(
+      (result.warnings as string[]).join("\n"),
+      /remote branch feature contains changes absent from main; keeping branch/,
+    );
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("mainline is never deleted as a feature branch", () => {
+  const { origin, seed, local } = seedOrigin();
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["release"], onForbidden: "create-feature-branch" },
+    mainline: "release",
+    afterCommit: "promote",
+  });
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    runGit(seed, ["branch", "release"]);
+    runGit(seed, ["push", "-q", "origin", "release"]);
+    runGit(local, ["checkout", "-q", "main"]);
+    writeFile(local, "base.txt", "base\nmainline change\n");
+    const { result } = runSkillScript(
+      "land.ts",
+      local,
+      ["--push-retry-delay-ms", "0", "--promote"],
+      VALID_MESSAGE,
+      { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
+    );
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal("deletedRemoteBranches" in result, false);
+    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "main"]), 0);
+  } finally {
+    cleanup(origin, seed, local, policyRoot);
   }
 });
 

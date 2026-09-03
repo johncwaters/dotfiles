@@ -1,5 +1,6 @@
 import { Git, type PushRefResult, type PushResult } from "./lib/git.ts";
 import { repositoryGuard } from "./lib/guard.ts";
+import { isPatchEquivalentMerged } from "./lib/merge-proof.ts";
 import { normalizeMessage, validateMessage } from "./lib/message.ts";
 import {
   branchForbidden,
@@ -431,7 +432,11 @@ class Landing {
     featureBranch: string | null,
     mainline: string | null,
   ): void {
-    if (!featureBranch?.startsWith("glissa/")) {
+    if (
+      featureBranch === null ||
+      featureBranch === mainline ||
+      ["main", "master", "develop"].includes(featureBranch)
+    ) {
       return;
     }
     if (mainline === null || !this.promoted.includes(mainline)) {
@@ -446,10 +451,25 @@ class Landing {
     if (remoteFeatureTip === null) {
       return;
     }
-    if (!this.git.isAncestor(remoteFeatureTip, `refs/heads/${mainline}`)) {
+    const mainlineRef = `refs/heads/${mainline}`;
+    if (this.git.isAncestor(remoteFeatureTip, mainlineRef)) {
+      this.deleteRemoteBranch(featureBranch);
       return;
     }
 
+    const patchProof = this.git.cherry(mainlineRef, remoteFeatureTip);
+    if (patchProof.code !== 0) {
+      this.warnings.push(`could not verify merged remote branch ${featureBranch}: ${patchProof.stderr.trim()}`);
+      return;
+    }
+    if (!isPatchEquivalentMerged(patchProof.stdout)) {
+      this.warnings.push(`remote branch ${featureBranch} contains changes absent from ${mainline}; keeping branch`);
+      return;
+    }
+    this.deleteRemoteBranch(featureBranch);
+  }
+
+  private deleteRemoteBranch(featureBranch: string): void {
     const deletion = this.git.deleteRemoteBranch("origin", featureBranch);
     if (deletion.code === 0) {
       this.deletedRemoteBranches.push(featureBranch);

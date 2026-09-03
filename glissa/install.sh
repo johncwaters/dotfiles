@@ -438,9 +438,12 @@ renderGlissaUnit() {
   local destinationPath="$2"
   local nodePath="$3"
   local unitPath
-  unitPath="$(glissaUnitSearchPath "$(dirname -- "$nodePath")")"
+  local nodeDirectory
+  nodeDirectory="$(dirname -- "$nodePath")"
+  unitPath="$(glissaUnitSearchPath "$nodeDirectory")"
   sed \
     -e "s/__NODE__/$(sedReplacementFor "$nodePath")/g" \
+    -e "s/__NPM__/$(sedReplacementFor "$nodeDirectory/npm")/g" \
     -e "s/__APP_DIR__/$(sedReplacementFor "$glissaAppDirectory")/g" \
     -e "s/__PATH__/$(sedReplacementFor "$unitPath")/g" \
     "$templatePath" > "$destinationPath"

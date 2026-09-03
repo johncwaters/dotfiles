@@ -160,6 +160,10 @@ export class Git {
     return this.run(["merge-base", "--is-ancestor", ancestorRef, descendantRef]).code === 0;
   }
 
+  cherry(upstream: string, head: string): GitResult {
+    return this.run(["cherry", upstream, head]);
+  }
+
   push(remote: string, refspecs: string[], setUpstream: boolean): PushResult {
     const args = ["push", "--porcelain"];
     if (setUpstream) {

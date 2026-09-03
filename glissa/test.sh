@@ -527,12 +527,14 @@ serverUnitPath="$serverHome/.config/systemd/user/glissa.service"
 check "the user unit is installed" test -f "$serverUnitPath"
 check "the unit runs the node from the fixed candidate list, not the shell's" \
   grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
-check "the unit skips itself rather than crash-looping on a wiped build" \
-  grep -q "^ConditionPathExists=$serverHome/Projects/glissa/dist/server/index.js\$" "$serverUnitPath"
+check "the unit rebuilds dist before starting, with the npm beside the resolved node" \
+  grep -q "^ExecStartPre=$serverHome/.local/bin/npm run build\$" "$serverUnitPath"
+check "the unit no longer conditions on a built dist, the build step heals it instead" \
+  bash -c '! grep -q "^ConditionPathExists=" "$1"' _ "$serverUnitPath"
 check "the unit works out of this home" grep -q "^WorkingDirectory=$serverHome/Projects/glissa\$" "$serverUnitPath"
 check "the unit carries a rendered PATH" grep -q "^Environment=PATH=.\+\$" "$serverUnitPath"
 check "no placeholder survives the render" \
-  bash -c '! grep -qE "__(NODE|APP_DIR|HOME|PATH)__" "$1"' _ "$serverUnitPath"
+  bash -c '! grep -qE "__(NODE|NPM|APP_DIR|HOME|PATH)__" "$1"' _ "$serverUnitPath"
 
 check "the unit is enabled and started" logHas "systemctl --user enable --now glissa"
 check "the manager reloads only for a new unit" logHas "systemctl --user daemon-reload"
@@ -788,8 +790,8 @@ check "the backup keeps what was there" \
   bash -c 'grep -q "hand written" "$1".pre-dotfiles.bak' _ "$serverUnitPath"
 check "the rendered unit replaces the hand edit" \
   grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
-check "the re-rendered unit keeps its build-exists condition" \
-  grep -q "^ConditionPathExists=$serverHome/Projects/glissa/dist/server/index.js\$" "$serverUnitPath"
+check "the re-rendered unit keeps its build step" \
+  grep -q "^ExecStartPre=$serverHome/.local/bin/npm run build\$" "$serverUnitPath"
 check "replacing the unit restarts the service" outputMatches "$handEditOutput" '\[ ok \].*glissa service.*restarted'
 
 : > "$commandLog"
