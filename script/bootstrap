@@ -203,6 +203,29 @@ for topicName in "${profileTopics[@]}"; do
   drainCountsIntoTally
 done
 
+convergedStateName="converged"
+
+convergedCommit() {
+  git -C "$dotfilesRepo" rev-parse HEAD 2>/dev/null || printf 'unknown\n'
+}
+
+recordConverge() {
+  local outcome="clean"
+  # A dirty converge renders content that no later commit accounts for, so the record must outlive the edit.
+  if [[ -n "$(git -C "$dotfilesRepo" status --porcelain 2>/dev/null)" ]]; then
+    outcome="dirty"
+  fi
+  if ((warnedTally != 0)); then
+    outcome="warned"
+  fi
+  writeDotfilesState "$convergedStateName" \
+    "$(convergedCommit) $profileName $(date -u +%Y-%m-%dT%H:%M:%SZ) $outcome"
+}
+
+# Before the summary: a refused record warns, and after the tally is banked nothing would count it.
+recordConverge
+drainCountsIntoTally
+
 writeSummary "$((SECONDS - scriptStartSeconds))" \
   "$appliedTally" \
   "$installedTally" \

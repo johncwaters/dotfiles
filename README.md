@@ -8,16 +8,20 @@ Linux, with mac seams left open. No Windows.
 
 ## Install
 
-Clone it wherever you work on repos, then bootstrap:
+One command on any machine, fresh or converged:
 
 ```sh
-git clone git@github.com:johncwaters/dotfiles.git ~/Projects/dotfiles
-cd ~/Projects/dotfiles
-script/bootstrap
+curl -fsSL https://raw.githubusercontent.com/johncwaters/dotfiles/main/bin/dot | bash -s -- --profile server
 ```
 
-After that, `dot` is on PATH in any new interactive shell: it pulls the repo and reruns bootstrap, so
-keeping a machine current is one command.
+On a fresh machine it clones the repo to `~/Projects/dotfiles`, points `~/.dotfiles` at it and
+bootstraps. After that `dot` is on PATH in any new interactive shell: it pulls mainline and reruns
+bootstrap, and `dot status` says how far the machine stands from `origin/main` and what a converge
+still owes, exiting 1 on any drift.
+
+Every `~/.claude` entry is a symlink into the checkout, so whatever branch the checkout holds is
+the live config. `dot` therefore refuses to converge a checkout that is off mainline or dirty;
+develop in a worktree and let the checkout stay on `main`. `dot --as-is` converges it anyway.
 
 `bootstrap` points `~/.dotfiles` at the clone and every link it creates resolves through
 that alias, never through the clone path. So the checkout lives wherever you want it and
@@ -64,6 +68,7 @@ profile.
 | `ai` | Claude Code and Codex: agents, commands, hooks, hud, skills, compiled-commit |
 | `vscodium` | settings, keybindings, mcp.json, extensions |
 | `glissa` | dashboard config, plus the user service on profiles that serve Glissa |
+| `converge` | a nightly user timer running `dot`, the one converge outside Glissa's cgroup that can pay a restart a hosted run left owed |
 | `fonts` | CommitMono |
 | `dictation` | ydotoold user service |
 | `screenshot` | flameshot desktop entry and save path |

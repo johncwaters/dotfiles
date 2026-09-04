@@ -1,14 +1,316 @@
 #!/usr/bin/env bash
-# Pulls the dotfiles and converges this machine; run it whenever, it only changes what drifted.
+# One command for every machine: clones on a fresh one, pulls mainline on a converged one, then bootstraps.
 
 set -euo pipefail
 
-dotfiles="$HOME/.dotfiles"
-if [[ ! -L "$dotfiles" || ! -f "$dotfiles/script/bootstrap" ]]; then
-  printf 'dotfiles: ~/.dotfiles is not a symlink to the clone; run script/bootstrap from the clone first\n' >&2
-  exit 1
-fi
+dotfilesAlias="$HOME/.dotfiles"
+clonePath="${DOTFILES_CLONE_PATH:-$HOME/Projects/dotfiles}"
+cloneUrl="${DOTFILES_CLONE_URL:-https://github.com/johncwaters/dotfiles.git}"
+command="converge"
+convergeAsIs=0
+bootstrapArguments=()
 
-git -C "$dotfiles" pull --ff-only \
-  || printf 'dotfiles: pull failed; converging the checkout as it stands\n' >&2
-exec "$dotfiles/script/bootstrap" "$@"
+usage() {
+  cat <<'USAGE'
+Usage: dot [status] [--profile <name>] [--as-is]
+
+dot           pulls mainline into ~/.dotfiles and reruns script/bootstrap. Refuses when the
+              checkout is off mainline or dirty, since a symlinked config is live whatever
+              branch the checkout holds. Clones the repo first when ~/.dotfiles is absent.
+dot status    reports where this machine stands against origin and what a converge still owes;
+              exits 1 when anything has drifted.
+--as-is       converges the checkout as it stands: no pull, no branch or cleanliness guard.
+--profile     passed through to script/bootstrap.
+
+DOTFILES_REQUIRE_ORIGIN=1 refuses the run when origin is unreachable instead of converging as it stands.
+USAGE
+}
+
+while (($# > 0)); do
+  case "$1" in
+    status)
+      command="status"
+      shift
+      ;;
+    --as-is)
+      convergeAsIs=1
+      shift
+      ;;
+    --profile)
+      if (($# < 2)) || [[ -z "$2" ]]; then
+        printf 'dot: --profile needs a name.\n' >&2
+        exit 1
+      fi
+      bootstrapArguments+=("--profile" "$2")
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'dot: unknown argument %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+reportStatusLine() {
+  printf '  %-12s %s\n' "$1" "$2"
+}
+
+aliasIsUsable() {
+  [[ -L "$dotfilesAlias" && -f "$dotfilesAlias/script/bootstrap" ]]
+}
+
+ensureClone() {
+  if aliasIsUsable; then
+    return 0
+  fi
+  if [[ -e "$dotfilesAlias" && ! -L "$dotfilesAlias" ]]; then
+    printf 'dotfiles: ~/.dotfiles is not a symlink to the clone; run script/bootstrap from the clone first\n' >&2
+    exit 1
+  fi
+  if [[ ! -d "$clonePath/.git" ]]; then
+    printf 'dotfiles: cloning %s into %s\n' "$cloneUrl" "$clonePath" >&2
+    git clone --quiet -- "$cloneUrl" "$clonePath"
+  fi
+  if [[ ! -f "$clonePath/script/bootstrap" ]]; then
+    printf 'dotfiles: %s holds no script/bootstrap; run script/bootstrap from the clone first\n' "$clonePath" >&2
+    exit 1
+  fi
+  rm -f -- "$dotfilesAlias"
+  ln -s -- "$clonePath" "$dotfilesAlias"
+}
+
+# Status reports the machine rather than changing it, so it never clones and never relinks.
+prepareClone() {
+  if [[ "$command" != "status" ]]; then
+    ensureClone
+    return 0
+  fi
+  if aliasIsUsable; then
+    return 0
+  fi
+  reportStatusLine "checkout" "$dotfilesAlias does not point at a clone; run dot to converge this machine"
+  exit 1
+}
+
+prepareClone
+
+# shellcheck source=../script/lib/context.sh
+source "$dotfilesAlias/script/lib/context.sh"
+
+repoGit() {
+  git -C "$dotfilesRepo" "$@"
+}
+
+originIsConfigured() {
+  repoGit remote get-url origin >/dev/null 2>&1
+}
+
+mainlineBranch() {
+  local originHead
+  originHead="$(repoGit symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)" || originHead=""
+  if [[ -n "$originHead" ]]; then
+    printf '%s\n' "${originHead#origin/}"
+    return 0
+  fi
+  if repoGit show-ref --verify -q refs/heads/main; then
+    printf 'main\n'
+    return 0
+  fi
+  printf 'master\n'
+}
+
+currentBranch() {
+  repoGit symbolic-ref --short -q HEAD 2>/dev/null || printf 'detached\n'
+}
+
+changedPathCount() {
+  repoGit status --porcelain 2>/dev/null | grep -c . || true
+}
+
+shortCommit() {
+  repoGit rev-parse --short "$1" 2>/dev/null || printf 'none\n'
+}
+
+fetchOrigin() {
+  originIsConfigured || return 1
+  repoGit fetch --quiet origin 2>/dev/null
+}
+
+driftReasons=()
+
+noteDrift() {
+  driftReasons+=("$1")
+}
+
+pendingStateNames() {
+  local pendingPath
+  dotfilesStateDirectory >/dev/null 2>&1 || return 0
+  for pendingPath in "$dotfilesStateDirectoryPath"/*-pending; do
+    [[ -e "$pendingPath" ]] || continue
+    basename -- "$pendingPath"
+  done
+}
+
+# A refused state directory warns on stdout, so a failed read is dropped rather than rendered as the record.
+convergedRecord() {
+  local record
+  record="$(readDotfilesState converged 2>/dev/null)" || record=""
+  if [[ -z "$record" ]]; then
+    printf 'never\n'
+    return 0
+  fi
+  printf '%s\n' "$record"
+}
+
+reportStatus() {
+  local mainline
+  local branch
+  local head
+  local changedCount
+  local originState
+  local originWasCompared=0
+  local behindCount
+  local aheadCount
+  local record
+  local recordedCommit
+  local recordedOutcome
+  local pending
+  mainline="$(mainlineBranch)"
+  branch="$(currentBranch)"
+  head="$(shortCommit HEAD)"
+  changedCount="$(changedPathCount)"
+  record="$(convergedRecord)"
+  recordedCommit="${record%% *}"
+  read -r _ _ _ recordedOutcome <<< "$record"
+  pending="$(pendingStateNames | tr '\n' ' ')"
+
+  reportStatusLine "profile" "${profileName:-none}"
+  reportStatusLine "checkout" "$(cd -- "$dotfilesRepo" && pwd -P) on $branch at $head"
+  if [[ "$branch" != "$mainline" ]]; then
+    noteDrift "checkout is on $branch, not $mainline"
+  fi
+  if ((changedCount > 0)); then
+    noteDrift "$changedCount changed paths in the checkout"
+  fi
+  reportStatusLine "tree" "$changedCount changed paths"
+
+  originState="unreachable, comparison skipped"
+  if fetchOrigin; then
+    originWasCompared=1
+    read -r behindCount aheadCount <<< "$(repoGit rev-list --left-right --count "origin/$mainline...HEAD" 2>/dev/null || printf '? ?')"
+    originState="origin/$mainline at $(shortCommit "origin/$mainline"), behind $behindCount, ahead $aheadCount"
+    if [[ "$behindCount$aheadCount" != "00" ]]; then
+      noteDrift "HEAD is not origin/$mainline"
+    fi
+  fi
+  if ((originWasCompared == 0)); then
+    noteDrift "origin unreachable, HEAD not compared"
+  fi
+  reportStatusLine "origin" "$originState"
+
+  reportStatusLine "converged" "$record"
+  if [[ "$recordedCommit" != "$(repoGit rev-parse HEAD 2>/dev/null)" ]]; then
+    noteDrift "last converge was not this commit"
+  fi
+  if [[ -n "$recordedOutcome" && "$recordedOutcome" != "clean" ]]; then
+    noteDrift "last converge was $recordedOutcome"
+  fi
+  if [[ -n "$pending" ]]; then
+    reportStatusLine "pending" "$pending"
+    noteDrift "a converge still owes work"
+  fi
+
+  if ((${#driftReasons[@]} == 0)); then
+    reportStatusLine "drift" "none"
+    return 0
+  fi
+  local reason
+  for reason in "${driftReasons[@]}"; do
+    reportStatusLine "drift" "$reason"
+  done
+  return 1
+}
+
+refuseConverge() {
+  printf 'dotfiles: %s; move that work to a worktree, or run dot --as-is to converge it anyway\n' "$1" >&2
+  exit 1
+}
+
+guardCheckoutIsMainlineAndClean() {
+  local mainline
+  local branch
+  local changedCount
+  mainline="$(mainlineBranch)"
+  branch="$(currentBranch)"
+  changedCount="$(changedPathCount)"
+  if [[ "$branch" != "$mainline" ]]; then
+    refuseConverge "$dotfilesRepo is on $branch, not $mainline"
+  fi
+  if ((changedCount > 0)); then
+    refuseConverge "$dotfilesRepo has $changedCount changed paths"
+  fi
+}
+
+pullMainline() {
+  local mainline
+  local behindCount
+  local aheadCount
+  mainline="$(mainlineBranch)"
+  if ! fetchOrigin; then
+    # The timer sets this: an unattended run that converged a stale commit would record success and never retry.
+    if [[ "${DOTFILES_REQUIRE_ORIGIN:-0}" == "1" ]]; then
+      printf 'dotfiles: origin unreachable and DOTFILES_REQUIRE_ORIGIN=1; refusing rather than applying a stale checkout\n' >&2
+      exit 1
+    fi
+    printf 'dotfiles: fetch failed; converging the checkout as it stands\n' >&2
+    return 0
+  fi
+  if ! repoGit rev-parse --verify -q "refs/remotes/origin/$mainline" > /dev/null; then
+    printf 'dotfiles: origin has no %s to pull; converging the checkout as it stands\n' "$mainline" >&2
+    return 0
+  fi
+  read -r behindCount aheadCount \
+    <<< "$(repoGit rev-list --left-right --count "origin/$mainline...HEAD" 2>/dev/null || printf '0 0')"
+  if ((aheadCount > 0 && behindCount == 0)); then
+    refuseConverge "$dotfilesRepo has $aheadCount commits origin/$mainline does not"
+  fi
+  if repoGit merge --ff-only --quiet "origin/$mainline"; then
+    return 0
+  fi
+  printf 'dotfiles: %s has diverged from origin/%s; rebase or reset it before converging\n' \
+    "$dotfilesRepo" "$mainline" >&2
+  exit 1
+}
+
+# Two converges at once (a timer and a hand run) would both rewrite the same links and state.
+holdConvergeLock() {
+  command -v flock >/dev/null 2>&1 || return 0
+  dotfilesStateDirectory >/dev/null 2>&1 || return 0
+  # The directory itself is the lock: a lock file at a path a symlink can claim would be truncated.
+  exec 9< "$dotfilesStateDirectoryPath"
+  if flock -n 9; then
+    return 0
+  fi
+  printf 'dotfiles: another dot run holds %s\n' "$dotfilesStateDirectoryPath" >&2
+  exit 1
+}
+
+converge() {
+  holdConvergeLock
+  if ((convergeAsIs == 0)); then
+    guardCheckoutIsMainlineAndClean
+    pullMainline
+  fi
+  exec "$dotfilesRepo/script/bootstrap" "${bootstrapArguments[@]+"${bootstrapArguments[@]}"}"
+}
+
+if [[ "$command" == "status" ]]; then
+  reportStatus
+  exit $?
+fi
+converge

@@ -1,0 +1,10 @@
+[Unit]
+Description=Converge this machine from dotfiles mainline
+
+[Service]
+Type=oneshot
+TimeoutStartSec=1h
+ExecStart=%h/.dotfiles/bin/dot
+Environment=NO_COLOR=1
+Environment=DOTFILES_REQUIRE_ORIGIN=1
+Environment=PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin

@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly dotfiles converge
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+OnBootSec=10min
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

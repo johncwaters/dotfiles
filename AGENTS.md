@@ -28,6 +28,9 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
 - What a converge still owes is state, not config: it is recorded under
   `$XDG_STATE_HOME/dotfiles` through `script/lib/state.sh`, so a run can retry owed work
   and no marker lands beside a root-owned target the next run cannot rewrite.
+- The checkout is the live config, so `~/.dotfiles` stays on mainline and clean; feature work
+  happens in a worktree. `bin/dot` refuses to converge otherwise, and every converge records
+  its commit under the state directory so `dot status` can name the drift.
 - `~/.claude` holds runtime state (`projects/`, `sessions/`, `plugins/`, credentials)
   that must never enter this repo, so `ai/install.sh` links per entry rather than
   linking whole directories.
@@ -49,7 +52,8 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
 - `<topic>/collect.sh`: optional, run by `script/collect`
 - `<topic>/*.bash`: sourced by the shell loader for the profile's topics, `path.bash`
   first, `completion.bash` last; `shell/test.sh` pins the order
-- `bin/dot`: pulls this repo and reruns bootstrap
+- `bin/dot`: clones on a fresh machine, pulls mainline and reruns bootstrap; `dot status`
+  reports drift against `origin/main` and owed work
 - `test/`: shared bubblewrap sandbox and cross-cutting suites listed in `test/run-all.sh`;
   per-topic tests live next to their installer
 - `test/harness.sh`: shared assertions, sandbox home, command stubs
