@@ -65,8 +65,8 @@ gate.
 **Then loop.**
 
 1. Invoke `/code-review` with target `working`, the repo path, the explicit changed-file
-   list from preflight as `--paths`, and one or two sentences of what changed and why.
-   Always `working`, never `staged`: `land.ts` stages every tracked
+   list from preflight as `--paths`, and one or two sentences of what changed and the goal
+   it serves. Always `working`, never `staged`: `land.ts` stages every tracked
    modification in scope plus the scoped untracked files, so a `staged` review would
    approve a subset of what gets committed.
 2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
@@ -87,7 +87,10 @@ gate.
      and then stops rather than landing a review that never completed. Hand every surviving
      `ACTIONABLE` finding at MEDIUM or higher to `finding-fixer` the same way. Decide each
      surviving `AMBIGUOUS` finding at MEDIUM or higher yourself, from the caller context and
-     the code: one with a bounded fix inside the changed-file list is re-dispositioned
+     the code: one tagged `necessity` or `necessity/<category>` and carrying no answer from
+     the carbon unit is never re-dispositioned `ACTIONABLE` and is recorded as a NIT with the
+     reading you chose, because a CUT is the carbon unit's call and round 3 has nobody to
+     ask; any other one with a bounded fix inside the changed-file list is re-dispositioned
      `ACTIONABLE`, with the reading you chose written into its body, before it joins the
      writer's batch, since a finding still marked `AMBIGUOUS` when it arrives is declined on
      sight; a MEDIUM one without such a fix is recorded as a NIT with the reading you chose;

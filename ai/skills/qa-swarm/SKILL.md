@@ -40,6 +40,7 @@ The router never spawns anything. It returns a plan; this skill decides and disp
 | `code` | `code-reviewer` agent | opus | Always. Logic defects, correctness, contracts |
 | `security` | `security-reviewer` agent | fable | Diff touches auth, input handling, crypto, payments, PII, secrets, infrastructure, or destructive operations |
 | `structure` | `structure-reviewer` agent | opus | Diff is a refactor, establishes a new module or boundary, or moves responsibilities across existing ones |
+| `necessity` | `necessity-reviewer` agent | opus | Diff introduces a net-new file, exported symbol, or doc section, and the context states a goal |
 | `external` | Codex CLI | `gpt-5.6-sol`, effort `high` | Danger or complexity is HIGH. An independent frontier read of the same diff |
 | `tiebreak` | Grok CLI | default | Two lanes disagree on whether a specific finding is real. Runs in Step 3, never here |
 
@@ -110,7 +111,7 @@ Lanes emit LOW at minimum and never `NIT`. Only code-review may use `NIT` as a d
 
 ## Step 3: Converge
 
-**Lane death is blocking, for the three agent lanes.** `code`, `security`, or `structure` triggered and spawned, then erroring, returning empty, or producing no parseable `STRUCTURED_FINDINGS` block, is a failed run. Stop and tell the caller. Never return a partial block as if it were complete.
+**Lane death is blocking, for the four agent lanes.** `code`, `security`, `structure`, or `necessity` triggered and spawned, then erroring, returning empty, or producing no parseable `STRUCTURED_FINDINGS` block, is a failed run. Stop and tell the caller. Never return a partial block as if it were complete.
 
 `router`, `external`, and `tiebreak` are exempt at every stage, before or after dispatch: they run on an external CLI with its own quota and none is ever the sole coverage for a concern. Their failure degrades, never blocks:
 
@@ -120,7 +121,7 @@ Lanes emit LOW at minimum and never `NIT`. Only code-review may use `NIT` as a d
 
 **Lane overflow.** Every agent lane caps itself at 10 findings and reports what it dropped as one sentence in its own summary. Read each lane's summary for that sentence and carry the lanes that capped into this skill's `OVERALL_SUMMARY`. Left as prose it dies here, and the caller's late-finding ratchet, which exists to give dropped overflow its first look, stays armed on a diff nobody finished sweeping.
 
-**Deduplication.** First compute the changed-file set with `git diff --name-only` for the review range. Drop any finding whose `file` is outside that set and mention all such drops in at most one summary sentence. Then merge findings that name the same file within 5 lines of each other, or are plainly the same concern in different words. Merged findings carry the tag `convergent: <tag> + <tag>`. Convergence means independent lanes reached the same conclusion, so it promotes confidence: a merged finding counts as confirmed even when one lane marked it low-confidence. It does **not** by itself raise severity; keep the highest severity any lane assigned and name that lane in the body.
+**Deduplication.** First compute the changed-file set with `git diff --name-only` for the review range. Drop any finding whose `file` is outside that set and mention all such drops in at most one summary sentence. Then merge findings that name the same file within 5 lines of each other, or are plainly the same concern in different words. Merged findings carry the tag `convergent: <tag> + <tag>`. Convergence means independent lanes reached the same conclusion, so it promotes confidence: a merged finding counts as confirmed even when one lane marked it low-confidence. It does **not** by itself raise severity; keep the highest severity any lane assigned and name that lane in the body. A `necessity` finding never merges with another lane's finding, whatever the distance between them: both are kept under their own tags, so nothing is dropped, the other lane's finding keeps its own severity, and the CUT reaches triage on the `necessity` tag its rule keys on.
 
 **Contradiction.** One lane asserts a defect and another explicitly verified it as safe: that is a `tiebreak` case, not a merge. Dispatch the Grok lane on those findings alone, with both positions in the prompt, and keep whichever finding its ruling supports.
 
