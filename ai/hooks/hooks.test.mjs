@@ -826,6 +826,26 @@ function makeMultiLineRepository() {
   return makeRepository("one\ntwo\nthree\nfour\nfive\n", "one\ntwo\nTHREE\nfive\n");
 }
 
+test("injected routing rules stay under the harness persisted-output threshold", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "inject-routing-hook-"));
+  try {
+    const claudeDirectory = path.join(directory, ".claude");
+    fs.mkdirSync(claudeDirectory);
+    fs.copyFileSync(
+      path.join(HOOKS_DIRECTORY, "..", "ROUTING.md"),
+      path.join(claudeDirectory, "ROUTING.md"),
+    );
+
+    const processResult = runHook("inject-routing.mjs", {}, { HOME: directory });
+
+    assert.equal(processResult.status, 0);
+    assert.ok(Buffer.byteLength(processResult.stdout, "utf8") < 10000);
+    assert.match(processResult.stdout, /<routing>/);
+  } finally {
+    removeAll(directory);
+  }
+});
+
 test("spawn prompt missing scope markers is denied", () => {
   const processResult = runHook("enforce-spawn-model.mjs", {
     tool_name: "Agent",
