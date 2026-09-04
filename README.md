@@ -67,6 +67,7 @@ profile.
 | `fonts` | CommitMono |
 | `dictation` | ydotoold user service |
 | `screenshot` | flameshot desktop entry and save path |
+| `terminal` | Ghostty, its config, and COSMIC's default terminal |
 | `packages` | system packages, npm globals, python tools, and their removals |
 | `repos` | clones the working set |
 | `tailscale` | the tailnet client |
