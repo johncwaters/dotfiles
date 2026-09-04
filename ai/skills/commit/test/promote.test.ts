@@ -22,13 +22,17 @@ import {
 
 type PromotionSetup = { origin: string; seed: string; local: string };
 
-function seedOrigin(featureBranch = "feature"): PromotionSetup {
+function seedOrigin(featureBranch = "feature", branchesOnOrigin: string[] = []): PromotionSetup {
   const origin = makeBareOrigin();
   const seed = makeRepo();
   runGit(seed, ["remote", "add", "origin", origin]);
   commitFile(seed, "base.txt", "base\n", "init");
   runGit(seed, ["push", "-q", "-u", "origin", "main"]);
   runGit(origin, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+  for (const branchOnOrigin of branchesOnOrigin) {
+    runGit(seed, ["branch", branchOnOrigin]);
+    runGit(seed, ["push", "-q", "origin", branchOnOrigin]);
+  }
   runGit(seed, ["checkout", "-q", "-b", featureBranch]);
   runGit(seed, ["push", "-q", "-u", "origin", featureBranch]);
   const local = cloneRepo(origin);
@@ -36,10 +40,13 @@ function seedOrigin(featureBranch = "feature"): PromotionSetup {
   return { origin, seed, local };
 }
 
+function writeExecutable(filePath: string, body: string): void {
+  fs.writeFileSync(filePath, body, "utf8");
+  fs.chmodSync(filePath, 0o755);
+}
+
 function writeOriginHook(origin: string, name: string, body: string): void {
-  const hookPath = path.join(origin, "hooks", name);
-  fs.writeFileSync(hookPath, body, "utf8");
-  fs.chmodSync(hookPath, 0o755);
+  writeExecutable(path.join(origin, "hooks", name), body);
 }
 
 function rejectUpdateHook(branch: string): string {
@@ -70,6 +77,58 @@ function rejectDeleteHook(branch: string): string {
     "exit 1",
     "",
   ].join("\n");
+}
+
+function gitWrapperInterceptingDeleteOf(branch: string): string {
+  return [
+    "#!/usr/bin/env node",
+    'import { spawnSync } from "node:child_process";',
+    'import fs from "node:fs";',
+    'import path from "node:path";',
+    'const originalPaths = (process.env.ORIGINAL_PATH ?? "").split(":");',
+    'const realGitPath = originalPaths.map((directory) => path.join(directory, "git")).find((candidate) => fs.existsSync(candidate));',
+    "if (!realGitPath) process.exit(1);",
+    `const isBranchDeletion = process.argv[2] === "push" && process.argv.includes(":refs/heads/${branch}");`,
+    'const argumentsBeforeDeletion = JSON.parse(process.env.GIT_ARGS_BEFORE_DELETION ?? "[]");',
+    'const argumentsAfterDeletion = JSON.parse(process.env.GIT_ARGS_AFTER_DELETION ?? "[]");',
+    "if (isBranchDeletion && argumentsBeforeDeletion.length > 0) {",
+    '  const raced = spawnSync(realGitPath, argumentsBeforeDeletion, { stdio: "inherit" });',
+    "  if ((raced.status ?? 1) !== 0) process.exit(1);",
+    "}",
+    'const forwarded = spawnSync(realGitPath, process.argv.slice(2), { stdio: "inherit" });',
+    "if (isBranchDeletion && argumentsAfterDeletion.length > 0) {",
+    '  const trailing = spawnSync(realGitPath, argumentsAfterDeletion, { stdio: "inherit" });',
+    "  if ((trailing.status ?? 1) !== 0) process.exit(1);",
+    "}",
+    "process.exit(forwarded.status ?? 1);",
+    "",
+  ].join("\n");
+}
+
+function seedMergeDriverDivergence(): PromotionSetup {
+  const { origin, seed, local } = seedOrigin();
+  runGit(seed, ["checkout", "-q", "feature"]);
+  commitFile(seed, ".gitattributes", "* merge=ours\n", "attributes");
+  commitFile(seed, "base.txt", "feature side\n", "feature side");
+  runGit(seed, ["push", "-q", "origin", "feature"]);
+  runGit(seed, ["checkout", "-q", "main"]);
+  commitFile(seed, ".gitattributes", "* merge=ours\n", "attributes");
+  commitFile(seed, "base.txt", "main side\n", "main side");
+  runGit(seed, ["push", "-q", "origin", "main"]);
+  runGit(local, ["fetch", "-q", "origin"]);
+  runGit(local, ["merge", "-q", "--ff-only", "origin/feature"]);
+  writeFile(local, "unrelated.txt", "unrelated\n");
+  return { origin, seed, local };
+}
+
+function assertContainmentRefusedAndBranchKept(
+  result: Record<string, unknown>,
+  origin: string,
+): void {
+  assert.equal(result.outcome, "COMMITTED");
+  assert.equal("deletedRemoteBranches" in result, false);
+  assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+  assert.match((result.warnings as string[]).join("\n"), /tree containment failed/);
 }
 
 test("findWorktreeForBranch skips detached and bare blocks", () => {
@@ -570,7 +629,7 @@ test("a clean tree still promotes an unlanded feature tip", () => {
   }
 });
 
-test("mainline promotion deletes a merged glissa remote branch", () => {
+test("mainline promotion deletes a merged remote branch", () => {
   const featureBranch = "glissa/session/delete-after-mainline";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
@@ -585,7 +644,7 @@ test("mainline promotion deletes a merged glissa remote branch", () => {
   }
 });
 
-test("a refused glissa branch deletion is only a warning", () => {
+test("a refused merged remote branch deletion is only a warning", () => {
   const featureBranch = "glissa/session/delete-rejected";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
@@ -602,43 +661,127 @@ test("a refused glissa branch deletion is only a warning", () => {
   }
 });
 
-test("a feature branch is deleted after promotion whatever its name", () => {
-  const { origin, seed, local } = seedOrigin();
-  try {
-    writeFile(local, "base.txt", "base\nfeature change\n");
-    const { result } = land(local, ["--promote"], VALID_MESSAGE);
-
-    assert.equal(result.outcome, "COMMITTED");
-    assert.deepEqual(result.deletedRemoteBranches, ["feature"]);
-    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
-  } finally {
-    cleanup(origin, seed, local);
-  }
-});
-
-test("a rebased landing still deletes the remote feature branch", () => {
-  const { origin, seed, local } = seedOrigin();
-  try {
-    runGit(seed, ["checkout", "-q", "main"]);
-    commitFile(seed, "remote.txt", "remote advance\n", "remote advance");
-    runGit(seed, ["push", "-q", "origin", "main"]);
-    writeFile(local, "base.txt", "base\nfeature change\n");
-
-    const { result } = land(local, ["--promote"], VALID_MESSAGE);
-
-    assert.equal(result.outcome, "COMMITTED");
-    assert.deepEqual(result.deletedRemoteBranches, ["feature"]);
-    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
-  } finally {
-    cleanup(origin, seed, local);
-  }
-});
-
-test("a remote feature branch with absent changes survives with a warning", () => {
+test("a rebased landing deletes the remote feature branch through tree containment", () => {
   const { origin, seed, local } = seedOrigin();
   try {
     runGit(seed, ["checkout", "-q", "feature"]);
+    commitFile(seed, "feature-work.txt", "feature work\n", "feature work");
+    runGit(seed, ["push", "-q", "origin", "feature"]);
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "remote.txt", "remote advance\n", "remote advance");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["merge", "-q", "--ff-only", "origin/feature"]);
+    const remoteFeatureTip = gitOutput(local, ["rev-parse", "origin/feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.notEqual(gitOutput(local, ["rev-parse", "main"]), remoteFeatureTip);
+    assert.deepEqual(result.deletedRemoteBranches, ["feature"]);
+    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a remote branch that gained commits after the local push is kept with a warning", () => {
+  const { origin, seed, local } = seedOrigin();
+  const advancing = cloneRepo(origin);
+  try {
+    runGit(advancing, ["checkout", "-q", "-b", "feature", "origin/feature"]);
+    commitFile(advancing, "sneaky.txt", "unreviewed\n", "add unreviewed file");
+    runGit(advancing, ["revert", "--no-edit", "HEAD"]);
+    runGit(advancing, ["push", "-q", "origin", "feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal("deletedRemoteBranches" in result, false);
+    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+    assert.match(
+      (result.warnings as string[]).join("\n"),
+      /remote branch feature at [0-9a-f]+ carries commits this landing never rebased from [0-9a-f]+; keeping branch/,
+    );
+  } finally {
+    cleanup(origin, seed, local, advancing);
+  }
+});
+
+test("a local custom merge driver cannot make an unmerged remote branch look contained", () => {
+  const { origin, seed, local } = seedMergeDriverDivergence();
+  try {
+    runGit(local, ["config", "merge.ours.driver", "true"]);
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assertContainmentRefusedAndBranchKept(result, origin);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("an included custom merge driver cannot make an unmerged remote branch look contained", () => {
+  const { origin, seed, local } = seedMergeDriverDivergence();
+  try {
+    const includedConfigPath = path.join(local, ".git", "included-config");
+    fs.writeFileSync(includedConfigPath, '[merge "ours"]\n\tdriver = true\n', "utf8");
+    runGit(local, ["config", "include.path", includedConfigPath]);
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assertContainmentRefusedAndBranchKept(result, origin);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a worktree-scoped custom merge driver cannot make an unmerged remote branch look contained", () => {
+  const { origin, seed, local } = seedMergeDriverDivergence();
+  try {
+    runGit(local, ["config", "extensions.worktreeConfig", "true"]);
+    runGit(local, ["config", "--worktree", "merge.ours.driver", "true"]);
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assertContainmentRefusedAndBranchKept(result, origin);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("an environment-injected merge driver cannot make an unmerged remote branch look contained", () => {
+  const { origin, seed, local } = seedMergeDriverDivergence();
+  try {
+    const { result } = runSkillScript(
+      "land.ts",
+      local,
+      ["--push-retry-delay-ms", "0", "--promote"],
+      VALID_MESSAGE,
+      {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "merge.ours.driver",
+        GIT_CONFIG_VALUE_0: "true",
+        GIT_CONFIG_PARAMETERS: "'merge.ours.driver=true'",
+      },
+    );
+
+    assertContainmentRefusedAndBranchKept(result, origin);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a remote feature branch with an unmerged merge commit is kept with a warning", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    runGit(seed, ["checkout", "-q", "-b", "side"]);
     commitFile(seed, "remote-only.txt", "remote only\n", "remote only");
+    runGit(seed, ["checkout", "-q", "feature"]);
+    runGit(seed, ["merge", "-q", "--no-ff", "side", "-m", "merge remote changes"]);
     runGit(seed, ["push", "-q", "origin", "feature"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
 
@@ -649,15 +792,166 @@ test("a remote feature branch with absent changes survives with a warning", () =
     assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
     assert.match(
       (result.warnings as string[]).join("\n"),
-      /remote branch feature contains changes absent from main; keeping branch/,
+      /remote branch feature at [0-9a-f]+ carries commits this landing never rebased/,
     );
   } finally {
     cleanup(origin, seed, local);
   }
 });
 
-test("mainline is never deleted as a feature branch", () => {
+test("a remote branch cherry-picked then reverted from main is kept", () => {
   const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "feature"]);
+    commitFile(seed, "reverted.txt", "remote only\n", "remote only");
+    const remoteFeatureCommit = gitOutput(seed, ["rev-parse", "HEAD"]);
+    runGit(seed, ["push", "-q", "origin", "feature"]);
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "main-before.txt", "main before cherry-pick\n", "main advance");
+    runGit(seed, ["cherry-pick", remoteFeatureCommit]);
+    runGit(seed, ["revert", "--no-edit", "HEAD"]);
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["merge", "-q", "--ff-only", "origin/feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal("deletedRemoteBranches" in result, false);
+    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+    assert.match((result.warnings as string[]).join("\n"), /tree differs from main; keeping branch/);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a whitespace-only remote variant is kept", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "feature"]);
+    commitFile(seed, "spacing.txt", "value \n", "remote whitespace");
+    runGit(seed, ["push", "-q", "origin", "feature"]);
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "spacing.txt", "value\n", "main whitespace");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal("deletedRemoteBranches" in result, false);
+    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+    assert.match(
+      (result.warnings as string[]).join("\n"),
+      /remote branch feature at [0-9a-f]+ carries commits this landing never rebased/,
+    );
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a branch named like a remote tag never deletes the tag", () => {
+  const { origin, seed, local } = seedOrigin("v9");
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    runGit(seed, ["tag", "v9"]);
+    runGit(seed, ["push", "-q", "origin", "refs/tags/v9"]);
+    runGit(local, ["checkout", "-q", "v9"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.deletedRemoteBranches, ["v9"]);
+    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "refs/tags/v9"]), 0);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a stale branch deletion lease keeps the remote branch with a warning", () => {
+  const { origin, seed, local } = seedOrigin();
+  const advancing = cloneRepo(origin);
+  const wrapperDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-git-wrapper-"));
+  const wrapperPath = path.join(wrapperDirectory, "git");
+  try {
+    runGit(advancing, ["checkout", "-q", "-b", "feature", "origin/feature"]);
+    commitFile(advancing, "concurrent.txt", "concurrent advance\n", "concurrent advance");
+    writeExecutable(wrapperPath, gitWrapperInterceptingDeleteOf("feature"));
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = runSkillScript(
+      "land.ts",
+      local,
+      ["--push-retry-delay-ms", "0", "--promote"],
+      VALID_MESSAGE,
+      {
+        GIT_ARGS_BEFORE_DELETION: JSON.stringify([
+          "-C",
+          advancing,
+          "push",
+          "-q",
+          "origin",
+          "feature",
+        ]),
+        ORIGINAL_PATH: process.env.PATH ?? "",
+        PATH: `${wrapperDirectory}:${process.env.PATH ?? ""}`,
+      },
+    );
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal("deletedRemoteBranches" in result, false);
+    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
+    assert.match((result.warnings as string[]).join("\n"), /could not delete merged remote branch feature/);
+  } finally {
+    cleanup(origin, seed, local, advancing, wrapperDirectory);
+  }
+});
+
+test("a mainline force-reset right after the deletion restores the remote branch", () => {
+  const { origin, seed, local } = seedOrigin();
+  const wrapperDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-git-wrapper-"));
+  const wrapperPath = path.join(wrapperDirectory, "git");
+  try {
+    const mainlineBeforePromotion = gitOutput(local, ["rev-parse", "origin/main"]);
+    const remoteFeatureTip = gitOutput(local, ["rev-parse", "origin/feature"]);
+    writeExecutable(wrapperPath, gitWrapperInterceptingDeleteOf("feature"));
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = runSkillScript(
+      "land.ts",
+      local,
+      ["--push-retry-delay-ms", "0", "--promote"],
+      VALID_MESSAGE,
+      {
+        GIT_ARGS_AFTER_DELETION: JSON.stringify([
+          "--git-dir",
+          origin,
+          "update-ref",
+          "refs/heads/main",
+          mainlineBeforePromotion,
+        ]),
+        ORIGINAL_PATH: process.env.PATH ?? "",
+        PATH: `${wrapperDirectory}:${process.env.PATH ?? ""}`,
+      },
+    );
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal("deletedRemoteBranches" in result, false);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), remoteFeatureTip);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainlineBeforePromotion);
+    assert.match(
+      (result.warnings as string[]).join("\n"),
+      /origin\/main is at [0-9a-f]+, not the [0-9a-f]+ this landing pushed; restoring deleted remote branch feature at [0-9a-f]+/,
+    );
+  } finally {
+    cleanup(origin, seed, local, wrapperDirectory);
+  }
+});
+
+test("mainline is never deleted as a feature branch", () => {
+  const { origin, seed, local } = seedOrigin("feature", ["release"]);
   const policyRoot = makePolicyRoot("personal", {
     profile: "personal",
     commitBranches: { forbid: ["release"], onForbidden: "create-feature-branch" },
@@ -665,10 +959,9 @@ test("mainline is never deleted as a feature branch", () => {
     afterCommit: "promote",
   });
   try {
-    runGit(seed, ["checkout", "-q", "main"]);
-    runGit(seed, ["branch", "release"]);
-    runGit(seed, ["push", "-q", "origin", "release"]);
+    runGit(origin, ["symbolic-ref", "HEAD", "refs/heads/release"]);
     runGit(local, ["checkout", "-q", "main"]);
+    const mainOnOriginBefore = gitOutput(origin, ["rev-parse", "main"]);
     writeFile(local, "base.txt", "base\nmainline change\n");
     const { result } = runSkillScript(
       "land.ts",
@@ -679,8 +972,10 @@ test("mainline is never deleted as a feature branch", () => {
     );
 
     assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["release"]);
     assert.equal("deletedRemoteBranches" in result, false);
-    assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "main"]), 0);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainOnOriginBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "release"]), result.commit);
   } finally {
     cleanup(origin, seed, local, policyRoot);
   }

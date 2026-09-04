@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 
 export type GitResult = { code: number; stdout: string; stderr: string };
 
@@ -19,6 +20,38 @@ function nonEmptyLines(text: string): string[] {
   return text.split("\n").filter((line) => line.trim() !== "");
 }
 
+const INHERITED_GIT_CONFIG_ENV = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|PARAMETERS)$/;
+
+const OID_PATTERN = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
+
+const REMOTE_QUERY_TIMEOUT_MS = 30_000;
+
+function envWithoutConfigInjection(): Record<string, string> {
+  const childEnv: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value === undefined || INHERITED_GIT_CONFIG_ENV.test(name)) {
+      continue;
+    }
+    childEnv[name] = value;
+  }
+  childEnv.GIT_CONFIG_GLOBAL = os.devNull;
+  childEnv.GIT_CONFIG_SYSTEM = os.devNull;
+  childEnv.GIT_CONFIG_NOSYSTEM = "1";
+  return childEnv;
+}
+
+function withConfigEntries(
+  baseEnv: Record<string, string>,
+  entries: Array<[string, string]>,
+): Record<string, string> {
+  const childEnv: Record<string, string> = { ...baseEnv, GIT_CONFIG_COUNT: String(entries.length) };
+  entries.forEach(([name, value], index) => {
+    childEnv[`GIT_CONFIG_KEY_${index}`] = name;
+    childEnv[`GIT_CONFIG_VALUE_${index}`] = value;
+  });
+  return childEnv;
+}
+
 export class Git {
   readonly repo: string;
 
@@ -26,12 +59,24 @@ export class Git {
     this.repo = repo;
   }
 
-  run(args: string[], options: { cwd?: string; input?: string } = {}): GitResult {
+  run(
+    args: string[],
+    options: {
+      cwd?: string;
+      input?: string;
+      env?: Record<string, string>;
+      replacesInheritedEnv?: boolean;
+      timeoutMs?: number;
+    } = {},
+  ): GitResult {
+    const inherited = options.replacesInheritedEnv ? {} : process.env;
     const proc = spawnSync("git", args, {
       cwd: options.cwd ?? this.repo,
       input: options.input,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
+      timeout: options.timeoutMs,
+      env: { ...inherited, ...(options.env ?? {}) },
     });
     return {
       code: proc.status ?? 1,
@@ -77,8 +122,10 @@ export class Git {
     return nonEmptyLines(this.run(["rev-list", "--reverse", range]).stdout);
   }
 
-  fetch(remote: string, branch: string): GitResult {
-    return this.run(["fetch", remote, branch]);
+  fetchRemoteBranch(remote: string, branch: string): GitResult {
+    const remoteRef = `refs/remotes/${remote}/${branch}`;
+    const refspec = `+refs/heads/${branch}:${remoteRef}`;
+    return this.run(["fetch", remote, refspec]);
   }
 
   fetchLocalFf(src: string, dst: string): GitResult {
@@ -152,16 +199,69 @@ export class Git {
     return this.run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).code === 0;
   }
 
-  deleteRemoteBranch(remote: string, branch: string): GitResult {
-    return this.run(["push", "--porcelain", remote, "--delete", branch]);
+  deleteRemoteBranch(options: { remote: string; branch: string; expectedTip: string }): GitResult {
+    return this.run([
+      "push",
+      "--porcelain",
+      `--force-with-lease=refs/heads/${options.branch}:${options.expectedTip}`,
+      options.remote,
+      `:refs/heads/${options.branch}`,
+    ]);
+  }
+
+  remoteBranchTip(remote: string, branch: string): string | null {
+    const listing = this.run(["ls-remote", "--heads", remote, `refs/heads/${branch}`], {
+      env: { GIT_TERMINAL_PROMPT: "0" },
+      timeoutMs: REMOTE_QUERY_TIMEOUT_MS,
+    });
+    if (listing.code !== 0) {
+      return null;
+    }
+    const firstListedRef = nonEmptyLines(listing.stdout)[0];
+    if (firstListedRef === undefined) {
+      return null;
+    }
+    const tip = (firstListedRef.split(/\s+/)[0] ?? "").trim();
+    if (!OID_PATTERN.test(tip)) {
+      return null;
+    }
+    return tip;
   }
 
   isAncestor(ancestorRef: string, descendantRef: string): boolean {
     return this.run(["merge-base", "--is-ancestor", ancestorRef, descendantRef]).code === 0;
   }
 
-  cherry(upstream: string, head: string): GitResult {
-    return this.run(["cherry", upstream, head]);
+  configuredMergeDriverKeys(childEnv: Record<string, string>): string[] {
+    const keys = this.run(["config", "--name-only", "--get-regexp", "^merge\\..+\\.driver$"], {
+      env: childEnv,
+      replacesInheritedEnv: true,
+    });
+    if (keys.code !== 0) {
+      return [];
+    }
+    return nonEmptyLines(keys.stdout)
+      .map((key) => key.trim())
+      .filter((key) => /^merge\..+\.driver$/.test(key));
+  }
+
+  mergeTree(base: string, head: string): GitResult {
+    const childEnv = envWithoutConfigInjection();
+    const neutralizedDrivers: Array<[string, string]> = this.configuredMergeDriverKeys(
+      childEnv,
+    ).map((driverKey) => [driverKey, "false"]);
+    return this.run(["merge-tree", "--write-tree", base, head], {
+      env: withConfigEntries(childEnv, [
+        ["merge.default", "text"],
+        ["merge.renormalize", "false"],
+        ...neutralizedDrivers,
+      ]),
+      replacesInheritedEnv: true,
+    });
+  }
+
+  treeOid(ref: string): string | null {
+    return this.revParseRef(`${ref}^{tree}`);
   }
 
   push(remote: string, refspecs: string[], setUpstream: boolean): PushResult {

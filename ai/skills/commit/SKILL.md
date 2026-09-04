@@ -226,7 +226,7 @@ failures.
 
 | Outcome | Exit | What to do |
 |---|---|---|
-| `COMMITTED` | 0 | `pushed` says whether the feature branch was pushed, `promoted` lists the branches promotion carried the commit into, and `deletedRemoteBranches` lists any non-mainline remote feature branch proven merged by ancestry or patch equivalence that was pruned. Report |
+| `COMMITTED` | 0 | `pushed` says whether the feature branch was pushed, `promoted` lists the branches promotion carried the commit into, and `deletedRemoteBranches` lists any non-mainline remote feature branch proven merged by ancestry or tree containment that was pruned. Report |
 | `NOTHING_TO_COMMIT` | 13 | With `--promote`, promotion still ran: report what `promoted` says. Without it, stop and relay |
 | `MESSAGE_INVALID` | 20 | `errors` names each violation. Fix the message and re-run `land.ts` |
 | `HOOK_FAILED` | 21 | A commit hook rejected the commit; its stderr is in `warnings`. Fix the cause, then re-run |
@@ -252,7 +252,10 @@ Successful promotion to mainline does not push the feature branch: it fast-forwa
 mainline, so pushing it too would only leave a dead remote branch. `pushed: false` on a
 `COMMITTED` mainline promotion is therefore normal, not a failure. Two consequences: a
 merged remote feature branch other than mainline, `main`, `master`, or `develop` is deleted
-once ancestry or patch equivalence proves pushed mainline carries it, listed in
+once ancestry proves pushed mainline carries it, or tree containment does for a remote tip
+this landing actually rebased; the deletion is a single push leased on that branch tip, and
+origin mainline is re-read right after it, so a mainline that no longer carries the sha this
+run pushed restores the branch and warns. Deletions are listed in
 `deletedRemoteBranches` (a refused deletion is a warning, never an outcome change). A
 missing mainline also pushes the feature branch and reports the skip in `warnings`.
 

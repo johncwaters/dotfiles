@@ -1,6 +1,6 @@
 import { Git, type PushRefResult, type PushResult } from "./lib/git.ts";
 import { repositoryGuard } from "./lib/guard.ts";
-import { isPatchEquivalentMerged } from "./lib/merge-proof.ts";
+import { isTreeContained } from "./lib/merge-proof.ts";
 import { normalizeMessage, validateMessage } from "./lib/message.ts";
 import {
   branchForbidden,
@@ -33,6 +33,7 @@ import {
 } from "./lib/workspace.ts";
 
 const PUSH_ATTEMPTS = 3;
+const NEVER_DELETED_BRANCHES = ["main", "master", "develop"];
 
 type FailureOutcome =
   | "NOTHING_TO_COMMIT"
@@ -125,6 +126,7 @@ class Landing {
   private pushed = false;
   private commitHash: string | null = null;
   private deferredFeatureBranch: string | null = null;
+  private preRebaseFeatureTip: string | null = null;
   private noOriginPromoteWarned = false;
 
   constructor(repo: string, config: Arguments) {
@@ -341,6 +343,7 @@ class Landing {
     }
 
     const featureBranch = this.featureBranchForPromotion(current, mainline);
+    this.preRebaseFeatureTip = this.git.revParseRef("HEAD");
     if (originExists) {
       const syncOutcome = this.syncMainlineWithOrigin(mainline);
       if (syncOutcome) {
@@ -435,7 +438,7 @@ class Landing {
     if (
       featureBranch === null ||
       featureBranch === mainline ||
-      ["main", "master", "develop"].includes(featureBranch)
+      NEVER_DELETED_BRANCHES.includes(featureBranch)
     ) {
       return;
     }
@@ -443,41 +446,106 @@ class Landing {
       return;
     }
 
-    if (this.git.fetch("origin", featureBranch).code !== 0) {
+    if (this.git.fetchRemoteBranch("origin", featureBranch).code !== 0) {
       return;
     }
 
-    const remoteFeatureTip = this.git.revParseRef("FETCH_HEAD");
+    const remoteFeatureRef = `refs/remotes/origin/${featureBranch}`;
+    const remoteFeatureTip = this.git.revParseRef(remoteFeatureRef);
     if (remoteFeatureTip === null) {
       return;
     }
     const mainlineRef = `refs/heads/${mainline}`;
+    const mainlineTip = this.git.revParseRef(mainlineRef);
+    if (mainlineTip === null) {
+      this.warnings.push(`could not verify merged remote branch ${featureBranch}: ${mainline} is unavailable`);
+      return;
+    }
     if (this.git.isAncestor(remoteFeatureTip, mainlineRef)) {
-      this.deleteRemoteBranch(featureBranch);
+      this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
       return;
     }
 
-    const patchProof = this.git.cherry(mainlineRef, remoteFeatureTip);
-    if (patchProof.code !== 0) {
-      this.warnings.push(`could not verify merged remote branch ${featureBranch}: ${patchProof.stderr.trim()}`);
+    const preRebaseTip = this.preRebaseFeatureTip;
+    if (preRebaseTip === null || !this.git.isAncestor(remoteFeatureTip, preRebaseTip)) {
+      this.warnings.push(
+        `remote branch ${featureBranch} at ${remoteFeatureTip} carries commits this landing never rebased from ${preRebaseTip ?? "an unresolved head"}; keeping branch`,
+      );
       return;
     }
-    if (!isPatchEquivalentMerged(patchProof.stdout)) {
-      this.warnings.push(`remote branch ${featureBranch} contains changes absent from ${mainline}; keeping branch`);
+
+    const mainlineTreeOid = this.git.treeOid(mainlineRef);
+    if (mainlineTreeOid === null) {
+      this.warnings.push(`could not verify merged remote branch ${featureBranch}: mainline tree is unavailable`);
       return;
     }
-    this.deleteRemoteBranch(featureBranch);
+    const mergeTreeResult = this.git.mergeTree(mainlineRef, remoteFeatureTip);
+    if (mergeTreeResult.code !== 0) {
+      const failureText = (mergeTreeResult.stderr || "unknown error").trim();
+      this.warnings.push(`could not verify merged remote branch ${featureBranch}: tree containment failed: ${failureText}`);
+      return;
+    }
+    if (!isTreeContained(mergeTreeResult.stdout, mainlineTreeOid)) {
+      this.warnings.push(`remote branch ${featureBranch} tree differs from ${mainline}; keeping branch`);
+      return;
+    }
+    this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
   }
 
-  private deleteRemoteBranch(featureBranch: string): void {
-    const deletion = this.git.deleteRemoteBranch("origin", featureBranch);
-    if (deletion.code === 0) {
+  private pruneMergedRemoteBranch(
+    featureBranch: string,
+    remoteFeatureTip: string,
+    mainline: string,
+    pushedMainlineTip: string,
+  ): void {
+    const deletion = this.git.deleteRemoteBranch({
+      remote: "origin",
+      branch: featureBranch,
+      expectedTip: remoteFeatureTip,
+    });
+    if (deletion.code !== 0) {
+      const failureText = (deletion.stderr || deletion.stdout || "unknown error").trim();
+      this.warnings.push(`could not delete merged remote branch ${featureBranch}: ${failureText}`);
+      return;
+    }
+
+    const mainlineTipAfterDeletion = this.git.remoteBranchTip("origin", mainline);
+    if (mainlineTipAfterDeletion === pushedMainlineTip) {
       this.deletedRemoteBranches.push(featureBranch);
       return;
     }
+    this.restoreRemoteBranch(featureBranch, remoteFeatureTip, {
+      mainline,
+      pushedMainlineTip,
+      mainlineTipAfterDeletion,
+    });
+  }
 
-    const failureText = (deletion.stderr || deletion.stdout || "unknown error").trim();
-    this.warnings.push(`could not delete merged remote branch ${featureBranch}: ${failureText}`);
+  private restoreRemoteBranch(
+    featureBranch: string,
+    remoteFeatureTip: string,
+    mainlineState: {
+      mainline: string;
+      pushedMainlineTip: string;
+      mainlineTipAfterDeletion: string | null;
+    },
+  ): void {
+    const observedTip = mainlineState.mainlineTipAfterDeletion ?? "an unreadable head";
+    this.warnings.push(
+      `origin/${mainlineState.mainline} is at ${observedTip}, not the ${mainlineState.pushedMainlineTip} this landing pushed; restoring deleted remote branch ${featureBranch} at ${remoteFeatureTip}`,
+    );
+    const restore = this.git.push(
+      "origin",
+      [`${remoteFeatureTip}:refs/heads/${featureBranch}`],
+      false,
+    );
+    if (restore.code === 0) {
+      return;
+    }
+    const failureText = (restore.stderr || restore.stdout || "unknown error").trim();
+    this.warnings.push(
+      `could not restore deleted remote branch ${featureBranch} at ${remoteFeatureTip}: ${failureText}`,
+    );
   }
 
   private promoteHop(source: string, destination: string): FailureOutcome | null {
@@ -512,7 +580,7 @@ class Landing {
   }
 
   private syncMainlineWithOrigin(mainline: string): FailureOutcome | null {
-    const fetch = this.git.fetch("origin", mainline);
+    const fetch = this.git.fetchRemoteBranch("origin", mainline);
     if (fetch.code !== 0) {
       this.warnings.push(
         `could not verify origin/${mainline}; fetch failed: ${fetch.stderr.trim()}`,
