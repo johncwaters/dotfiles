@@ -3,8 +3,26 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ParkedEntry } from "../lib/ledger.ts";
 
 export const SKILL_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+export function parkedEntryFixture(overrides: Partial<ParkedEntry> = {}): ParkedEntry {
+  return {
+    v: 1,
+    at: "2026-09-03T00:00:00.000Z",
+    machine: "test-machine",
+    repo: "/tmp/repo",
+    gitCommonDir: "/tmp/repo/.git",
+    branch: "feature",
+    mainline: "main",
+    commit: "0123456789abcdef",
+    outcome: "PROMOTE_CONFLICT",
+    pushed: true,
+    conflicts: ["shared.txt"],
+    ...overrides,
+  };
+}
 
 export function runGit(repo: string, args: string[]): { code: number; stdout: string } {
   const proc = spawnSync("git", args, { cwd: repo, encoding: "utf8" });
@@ -52,6 +70,11 @@ export function cloneRepo(origin: string): string {
   return dest;
 }
 
+export function makeLedgerPath(): { ledgerDirectory: string; ledgerPath: string } {
+  const ledgerDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-ledger-"));
+  return { ledgerDirectory, ledgerPath: path.join(ledgerDirectory, "ledger.jsonl") };
+}
+
 export function writeFile(repo: string, filePath: string, content: string): string {
   const full = path.join(repo, filePath);
   fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -81,8 +104,12 @@ export function runSkillScript(
   env: Record<string, string> = {},
 ): RunResult {
   const childEnv = { ...process.env, ...env };
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
   if (!("CLAUDE_COMMIT_POLICY_ROOT" in env)) {
     delete childEnv.CLAUDE_COMMIT_POLICY_ROOT;
+  }
+  if (!("CLAUDE_COMMIT_LEDGER" in env)) {
+    childEnv.CLAUDE_COMMIT_LEDGER = ledgerPath;
   }
   const proc = spawnSync("node", [path.join(SKILL_DIR, script), ...args], {
     cwd: repo,
@@ -91,6 +118,7 @@ export function runSkillScript(
     maxBuffer: 16 * 1024 * 1024,
     env: childEnv,
   });
+  cleanup(ledgerDirectory);
   const stdout = proc.stdout ?? "";
   const stderr = proc.stderr ?? "";
   const lastLine = stdout.trim().split("\n").pop() ?? "";
@@ -98,8 +126,13 @@ export function runSkillScript(
   return { code: proc.status ?? 1, result: parsed, stderr };
 }
 
-export function land(repo: string, args: string[], message: string): RunResult {
-  return runSkillScript("land.ts", repo, ["--push-retry-delay-ms", "0", ...args], message);
+export function land(
+  repo: string,
+  args: string[],
+  message: string,
+  env: Record<string, string> = {},
+): RunResult {
+  return runSkillScript("land.ts", repo, ["--push-retry-delay-ms", "0", ...args], message, env);
 }
 
 export function preflight(

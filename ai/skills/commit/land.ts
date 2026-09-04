@@ -1,5 +1,12 @@
+import os from "node:os";
 import { Git, type PushRefResult, type PushResult } from "./lib/git.ts";
 import { repositoryGuard } from "./lib/guard.ts";
+import {
+  appendParkedEntry,
+  dropParkedEntries,
+  entryPathsAreAbsolute,
+  type ParkedEntry,
+} from "./lib/ledger.ts";
 import { isTreeContained } from "./lib/merge-proof.ts";
 import { normalizeMessage, validateMessage } from "./lib/message.ts";
 import {
@@ -48,6 +55,14 @@ type FailureOutcome =
 const SAFETY_PUSH_OUTCOMES = new Set<FailureOutcome>([
   "PROMOTE_FAILED",
   "PROMOTE_CONFLICT",
+  "MAINLINE_AHEAD",
+  "MAINLINE_UNVERIFIED",
+]);
+
+const PARKED_OUTCOMES = new Set<FailureOutcome>([
+  "PUSH_FAILED",
+  "PROMOTE_CONFLICT",
+  "PROMOTE_FAILED",
   "MAINLINE_AHEAD",
   "MAINLINE_UNVERIFIED",
 ]);
@@ -126,6 +141,7 @@ class Landing {
   private pushed = false;
   private commitHash: string | null = null;
   private deferredFeatureBranch: string | null = null;
+  private parkedFeatureBranch: string | null = null;
   private preRebaseFeatureTip: string | null = null;
   private noOriginPromoteWarned = false;
 
@@ -208,6 +224,7 @@ class Landing {
   }
 
   private failure(outcome: FailureOutcome): Result {
+    this.recordParkedBranch(outcome);
     const state = {
       ...(this.commitHash ? { commit: this.commitHash } : {}),
       pushed: this.pushed,
@@ -243,6 +260,48 @@ class Landing {
       return denylistedFileStaged({ files: this.denylistedStagedFiles, warnings: this.warnings });
     }
     return hookFailed({ warnings: this.warnings });
+  }
+
+  private recordParkedBranch(outcome: FailureOutcome): void {
+    if (!PARKED_OUTCOMES.has(outcome) || this.parkedFeatureBranch === null) {
+      return;
+    }
+    const entry: ParkedEntry = {
+      v: 1,
+      at: new Date().toISOString(),
+      machine: os.hostname(),
+      repo: this.git.repo,
+      gitCommonDir: this.git.commonDir(),
+      branch: this.parkedFeatureBranch,
+      mainline: this.mainline,
+      commit: this.commitHash ?? this.git.revParseHead(),
+      outcome,
+      pushed: this.pushed,
+      conflicts: outcome === "PROMOTE_CONFLICT" ? this.conflicts : [],
+    };
+    if (!entryPathsAreAbsolute(entry)) {
+      this.warnings.push("could not record parked branch in commit ledger");
+      return;
+    }
+    if (!appendParkedEntry(entry)) {
+      this.warnings.push("could not record parked branch in commit ledger");
+    }
+  }
+
+  private clearParkedBranch(branch: string | null): void {
+    if (branch === null || branch === "") {
+      return;
+    }
+    const gitCommonDir = this.git.commonDir();
+    if (gitCommonDir === "") {
+      return;
+    }
+    dropParkedEntries({ gitCommonDir, branch });
+  }
+
+  private markFeaturePushed(branch: string): void {
+    this.pushed = true;
+    this.clearParkedBranch(branch);
   }
 
   private commit(message: string, untracked: string[]): FailureOutcome | null {
@@ -310,10 +369,11 @@ class Landing {
       this.deferredFeatureBranch = branch;
       return null;
     }
+    this.parkedFeatureBranch = branch;
 
     const pending: PendingPushRef[] = [{ branch, kind: "feature" }];
     if (this.originRefIsUpToDate(branch)) {
-      this.pushed = true;
+      this.markFeaturePushed(branch);
       return null;
     }
 
@@ -322,7 +382,7 @@ class Landing {
       return outcome;
     }
 
-    this.pushed = true;
+    this.markFeaturePushed(branch);
     return null;
   }
 
@@ -331,18 +391,19 @@ class Landing {
     const { policy } = readCommitPolicy();
     const mainline = resolveMainline(this.git, configuredMainline(policy));
     this.mainline = mainline;
+    const current = this.git.currentBranch();
+    const featureBranch = this.featureBranchForPromotion(current, mainline);
+    this.parkedFeatureBranch = featureBranch;
     if (mainline === null) {
       this.warnings.push("promotion skipped: no mainline");
       return this.pushDeferredFeatureBranch();
     }
 
-    const current = this.git.currentBranch();
     if (current === mainline) {
       this.warnings.push(`commit landed directly on ${mainline}; promotion skipped`);
       return null;
     }
 
-    const featureBranch = this.featureBranchForPromotion(current, mainline);
     this.preRebaseFeatureTip = this.git.revParseRef("HEAD");
     if (originExists) {
       const syncOutcome = this.syncMainlineWithOrigin(mainline);
@@ -361,6 +422,7 @@ class Landing {
     if (!originExists) {
       this.warnAboutMissingOrigin();
       this.promoted.push(mainline);
+      this.clearParkedBranch(featureBranch);
       return null;
     }
 
@@ -371,6 +433,7 @@ class Landing {
     }
 
     this.promoted.push(mainline);
+    this.clearParkedBranch(featureBranch);
     if (this.config.noPush) {
       return null;
     }
@@ -379,7 +442,8 @@ class Landing {
   }
 
   private pushDeferredFeatureBranch(): FailureOutcome | null {
-    if (!this.deferredFeatureBranch || this.config.noPush) {
+    const deferredBranch = this.deferredFeatureBranch;
+    if (!deferredBranch || this.config.noPush) {
       return null;
     }
     if (!this.git.listRemotes().includes("origin")) {
@@ -387,23 +451,20 @@ class Landing {
       return null;
     }
     const outcome = this.pushPendingRefs(
-      [{ branch: this.deferredFeatureBranch, kind: "feature" }],
+      [{ branch: deferredBranch, kind: "feature" }],
       !this.git.hasUpstream(),
       "PUSH_FAILED",
     );
     if (outcome) {
       return outcome;
     }
-    this.pushed = true;
+    this.markFeaturePushed(deferredBranch);
     return null;
   }
 
   private featureBranchForPromotion(current: string, mainline: string | null): string | null {
     if (this.deferredFeatureBranch) {
       return this.deferredFeatureBranch;
-    }
-    if (this.config.noPush) {
-      return null;
     }
     if (current === mainline) {
       return null;
@@ -425,7 +486,7 @@ class Landing {
       "PUSH_FAILED",
     );
     if (!pushOutcome) {
-      this.pushed = true;
+      this.markFeaturePushed(featureBranch);
       return;
     }
     this.warnings.push(`promotion failed and safety push of ${featureBranch} also failed`);

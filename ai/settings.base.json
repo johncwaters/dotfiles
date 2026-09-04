@@ -67,6 +67,10 @@
           {
             "type": "command",
             "command": "node {{HOME}}/.claude/hooks/caveman-ultra.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/report-parked-branches.mjs"
           }
         ]
       }

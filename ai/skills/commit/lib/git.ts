@@ -110,6 +110,10 @@ export class Git {
     return this.run(["rev-parse", "HEAD"]).stdout.trim();
   }
 
+  commonDir(): string {
+    return this.run(["rev-parse", "--path-format=absolute", "--git-common-dir"]).stdout.trim();
+  }
+
   symbolicRef(ref: string): string | null {
     const proc = this.run(["symbolic-ref", "-q", ref]);
     if (proc.code !== 0) {

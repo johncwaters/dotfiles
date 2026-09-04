@@ -21,6 +21,7 @@ so the agent can correct it immediately instead of guessing.
 | `block-comments.mjs` | PreToolUse guard that denies a Write/Edit/MultiEdit adding net-new comment lines to a code file (JSDoc `@tag` blocks and shebangs exempt). Seeded into `~/.glissa/config.json` from `glissa/config.example.json`, tuned per-session in the Glissa Hooks tab, not settings.json. |
 | `hook-io.mjs` | Shared stdin payload, allow, PreToolUse deny, and spawn-tool helpers for the guard hooks. |
 | `inject-routing.mjs` | Routing loader (separate hook, own header docs). On `SessionStart` it prints `~/.claude/ROUTING.md` into the session. SessionStart never fires for subagents, so main-loop-only routing rules stay out of every spawn and out of the Codex mirror. |
+| `report-parked-branches.mjs` | SessionStart reporter for `~/.claude/commit-ledger.jsonl`. Checks each parked branch against its repo (origin plus the local ref), prints the live ones as inert backticked data under one 10s deadline, and compacts the resolved entries under the ledger lock. |
 | `README.md` | This file. |
 | `AGENTS.md` | Instructions for an AI agent editing anything in this directory. |
 

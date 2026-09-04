@@ -15,6 +15,7 @@ of them as production and follow the shared rule below before editing any hook.
 | `check-finding-scope.mjs` | `PostToolUse` (Agent/Task) | No, warns on findings outside the current diff or on unchanged lines inside it | `README.md` |
 | `inject-routing.mjs` | `SessionStart` | No, prints context or nothing | `README.md` |
 | `caveman-ultra.mjs` | `SessionStart` | No, prints the ultra mode instruction and writes `~/.claude/.caveman-active` | Header comment in the script |
+| `report-parked-branches.mjs` | `SessionStart` | No, prints the parked branches the commit ledger still holds, as inert backticked data | Header row in `README.md` |
 | `block-comments.mjs` | `PreToolUse` (Write/Edit/MultiEdit) | Yes, denies writes adding net-new comment lines. Seeded from `glissa/config.example.json` into config.json `hooks` and tuned per-session in the Glissa Hooks tab, NOT settings.json | Header comment in the script |
 
 **Shared rule for every hook here: fail open.** Any error, malformed input, or

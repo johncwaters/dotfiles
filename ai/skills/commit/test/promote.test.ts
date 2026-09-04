@@ -11,14 +11,17 @@ import {
   gitOutput,
   land,
   makeBareOrigin,
+  makeLedgerPath,
   makePolicyRoot,
   makeRepo,
+  parkedEntryFixture,
   runGit,
   runSkillScript,
   tryGit,
   VALID_MESSAGE,
   writeFile,
 } from "./helpers.ts";
+import { parseLedger } from "../lib/ledger.ts";
 
 type PromotionSetup = { origin: string; seed: string; local: string };
 
@@ -533,6 +536,92 @@ test("a feature rebase conflict aborts and restores a clean feature branch", () 
   }
 });
 
+test("a promotion conflict records the parked feature branch", () => {
+  const { origin, seed, local } = seedOrigin();
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nmain change\n", "main change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE, {
+      CLAUDE_COMMIT_LEDGER: ledgerPath,
+    });
+    const [entry] = parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries;
+
+    assert.equal(result.outcome, "PROMOTE_CONFLICT");
+    assert.equal(entry?.branch, "feature");
+    assert.equal(entry?.commit, result.commit);
+    assert.equal(entry?.outcome, "PROMOTE_CONFLICT");
+    assert.deepEqual(entry?.conflicts, ["base.txt"]);
+  } finally {
+    cleanup(origin, seed, local, ledgerDirectory);
+  }
+});
+
+test("a clean tree promotion conflict still records the parked feature branch", () => {
+  const { origin, seed, local } = seedOrigin();
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  try {
+    commitFile(local, "base.txt", "base\nfeature change\n", "feature change");
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nmain change\n", "main change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE, {
+      CLAUDE_COMMIT_LEDGER: ledgerPath,
+    });
+    const [entry] = parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries;
+
+    assert.equal(result.outcome, "PROMOTE_CONFLICT");
+    assert.equal(entry?.branch, "feature");
+    assert.equal(entry?.commit, gitOutput(local, ["rev-parse", "HEAD"]));
+  } finally {
+    cleanup(origin, seed, local, ledgerDirectory);
+  }
+});
+
+test("--no-push records a parked branch with pushed false", () => {
+  const { origin, seed, local } = seedOrigin();
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  try {
+    runGit(local, ["checkout", "-q", "main"]);
+    commitFile(local, "local-only.txt", "local only\n", "local only");
+    runGit(local, ["checkout", "-q", "feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE, {
+      CLAUDE_COMMIT_LEDGER: ledgerPath,
+    });
+    const [entry] = parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries;
+
+    assert.equal(result.outcome, "MAINLINE_AHEAD");
+    assert.equal(entry?.pushed, false);
+  } finally {
+    cleanup(origin, seed, local, ledgerDirectory);
+  }
+});
+
+test("an unwritable ledger keeps the promotion outcome and adds a warning", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(local, ["checkout", "-q", "main"]);
+    commitFile(local, "local-only.txt", "local only\n", "local only");
+    runGit(local, ["checkout", "-q", "feature"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE, {
+      CLAUDE_COMMIT_LEDGER: os.tmpdir(),
+    });
+
+    assert.equal(result.outcome, "MAINLINE_AHEAD");
+    assert.match((result.warnings as string[]).join("\n"), /could not record parked branch/);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
 test("a mainline checked out in a clean worktree is fast-forwarded there", () => {
   const { origin, seed } = seedOrigin();
   const holder = cloneRepo(origin);
@@ -995,5 +1084,93 @@ test("--promote-to is rejected as an unknown flag", () => {
     assert.match(stderr, /unknown flag --promote-to/);
   } finally {
     cleanup(repo);
+  }
+});
+
+function parkedLine(gitCommonDir: string, repo: string, branch: string): string {
+  return JSON.stringify(
+    parkedEntryFixture({
+      at: "2026-09-01T00:00:00.000Z",
+      repo,
+      gitCommonDir,
+      branch,
+      commit: "0123456789abcdef0123456789abcdef01234567",
+      conflicts: [],
+    }),
+  );
+}
+
+function commonDirOf(repo: string): string {
+  return gitOutput(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+}
+
+test("a deferred feature push failure without a mainline records the parked branch", () => {
+  const origin = makeBareOrigin();
+  const local = makeRepo("feature");
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  try {
+    commitFile(local, "base.txt", "base\n", "init");
+    runGit(local, ["remote", "add", "origin", origin]);
+    writeOriginHook(origin, "update", rejectUpdateHook("feature"));
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE, {
+      CLAUDE_COMMIT_LEDGER: ledgerPath,
+    });
+    const [entry] = parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries;
+
+    assert.equal(result.outcome, "PUSH_FAILED");
+    assert.match((result.warnings as string[]).join("\n"), /promotion skipped: no mainline/);
+    assert.equal(entry?.branch, "feature");
+    assert.equal(entry?.mainline, null);
+    assert.equal(entry?.commit, result.commit);
+  } finally {
+    cleanup(origin, local, ledgerDirectory);
+  }
+});
+
+test("a successful promotion clears the parked entry for that branch alone", () => {
+  const { origin, seed, local } = seedOrigin();
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  try {
+    const gitCommonDir = commonDirOf(local);
+    const otherLine = parkedLine(gitCommonDir, local, "other");
+    fs.writeFileSync(
+      ledgerPath,
+      `${parkedLine(gitCommonDir, local, "feature")}\n${otherLine}\n`,
+      "utf8",
+    );
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE, {
+      CLAUDE_COMMIT_LEDGER: ledgerPath,
+    });
+    const entries = parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries;
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.deepEqual(
+      entries.map((entry) => entry.branch),
+      ["other"],
+    );
+  } finally {
+    cleanup(origin, seed, local, ledgerDirectory);
+  }
+});
+
+test("a successful feature push clears the parked entry for that branch", () => {
+  const { origin, seed, local } = seedOrigin();
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  try {
+    fs.writeFileSync(ledgerPath, `${parkedLine(commonDirOf(local), local, "feature")}\n`, "utf8");
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, [], VALID_MESSAGE, { CLAUDE_COMMIT_LEDGER: ledgerPath });
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(result.pushed, true);
+    assert.deepEqual(parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries, []);
+  } finally {
+    cleanup(origin, seed, local, ledgerDirectory);
   }
 });
