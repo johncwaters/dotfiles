@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { findWorktreeForBranch } from "../lib/workspace.ts";
+import { Git } from "../lib/git.ts";
 import {
   cleanup,
   cloneRepo,
@@ -15,10 +16,12 @@ import {
   makePolicyRoot,
   makeRepo,
   parkedEntryFixture,
+  REAL_GIT_PATH,
   runGit,
   runSkillScript,
   tryGit,
   VALID_MESSAGE,
+  writeExecutable,
   writeFile,
 } from "./helpers.ts";
 import { parseLedger } from "../lib/ledger.ts";
@@ -41,11 +44,6 @@ function seedOrigin(featureBranch = "feature", branchesOnOrigin: string[] = []):
   const local = cloneRepo(origin);
   runGit(local, ["checkout", "-q", "-b", featureBranch, `origin/${featureBranch}`]);
   return { origin, seed, local };
-}
-
-function writeExecutable(filePath: string, body: string): void {
-  fs.writeFileSync(filePath, body, "utf8");
-  fs.chmodSync(filePath, 0o755);
 }
 
 function writeOriginHook(origin: string, name: string, body: string): void {
@@ -86,11 +84,7 @@ function gitWrapperInterceptingDeleteOf(branch: string): string {
   return [
     "#!/usr/bin/env node",
     'import { spawnSync } from "node:child_process";',
-    'import fs from "node:fs";',
-    'import path from "node:path";',
-    'const originalPaths = (process.env.ORIGINAL_PATH ?? "").split(":");',
-    'const realGitPath = originalPaths.map((directory) => path.join(directory, "git")).find((candidate) => fs.existsSync(candidate));',
-    "if (!realGitPath) process.exit(1);",
+    `const realGitPath = ${JSON.stringify(REAL_GIT_PATH)};`,
     `const isBranchDeletion = process.argv[2] === "push" && process.argv.includes(":refs/heads/${branch}");`,
     'const argumentsBeforeDeletion = JSON.parse(process.env.GIT_ARGS_BEFORE_DELETION ?? "[]");',
     'const argumentsAfterDeletion = JSON.parse(process.env.GIT_ARGS_AFTER_DELETION ?? "[]");',
@@ -117,6 +111,25 @@ function seedMergeDriverDivergence(): PromotionSetup {
   runGit(seed, ["checkout", "-q", "main"]);
   commitFile(seed, ".gitattributes", "* merge=ours\n", "attributes");
   commitFile(seed, "base.txt", "main side\n", "main side");
+  runGit(seed, ["push", "-q", "origin", "main"]);
+  runGit(local, ["fetch", "-q", "origin"]);
+  runGit(local, ["merge", "-q", "--ff-only", "origin/feature"]);
+  writeFile(local, "unrelated.txt", "unrelated\n");
+  return { origin, seed, local };
+}
+
+function seedUnionOverwriteDivergence(): PromotionSetup {
+  const { origin, seed, local } = seedOrigin();
+  runGit(seed, ["checkout", "-q", "main"]);
+  commitFile(seed, ".gitattributes", "* merge=union\n", "attributes");
+  commitFile(seed, "shared.txt", "first\nsecond\nthird\n", "shared base");
+  runGit(seed, ["push", "-q", "origin", "main"]);
+  runGit(seed, ["checkout", "-q", "feature"]);
+  runGit(seed, ["merge", "-q", "--ff-only", "main"]);
+  commitFile(seed, "shared.txt", "first\nthird\n", "feature drops the middle line");
+  runGit(seed, ["push", "-q", "origin", "feature"]);
+  runGit(seed, ["checkout", "-q", "main"]);
+  commitFile(seed, "shared.txt", "first\nsecond edited\nthird\n", "main rewrites the middle line");
   runGit(seed, ["push", "-q", "origin", "main"]);
   runGit(local, ["fetch", "-q", "origin"]);
   runGit(local, ["merge", "-q", "--ff-only", "origin/feature"]);
@@ -863,6 +876,17 @@ test("an environment-injected merge driver cannot make an unmerged remote branch
   }
 });
 
+test("a union merge driver cannot make an overwritten branch line look contained", () => {
+  const { origin, seed, local } = seedUnionOverwriteDivergence();
+  try {
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assertContainmentRefusedAndBranchKept(result, origin);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
 test("a remote feature branch with an unmerged merge commit is kept with a warning", () => {
   const { origin, seed, local } = seedOrigin();
   try {
@@ -984,7 +1008,6 @@ test("a stale branch deletion lease keeps the remote branch with a warning", () 
           "origin",
           "feature",
         ]),
-        ORIGINAL_PATH: process.env.PATH ?? "",
         PATH: `${wrapperDirectory}:${process.env.PATH ?? ""}`,
       },
     );
@@ -1021,7 +1044,6 @@ test("a mainline force-reset right after the deletion restores the remote branch
           "refs/heads/main",
           mainlineBeforePromotion,
         ]),
-        ORIGINAL_PATH: process.env.PATH ?? "",
         PATH: `${wrapperDirectory}:${process.env.PATH ?? ""}`,
       },
     );

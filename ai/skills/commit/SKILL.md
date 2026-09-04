@@ -10,7 +10,7 @@ commit message, and the recovery procedures. Never stage, commit, push, or merge
 outside the recovery sections below.
 
 ```
-node "$HOME/.claude/skills/commit/preflight.ts" [--paths <file-or-dir> ...]
+node "$HOME/.claude/skills/commit/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]
 node "$HOME/.claude/skills/commit/land.ts" [--paths ...] [--promote] [--no-push] <<'MSG'
 <commit message>
 MSG
@@ -28,9 +28,9 @@ unstaged work out of the commit; anything already in the index rides along regar
 because git commits the whole index, and `land.ts` names those files in `warnings`. Pass
 the same restriction to `/code-review` later.
 
-It answers four things: the outcome (`READY` or a refusal), the current `branch` and
+It answers five things: the outcome (`READY` or a refusal), the current `branch` and
 whether `branchAllowed` permits committing on it, the `changed` and `untracked` files that
-will be staged, and the machine's `policy`.
+will be staged, the machine's `policy`, and `mainlineFreshness`.
 
 **Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
 committing on this branch. `policy.commitBranches.onForbidden` permits only
@@ -41,6 +41,10 @@ forbidden branch or resolved mainline. `POLICY_INVALID` means the profile still 
 unsupported remedy;
 both entry points stop and name the profile file in `errors`. An absent `commitBranches`
 key uses the fallback `main` and `master` guard without invalidating the policy.
+
+**Mainline freshness.** A `mainlineFreshness.behind` above zero means rebase onto
+`origin/<mainline>` now, before Step 2, then re-run preflight. A conflict there uses the
+Conflict resolution section and needs no re-review, since nothing has been reviewed yet.
 
 `policy.resolved.mainline` is the destination for promotion. With `mainline: "auto"`,
 preflight checks the `origin/HEAD` target, then `main`, then `master`. A literal policy

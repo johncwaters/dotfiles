@@ -2,6 +2,12 @@ import type { Git } from "./git.ts";
 
 export const MAINLINE_CANDIDATES = ["main", "master"] as const;
 
+export type MainlineFreshness =
+  | { checked: true; mainline: string; behind: number }
+  | { checked: false; mainline: string; reason: string };
+
+const MAINLINE_FETCH_TIMEOUT_MS = 5_000;
+
 const DENYLIST_DIR_PREFIXES = ["node_modules/", "dist/", "__pycache__/"] as const;
 
 export type Scope = { changed: Set<string>; untracked: string[] };
@@ -69,6 +75,33 @@ export function resolveMainline(git: Git, configuredMainline: unknown = "auto"):
     }
   }
   return null;
+}
+
+export function checkMainlineFreshness(
+  git: Git,
+  mainline: string,
+  timeoutMs = MAINLINE_FETCH_TIMEOUT_MS,
+): MainlineFreshness {
+  if (!git.listRemotes().includes("origin")) {
+    return { checked: false, mainline, reason: "origin remote is not configured" };
+  }
+  if (git.fetchRemoteBranch("origin", mainline, { timeoutMs, noPrompt: true }).code !== 0) {
+    return { checked: false, mainline, reason: `could not fetch origin/${mainline}` };
+  }
+  const remoteMainlineRef = `refs/remotes/origin/${mainline}`;
+  const mergeBase = git.mergeBase("HEAD", remoteMainlineRef);
+  if (mergeBase === null) {
+    return {
+      checked: false,
+      mainline,
+      reason: `could not find a merge base with origin/${mainline}`,
+    };
+  }
+  return {
+    checked: true,
+    mainline,
+    behind: git.revList(`${mergeBase}..${remoteMainlineRef}`).length,
+  };
 }
 
 export function findWorktreeForBranch(porcelainText: string, branch: string): string | null {

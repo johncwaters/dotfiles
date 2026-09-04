@@ -18,9 +18,9 @@ import {
   readCommitPolicy,
 } from "./lib/policy.ts";
 import { readStdin } from "./lib/stdio.ts";
-import { computeScope, resolveMainline } from "./lib/workspace.ts";
+import { checkMainlineFreshness, computeScope, resolveMainline } from "./lib/workspace.ts";
 
-type Arguments = { paths: string[]; checkMessage: boolean };
+type Arguments = { paths: string[]; checkMessage: boolean; noFetch: boolean };
 
 type ReleaseIntegrationLookup = {
   profilePath?: string;
@@ -29,7 +29,7 @@ type ReleaseIntegrationLookup = {
 };
 
 function parseArguments(argv: string[]): Arguments {
-  const parsed: Arguments = { paths: [], checkMessage: false };
+  const parsed: Arguments = { paths: [], checkMessage: false, noFetch: false };
   let collectingPaths = false;
   for (const argument of argv) {
     if (argument === "--check-message") {
@@ -39,6 +39,11 @@ function parseArguments(argv: string[]): Arguments {
     }
     if (argument === "--paths") {
       collectingPaths = true;
+      continue;
+    }
+    if (argument === "--no-fetch") {
+      parsed.noFetch = true;
+      collectingPaths = false;
       continue;
     }
     if (argument.startsWith("--")) {
@@ -115,7 +120,7 @@ function releaseProfileIntegration(repo: string): ReleaseIntegrationLookup {
   return yamlReleaseProfileIntegration(profilePath);
 }
 
-function preflightResult(paths: string[]): Result {
+function preflightResult(paths: string[], noFetch: boolean): Result {
   const git = new Git(process.cwd());
   const guard = repositoryGuard(git);
   if (guard) {
@@ -133,6 +138,14 @@ function preflightResult(paths: string[]): Result {
 
   const mainline = resolveMainline(git, configuredMainline(policy));
   const warnings = warning ? [warning] : [];
+  const mainlineFreshness = mainline === null || noFetch
+    ? undefined
+    : checkMainlineFreshness(git, mainline);
+  if (mainlineFreshness?.checked && mainlineFreshness.behind > 0) {
+    warnings.push(
+      `branch is ${mainlineFreshness.behind} commits behind origin/${mainlineFreshness.mainline}; rebase before review`,
+    );
+  }
   if (policy && mainline === null) {
     warnings.push("could not resolve the policy mainline; promotion will be skipped");
   }
@@ -160,6 +173,7 @@ function preflightResult(paths: string[]): Result {
       untracked,
       ...(profile ? { profile } : {}),
       ...(resolvedPolicy ? { policy: resolvedPolicy } : {}),
+      ...(mainlineFreshness ? { mainlineFreshness } : {}),
       warnings,
     }),
     paths: resolvedScopePaths,
@@ -170,4 +184,4 @@ const parsed = parseArguments(process.argv.slice(2));
 if (parsed.checkMessage) {
   emit(checkMessageResult(await readStdin()));
 }
-emit(preflightResult(parsed.paths));
+emit(preflightResult(parsed.paths, parsed.noFetch));

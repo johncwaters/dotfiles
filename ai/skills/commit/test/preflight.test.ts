@@ -5,15 +5,19 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   cleanup,
+  cloneRepo,
   commitFile,
+  gitOutput,
   makeBareOrigin,
   makePolicyRoot,
   makeRepo,
   preflight,
+  REAL_GIT_PATH,
   runGit,
   runSkillScript,
   tryGit,
   VALID_MESSAGE,
+  writeExecutable,
   writeFile,
 } from "./helpers.ts";
 
@@ -71,6 +75,157 @@ test("a clean tree is READY with an empty scope", () => {
     assert.deepEqual(result.untracked, []);
     assert.deepEqual(result.paths, []);
     assert.equal(result.branch, "main");
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("two mainline commits ahead report freshness and one warning", () => {
+  const origin = makeBareOrigin();
+  const seed = makeRepo();
+  try {
+    commitFile(seed, "a.txt", "one\n");
+    runGit(seed, ["remote", "add", "origin", origin]);
+    runGit(seed, ["push", "-q", "-u", "origin", "main"]);
+    const local = cloneRepo(origin);
+    try {
+      commitFile(seed, "b.txt", "two\n", "second");
+      commitFile(seed, "c.txt", "three\n", "third");
+      runGit(seed, ["push", "-q", "origin", "main"]);
+
+      const { result } = preflight(local);
+
+      assert.deepEqual(result.mainlineFreshness, { checked: true, mainline: "main", behind: 2 });
+      assert.match((result.warnings as string[]).join("\n"), /2 commits behind origin\/main/);
+    } finally {
+      cleanup(local);
+    }
+  } finally {
+    cleanup(origin, seed);
+  }
+});
+
+test("an up-to-date mainline reports zero behind with no warning", () => {
+  const origin = makeBareOrigin();
+  const seed = makeRepo();
+  try {
+    commitFile(seed, "a.txt", "one\n");
+    runGit(seed, ["remote", "add", "origin", origin]);
+    runGit(seed, ["push", "-q", "-u", "origin", "main"]);
+    const local = cloneRepo(origin);
+    try {
+      const { result } = preflight(local);
+
+      assert.deepEqual(result.mainlineFreshness, { checked: true, mainline: "main", behind: 0 });
+      assert.equal(/behind origin\/main/.test((result.warnings as string[]).join("\n")), false);
+    } finally {
+      cleanup(local);
+    }
+  } finally {
+    cleanup(origin, seed);
+  }
+});
+
+function markFetchesGitWrapper(): string {
+  return [
+    "#!/usr/bin/env node",
+    'import { spawnSync } from "node:child_process";',
+    'import fs from "node:fs";',
+    'if (process.argv[2] === "fetch") fs.appendFileSync(process.env.FETCH_MARKER ?? "", `${process.argv.slice(2).join(" ")}\\n`);',
+    `const forwarded = spawnSync(${JSON.stringify(REAL_GIT_PATH)}, process.argv.slice(2), { stdio: "inherit" });`,
+    "process.exit(forwarded.status ?? 1);",
+    "",
+  ].join("\n");
+}
+
+test("a dash-named default branch is fetched by refspec and prunes no tracking ref", () => {
+  const origin = makeBareOrigin();
+  const seed = makeRepo();
+  const policyRoot = makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "auto",
+    afterCommit: "promote",
+  });
+  try {
+    commitFile(seed, "a.txt", "one\n");
+    runGit(seed, ["remote", "add", "origin", origin]);
+    runGit(seed, ["push", "-q", "origin", "main:refs/heads/--prune"]);
+    runGit(origin, ["symbolic-ref", "HEAD", "refs/heads/--prune"]);
+    const local = cloneRepo(origin);
+    try {
+      runGit(local, ["update-ref", "refs/remotes/origin/stale", gitOutput(local, ["rev-parse", "HEAD"])]);
+
+      const { result } = preflight(local, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+      assert.deepEqual(result.mainlineFreshness, {
+        checked: true,
+        mainline: "--prune",
+        behind: 0,
+      });
+      assert.equal(tryGit(local, ["rev-parse", "-q", "--verify", "refs/remotes/origin/stale"]), 0);
+    } finally {
+      cleanup(local);
+    }
+  } finally {
+    cleanup(origin, seed, policyRoot);
+  }
+});
+
+test("--no-fetch omits mainline freshness without contacting origin", () => {
+  const repo = makeRepo();
+  const wrapperDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-preflight-git-"));
+  const fetchMarkerPath = path.join(wrapperDirectory, "fetch-marker");
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["remote", "add", "origin", "https://127.0.0.1:1/unreachable.git"]);
+    writeExecutable(path.join(wrapperDirectory, "git"), markFetchesGitWrapper());
+
+    const { result } = preflight(repo, ["--no-fetch"], {
+      PATH: `${wrapperDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      FETCH_MARKER: fetchMarkerPath,
+    });
+
+    assert.equal(result.outcome, "READY");
+    assert.equal("mainlineFreshness" in result, false);
+    assert.equal(fs.existsSync(fetchMarkerPath), false);
+  } finally {
+    cleanup(repo, wrapperDirectory);
+  }
+});
+
+test("no origin records an unchecked freshness result and stays READY", () => {
+  const repo = makeRepo();
+  try {
+    commitFile(repo, "a.txt", "one\n");
+
+    const { result } = preflight(repo);
+
+    assert.equal(result.outcome, "READY");
+    assert.deepEqual(result.mainlineFreshness, {
+      checked: false,
+      mainline: "main",
+      reason: "origin remote is not configured",
+    });
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("an unreachable origin records unchecked freshness within the fetch timeout", () => {
+  const repo = makeRepo();
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["remote", "add", "origin", "https://127.0.0.1:1/unreachable.git"]);
+    const startedAt = Date.now();
+    const { result } = preflight(repo);
+
+    assert.ok(Date.now() - startedAt < 5_500);
+    assert.deepEqual(result.mainlineFreshness, {
+      checked: false,
+      mainline: "main",
+      reason: "could not fetch origin/main",
+    });
   } finally {
     cleanup(repo);
   }
@@ -304,5 +459,28 @@ test("--check-message accepts a valid message and rejects an invalid one", () =>
     assert.ok((bad.result.errors as string[]).length > 0);
   } finally {
     cleanup(repo);
+  }
+});
+
+test("--check-message does not fetch origin", () => {
+  const repo = makeRepo();
+  const wrapperDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-check-message-git-"));
+  const fetchMarkerPath = path.join(wrapperDirectory, "fetch-marker");
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["remote", "add", "origin", "https://127.0.0.1:1/unreachable.git"]);
+    writeExecutable(path.join(wrapperDirectory, "git"), markFetchesGitWrapper());
+
+    const good = runSkillScript("preflight.ts", repo, ["--check-message"], VALID_MESSAGE, {
+      PATH: `${wrapperDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+      FETCH_MARKER: fetchMarkerPath,
+    });
+
+    assert.equal(good.result.outcome, "READY");
+    assert.equal(good.code, 0);
+    assert.equal("mainlineFreshness" in good.result, false);
+    assert.equal(fs.existsSync(fetchMarkerPath), false);
+  } finally {
+    cleanup(repo, wrapperDirectory);
   }
 });

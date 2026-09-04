@@ -20,13 +20,23 @@ function nonEmptyLines(text: string): string[] {
   return text.split("\n").filter((line) => line.trim() !== "");
 }
 
-const INHERITED_GIT_CONFIG_ENV = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|PARAMETERS)$/;
+const INHERITED_GIT_CONFIG_ENV = /^GIT_CONFIG(?:_COUNT|_KEY_\d+|_VALUE_\d+|_PARAMETERS)?$/;
 
 const OID_PATTERN = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
 
 const REMOTE_QUERY_TIMEOUT_MS = 30_000;
 
-function envWithoutConfigInjection(): Record<string, string> {
+function promptSuppressionEnv(): Record<string, string> {
+  return {
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_ASKPASS: "true",
+    SSH_ASKPASS: "true",
+    SSH_ASKPASS_REQUIRE: "force",
+    GCM_INTERACTIVE: "never",
+  };
+}
+
+function envWithoutGitConfigInjection(): Record<string, string> {
   const childEnv: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (value === undefined || INHERITED_GIT_CONFIG_ENV.test(name)) {
@@ -34,10 +44,16 @@ function envWithoutConfigInjection(): Record<string, string> {
     }
     childEnv[name] = value;
   }
-  childEnv.GIT_CONFIG_GLOBAL = os.devNull;
-  childEnv.GIT_CONFIG_SYSTEM = os.devNull;
-  childEnv.GIT_CONFIG_NOSYSTEM = "1";
   return childEnv;
+}
+
+function envWithoutAnyInheritedGitConfig(): Record<string, string> {
+  return {
+    ...envWithoutGitConfigInjection(),
+    GIT_CONFIG_GLOBAL: os.devNull,
+    GIT_CONFIG_SYSTEM: os.devNull,
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
 }
 
 function withConfigEntries(
@@ -67,6 +83,7 @@ export class Git {
       env?: Record<string, string>;
       replacesInheritedEnv?: boolean;
       timeoutMs?: number;
+      noPrompt?: boolean;
     } = {},
   ): GitResult {
     const inherited = options.replacesInheritedEnv ? {} : process.env;
@@ -76,7 +93,11 @@ export class Git {
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
       timeout: options.timeoutMs,
-      env: { ...inherited, ...(options.env ?? {}) },
+      env: {
+        ...inherited,
+        ...(options.env ?? {}),
+        ...(options.noPrompt ? promptSuppressionEnv() : {}),
+      },
     });
     return {
       code: proc.status ?? 1,
@@ -126,10 +147,22 @@ export class Git {
     return nonEmptyLines(this.run(["rev-list", "--reverse", range]).stdout);
   }
 
-  fetchRemoteBranch(remote: string, branch: string): GitResult {
+  mergeBase(a: string, b: string): string | null {
+    const mergeBase = this.run(["merge-base", a, b]);
+    if (mergeBase.code !== 0) {
+      return null;
+    }
+    return mergeBase.stdout.trim();
+  }
+
+  fetchRemoteBranch(
+    remote: string,
+    branch: string,
+    options: { timeoutMs?: number; noPrompt?: boolean } = {},
+  ): GitResult {
     const remoteRef = `refs/remotes/${remote}/${branch}`;
     const refspec = `+refs/heads/${branch}:${remoteRef}`;
-    return this.run(["fetch", remote, refspec]);
+    return this.run(["fetch", remote, refspec], options);
   }
 
   fetchLocalFf(src: string, dst: string): GitResult {
@@ -215,7 +248,7 @@ export class Git {
 
   remoteBranchTip(remote: string, branch: string): string | null {
     const listing = this.run(["ls-remote", "--heads", remote, `refs/heads/${branch}`], {
-      env: { GIT_TERMINAL_PROMPT: "0" },
+      noPrompt: true,
       timeoutMs: REMOTE_QUERY_TIMEOUT_MS,
     });
     if (listing.code !== 0) {
@@ -236,29 +269,57 @@ export class Git {
     return this.run(["merge-base", "--is-ancestor", ancestorRef, descendantRef]).code === 0;
   }
 
-  configuredMergeDriverKeys(childEnv: Record<string, string>): string[] {
+  configuredMergeDriverKeys(childEnv: Record<string, string>): string[] | null {
     const keys = this.run(["config", "--name-only", "--get-regexp", "^merge\\..+\\.driver$"], {
       env: childEnv,
       replacesInheritedEnv: true,
     });
-    if (keys.code !== 0) {
+    if (keys.code === 1) {
       return [];
+    }
+    if (keys.code !== 0) {
+      return null;
     }
     return nonEmptyLines(keys.stdout)
       .map((key) => key.trim())
       .filter((key) => /^merge\..+\.driver$/.test(key));
   }
 
+  inheritedSafeDirectories(): string[] {
+    const uninjectedEnv = envWithoutGitConfigInjection();
+    const listed = ["--system", "--global"].flatMap((scope) =>
+      nonEmptyLines(
+        this.run(["config", scope, "--get-all", "safe.directory"], {
+          env: uninjectedEnv,
+          replacesInheritedEnv: true,
+        }).stdout,
+      ),
+    );
+    return [...new Set(listed.map((safeDirectory) => safeDirectory.trim()).filter(Boolean))];
+  }
+
   mergeTree(base: string, head: string): GitResult {
-    const childEnv = envWithoutConfigInjection();
-    const neutralizedDrivers: Array<[string, string]> = this.configuredMergeDriverKeys(
-      childEnv,
-    ).map((driverKey) => [driverKey, "false"]);
+    const hardenedEnv = envWithoutAnyInheritedGitConfig();
+    const safeDirectoryEntries = this.inheritedSafeDirectories().map(
+      (safeDirectory) => ["safe.directory", safeDirectory] as [string, string],
+    );
+    const configuredDriverKeys = this.configuredMergeDriverKeys(
+      withConfigEntries(hardenedEnv, safeDirectoryEntries),
+    );
+    if (configuredDriverKeys === null) {
+      return { code: 1, stdout: "", stderr: "could not enumerate configured merge drivers" };
+    }
+    const neutralizedDrivers: Array<[string, string]> = configuredDriverKeys.map((driverKey) => [
+      driverKey,
+      "false",
+    ]);
     return this.run(["merge-tree", "--write-tree", base, head], {
-      env: withConfigEntries(childEnv, [
+      env: withConfigEntries(hardenedEnv, [
         ["merge.default", "text"],
         ["merge.renormalize", "false"],
+        ["merge.union.driver", "false"],
         ...neutralizedDrivers,
+        ...safeDirectoryEntries,
       ]),
       replacesInheritedEnv: true,
     });

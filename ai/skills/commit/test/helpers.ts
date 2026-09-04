@@ -7,6 +7,24 @@ import type { ParkedEntry } from "../lib/ledger.ts";
 
 export const SKILL_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
+function resolveRealGitPath(): string {
+  const searchedDirectories = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  for (const directory of searchedDirectories) {
+    const candidate = path.join(directory, "git");
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error("the tests need a real git on PATH");
+}
+
+export const REAL_GIT_PATH = resolveRealGitPath();
+
+export function writeExecutable(filePath: string, body: string): void {
+  fs.writeFileSync(filePath, body, "utf8");
+  fs.chmodSync(filePath, 0o755);
+}
+
 export function parkedEntryFixture(overrides: Partial<ParkedEntry> = {}): ParkedEntry {
   return {
     v: 1,

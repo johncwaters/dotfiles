@@ -108,6 +108,7 @@ export const ready = defineOutcome("READY", {
   untracked: required("stringList"),
   profile: optional("string"),
   policy: optional("object"),
+  mainlineFreshness: optional("object"),
 });
 
 export const committed = defineOutcome("COMMITTED", {
