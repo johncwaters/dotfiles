@@ -21,7 +21,7 @@ Find, converge, return. Every lane emits the same structured format so the merge
 
 One cheap pass produces both a first-pass review and the delegation plan.
 
-Route it per `~/.claude/ROUTING.md` rule 1: Codex `gpt-5.6-terra`, prompt written to a temp file, dispatched with `codex exec --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-terra < <file>`. Codex quota exhausted or the CLI errors: step down to `gpt-5.6-luna`, then fall back to an `opus` agent. Only the cost of the first pass changes.
+Route it per `~/.claude/ROUTING.md` rule 1: Codex `gpt-5.6-terra`, prompt written to a temp file, dispatched with `codex exec --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-terra < <file>`. Codex quota exhausted (rate-limit or usage-cap error): step down to `gpt-5.6-luna`, then fall back to an `opus` agent; only the cost of the first pass changes. A model or CLI error is a stale row, not a cap: fall back to the `opus` agent and say the row is stale.
 
 Ask it for:
 
@@ -54,7 +54,7 @@ The router never spawns anything. It returns a plan; this skill decides and disp
 
 The substitutes are not a downgrade to be apologised for: what `external` buys is an independent read, and an adversarially-framed second pass buys that without leaving the vendor.
 
-Every model id and CLI invocation above comes from the model table in `~/.claude/ROUTING.md`, which is the single source of truth and carries its own staleness stamp; re-read that row before dispatch rather than trusting the name here. The router and the `external` lane sit on different Codex tiers deliberately: the router is a cheap triage pass whose output is a plan, so it takes `terra`, while `external` is a frontier read of a diff already known to be dangerous, which is what ROUTING.md reserves `sol` at `high` effort for. An id that errors means the table moved: degrade per Step 4 and say the row is stale.
+Every model id and CLI invocation above comes from the model table in `~/.claude/ROUTING.md`, which is the single source of truth and carries its own staleness stamp; re-read that row before dispatch rather than trusting the name here. The router and the `external` lane sit on different Codex tiers deliberately: the router is a cheap triage pass whose output is a plan, so it takes `terra`, while `external` is a frontier read of a diff already known to be dangerous, which is what ROUTING.md reserves `sol` at `high` effort for. An id that errors means the table moved: degrade per Step 3 and say the row is stale.
 
 `code` always runs. Spawn every triggered lane in **one message, multiple calls**, so they run concurrently.
 
@@ -115,7 +115,7 @@ Lanes emit LOW at minimum and never `NIT`. Only code-review may use `NIT` as a d
 
 `router`, `external`, and `tiebreak` are exempt at every stage, before or after dispatch: they run on an external CLI with its own quota and none is ever the sole coverage for a concern. Their failure degrades, never blocks:
 
-- Codex router unavailable: fall back down the tier ladder, then to an `opus` agent (Step 1). Every one of those failing means nobody rated danger or picked lanes, so run `code` and `security` and say the lane set was the no-router default. Running the always-on `code` lane alone would drop security coverage on a security-sensitive diff
+- Codex router quota exhausted: fall back down the tier ladder, then to an `opus` agent; a model or CLI error goes straight to the `opus` agent (Step 1). Every one of those failing means nobody rated danger or picked lanes, so run `code` and `security` and say the lane set was the no-router default. Running the always-on `code` lane alone would drop security coverage on a security-sensitive diff
 - Codex `external` unavailable: run without it and say so in the summary. A concern the router routed there re-routes to `code` or `security`. If no lane can safely cover it, emit it as a HIGH finding naming the lane that was unavailable
 - `tiebreak` unavailable: a contradiction is one defect claim plus one lane's verified-safe position, and only the claim is a finding, so there is no second finding to return. Emit the asserting lane's finding once, tagged `contested: <asserting lane> vs <disputing lane>`, with the disputing lane's reasoning in its body and `Confidence: low, tiebreak unavailable` at the end. That guarantees the caller triages it `AMBIGUOUS` rather than acting on a disputed claim
 
