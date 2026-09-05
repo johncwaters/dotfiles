@@ -83,6 +83,8 @@ check "the caveman ultra hook renders from the base" test "$(countSettingsComman
 check "the finding scope hook reaches the profile" test "$(countSettingsCommand check-finding-scope.mjs)" -eq 1
 check "the plan challenge hook reaches the profile" test "$(countSettingsCommand challenge-plan.mjs)" -eq 1
 check "the retired sync hook is gone" test "$(countSettingsCommand sync-agents-md.mjs)" -eq 0
+check "commit and pr attribution render empty from the base" \
+  node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(s.attribution.commit===""&&s.attribution.pr===""?0:1)' "$settingsPath"
 
 rm -f "$sandbox/.claude/AGENTS.md"
 printf 'later hand written notes\n' > "$sandbox/.claude/AGENTS.md"

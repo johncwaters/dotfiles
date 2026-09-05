@@ -5,6 +5,10 @@
     "CAVEMAN_DEFAULT_MODE": "ultra"
   },
   "model": "claude-fable-5-1[1m]",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "enabledPlugins": {
     "caveman@caveman": true
   },
