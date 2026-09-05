@@ -70,6 +70,38 @@ check "backup keeps the old content" grep -q 'pre-existing user notes' "$sandbox
 settingsPath="$sandbox/.claude/settings.json"
 check "settings.json rendered" test -f "$settingsPath"
 check "settings.json is valid JSON" node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$settingsPath"
+check "settings.json keeps the base deny list through the overlay merge" \
+  node -e 'const readJson=(path)=>JSON.parse(require("fs").readFileSync(path,"utf8"));const baseDenyList=readJson(process.argv[1]).permissions.deny;const renderedDenyList=readJson(process.argv[2]).permissions.deny;process.exit(baseDenyList.length>0&&JSON.stringify(renderedDenyList)===JSON.stringify(baseDenyList)?0:1)' "$topicDir/settings.base.json" "$settingsPath"
+
+renderProfileSettings() {
+  HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
+    "$topicDir/settings.base.json" "$1" "$2" /fixture/home > /dev/null
+}
+
+renderKeepsEveryBaseDenyEntry() {
+  node -e 'const readJson=(path)=>JSON.parse(require("fs").readFileSync(path,"utf8"));const baseDenyList=readJson(process.argv[1]).permissions.deny;const renderedDenyList=readJson(process.argv[2]).permissions.deny||[];process.exit(baseDenyList.length>0&&baseDenyList.every((denyEntry)=>renderedDenyList.includes(denyEntry))?0:1)' \
+    "$topicDir/settings.base.json" "$1"
+}
+
+overlayDefinesNoDenyList() {
+  node -e 'const overlaySettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlaySettings.permissions&&overlaySettings.permissions.deny?1:0)' "$1"
+}
+
+for profileOverlayPath in "$repoRoot"/profiles/*/settings.overlay.json; do
+  profileName="$(basename -- "$(dirname -- "$profileOverlayPath")")"
+  renderedProfilePath="$sandbox/deny-probe-$profileName.json"
+  check "the $profileName overlay renders" \
+    renderProfileSettings "$profileOverlayPath" "$renderedProfilePath"
+  check "the $profileName render keeps every base deny entry" \
+    renderKeepsEveryBaseDenyEntry "$renderedProfilePath"
+  check "the $profileName overlay defines no deny list of its own" \
+    overlayDefinesNoDenyList "$profileOverlayPath"
+done
+
+check "settings.json keeps the personal permissions allow list" \
+  node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.allow.includes("Bash(node:*)")?0:1)' "$settingsPath"
+check "settings.json keeps the personal permissions default mode" \
+  node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.defaultMode==="auto"?0:1)' "$settingsPath"
 check "settings.json has no unrendered token" bash -c '! grep -q "{{HOME}}" "$1"' _ "$settingsPath"
 check "settings.json points the commit policy at the alias" \
   grep -q "\"CLAUDE_COMMIT_POLICY_ROOT\": \"$sandbox/.dotfiles\"" "$settingsPath"
