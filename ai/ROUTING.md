@@ -12,7 +12,7 @@ Intelligence and speed 1 (low) to 10 (high). Cost is the list API price in USD p
 | `sonnet` (claude-sonnet-5) | 6 | 6 | 2 / 10 | Agent `model=sonnet` | Rule 2 downgrade only |
 | `haiku` (claude-haiku-4-5) | 3 | 10 | 1 / 5 | Agent `model=haiku` | Rule 2 floor only |
 | `gpt-6-astra` (Codex, top) | 10 | 3 | 10 / 50 | `codex exec ... -m gpt-6-astra -c model_reasoning_effort="high"` (codex-cli 0.153.1+; older CLIs reject the id, so upgrade with `npm install -g @openai/codex@latest`) | Rule 1 hardest slices. Default effort is `medium`, so pass `high` (`xhigh`/`max`/`ultra` for the hardest) |
-| `gpt-5.6-sol` (Codex, frontier) | 8 | 4 | 4 / 20 (promo to 2026-11-21) | `codex exec ... -m gpt-5.6-sol -c model_reasoning_effort="high"` | Rule 1 hard slices. Default effort is `low`, so always pass `high` (`xhigh`/`max`/`ultra` for the hardest) |
+| `gpt-5.6-sol` (Codex, frontier) | 8 | 4 | 5 / 30 | `codex exec ... -m gpt-5.6-sol -c model_reasoning_effort="high"` | Rule 1 hard slices. Default effort is `low`, so always pass `high` (`xhigh`/`max`/`ultra` for the hardest) |
 | `gpt-5.6-terra` (Codex, balanced) | 6 | 6 | 2 / 12 | `codex exec ... -m gpt-5.6-terra` | Rule 0 PC control; rule 1 default executor |
 | `gpt-5.6-luna` (Codex, fast) | 4 | 9 | 0.20 / 1.20 | `codex exec ... -m gpt-5.6-luna` | Rule 1 trivial mechanical slices |
 | Grok (`grok-4.6`; `grok models` lists the rest) | 6 | 7 | 2 / 6 | `grok --prompt-file <file> --always-approve` | Rule 1b; needs `XAI_API_KEY` or `grok login --device-auth` (token lasts 7 days) |
