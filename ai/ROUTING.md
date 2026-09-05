@@ -3,19 +3,19 @@ Main session loop only; subagents skip per `<scope>`. Single source of truth for
 
 Rows verified live 2026-09-05 on codex-cli 0.153.4. Re-verify a row (run its Access command once, update this stamp) when its id errors, a newer tier ships, a plan changes, or the stamp is over 90 days old.
 
-Intelligence and speed 1 (low) to 10 (high); cost 1 (cheap) to 10 (expensive). Codex and Grok are flat-rate (ChatGPT Pro Lite, Grok upgraded), so their cost is quota pressure; a plan change invalidates those cells.
+Intelligence and speed 1 (low) to 10 (high). Cost is the list API price in USD per 1M tokens, input / output, verified 2026-09-05; Codex and Grok run on flat-rate plans here (ChatGPT Pro Lite, Grok upgraded), so their price is quota weight, not a bill, and a plan change reopens rule 1.
 
-| Model | Int | Speed | Cost | Access | Use for |
+| Model | Int | Speed | $/1M in / out | Access | Use for |
 |---|---|---|---|---|---|
-| `fable` (claude-fable-5-1) | 10 | 7 | 10 | session model; Agent `model=fable` | Main loop; spawned slices where top judgment beats cost (security review pinned here) |
-| `opus` (claude-opus-5) | 8 | 4 | 8 | Agent `model=opus` | Default Claude tier (rule 2) |
-| `sonnet` (claude-sonnet-5) | 6 | 6 | 5 | Agent `model=sonnet` | Rule 2 downgrade only |
-| `haiku` (claude-haiku-4-5) | 3 | 10 | 2 | Agent `model=haiku` | Rule 2 floor only |
-| `gpt-6-astra` (Codex, top) | 9 | 3 | 5 | `codex exec ... -m gpt-6-astra -c model_reasoning_effort="high"` (codex-cli 0.153.1+; older CLIs reject the id, so upgrade with `npm install -g @openai/codex@latest`) | Rule 1 hardest slices. Default effort is `medium`, so pass `high` (`xhigh`/`max`/`ultra` for the hardest) |
-| `gpt-5.6-sol` (Codex, frontier) | 8 | 4 | 3 | `codex exec ... -m gpt-5.6-sol -c model_reasoning_effort="high"` | Rule 1 hard slices. Default effort is `low`, so always pass `high` (`xhigh`/`max`/`ultra` for the hardest) |
-| `gpt-5.6-terra` (Codex, balanced) | 6 | 6 | 2 | `codex exec ... -m gpt-5.6-terra` | Rule 0 PC control; rule 1 default executor |
-| `gpt-5.6-luna` (Codex, fast) | 4 | 9 | 1 | `codex exec ... -m gpt-5.6-luna` | Rule 1 trivial mechanical slices |
-| Grok (`grok-4.6`; `grok models` lists the rest) | 6 | 7 | 2 | `grok --prompt-file <file> --always-approve` | Rule 1b; needs `XAI_API_KEY` or `grok login --device-auth` (token lasts 7 days) |
+| `fable` (claude-fable-5-1) | 10 | 7 | 10 / 50 | session model; Agent `model=fable` | Main loop; spawned slices where top judgment beats cost (security review pinned here) |
+| `opus` (claude-opus-5) | 8 | 4 | 5 / 25 | Agent `model=opus` | Default Claude tier (rule 2) |
+| `sonnet` (claude-sonnet-5) | 6 | 6 | 2 / 10 | Agent `model=sonnet` | Rule 2 downgrade only |
+| `haiku` (claude-haiku-4-5) | 3 | 10 | 1 / 5 | Agent `model=haiku` | Rule 2 floor only |
+| `gpt-6-astra` (Codex, top) | 10 | 3 | 10 / 50 | `codex exec ... -m gpt-6-astra -c model_reasoning_effort="high"` (codex-cli 0.153.1+; older CLIs reject the id, so upgrade with `npm install -g @openai/codex@latest`) | Rule 1 hardest slices. Default effort is `medium`, so pass `high` (`xhigh`/`max`/`ultra` for the hardest) |
+| `gpt-5.6-sol` (Codex, frontier) | 8 | 4 | 4 / 20 (promo to 2026-11-21) | `codex exec ... -m gpt-5.6-sol -c model_reasoning_effort="high"` | Rule 1 hard slices. Default effort is `low`, so always pass `high` (`xhigh`/`max`/`ultra` for the hardest) |
+| `gpt-5.6-terra` (Codex, balanced) | 6 | 6 | 2 / 12 | `codex exec ... -m gpt-5.6-terra` | Rule 0 PC control; rule 1 default executor |
+| `gpt-5.6-luna` (Codex, fast) | 4 | 9 | 0.20 / 1.20 | `codex exec ... -m gpt-5.6-luna` | Rule 1 trivial mechanical slices |
+| Grok (`grok-4.6`; `grok models` lists the rest) | 6 | 7 | 2 / 6 | `grok --prompt-file <file> --always-approve` | Rule 1b; needs `XAI_API_KEY` or `grok login --device-auth` (token lasts 7 days) |
 
 The table is a map, not a gate: an unlisted model is routable under rule 1c when you name why and its id verifiably works.
 
