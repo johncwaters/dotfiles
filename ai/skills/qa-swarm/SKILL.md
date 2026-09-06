@@ -74,6 +74,7 @@ Definition of done: <this lane's required structured output>
 - the declined list, phrased as "report each of these again if it is still present", exempt from any reporting bar the caller supplies
 - when the caller sends round state: the round number, its touched-file set, the instruction to focus on those files and on the regression and declined checks, and the caller's reporting bar relayed verbatim. The bar is the caller's rule to write and to arm; this skill states no severity threshold of its own, because a second copy here drifts from the owner's the first time the rule is tuned. The full `REVIEW_CMD` sweep stays regardless; only what is worth reporting on settled ground moves
 - the router's danger and complexity ratings and which files it classified into this lane
+- the lane set spawned this run, so a lane knows which owners exist: a concern its Skip line yields to a lane outside that set is still reported by the lane tempted, but under the absent owner's tag, with the reporting lane named in the body and at a severity no higher than the top of that owner's own ladder, since the triage rule keyed on that tag assumes that ceiling, and since a yield to nobody is a dropped defect
 - the ask: real defects with a concrete failure scenario, severity-tagged, with LOW as the minimum and never NIT, each anchored to a line the diff adds or removes, or to `general` when the defect is file-level
 - the reviewer output format below
 

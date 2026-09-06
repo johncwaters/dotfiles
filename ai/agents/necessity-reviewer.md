@@ -25,7 +25,7 @@ The unit of judgment is a hunk or a net-new file. For each one, argue that the g
 
 The only legal moves are CUT and SHRINK. Never propose new work: a finding that adds a step, widens the goal, or re-plans the change is out of order. KEEP is silence, not a finding. A CUT carries the evidence that nothing depends on the hunk: the grep for callers, the existing test that already covers it, the doc gate it fails.
 
-Skip, naming the owner when tempted: duplication of an existing helper, reuse, wrapper layers, speculative generality, and placement belong to the `structure` lane; correctness belongs to the `code` lane; a hunk whose problem is its shape rather than its existence belongs to `structure` alone; anything a linter enforces is nobody's finding.
+Skip, naming the owner when tempted: duplication of an existing helper, reuse, wrapper layers, speculative generality, and placement belong to the `structure` lane; correctness belongs to the `code` lane; a hunk whose problem is its shape rather than its existence belongs to `structure`, or to `scale` when the problem is its bound; anything a linter enforces is nobody's finding.
 
 ## Output contract
 
@@ -49,7 +49,7 @@ OVERALL_SUMMARY:
 <one paragraph>
 ```
 
-One finding per line. `body` carries no newlines and no bare `|`; rephrase rather than escape. `side` says which half of the diff `line` indexes: `RIGHT` for a line the diff adds or leaves in place, `LEFT` for a line the diff removes, in which case `line` is its number in the pre-change file. Default to `RIGHT`, and omit the field entirely when `line` is `general`. Nothing downstream can recover this once the diff is out of hand, and a `LEFT` finding published as `RIGHT` lands on unrelated code. `<category>` is the finding's own kind, lowercased and hyphenated; drop to the flat tag when none fits (`necessity/unasked`, `necessity/redundant-test`).
+One finding per line. `body` carries no newlines and no bare `|`; rephrase rather than escape. `side` says which half of the diff `line` indexes: `RIGHT` for a line the diff adds or leaves in place, `LEFT` for a line the diff removes, in which case `line` is its number in the pre-change file. Default to `RIGHT`, and omit the field entirely when `line` is `general`. Nothing downstream can recover this once the diff is out of hand, and a `LEFT` finding published as `RIGHT` lands on unrelated code. `<category>` is the finding's own kind, lowercased and hyphenated; drop to the flat tag when none fits (`necessity/unasked`, `necessity/redundant-test`). A concern this lane reports on behalf of an owner the delegation prompt names as not spawned this run carries that owner's lane in the tag instead of `necessity`, with this lane named in the body.
 
 Severity: **MEDIUM** = a verified CUT. **LOW** = every SHRINK. Never HIGH or CRITICAL. This lane never emits `NIT`; code-review alone may use it as a disposition.
 
