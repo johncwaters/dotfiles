@@ -29,7 +29,7 @@ One message, three `plan-challenger` calls (`subagent_type: plan-challenger`), a
 |---|---|
 | `necessity` | Burden of proof per step: argue the step should be CUT. Does the goal still land without it? Hunt YAGNI, speculative generality, gold-plating, unenforceable docs, tests duplicating existing coverage, work the goal never asked for. |
 | `leverage` | For each step argue SHRINK: existing code to reuse (grep for prior art before claiming there is none), fewer files, a standard tool over custom code, two steps that are one step wearing two numbers. |
-| `scale` | For each step name the input that grows when the feature meets real data (rows, files, carbon units, requests) and the time and space bound of the approach the step describes. Argue SHRINK when a lower-order approach exists using existing code, a keyed lookup, a single pass, or an index or page bound already present in the repo and verified there before the SHRINK is claimed, so the step is rewritten to it at the same plan size. A lowering that would need an index or page bound the plan lacks is the KEEP the Never paragraph above describes, never a SHRINK. KEEP when the bound is already linear or is inherent to the operation, and say which. Open `because` with `bound: O(...) in <input>` so the bound is machine-findable. |
+| `scale` | For each step name the input that grows when the feature meets real data (rows, files, carbon units, requests) and the time and space bound of the approach the step describes. Argue SHRINK when a lower-order approach exists using existing code, a keyed lookup, a single pass, or an index or page bound already present in the repo and verified there before the SHRINK is claimed, so the step is rewritten to it at the same plan size. KEEP when the bound is already linear or is inherent to the operation, and say which. Open `because` with `bound: O(...) in <input>` so the bound is machine-findable. |
 
 Every spawn prompt carries, per the delegation contract in `~/.claude/ROUTING.md`:
 
@@ -54,11 +54,11 @@ PLAN_SUMMARY:
 <one paragraph: the plan's weakest step and the single biggest simplification available>
 ```
 
-Every numbered step gets exactly one verdict line. A KEEP must still name what breaks without the step; "seems fine" is not a verdict. One verdict per line, no bare `|` inside a field.
+Every numbered step gets exactly one verdict line. One verdict per line, no bare `|` inside a field.
 
 ## Step 2: Converge and judge
 
-The caller judges; challengers only argue. Per step, start from the most aggressive verdict any lane returned (CUT beats SHRINK beats KEEP). A step survives a CUT or escapes a SHRINK only through a rebuttal naming the concrete failure that occurs without it; "might need it later", "best practice", and "small anyway" all lose. A scale SHRINK is escaped only by a rebuttal naming the fact that bounds the input (an enum, a config cap, a fixed list) and where it lives; "it will be small" loses. `unverified` evidence loses to verified evidence pointing the other way. A scale KEEP naming missing infrastructure is not discarded when another lane's verdict wins the step, since its bound and the infrastructure it named still go into the revised step text under Step 3.
+The caller judges; challengers only argue. Per step, start from the most aggressive verdict any lane returned (CUT beats SHRINK beats KEEP). A step survives a CUT or escapes a SHRINK only through a rebuttal naming the concrete failure that occurs without it; "might need it later", "best practice", and "small anyway" all lose. A scale SHRINK is escaped only by a rebuttal naming the fact that bounds the input (an enum, a config cap, a fixed list) and where it lives; "it will be small" loses. `unverified` evidence loses to verified evidence pointing the other way.
 
 Overriding more than a third of the aggressive verdicts means the challengers misread the goal: fix the goal statement and respawn rather than bulk-rebutting.
 
@@ -66,7 +66,7 @@ A lane that errors or returns no parseable `STEP_VERDICTS` block reruns once; st
 
 ## Step 3: Revise and stamp
 
-Apply the surviving verdicts, merge and renumber, append the `CHALLENGE:` stamp as the last line, and hand the revised plan to whatever comes next — usually ExitPlanMode, where the carbon unit sees the already-simplified plan. Every step the scale lane bounded keeps its bound in the revised step text, in the form `(O(n) in rows)` or, when a scale KEEP named the infrastructure a lowering would need, `(O(n²) in rows; O(n log n) needs an index on created_at)`, so the carbon unit approving the plan sees the cost being approved and what would lower it. Counts in the stamp refer to the original steps: a step merged into another counts as shrunk.
+Apply the surviving verdicts, merge and renumber, append the `CHALLENGE:` stamp as the last line, and hand the revised plan to whatever comes next — usually ExitPlanMode, where the carbon unit sees the already-simplified plan. Every step whose work survives carries a bound in its revised text: a step a scale SHRINK rewrote carries the lowered bound that SHRINK named, never the bound of the approach the rewrite replaced; a step merged into another hands its bound to the absorbing step, which carries both; only a cut step drops its bound. A kept bound appears in the revised step text in the form `(O(n) in rows)` or, when a scale KEEP named the infrastructure a lowering would need, `(O(n²) in rows; O(n log n) needs an index on created_at)`, so the carbon unit approving the plan sees the cost being approved and what would lower it. Counts in the stamp refer to the original steps: a step merged into another counts as shrunk.
 
 ## Token discipline
 
