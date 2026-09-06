@@ -257,6 +257,12 @@ renderJsonTemplate "hook merge probe" "$repoRoot/ai/render-settings.mjs" \
 check "an overlay hook renders alongside the base hook it shares an event with" \
   bash -c 'grep -q "base-only-hook.mjs" "$1" && grep -q "overlay-only-hook.mjs" "$1"' _ "$hookDestination"
 
-check "hook behavior tests pass" node --test "$topicDir/hooks/hooks.test.mjs"
+shopt -s nullglob
+hookTestFiles=("$topicDir"/hooks/test/*.test.mjs)
+shopt -u nullglob
+check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
+if [ "${#hookTestFiles[@]}" -gt 0 ]; then
+  check "hook behavior tests pass" node --test "${hookTestFiles[@]}"
+fi
 
 reportTopicResults "ai"
