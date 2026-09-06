@@ -68,7 +68,7 @@ function main() {
   deny(
     "Unchallenged plan: every plan gets adversarially simplified before it " +
       "leaves plan mode. Invoke the plan-challenge skill (Skill tool, skill: " +
-      '"plan-challenge"), let its two challengers argue against each step, ' +
+      '"plan-challenge"), let its three challengers argue against each step, ' +
       "apply the verdicts, then re-call ExitPlanMode with the revised plan " +
       "ending in its CHALLENGE: stamp line. A context that cannot spawn " +
       "agents returns the plan to its caller unstamped instead of exiting " +

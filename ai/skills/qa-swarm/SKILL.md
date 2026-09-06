@@ -27,7 +27,7 @@ Ask it for:
 
 1. **Danger rating** LOW / MEDIUM / HIGH, with the one fact that set it
 2. **Complexity rating** LOW / MEDIUM / HIGH
-3. **File classification**: which touched files are logic, security surface, structural, config, test, or docs
+3. **File classification**: which touched files are logic, security surface, structural, scale surface, config, test, or docs; scale surface means files where the diff iterates, recurses, queries, or accumulates over a collection whose size the context does not bound
 4. **Delegation plan**: which lanes below should run, one clause of justification each
 5. Its own findings, in the format below, tagged `router`
 
@@ -41,6 +41,7 @@ The router never spawns anything. It returns a plan; this skill decides and disp
 | `security` | `security-reviewer` agent | fable | Diff touches auth, input handling, crypto, payments, PII, secrets, infrastructure, or destructive operations |
 | `structure` | `structure-reviewer` agent | opus | Diff is a refactor, establishes a new module or boundary, or moves responsibilities across existing ones |
 | `necessity` | `necessity-reviewer` agent | opus | Diff introduces a net-new file, exported symbol, or doc section, and the context states a goal |
+| `scale` | `scale-reviewer` agent | opus | Diff adds or changes a loop, recursion, query, batch, cache, or list endpoint whose input the context does not bound by fact |
 | `external` | Codex CLI | `gpt-5.6-sol`, effort `high` | Danger or complexity is HIGH. An independent frontier read of the same diff |
 | `tiebreak` | Grok CLI | default | Two lanes disagree on whether a specific finding is real. Runs in Step 3, never here |
 
@@ -101,7 +102,7 @@ OVERALL_SUMMARY:
 <one paragraph>
 ```
 
-**Tags** are `<lane>` or `<lane>/<category>`, the category being the finding's own lowercased, hyphenated kind: `security/idor`, `code/logic`, `structure/duplication`. Sub-tagging keeps each lane's taxonomy readable once findings converge; fall back to the flat lane tag when no category fits.
+**Tags** are `<lane>` or `<lane>/<category>`, the category being the finding's own lowercased, hyphenated kind: `security/idor`, `code/logic`, `structure/duplication`, `scale/quadratic`. Sub-tagging keeps each lane's taxonomy readable once findings converge; fall back to the flat lane tag when no category fits.
 
 **`body`** is compact: what is wrong, the failure scenario, the fix, and `Confidence: low, <what would confirm it>` when the lane could not fully verify it. One finding per line, no newlines and no bare `|` inside a body.
 
@@ -111,7 +112,7 @@ Lanes emit LOW at minimum and never `NIT`. Only code-review may use `NIT` as a d
 
 ## Step 3: Converge
 
-**Lane death is blocking, for the four agent lanes.** `code`, `security`, `structure`, or `necessity` triggered and spawned, then erroring, returning empty, or producing no parseable `STRUCTURED_FINDINGS` block, is a failed run. Stop and tell the caller. Never return a partial block as if it were complete.
+**Lane death is blocking, for the five agent lanes.** `code`, `security`, `structure`, `necessity`, or `scale` triggered and spawned, then erroring, returning empty, or producing no parseable `STRUCTURED_FINDINGS` block, is a failed run. Stop and tell the caller. Never return a partial block as if it were complete.
 
 `router`, `external`, and `tiebreak` are exempt at every stage, before or after dispatch: they run on an external CLI with its own quota and none is ever the sole coverage for a concern. Their failure degrades, never blocks:
 

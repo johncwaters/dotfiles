@@ -1013,11 +1013,11 @@ test("a list-item stamp is allowed", () => {
   assert.equal(processResult.stdout, "");
 });
 
-test("a single-lane suffix on the stamp is allowed", () => {
+test("a lane-list suffix on the stamp is allowed", () => {
   const processResult = runHook("challenge-plan.mjs", {
     tool_name: "ExitPlanMode",
     tool_input: {
-      plan: "1. Do the thing\n\nCHALLENGE: 2 kept, 1 shrunk, 0 cut (single lane: leverage)",
+      plan: "1. Do the thing\n\nCHALLENGE: 2 kept, 1 shrunk, 0 cut (lanes: necessity, leverage)",
     },
   });
 
