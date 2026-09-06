@@ -25,6 +25,7 @@ done
 
 runSuite "bootstrap" bash "$repoRoot/test/bootstrap.sh"
 runSuite "packages-lib" bash "$repoRoot/test/packages-lib.sh"
+runSuite "dot" bash "$repoRoot/test/dot.sh"
 runSuite "repo-wiring" bash "$repoRoot/test/repo-wiring.sh"
 
 if command -v bwrap >/dev/null 2>&1; then
