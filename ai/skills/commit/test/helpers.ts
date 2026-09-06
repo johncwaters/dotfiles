@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParkedEntry } from "../lib/ledger.ts";
 
+export type PromotionSetup = { origin: string; seed: string; local: string };
+
 export const SKILL_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function resolveRealGitPath(): string {
@@ -23,6 +25,31 @@ export const REAL_GIT_PATH = resolveRealGitPath();
 export function writeExecutable(filePath: string, body: string): void {
   fs.writeFileSync(filePath, body, "utf8");
   fs.chmodSync(filePath, 0o755);
+}
+
+export function seedOrigin(
+  featureBranch = "feature",
+  branchesOnOrigin: string[] = [],
+): PromotionSetup {
+  const origin = makeBareOrigin();
+  const seed = makeRepo();
+  runGit(seed, ["remote", "add", "origin", origin]);
+  commitFile(seed, "base.txt", "base\n", "init");
+  runGit(seed, ["push", "-q", "-u", "origin", "main"]);
+  runGit(origin, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+  for (const branchOnOrigin of branchesOnOrigin) {
+    runGit(seed, ["branch", branchOnOrigin]);
+    runGit(seed, ["push", "-q", "origin", branchOnOrigin]);
+  }
+  runGit(seed, ["checkout", "-q", "-b", featureBranch]);
+  runGit(seed, ["push", "-q", "-u", "origin", featureBranch]);
+  const local = cloneRepo(origin);
+  runGit(local, ["checkout", "-q", "-b", featureBranch, `origin/${featureBranch}`]);
+  return { origin, seed, local };
+}
+
+export function writeOriginHook(origin: string, name: string, body: string): void {
+  writeExecutable(path.join(origin, "hooks", name), body);
 }
 
 export function parkedEntryFixture(overrides: Partial<ParkedEntry> = {}): ParkedEntry {

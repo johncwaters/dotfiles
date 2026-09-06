@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { findWorktreeForBranch } from "../lib/workspace.ts";
 import {
   cleanup,
   cloneRepo,
@@ -16,6 +18,24 @@ import {
   VALID_MESSAGE,
   writeFile,
 } from "./helpers.ts";
+
+test("findWorktreeForBranch skips detached and bare blocks", () => {
+  const porcelain = [
+    "worktree /repo/main",
+    "HEAD abc123",
+    "branch refs/heads/main",
+    "",
+    "worktree /repo/detached",
+    "HEAD def456",
+    "detached",
+    "",
+    "worktree /repo/bare",
+    "bare",
+    "",
+  ].join("\n");
+  assert.equal(findWorktreeForBranch(porcelain, "main"), "/repo/main");
+  assert.equal(findWorktreeForBranch(porcelain, "feature"), null);
+});
 
 function writeFailingHook(repo: string, name: string): void {
   const hooksDir = path.join(repo, ".git", "hooks");
@@ -360,6 +380,23 @@ test("the gate refuses additions only, so a tracked denylisted file stays editab
     assert.deepEqual(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]).split("\n"), [
       ".env.example",
     ]);
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("--promote-to is rejected as an unknown flag", () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-unknown-flag-"));
+  try {
+    const { code, result, stderr } = runSkillScript(
+      "land.ts",
+      repo,
+      ["--promote-to", "main"],
+      VALID_MESSAGE,
+    );
+    assert.equal(code, 1);
+    assert.deepEqual(result, {});
+    assert.match(stderr, /unknown flag --promote-to/);
   } finally {
     cleanup(repo);
   }
