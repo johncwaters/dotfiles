@@ -1,0 +1,125 @@
+export const meta = { name: 'plan-challenge', description: 'Runs three adversarial plan challenges and returns their verdicts.', phases: [{ title: 'Challenge', detail: 'Challenge necessity, leverage, and scale concurrently.' }] }
+
+const laneBriefs = [
+  {
+    lane: 'necessity',
+    brief: 'Burden of proof per step: argue the step should be CUT. Does the goal still land without it? Hunt YAGNI, speculative generality, gold-plating, unenforceable docs, tests duplicating existing coverage, work the goal never asked for.'
+  },
+  {
+    lane: 'leverage',
+    brief: 'For each step argue SHRINK: existing code to reuse (grep for prior art before claiming there is none), fewer files, a standard tool over custom code, two steps that are one step wearing two numbers.'
+  },
+  {
+    lane: 'scale',
+    brief: 'For each step name the input that grows when the feature meets real data (rows, files, carbon units, requests) and the time and space bound of the approach the step describes. Argue SHRINK when a lower-order approach exists using existing code, a keyed lookup, a single pass, or an index or page bound already present in the repo and verified there before the SHRINK is claimed, so the step is rewritten to it at the same plan size. KEEP when the bound is already linear or is inherent to the operation, and say which. Open `because` with `bound: O(...) in <input>` so the bound is machine-findable.'
+  }
+]
+
+function numberedStepsFrom(planText) {
+  const stepNumbers = new Set()
+  for (const planLine of String(planText == null ? '' : planText).split('\n')) {
+    if (/^(?:\t| {2})/.test(planLine)) {
+      continue
+    }
+    const markerlessLine = planLine.replace(/^[-*#>\s]+/, '')
+    const stepMatch = markerlessLine.match(/^(?:step\s+(\d+)\s*[-.):]|(\d+)[.):])\s+\S/i)
+    if (!stepMatch) {
+      continue
+    }
+    stepNumbers.add(Number(stepMatch[1] || stepMatch[2]))
+  }
+  return [...stepNumbers]
+}
+
+function buildChallengePrompt(laneBrief) {
+  return `Scope: judging the supplied plan text against the repo at ${args.repoPath}, read-only
+Out of scope: editing anything, proposing new steps, re-planning the work
+Definition of done: a STEP_VERDICTS block covering every numbered step
+
+Goal:
+${args.goal}
+
+Plan text, verbatim:
+${args.planText}
+
+Repo path: ${args.repoPath}
+Lane: ${laneBrief.lane}
+Lane brief, verbatim:
+${laneBrief.brief}
+
+Verify claims against the repo with Read, Grep, Glob, or read-only commands before asserting them. A verdict resting on nothing gets evidence: unverified and is worth less at convergence.
+
+STEP_VERDICTS:
+- step: <n> | verdict: <CUT|SHRINK|KEEP> | because: <one sentence> | evidence: <file:line, command output, or unverified>
+- step: ...
+
+PLAN_SUMMARY:
+<one paragraph: the plan's weakest step and the single biggest simplification available>
+
+Cover every numbered step exactly once and in step order. Use one verdict per line and no bare | inside a field. End with this block and nothing after it.`
+}
+
+function verdictStepNumbersFrom(laneText) {
+  if (typeof laneText !== 'string') {
+    return null
+  }
+  const blockMatch = laneText.match(/STEP_VERDICTS:[ \t]*\n([\s\S]*?)(?:\nPLAN_SUMMARY:|$)/)
+  if (!blockMatch) {
+    return null
+  }
+  const planSummaryMatch = laneText.match(/PLAN_SUMMARY:[ \t]*([\s\S]*)$/)
+  if (!planSummaryMatch || planSummaryMatch[1].trim() === '') {
+    return null
+  }
+  const stepNumbers = []
+  for (const blockLine of blockMatch[1].split('\n')) {
+    const verdictMatch = blockLine.trim().match(/^- step: (\d+) \| verdict: (?:CUT|SHRINK|KEEP) \| because: .+ \| evidence: .+$/)
+    if (!verdictMatch) {
+      continue
+    }
+    stepNumbers.push(Number(verdictMatch[1]))
+  }
+  return stepNumbers
+}
+
+function coversEveryPlanStep(laneText, requiredStepNumbers) {
+  const stepNumbers = verdictStepNumbersFrom(laneText)
+  if (!stepNumbers) {
+    return false
+  }
+  const distinctStepNumbers = new Set(stepNumbers)
+  if (distinctStepNumbers.size !== stepNumbers.length) {
+    return false
+  }
+  if (requiredStepNumbers.length === 0) {
+    return false
+  }
+  return requiredStepNumbers.every((stepNumber) => distinctStepNumbers.has(stepNumber))
+}
+
+function runChallengeLane(laneBrief) {
+  const challengePrompt = buildChallengePrompt(laneBrief)
+  return agent(challengePrompt, { model: 'opus', label: `${laneBrief.lane} challenge`, phase: 'Challenge', agentType: 'plan-challenger' })
+}
+
+phase('Challenge')
+const requiredStepNumbers = numberedStepsFrom(args.planText)
+if (requiredStepNumbers.length === 0) {
+  return { lanes: [], survivingLanes: [] }
+}
+
+const firstLaneTexts = await parallel(laneBriefs.map((laneBrief) => () => runChallengeLane(laneBrief)))
+const laneTextsByName = new Map(laneBriefs.map((laneBrief, laneIndex) => [laneBrief.lane, firstLaneTexts[laneIndex]]))
+const lanesNeedingRerun = laneBriefs.filter((laneBrief) => !coversEveryPlanStep(laneTextsByName.get(laneBrief.lane), requiredStepNumbers))
+
+if (lanesNeedingRerun.length > 0) {
+  const rerunLaneTexts = await parallel(lanesNeedingRerun.map((laneBrief) => () => runChallengeLane(laneBrief)))
+  for (let laneIndex = 0; laneIndex < lanesNeedingRerun.length; laneIndex += 1) {
+    laneTextsByName.set(lanesNeedingRerun[laneIndex].lane, rerunLaneTexts[laneIndex])
+  }
+}
+
+const laneOutputs = laneBriefs.map((laneBrief) => ({ lane: laneBrief.lane, text: laneTextsByName.get(laneBrief.lane) }))
+const lanes = laneOutputs.filter((laneOutput) => coversEveryPlanStep(laneOutput.text, requiredStepNumbers))
+const survivingLanes = lanes.map((laneOutput) => laneOutput.lane)
+return { lanes, survivingLanes }

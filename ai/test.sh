@@ -29,7 +29,7 @@ check "install says what it did" test -n "$firstRunOutput"
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
-  ".claude/agents" ".claude/commands" ".claude/hooks" ".claude/hud" ".claude/skills"
+  ".claude/agents" ".claude/workflows" ".claude/commands" ".claude/hooks" ".claude/hud" ".claude/skills"
   ".codex/AGENTS.md"
 )
 
@@ -52,6 +52,62 @@ for destination in "${linkedDestinations[@]}"; do
     continue
   fi
   pass "$destination linked through the alias"
+done
+
+workflowPinsEveryAgentCall() {
+  local workflowPath="$1"
+  local agentCallCount
+  local modelPinnedCallCount
+  agentCallCount="$(grep -oF 'agent(' "$workflowPath" | wc -l)"
+  modelPinnedCallCount="$(grep -Ec "agent\\([^,]+, \\{ model: '[^']+'" "$workflowPath" || true)"
+  [[ "$agentCallCount" -eq "$modelPinnedCallCount" ]]
+}
+
+workflowCarriesDelegationMarkers() {
+  local workflowPath="$1"
+  grep -qF 'Scope:' "$workflowPath" \
+    && grep -qF 'Out of scope:' "$workflowPath" \
+    && grep -qF 'Definition of done:' "$workflowPath"
+}
+
+workflowModelIdsComeFromRouting() {
+  local workflowPath="$1"
+  local modelId
+  while read -r modelId; do
+    [[ -n "$modelId" ]] || continue
+    grep -qF -- "$modelId" "$topicDir/ROUTING.md" || return 1
+  done < <(
+    {
+      grep -oE 'gpt-[a-z0-9]+([.-][a-z0-9]+)*' "$workflowPath" || true
+      grep -oE "model: '[^']+'" "$workflowPath" | sed -E "s/^model: '(.*)'$/\1/" || true
+    } | sort -u
+  )
+}
+
+workflowCliCommandsComeFromRouting() {
+  local workflowPath="$1"
+  local cliCommand
+  while read -r cliCommand; do
+    [[ -n "$cliCommand" ]] || continue
+    grep -qF -- "$cliCommand" "$topicDir/ROUTING.md" || return 1
+  done < <(
+    {
+      grep -oE -- "codex exec [^']*" "$workflowPath" || true
+      grep -oE -- "grok --prompt-file [^']*" "$workflowPath" || true
+    } | sort -u
+  )
+}
+
+shopt -s nullglob
+workflowScripts=("$topicDir"/workflows/*.js)
+shopt -u nullglob
+check "workflow scripts are present" test "${#workflowScripts[@]}" -gt 0
+for workflowPath in "${workflowScripts[@]}"; do
+  workflowName="$(basename -- "$workflowPath")"
+  check "$workflowName pins every agent model" workflowPinsEveryAgentCall "$workflowPath"
+  check "$workflowName carries delegation markers" workflowCarriesDelegationMarkers "$workflowPath"
+  check "$workflowName names only models ROUTING.md lists" workflowModelIdsComeFromRouting "$workflowPath"
+  check "$workflowName names only CLI invocations ROUTING.md lists" workflowCliCommandsComeFromRouting "$workflowPath"
 done
 
 # Claude Code drops every @import in a symlinked CLAUDE.md, so this one entry is a copy.

@@ -19,7 +19,7 @@ Int and speed 1 (low) to 10 (high). Cost is list API price, USD per 1M tokens in
 
 The table is a map, not a gate: an unlisted model is routable under rule 1c when you name why and its id verifiably works.
 
-External dispatch: prompt in a temp file. Codex: `codex exec --dangerously-bypass-approvals-and-sandbox -m <model> [-c model_reasoning_effort="<level>"] < <file>`; only the four Codex ids above work on a ChatGPT account. Grok: `grok --prompt-file <file> --always-approve` (`-m <id>` only for a listed model). A grok "You are not authenticated" reply means the token lapsed: ask the user to run `! grok login --device-auth`, do not retry. Neither sees this conversation; judge their output yourself.
+External dispatch: prompt in a temp file. Codex: `codex exec --dangerously-bypass-approvals-and-sandbox -m <model> [-c model_reasoning_effort="<level>"] < <file>`; only the four Codex ids above work on a ChatGPT account. Grok: `grok --prompt-file <file> --always-approve` (`-m <id>` only for a listed model). Dispatch as one Bash `run_in_background` call, never a Monitor, so it costs one wake-up. A grok "You are not authenticated" reply means the token lapsed: ask the carbon unit to run `! grok login --device-auth`, do not retry. Neither sees this conversation; judge their output yourself.
 
 First ask whether a model is needed at all: grep, sed, scripts, SQL, formatters, linters, type checkers, and `git log` are free and cannot hallucinate. Spend a model on judgment only.
 
@@ -31,13 +31,13 @@ Decision order for any delegated task:
 1c. Structural fit outranks quota and price: when only one model can do the job (live web and X, a context window nothing else holds, multimodal input), route there and skip rules 1 and 2. Nothing fits: say so and propose the tool.
 2. Work kept off Codex, or after 1a: `opus` by default, including anything of uncertain complexity. `sonnet` only for one-shot slices with simple checkable output where opus changes nothing; a cheaper tier that fails once costs more than one that one-shots. `haiku` only for one-shot short answers checkable at a glance (classify, label, extract a field), never code, debugging, review, or a completion-gating judgment.
 3. A concrete failure on a lower tier reruns one tier up (`luna`, `terra`, `sol`, `astra`; `haiku`, `sonnet`, `opus`), never the same tier again, never a tier below these floors.
-4. Read-only sweeps use `Explore`, not `general-purpose`. Every spawn pins `model`; `hooks/enforce-spawn-model.mjs` denies one without it.
+4. Read-only sweeps use `Explore`, not `general-purpose`. Every spawn pins `model`; `hooks/enforce-spawn-model.mjs` denies one without it. A Workflow script pins `model` on every `agent()` call, and `ai/test.sh` pins that.
 5. Change a default only on `evals/` evidence (same tasks, competing routes, judged output). No eval covers the slice: write the task first, then reroute.
 
 Delegation prompts: the target cannot see this conversation, so carry objective, definition of done, paths, prior decisions, constraints, an output contract that fits back into context, and boundaries. Agent prompts carry literal `Scope:`, `Out of scope:`, and `Definition of done:` lines or `hooks/enforce-spawn-model.mjs` denies them. Do not restate AGENTS.md rules Claude subagents and Codex already read (global plus repo copy); Grok reads only the repo copy, so a Grok prompt carries any global rule it must follow.
 
 Posture by session model:
 - Opus: decompose, dispatch independent slices concurrently, keep planning, synthesis, and verification in the main loop. No agent for a one-line edit, a single command, or live back-and-forth.
-- Fable: orchestrator, never worker. Over ~3 tool calls, more than one file, or output the user will not read verbatim: dispatch per the decision order. When torn, delegate; judge every result before relaying it. Direct work only for single commands, trivial one-file edits, and answers already in context.
+- Fable: orchestrator, never worker. Over ~3 tool calls, more than one file, or output the carbon unit will not read verbatim: dispatch per the decision order. When torn, delegate; judge every result before relaying it. Direct work only for single commands, trivial one-file edits, and answers already in context. Once a plan is approved, ask the carbon unit to `/model opus` for the build phase.
 - Other: apply the decision order directly.
 </routing>
