@@ -23,7 +23,7 @@ The `challenge-plan.mjs` PreToolUse hook looks for that line and denies an ExitP
 
 ## Step 1: Run the workflow
 
-Call `Workflow({name: 'plan-challenge', args: { goal, planText, repoPath }})`. `lanes` holds the surviving lanes only, each one's `text` being the challenger output to judge; a lane whose verdicts do not cover every numbered step is dropped rather than returned, so a plan text with no detectable numbered step returns nothing. Read `survivingLanes` for the `(lanes: <comma-separated names>)` stamp suffix whenever fewer than all three lanes survive.
+Call `Workflow({name: 'plan-challenge', args: { goal, planText, repoPath }})`. `lanes` holds the surviving lanes only, each one's `text` being the challenger output to judge; a lane whose verdicts do not cover every numbered step is dropped rather than returned, so a plan text with no detectable numbered step returns nothing. Read `survivingLanes` for the `(lanes: <comma-separated names>)` stamp suffix whenever fewer than all three lanes survive. A plan written as prose or headings has no detectable step, so before calling, restate it as a numbered list (`1.`, `2.`, one line per step at column zero) inside the plan file and pass that text; the plan file Claude Code hands to ExitPlanMode carries the same list, so the stamp lands under it. Pass `scriptPath: '~/.claude/workflows/plan-challenge.js'` instead of `name` only while iterating on the script inside one session; the `Read(~/.claude/workflows/**)` allow rule in settings.base.json is what lets the tool open it.
 
 Workflow tool absent in this session: read `~/.claude/workflows/plan-challenge.js`, spawn the lane set it names in one message with multiple calls, as before, and converge by the rules in that script.
 

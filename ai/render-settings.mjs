@@ -14,6 +14,13 @@ function mergeHookEvents(baseHooks, overlayHooks) {
   return mergedHooks;
 }
 
+function mergeAllowLists(baseAllowList, overlayAllowList) {
+  if (!Array.isArray(baseAllowList) || !Array.isArray(overlayAllowList)) {
+    return undefined;
+  }
+  return [...new Set([...baseAllowList, ...overlayAllowList])];
+}
+
 const [basePath, overlayPath, destinationPath, homeOverride] = process.argv.slice(2);
 if (!basePath || !overlayPath || !destinationPath) {
   process.stderr.write(
@@ -29,6 +36,9 @@ try {
     destinationPath,
     home: homeOverride || os.homedir(),
     mergeProperty: ({ key, baseValue, overlayValue }) => {
+      if (key === "allow") {
+        return mergeAllowLists(baseValue, overlayValue);
+      }
       if (key !== "hooks") {
         return undefined;
       }
