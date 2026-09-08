@@ -12,8 +12,10 @@ codiumUserDirectory="$HOME/.config/VSCodium/User"
 codiumExtensionsDirectory="$HOME/.vscode-oss/extensions"
 vscodiumManualUrl="https://vscodium.com/#install"
 wantedExtensions=()
+retiredExtensions=()
 installedExtensions=()
 missingExtensions=()
+retiredPresentExtensions=()
 extraExtensions=()
 extensionSyncMode=""
 
@@ -162,6 +164,7 @@ readExtensionLists() {
   local listingPath
   local listingStatus=0
   mapfile -t wantedExtensions < <(readPackageList "$topicDirectory/extensions.txt")
+  mapfile -t retiredExtensions < <(readPackageList "$topicDirectory/extensions-remove.txt")
   listingPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-codium-extensions.XXXXXX")"
   codium --list-extensions > "$listingPath" 2>/dev/null || listingStatus=$?
   if ((listingStatus != 0)); then
@@ -171,6 +174,7 @@ readExtensionLists() {
   mapfile -t installedExtensions < "$listingPath"
   rm -f -- "$listingPath"
   missingExtensions=()
+  retiredPresentExtensions=()
   extraExtensions=()
   for extensionName in ${wantedExtensions[@]+"${wantedExtensions[@]}"}; do
     if listHasExtension "$extensionName" ${installedExtensions[@]+"${installedExtensions[@]}"}; then
@@ -180,6 +184,10 @@ readExtensionLists() {
   done
   for extensionName in ${installedExtensions[@]+"${installedExtensions[@]}"}; do
     if listHasExtension "$extensionName" ${wantedExtensions[@]+"${wantedExtensions[@]}"}; then
+      continue
+    fi
+    if listHasExtension "$extensionName" ${retiredExtensions[@]+"${retiredExtensions[@]}"}; then
+      retiredPresentExtensions+=("$extensionName")
       continue
     fi
     extraExtensions+=("$extensionName")
@@ -195,6 +203,22 @@ installMissingExtensions() {
       continue
     fi
     noteWarned "$extensionName" "install failed"
+  done
+}
+
+removeRetiredExtensions() {
+  local extensionName
+  if ((${#retiredPresentExtensions[@]} == 0)); then
+    notePresent "extension removals" "none present"
+    return 0
+  fi
+  for extensionName in "${retiredPresentExtensions[@]}"; do
+    noteStarting "$extensionName" "uninstalling (retired)"
+    if codium --uninstall-extension "$extensionName" >/dev/null; then
+      noteApplied "$extensionName" "removed"
+      continue
+    fi
+    noteWarned "$extensionName" "uninstall failed"
   done
 }
 
@@ -283,6 +307,7 @@ syncExtensions() {
     noteWarned "extensions" "codium --list-extensions failed, nothing synced"
     return 0
   fi
+  removeRetiredExtensions
   if [[ "$extensionSyncMode" == "exact" ]] && ((${#missingExtensions[@]} == 0)) && ((${#extraExtensions[@]} == 0)); then
     notePresent "extensions" "all ${#wantedExtensions[@]} in sync"
   fi

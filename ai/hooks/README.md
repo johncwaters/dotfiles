@@ -28,10 +28,10 @@ so the agent can correct it immediately instead of guessing.
 
 ## How it's wired
 
-The hooks block now lives in `settings.base.json` with `{{HOME}}` tokens, and
-`setup/apply.ps1` (or `setup/apply.sh` on Linux) renders it into the machine's
-`settings.json` (user-level = **global**, all projects), substituting the real
-home path for each token:
+The hooks block now lives in `ai/settings.base.json` with `{{HOME}}` tokens, and
+`ai/install.sh` runs `ai/render-settings.mjs` over it plus the profile's
+`settings.overlay.json` to render the machine's `settings.json` (user-level =
+**global**, all projects), substituting the real home path for each token:
 
 ```json
 "hooks": {

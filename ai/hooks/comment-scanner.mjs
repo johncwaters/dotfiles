@@ -20,7 +20,7 @@ const SYNTAX_BY_EXT = new Map([
   ...[".css", ".scss", ".less"].map((ext) => [ext, BLOCK_ONLY]),
   ...[".rb", ".fish", ".pl", ".pm", ".r",
     ".jl", ".tcl", ".nix", ".tf", ".cmake",
-    ".ps1", ".ex", ".exs"].map((ext) => [ext, HASH]),
+    ".ex", ".exs"].map((ext) => [ext, HASH]),
   ...[".py"].map((ext) => [ext, PYTHON]),
   ...[".sh", ".bash", ".zsh"].map((ext) => [ext, SHELL]),
   ...[".sql", ".lua", ".hs", ".elm"].map((ext) => [ext, DASH]),

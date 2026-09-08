@@ -234,11 +234,6 @@ function exists(p) {
 function biomeGlobalRoots() {
   const nodeDir = path.dirname(process.execPath);
   const roots = [];
-  if (process.platform === "win32") {
-    roots.push(path.join(process.env.APPDATA || "", "npm", "node_modules"));
-    roots.push(path.join(nodeDir, "node_modules"));
-    return roots;
-  }
   roots.push(path.resolve(nodeDir, "..", "lib", "node_modules"));
   if (process.env.npm_config_prefix) {
     roots.push(path.join(process.env.npm_config_prefix, "lib", "node_modules"));
@@ -253,18 +248,16 @@ function biomeGlobalRoots() {
 
 function biomeCmd() {
   if (exists(process.env.BIOME_BIN)) return [process.env.BIOME_BIN];
-  const win = process.platform === "win32";
   for (const globalRoot of biomeGlobalRoots()) {
     const packageRoot = path.join(globalRoot, "@biomejs", "biome");
     const exe = path.join(
       packageRoot, "node_modules", "@biomejs",
-      `cli-${process.platform}-${process.arch}`, win ? "biome.exe" : "biome"
+      `cli-${process.platform}-${process.arch}`, "biome"
     );
     if (exists(exe)) return [exe];
     const shim = path.join(packageRoot, "bin", "biome");
     if (exists(shim)) return [process.execPath, shim];
   }
-  if (win) return null;
   for (const dir of (process.env.PATH || "").split(path.delimiter)) {
     if (!dir) continue;
     const direct = path.join(dir, "biome");
@@ -276,7 +269,6 @@ function biomeCmd() {
 const SPAWN_OPTS = {
   encoding: "utf8",
   timeout: 10000,
-  windowsHide: true,
   maxBuffer: 16 * 1024 * 1024,
 };
 
@@ -364,11 +356,9 @@ function validateWithBiome(content, ext, filePath) {
   };
 }
 
-// Resolve the interpreter for the ruff gate. Windows keeps the bare `python`
-// that has always resolved there; most Linux distros ship only `python3`.
+// Most distros ship only `python3`, so the PATH scan precedes the bare `python` fallback.
 function pythonBin() {
   if (exists(process.env.PYTHON_BIN)) return process.env.PYTHON_BIN;
-  if (process.platform === "win32") return "python";
   for (const dir of (process.env.PATH || "").split(path.delimiter)) {
     if (!dir) continue;
     const direct = path.join(dir, "python3");
@@ -399,18 +389,14 @@ function validatePython(content) {
   };
 }
 
-// Resolve a directly-spawnable dart executable. Honors DART_BIN, else scans
-// PATH for either a standalone Dart SDK (`dart.exe` in a bin dir) or a Flutter
-// SDK (whose `dart` is a .bat wrapper; the real exe lives under
-// `cache/dart-sdk/bin`). Returns null if none found (-> fail open for .dart).
+// Flutter keeps its real dart under `cache/dart-sdk/bin`; null here means fail open for .dart.
 function dartBin() {
   if (exists(process.env.DART_BIN)) return process.env.DART_BIN;
-  const exe = process.platform === "win32" ? "dart.exe" : "dart";
   for (const dir of (process.env.PATH || "").split(path.delimiter)) {
     if (!dir) continue;
-    const direct = path.join(dir, exe);
+    const direct = path.join(dir, "dart");
     if (exists(direct)) return direct;
-    const flutter = path.join(dir, "cache", "dart-sdk", "bin", exe);
+    const flutter = path.join(dir, "cache", "dart-sdk", "bin", "dart");
     if (exists(flutter)) return flutter;
   }
   return null;

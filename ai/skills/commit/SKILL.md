@@ -17,8 +17,7 @@ MSG
 ```
 
 Both print one JSON object on stdout and set the exit code from the outcome table. `node`
-must be 22.18 or newer; it runs the TypeScript directly, with no build step. `$HOME`
-resolves in both bash and PowerShell.
+must be 22.18 or newer; it runs the TypeScript directly, with no build step.
 
 ## Step 1: preflight
 

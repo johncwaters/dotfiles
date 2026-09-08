@@ -150,9 +150,12 @@ for presentFromTheStart in apt-get sudo dpkg curl; do
   provideCommand "$presentFromTheStart"
 done
 
+retiredExtensionName="$(head -n 1 "$topicDir/extensions-remove.txt")"
+
 printf 'aaron-bond.better-comments\n' > "$installedExtensionsFile"
 printf 'nosuch.extension\n' >> "$installedExtensionsFile"
 printf 'someone.unpublished-tool\n' >> "$installedExtensionsFile"
+printf '%s\n' "$retiredExtensionName" >> "$installedExtensionsFile"
 
 installedExtensionManifest() {
   local manifestDirectory="$sandbox/.vscode-oss/extensions/$1"
@@ -253,6 +256,8 @@ check "a multiline private property is parsed as unpublished" \
   logLacks "--uninstall-extension someone.unpublished-tool"
 check "keeping an unpublished extension is a note, not a warning" \
   outputMatches "$firstRunOutput" '\[ -- \].*someone.unpublished-tool.*unpublished'
+check "a retired extension that is present is uninstalled" \
+  logHas "--uninstall-extension $retiredExtensionName"
 check "the list names no extension no marketplace serves" \
   bash -c '! grep -qx "johnwaters.glissa-visions" "$1"' _ "$topicDir/extensions.txt"
 check "the vsix install nobody can automate is written down" \
@@ -265,6 +270,8 @@ secondRunOutput="$(runInstall)"
 check "second run reports no changes" reportsNoChanges "$secondRunOutput"
 check "second run installs no extension" logLacks "--install-extension"
 check "second run uninstalls no extension" logLacks "--uninstall-extension"
+check "a retired extension that is absent is left alone" \
+  outputMatches "$secondRunOutput" '\[ -- \].*extension removals.*none present'
 check "second run downloads nothing" logLacks "curl"
 check "second run installs no package" logLacks "apt-get"
 

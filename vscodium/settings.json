@@ -15,9 +15,6 @@
   "redhat.telemetry.enabled": true,
   "editor.wordWrap": "on",
   "editor.largeFileOptimizations": false,
-  "[powershell]": {
-    "editor.defaultFormatter": "ms-vscode.powershell"
-  },
   "javascript.updateImportsOnFileMove.enabled": "always",
   "editor.formatOnPaste": true,
   "editor.formatOnSave": true,
