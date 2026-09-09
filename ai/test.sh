@@ -98,6 +98,14 @@ workflowCliCommandsComeFromRouting() {
   )
 }
 
+qaSwarmDeclaresThreeLaneCap() {
+  grep -qE '^const maxLanesPerRun = 3$' "$topicDir/workflows/qa-swarm.js"
+}
+
+reviewerAgentsDoNotReportForAbsentOwners() {
+  ! grep -qF 'on behalf of an owner' "$topicDir"/agents/*-reviewer.md
+}
+
 shopt -s nullglob
 workflowScripts=("$topicDir"/workflows/*.js)
 shopt -u nullglob
@@ -109,6 +117,8 @@ for workflowPath in "${workflowScripts[@]}"; do
   check "$workflowName names only models ROUTING.md lists" workflowModelIdsComeFromRouting "$workflowPath"
   check "$workflowName names only CLI invocations ROUTING.md lists" workflowCliCommandsComeFromRouting "$workflowPath"
 done
+check "qa-swarm caps each run at three lanes" qaSwarmDeclaresThreeLaneCap
+check "reviewer agents stay inside their own lanes" reviewerAgentsDoNotReportForAbsentOwners
 
 # Claude Code drops every @import in a symlinked CLAUDE.md, so this one entry is a copy.
 claudeMdPath="$sandbox/.claude/CLAUDE.md"

@@ -87,6 +87,7 @@ const severityRankByName = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
 const mergeTagPrefixes = ['convergent: ', 'contested: ']
 const reviewerTagPattern = /^[a-z][a-z0-9-]*(?:\/[a-z0-9-]+)?$/i
 const maxFindingsPerLane = 10
+const maxLanesPerRun = 3
 
 function formatLines(lines) {
   if (!Array.isArray(lines) || lines.length === 0) {
@@ -95,11 +96,18 @@ function formatLines(lines) {
   return lines.join('\n')
 }
 
-function formatRoundState(round) {
+function formatRoundState(round, isNarrowedFollowupRound, narrowingLostToScopeRestriction) {
   if (!round) {
     return 'Round state: none.'
   }
-  return `Round number: ${round.number}\nRound touched files: ${formatLines(round.touchedFiles)}\nReporting bar: ${round.reportingBar}\nFocus on the round touched files and on the regression and declined checks. Keep the full REVIEW_CMD sweep; only what is worth reporting on settled ground changes.`
+  const roundFacts = `Round number: ${round.number}\nRound touched files: ${formatLines(round.touchedFiles)}\nReporting bar: ${round.reportingBar}`
+  if (isNarrowedFollowupRound) {
+    return `${roundFacts}\nThis round reviews only the narrowed set and the regression and declined checks. Everything else was swept in round 1.`
+  }
+  if (narrowingLostToScopeRestriction) {
+    return `${roundFacts}\nThis round keeps the full sweep because REVIEW_CMD already carries a scope restriction, so the narrowed set could not be applied. Focus on the round touched files and the regression and declined checks.`
+  }
+  return `${roundFacts}\nThis round keeps the full sweep because no narrowed changed files are available. Focus on the round touched files and the regression and declined checks.`
 }
 
 function normalizeFilePath(filePath) {
@@ -111,13 +119,14 @@ function normalizeFilePath(filePath) {
   return trimmedPath.replace(/^(\.\/)+/, '')
 }
 
+function shellQuotedPath(filePath) {
+  return `'${String(filePath).replace(/'/g, "'\\''")}'`
+}
+
 function laneNamesRecommendedBy(routerResult) {
-  const recommendedLaneNames = new Set()
+  const recommendedLaneNames = []
   for (const recommendation of routerResult.lanes || []) {
-    const normalizedRecommendation = String(recommendation).toLowerCase().trim()
-    if (selectableLaneNames.includes(normalizedRecommendation)) {
-      recommendedLaneNames.add(normalizedRecommendation)
-    }
+    appendUniqueLaneName(recommendedLaneNames, String(recommendation).toLowerCase().trim())
   }
   return recommendedLaneNames
 }
@@ -238,6 +247,15 @@ function reviewerFieldIsValid(reviewerValue) {
   return reviewerTags.every((reviewerTag) => reviewerTagPattern.test(reviewerTag))
 }
 
+function rawFindingLineFrom(fields) {
+  const rawFieldTexts = [`file: ${fields.file}`, `line: ${fields.line}`]
+  if (fields.side) {
+    rawFieldTexts.push(`side: ${fields.side}`)
+  }
+  rawFieldTexts.push(`severity: ${fields.severity}`, `reviewer: ${fields.reviewer}`, `body: ${fields.body}`)
+  return `- ${rawFieldTexts.join(' | ')}`
+}
+
 function parseFindingLine(findingLine) {
   const normalizedLine = findingLine.trim().replace(/^- /, '')
   if (!normalizedLine.startsWith('file: ')) {
@@ -283,12 +301,7 @@ function parseFindingLine(findingLine) {
     }
     fields.side = declaredSide
   }
-  const rawFieldTexts = [`file: ${fields.file}`, `line: ${fields.line}`]
-  if (fields.side) {
-    rawFieldTexts.push(`side: ${fields.side}`)
-  }
-  rawFieldTexts.push(`severity: ${fields.severity}`, `reviewer: ${fields.reviewer}`, `body: ${fields.body}`)
-  return { raw: `- ${rawFieldTexts.join(' | ')}`, fields }
+  return { raw: rawFindingLineFrom(fields), fields }
 }
 
 function severityRankOf(parsedFinding) {
@@ -332,22 +345,32 @@ function truncatedLaneTagsFrom(summaryText) {
   return new Set(declaredTagText.split(',').map((laneTag) => laneTag.trim().toLowerCase()).filter((laneTag) => laneTag !== ''))
 }
 
-function isConvergedBlock(rawJudgmentText, cappedLaneNames, changedFileNames) {
+function findConvergenceValidationFailure(rawJudgmentText, cappedLaneNames, reviewedFileNameSet) {
   if (typeof rawJudgmentText !== 'string') {
-    return false
+    return 'no parseable block'
   }
   const parsedJudgment = parseLaneResponse(rawJudgmentText)
-  if (!parsedJudgment.hasParseableBlock || parsedJudgment.hasUnparseableRow) {
-    return false
+  if (parsedJudgment.hasUnparseableRow) {
+    return 'an unparseable row'
   }
-  if (parsedJudgment.findings.some((parsedFinding) => !changedFileNames.has(parsedFinding.fields.file))) {
-    return false
+  if (!parsedJudgment.hasParseableBlock) {
+    return 'no parseable block'
+  }
+  if (parsedJudgment.findings.some((parsedFinding) => !reviewedFileNameSet.has(parsedFinding.fields.file))) {
+    return 'a file outside the reviewed set'
   }
   const declaredTruncatedLaneTags = truncatedLaneTagsFrom(parsedJudgment.summary)
   if (!declaredTruncatedLaneTags) {
-    return false
+    return 'the missing `truncated lanes:` phrase'
   }
-  return cappedLaneNames.every((cappedLaneName) => declaredTruncatedLaneTags.has(cappedLaneName.toLowerCase()))
+  if (!cappedLaneNames.every((cappedLaneName) => declaredTruncatedLaneTags.has(cappedLaneName.toLowerCase()))) {
+    return 'the missing `truncated lanes:` phrase naming every required lane'
+  }
+  return null
+}
+
+function isConvergedBlock(rawJudgmentText, cappedLaneNames, reviewedFileNameSet) {
+  return findConvergenceValidationFailure(rawJudgmentText, cappedLaneNames, reviewedFileNameSet) === null
 }
 
 function buildRouterAssessmentPrompt(filesToClassify, routeInstruction, routeOutcomeInstruction = '') {
@@ -363,7 +386,7 @@ ${args.context}
 Files to classify:
 ${formatLines(filesToClassify)}
 
-Rate danger and complexity LOW, MEDIUM, or HIGH. Give the one-sentence fact that set danger. Classify each supplied file into one or more of logic, security surface, structural, scale surface, config, test, or docs. Scale surface means iteration, recursion, queries, or accumulation over a collection whose size the context does not bound. Recommend every lane whose trigger this diff meets, from this table and no other source:
+Rate danger and complexity LOW, MEDIUM, or HIGH. Give the one-sentence fact that set danger. Classify each supplied file into one or more of logic, security surface, structural, scale surface, config, test, or docs. Scale surface means iteration, recursion, queries, or accumulation over a collection whose size the context does not bound. Recommend a lane only when its trigger is clearly met by a specific file, and name that file in the matching laneJustifications entry. List recommended lanes most valuable first. A diff under roughly 5 changed files rarely needs more than one recommended lane. Recommend lanes from this table and no other source:
 
 ${laneTriggerTable}
 
@@ -410,69 +433,93 @@ function laneOwnersCarriedIntoThisRound() {
   return laneOwnersFromFindings([...(args.claimedFixed || []), ...(args.declined || [])])
 }
 
-function selectLaneNames(routerResult) {
-  if (!routerResult) {
-    const noRouterLaneNames = new Set(['code', 'security'])
-    for (const carriedLaneName of laneOwnersCarriedIntoThisRound()) {
-      noRouterLaneNames.add(carriedLaneName)
-    }
-    return { laneNames: [...noRouterLaneNames], reason: 'the router was unavailable, so the no-router default applies, unioned with the carried claimed-fixed and declined lane owners' }
+function appendUniqueLaneName(laneNames, laneName) {
+  if (!selectableLaneNames.includes(laneName) || laneNames.includes(laneName)) {
+    return
   }
-  const recommendedLaneNames = laneNamesRecommendedBy(routerResult)
-  const laneNames = new Set(['code'])
-  if (securityIsForcedBy(routerResult)) {
-    laneNames.add('security')
-  }
-  if (routerResult.danger === 'HIGH' || routerResult.complexity === 'HIGH') {
-    laneNames.add('external')
-  }
-  if (!args.round || args.round.number < 2) {
-    for (const laneName of recommendableLaneNames) {
-      if (recommendedLaneNames.has(laneName)) {
-        laneNames.add(laneName)
-      }
-    }
-    return { laneNames: [...laneNames], reason: 'round one uses the router triggers, forces security on a security-surface file or HIGH danger, and adds external for a HIGH danger or complexity rating' }
-  }
-  const carriedLaneOwners = laneOwnersCarriedIntoThisRound()
-  for (const laneName of recommendableLaneNames) {
-    if (recommendedLaneNames.has(laneName) || carriedLaneOwners.has(laneName)) {
-      laneNames.add(laneName)
-    }
-  }
-  if (carriedLaneOwners.has('external')) {
-    laneNames.add('external')
-  }
-  return { laneNames: [...laneNames], reason: 'later rounds use touched-file router triggers, carried claimed-fixed or declined owners including external, the forced security trigger, and the touched set HIGH trigger for external' }
+  laneNames.push(laneName)
 }
 
-function buildLanePrompt(laneName, routerResult, laneNames) {
+function appendCarriedLaneNames(targetLaneNames, carriedLaneOwners, excludedLaneNames) {
+  for (const carriedLaneName of carriedLaneOwners) {
+    if (excludedLaneNames.includes(carriedLaneName)) {
+      continue
+    }
+    appendUniqueLaneName(targetLaneNames, carriedLaneName)
+  }
+}
+
+function applyLaneCap(candidateLaneNames, reason) {
+  return {
+    laneNames: candidateLaneNames.slice(0, maxLanesPerRun),
+    laneNamesCutByCap: candidateLaneNames.slice(maxLanesPerRun),
+    reason
+  }
+}
+
+function selectLaneNames(routerResult, isNarrowedFollowupRound) {
+  const carriedLaneOwners = laneOwnersCarriedIntoThisRound()
+  if (isNarrowedFollowupRound) {
+    const followupLaneNames = ['code']
+    if (carriedLaneOwners.has('security')) {
+      followupLaneNames.push('security')
+    }
+    appendCarriedLaneNames(followupLaneNames, carriedLaneOwners, ['code', 'security', 'necessity', 'external'])
+    if (carriedLaneOwners.has('external')) {
+      followupLaneNames.push('external')
+    }
+    return applyLaneCap(followupLaneNames, 'follow-up rounds use code plus carried claimed-fixed and declined owners, never necessity, with external last only when carried')
+  }
+  if (!routerResult) {
+    const noRouterLaneNames = ['code', 'security']
+    appendCarriedLaneNames(noRouterLaneNames, carriedLaneOwners, ['external'])
+    return applyLaneCap(noRouterLaneNames, 'the router was unavailable, so the no-router default applies, unioned with carried claimed-fixed and declined lane owners except external')
+  }
+  const recommendedLaneNames = laneNamesRecommendedBy(routerResult)
+  const candidateLaneNames = ['code']
+  if (securityIsForcedBy(routerResult)) {
+    candidateLaneNames.push('security')
+  }
+  for (const laneName of recommendedLaneNames) {
+    appendUniqueLaneName(candidateLaneNames, laneName)
+  }
+  if (args.round && args.round.number >= 2) {
+    appendCarriedLaneNames(candidateLaneNames, carriedLaneOwners, ['external'])
+  }
+  if (routerResult.danger === 'HIGH') {
+    candidateLaneNames.push('external')
+  }
+  if (!args.round || args.round.number < 2) {
+    return applyLaneCap(candidateLaneNames, 'round one uses router recommendations in value order, forces security on a security-surface file or HIGH danger, and adds external last only for HIGH danger')
+  }
+  return applyLaneCap(candidateLaneNames, 'a later round with no touched files keeps router recommendations and carried owners, forces security on its existing rule, and adds external last only for HIGH danger')
+}
+
+function buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, reviewCmd, isNarrowedFollowupRound, narrowingLostToScopeRestriction) {
   const routerRatings = routerResult ? `danger ${routerResult.danger}; complexity ${routerResult.complexity}; danger fact ${routerResult.dangerFact}; route ${routerResult.route}` : 'router unavailable'
   const classifiedFiles = routerResult ? JSON.stringify(filesClassifiedForLane(routerResult, laneName)) : '(router unavailable)'
-  const lanePrompt = `Scope: changed files ${formatLines(args.changedFiles)} under ${args.reviewCmd}
+  const lanePrompt = `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: pre-existing issues outside that set; unchanged lines inside it are read, never anchored
 Definition of done: this lane's STRUCTURED_FINDINGS block followed by one OVERALL_SUMMARY paragraph
 
 Repo path: ${args.repoPath}
-Exact REVIEW_CMD: ${args.reviewCmd}
+Exact REVIEW_CMD: ${reviewCmd}
 Caller context, verbatim:
 ${args.context}
 
 Settled ground not to re-flag:
 ${formatLines(args.settled)}
 
-Claimed fixed regression checks: confirm each of these is actually gone, report again at its severity if still present, exempt from any reporting bar:
+Claimed fixed regression checks: confirm each of these is actually gone, report again at its severity if still present, exempt from any reporting bar. Report a finding that is still present under this lane's own tag, with its original reviewer tag at the start of the body. A carried check is exempt from the lane-discipline rule, so whichever lane checks it reports it whatever discipline it belongs to:
 ${formatLines(args.claimedFixed)}
 
-Declined findings: report each again if still present, exempt from any bar:
+Declined findings: report each again if still present, exempt from any bar. Report a finding that is still present under this lane's own tag, with its original reviewer tag at the start of the body. A carried check is exempt from the lane-discipline rule here too, so report it even when it belongs to another lane's discipline:
 ${formatLines(args.declined)}
 
-${formatRoundState(args.round)}
+${formatRoundState(args.round, isNarrowedFollowupRound, narrowingLostToScopeRestriction)}
 Router ratings: ${routerRatings}
 Files classified into this lane: ${classifiedFiles}
-Spawned lane set: ${laneNames.join(', ')}
-
-If your own discipline yields a concern to a lane outside the spawned set, report it under that absent owner's tag, name this reporting lane in the body, and do not exceed the top of the absent owner's severity ladder.`
+Spawned lane set: ${laneNames.join(', ')}`
   if (laneName !== 'external') {
     return `${lanePrompt}
 
@@ -480,10 +527,10 @@ Everything above is this run's additions. Your agent definition owns the severit
   }
   const externalLanePrompt = `${lanePrompt}
 
-Find real defects with a concrete failure scenario. LOW is the minimum severity and NIT is forbidden. Anchor each finding to a line the diff adds or removes, or to general for a file-level defect. Emit at most 10 findings, highest severity first, and say in one summary sentence what an overflow dropped.
+Find real defects with a concrete failure scenario. MEDIUM is the minimum severity and NIT is forbidden. Anything below MEDIUM is not a finding and may appear in at most one summary sentence. Anchor each finding to a line the diff adds or removes, or to general for a file-level defect. Emit at most 10 findings, highest severity first, and say in one summary sentence what an overflow dropped.
 
 STRUCTURED_FINDINGS:
-- file: <path> | line: <number or general> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM|LOW> | reviewer: external or external/<category> | body: <problem, concrete failure scenario, fix>
+- file: <path> | line: <number or general> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM> | reviewer: external or external/<category> | body: <problem, concrete failure scenario, fix>
 - file: ...
 
 OVERALL_SUMMARY:
@@ -504,13 +551,47 @@ function spawnLane(laneName, lanePrompt) {
   return laneDefinition.spawn(lanePrompt)
 }
 
-function buildJudgmentPrompt(routerResult, laneNames, skippedLaneNames, degradationNotes, droppedFindingCount, cappedLaneNames, groupedFindings, routerFindings, laneSummaries) {
-  const routerRatings = routerResult ? `${routerResult.danger}/${routerResult.complexity} via ${routerResult.route}; ${routerResult.dangerFact}` : 'unavailable; no-router default'
+function formatRouterSummary(routerResult, routingNote) {
+  if (routingNote !== '') {
+    return routingNote
+  }
+  if (!routerResult) {
+    return 'unavailable; no-router default'
+  }
+  return `${routerResult.danger}/${routerResult.complexity} via ${routerResult.route}; ${routerResult.dangerFact}`
+}
+
+function formatTagList(tagValues) {
+  if (tagValues.length === 0) {
+    return 'none'
+  }
+  return tagValues.join(', ')
+}
+
+function buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, routerResult, routingNote, droppedFindingCount, droppedBelowMediumCount, droppedOutOfLaneCount, droppedOutOfLaneTags, cappedLaneNames) {
+  return {
+    lanesRun: laneNames.join(', '),
+    lanesSkipped: formatTagList(skippedLaneNames),
+    degraded: degradationNotes.length > 0 ? degradationNotes.join('; ') : 'none',
+    routerRatings: formatRouterSummary(routerResult, routingNote),
+    droppedFindingCount,
+    droppedBelowMediumCount,
+    droppedOutOfLaneCount,
+    droppedOutOfLaneTags: formatTagList(droppedOutOfLaneTags),
+    truncatedLanes: formatTagList(cappedLaneNames)
+  }
+}
+
+function formatConvergenceSummary(survivingFindingCount, convergenceFacts) {
+  return `${survivingFindingCount} finding(s) survived. Lanes run: ${convergenceFacts.lanesRun}. Lanes skipped: ${convergenceFacts.lanesSkipped}. Degraded: ${convergenceFacts.degraded}. Router ratings and route: ${convergenceFacts.routerRatings}. Dropped ${convergenceFacts.droppedFindingCount} finding(s) outside the reviewed-file set. Dropped below MEDIUM: ${convergenceFacts.droppedBelowMediumCount}. Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}. truncated lanes: ${convergenceFacts.truncatedLanes}`
+}
+
+function buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, reviewCmd) {
   const tiebreakInstruction = args.claudeOnly
     ? 'Session routing is Claude-only, so no external tiebreak exists: isolate the two positions of each contradiction and rule from those positions alone.'
     : `For each contradiction, write both positions to a temp file and run ${grokTiebreakCommand}, then keep the finding its ruling supports.`
-  return `Scope: converge findings for changed files ${formatLines(args.changedFiles)} under ${args.reviewCmd}
-Out of scope: findings outside that changed-file set, new review work, verdicts, fixes, and recommendations
+  return `Scope: converge findings for reviewed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
+Out of scope: findings outside that reviewed-file set, new review work, verdicts, fixes, and recommendations
 Definition of done: one final block opened by the exact line STRUCTURED_FINDINGS: (with the trailing colon) followed by one paragraph opened by the exact line OVERALL_SUMMARY: (with the trailing colon), and no trailing text
 
 Grouped lane findings:
@@ -522,12 +603,14 @@ ${JSON.stringify(routerFindings)}
 Lane summaries, supplied only to recognize explicit verified-safe contradictions and overflow reports:
 ${JSON.stringify(laneSummaries)}
 
-Lanes run: ${laneNames.join(', ')}
-Lanes skipped: ${skippedLaneNames.length > 0 ? skippedLaneNames.join(', ') : 'none'}
-Degraded: ${degradationNotes.length > 0 ? degradationNotes.join('; ') : 'none'}
-Router ratings and route: ${routerRatings}
-Dropped outside the changed-file set: ${droppedFindingCount}
-Truncated lane tags: ${cappedLaneNames.length > 0 ? cappedLaneNames.join(', ') : 'none'}
+Lanes run: ${convergenceFacts.lanesRun}
+Lanes skipped: ${convergenceFacts.lanesSkipped}
+Degraded: ${convergenceFacts.degraded}
+Router ratings and route: ${convergenceFacts.routerRatings}
+Dropped outside the reviewed-file set: ${convergenceFacts.droppedFindingCount}
+Dropped below MEDIUM: ${convergenceFacts.droppedBelowMediumCount}
+Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}
+Truncated lane tags: ${convergenceFacts.truncatedLanes}
 
 Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. Convergence confirms confidence but does not itself raise severity. A necessity finding never merges with another lane's finding.
 
@@ -535,7 +618,69 @@ A contradiction is one lane asserting a defect and another explicitly verifying 
 
 A lane summary may also report findings its own overflow dropped. Treat every lane whose summary reports such an overflow as truncated too, alongside the truncated lane tags supplied above.
 
-Return the reviewer output format exactly. The summary is one paragraph stating how many findings survived, which lanes ran, were skipped, or degraded, the router ratings and route, and the sentence \"Dropped ${droppedFindingCount} finding(s) outside the changed-file set.\" End that paragraph with the verbatim phrase \"truncated lanes: \" followed by the union of the truncated lane tags supplied above and every lane whose summary reports overflow, comma-separated, or by none when that union is empty. Do not return a verdict, risk tier, fix, or recommendation.`
+Return the reviewer output format exactly. The summary is one paragraph carrying exactly this text, with the surviving finding count in place of <count>:
+
+${formatConvergenceSummary('<count>', convergenceFacts)}
+
+Extend the lane list after the verbatim phrase \"truncated lanes: \" with every lane whose summary reports overflow, comma-separated, and write none when that union is empty. Do not return a verdict, risk tier, fix, or recommendation.`
+}
+
+function isFollowupRoundWithTouchedFiles() {
+  return Boolean(args.round && args.round.number >= 2 && Array.isArray(args.round.touchedFiles) && args.round.touchedFiles.length > 0)
+}
+
+function narrowFileNamesForFollowup(changedFileNames) {
+  const candidateFileNames = [...args.round.touchedFiles]
+  for (const findingLine of [...(args.claimedFixed || []), ...(args.declined || [])]) {
+    const parsedFinding = parseFindingLine(findingLine)
+    if (!parsedFinding) {
+      continue
+    }
+    candidateFileNames.push(parsedFinding.fields.file)
+  }
+  const narrowedFileNames = []
+  for (const candidateFileName of candidateFileNames) {
+    const normalizedCandidateFileName = normalizeFilePath(candidateFileName)
+    if (!changedFileNames.has(normalizedCandidateFileName) || narrowedFileNames.includes(normalizedCandidateFileName)) {
+      continue
+    }
+    narrowedFileNames.push(normalizedCandidateFileName)
+  }
+  return narrowedFileNames
+}
+
+function isFindingOwnedByLane(parsedFinding, laneName) {
+  return reviewerTagsFrom(parsedFinding.fields.reviewer).some((reviewerTag) => {
+    const normalizedReviewerTag = reviewerTag.toLowerCase()
+    return normalizedReviewerTag === laneName || normalizedReviewerTag.startsWith(`${laneName}/`)
+  })
+}
+
+function retaggedToLane(parsedFinding, laneName) {
+  const retaggedFields = { ...parsedFinding.fields, reviewer: laneName, body: `originally ${parsedFinding.fields.reviewer}: ${parsedFinding.fields.body}` }
+  return { raw: rawFindingLineFrom(retaggedFields), fields: retaggedFields }
+}
+
+function canConvergeMechanically(survivingFindings, laneSummaries) {
+  if (laneSummaries.some((laneSummary) => /overflow/i.test(laneSummary.summary))) {
+    return false
+  }
+  if (survivingFindings.length === 0) {
+    return true
+  }
+  const findingLaneNames = new Set(survivingFindings.map((survivingFinding) => survivingFinding.lane))
+  if (findingLaneNames.size !== 1) {
+    return false
+  }
+  return !laneSummaries.some((laneSummary) => /verified safe/i.test(laneSummary.summary))
+}
+
+function buildMechanicalConvergence(survivingFindings, convergenceFacts) {
+  const rankedFindingLines = [...survivingFindings]
+    .sort((leftFinding, rightFinding) => severityRankOf(leftFinding.finding) - severityRankOf(rightFinding.finding))
+    .map((survivingFinding) => survivingFinding.finding.raw)
+  const findingsBlock = rankedFindingLines.length > 0 ? rankedFindingLines.join('\n') : '(none)'
+  return `STRUCTURED_FINDINGS:\n${findingsBlock}\n\nOVERALL_SUMMARY:\n${formatConvergenceSummary(survivingFindings.length, convergenceFacts)}`
 }
 
 if (!args.reviewCmd) {
@@ -550,18 +695,34 @@ if (typeof args.claudeOnly !== 'boolean') {
   return 'No claudeOnly routing flag, no run.'
 }
 
-const filesToClassify = args.round && args.round.number >= 2 ? args.round.touchedFiles : args.changedFiles
-const routeOutcome = await routeReview(filesToClassify)
+const changedFileNames = new Set(args.changedFiles.map(normalizeFilePath))
+const narrowedFollowupFileNames = isFollowupRoundWithTouchedFiles() ? narrowFileNamesForFollowup(changedFileNames) : []
+const reviewCmdCarriesScopeRestriction = String(args.reviewCmd).includes(' -- ')
+const isNarrowedFollowupRound = narrowedFollowupFileNames.length > 0 && !reviewCmdCarriesScopeRestriction
+const narrowingLostToScopeRestriction = narrowedFollowupFileNames.length > 0 && reviewCmdCarriesScopeRestriction
+const reviewedFileNames = isNarrowedFollowupRound ? narrowedFollowupFileNames : [...changedFileNames]
+const reviewedFileNameSet = new Set(reviewedFileNames)
+const laneReviewCmd = isNarrowedFollowupRound ? `${args.reviewCmd} -- ${reviewedFileNames.map(shellQuotedPath).join(' ')}` : args.reviewCmd
+const filesToClassify = isFollowupRoundWithTouchedFiles() ? args.round.touchedFiles : args.changedFiles
+const routingNote = isNarrowedFollowupRound ? `routing skipped because round ${args.round.number} is a follow-up` : ''
+const routeOutcome = isNarrowedFollowupRound
+  ? { routerResult: null, degradationNote: '' }
+  : await routeReview(filesToClassify)
 const routerResult = routeOutcome.routerResult
-const laneSelection = selectLaneNames(routerResult)
+const laneSelection = selectLaneNames(routerResult, isNarrowedFollowupRound)
 const laneNames = laneSelection.laneNames
-log(`Chosen lanes: ${laneNames.join(', ')} because ${laneSelection.reason}.`)
+const laneNamesCutByCap = laneSelection.laneNamesCutByCap
+const laneNamesCutByCapForLog = laneNamesCutByCap.length > 0 ? laneNamesCutByCap.join(', ') : 'none'
+log(`Chosen lanes: ${laneNames.join(', ')} because ${laneSelection.reason}. Cut by the ${maxLanesPerRun}-lane cap: ${laneNamesCutByCapForLog}.`)
 
 phase('Review')
-const lanePrompts = new Map(laneNames.map((laneName) => [laneName, buildLanePrompt(laneName, routerResult, laneNames)]))
+const lanePrompts = new Map(laneNames.map((laneName) => [laneName, buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, laneReviewCmd, isNarrowedFollowupRound, narrowingLostToScopeRestriction)]))
 const laneTexts = await parallel(laneNames.map((laneName) => () => spawnLane(laneName, lanePrompts.get(laneName))))
 const parsedResponses = new Map()
 const degradationNotes = routeOutcome.degradationNote === '' ? [] : [routeOutcome.degradationNote]
+if (narrowingLostToScopeRestriction) {
+  degradationNotes.push('REVIEW_CMD already carries a scope restriction, so this follow-up round swept the full changed-file set instead of narrowing to the touched files')
+}
 
 for (let laneIndex = 0; laneIndex < laneNames.length; laneIndex += 1) {
   const laneName = laneNames[laneIndex]
@@ -581,25 +742,40 @@ for (let laneIndex = 0; laneIndex < laneNames.length; laneIndex += 1) {
   parsedResponses.set(laneName, parsedResponse)
 }
 
-if (!routerResult) {
+if (!routerResult && !isNarrowedFollowupRound) {
   degradationNotes.push('router unavailable; no-router default lane set used')
 }
 
-const changedFileNames = new Set(args.changedFiles.map(normalizeFilePath))
 const findingsByFile = new Map()
+const survivingLaneFindings = []
 const parsedRouterFindings = []
 let droppedFindingCount = 0
+let droppedBelowMediumCount = 0
+let droppedOutOfLaneCount = 0
+const droppedOutOfLaneTags = new Set()
 
 for (const [laneName, parsedResponse] of parsedResponses) {
   for (const parsedFinding of parsedResponse.findings) {
-    const findingFileName = parsedFinding.fields.file
-    if (!changedFileNames.has(findingFileName)) {
+    if (parsedFinding.fields.severity === 'LOW') {
+      droppedBelowMediumCount += 1
+      continue
+    }
+    const isOwnedByLane = isFindingOwnedByLane(parsedFinding, laneName)
+    if (!isOwnedByLane && severityRankOf(parsedFinding) > severityRankByName.HIGH) {
+      droppedOutOfLaneCount += 1
+      droppedOutOfLaneTags.add(parsedFinding.fields.reviewer)
+      continue
+    }
+    const keptFinding = isOwnedByLane ? parsedFinding : retaggedToLane(parsedFinding, laneName)
+    const findingFileName = keptFinding.fields.file
+    if (!reviewedFileNameSet.has(findingFileName)) {
       droppedFindingCount += 1
       continue
     }
     const findingsForFile = findingsByFile.get(findingFileName) || []
-    findingsForFile.push({ lane: laneName, line: parsedFinding.raw })
+    findingsForFile.push({ lane: laneName, line: keptFinding.raw })
     findingsByFile.set(findingFileName, findingsForFile)
+    survivingLaneFindings.push({ lane: laneName, finding: keptFinding })
   }
 }
 
@@ -608,7 +784,11 @@ for (const routerFindingLine of routerResult ? routerResult.findings || [] : [])
   if (!parsedRouterFinding) {
     continue
   }
-  if (!changedFileNames.has(parsedRouterFinding.fields.file)) {
+  if (parsedRouterFinding.fields.severity === 'LOW') {
+    droppedBelowMediumCount += 1
+    continue
+  }
+  if (!reviewedFileNameSet.has(parsedRouterFinding.fields.file)) {
     droppedFindingCount += 1
     continue
   }
@@ -616,7 +796,8 @@ for (const routerFindingLine of routerResult ? routerResult.findings || [] : [])
 }
 
 const rankedRouterFindings = parsedRouterFindings.sort((leftFinding, rightFinding) => severityRankOf(leftFinding) - severityRankOf(rightFinding))
-const routerFindings = rankedRouterFindings.slice(0, maxFindingsPerLane).map((parsedFinding) => parsedFinding.raw)
+const keptRouterFindings = rankedRouterFindings.slice(0, maxFindingsPerLane)
+const routerFindings = keptRouterFindings.map((parsedFinding) => parsedFinding.raw)
 
 const groupedFindings = [...findingsByFile].map(([file, findings]) => ({ file, findings }))
 const cappedLaneNames = [...parsedResponses].filter(([, parsedResponse]) => parsedResponse.hitFindingCap).map(([laneName]) => laneName)
@@ -625,11 +806,30 @@ if (rankedRouterFindings.length > routerFindings.length) {
 }
 const laneSummaries = [...parsedResponses].map(([laneName, parsedResponse]) => ({ lane: laneName, summary: parsedResponse.summary }))
 const skippedLaneNames = selectableLaneNames.filter((laneName) => !laneNames.includes(laneName))
+const survivingFindings = [
+  ...survivingLaneFindings,
+  ...keptRouterFindings.map((parsedFinding) => ({ lane: 'router', finding: parsedFinding }))
+]
 
 phase('Converge')
-const judgmentPrompt = buildJudgmentPrompt(routerResult, laneNames, skippedLaneNames, degradationNotes, droppedFindingCount, cappedLaneNames, groupedFindings, routerFindings, laneSummaries)
+const convergenceFacts = buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, routerResult, routingNote, droppedFindingCount, droppedBelowMediumCount, droppedOutOfLaneCount, [...droppedOutOfLaneTags], cappedLaneNames)
+if (canConvergeMechanically(survivingFindings, laneSummaries)) {
+  const mechanicalConvergence = buildMechanicalConvergence(survivingFindings, convergenceFacts)
+  if (!isConvergedBlock(mechanicalConvergence, cappedLaneNames, reviewedFileNameSet)) {
+    return 'LANE_DEATH: judgment'
+  }
+  return mechanicalConvergence
+}
+
+const judgmentPrompt = buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, laneReviewCmd)
 const convergedFindings = await agent(judgmentPrompt, { model: 'opus', label: 'Converge findings', phase: 'Converge' })
-if (!isConvergedBlock(convergedFindings, cappedLaneNames, changedFileNames)) {
+const firstValidationFailure = findConvergenceValidationFailure(convergedFindings, cappedLaneNames, reviewedFileNameSet)
+if (!firstValidationFailure) {
+  return convergedFindings
+}
+const retryJudgmentPrompt = `Validation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
+const retriedConvergedFindings = await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' })
+if (!isConvergedBlock(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {
   return 'LANE_DEATH: judgment'
 }
-return convergedFindings
+return retriedConvergedFindings
