@@ -174,12 +174,53 @@ function filesClassifiedForLane(routerResult, laneName) {
   return fileClasses.filter((fileClass) => laneDefinition.classNeedles.some((classNeedle) => String(fileClass.class).toLowerCase().includes(classNeedle)))
 }
 
-function summaryTextFrom(responseText) {
-  const summaryMatch = responseText.match(/OVERALL_SUMMARY:[ \t]*([\s\S]*)$/)
-  if (!summaryMatch) {
-    return ''
+function findingsHeaderMatchesIn(text) {
+  return [...text.matchAll(/^[ \t#>*-]*STRUCTURED_FINDINGS:[ \t]*$/gm)]
+}
+
+function summaryHeaderMatchesIn(text) {
+  return [...text.matchAll(/^[ \t#>*-]*OVERALL_SUMMARY:[ \t]*(.*)$/gm)]
+}
+
+function withLastBareHeaderColonized(text, headerName, colonizedHeaderMatchesIn) {
+  if (colonizedHeaderMatchesIn(text).length > 0) {
+    return text
   }
-  return summaryMatch[1].trim()
+  const bareHeaderLines = new RegExp(`^[ \\t#>*-]*${headerName}[ \\t]*$`, 'gm')
+  let lastBareHeaderMatch = null
+  for (const bareHeaderMatch of text.matchAll(bareHeaderLines)) {
+    lastBareHeaderMatch = bareHeaderMatch
+  }
+  if (!lastBareHeaderMatch) {
+    return text
+  }
+  return `${text.slice(0, lastBareHeaderMatch.index)}${headerName}:${text.slice(lastBareHeaderMatch.index + lastBareHeaderMatch[0].length)}`
+}
+
+function withHeaderColons(text) {
+  const withoutWrappers = text
+    .replace(/^[ \t]*```[a-z]*[ \t]*$\n?/gm, '')
+    .replace(/^[ \t]*END_STRUCTURED_FINDINGS:?[ \t]*\n?/gm, '')
+  const withFindingsHeader = withLastBareHeaderColonized(withoutWrappers, 'STRUCTURED_FINDINGS', findingsHeaderMatchesIn)
+  const withBothHeaders = withLastBareHeaderColonized(withFindingsHeader, 'OVERALL_SUMMARY', summaryHeaderMatchesIn)
+  return withBothHeaders.replace(/^[ \t]*(?:\((?:no findings|nothing|empty|none found)\)|\[\]|none)[ \t]*$/gmi, '(none)')
+}
+
+function blockAndSummaryFrom(normalizedText) {
+  const findingsHeaders = findingsHeaderMatchesIn(normalizedText)
+  const summaryHeaders = summaryHeaderMatchesIn(normalizedText)
+  if (findingsHeaders.length !== 1 || summaryHeaders.length !== 1) {
+    return null
+  }
+  const findingsHeader = findingsHeaders[0]
+  const summaryHeader = summaryHeaders[0]
+  if (summaryHeader.index < findingsHeader.index) {
+    return null
+  }
+  return {
+    blockText: normalizedText.slice(findingsHeader.index + findingsHeader[0].length, summaryHeader.index).trim(),
+    summaryText: `${summaryHeader[1]}${normalizedText.slice(summaryHeader.index + summaryHeader[0].length)}`.trim(),
+  }
 }
 
 function lineFieldIsValid(lineValue) {
@@ -254,23 +295,21 @@ function severityRankOf(parsedFinding) {
   return severityRankByName[parsedFinding.fields.severity]
 }
 
-function parseLaneResponse(laneText) {
+function parseLaneResponse(rawLaneText) {
   const deadResponse = { hasParseableBlock: false, hasUnparseableRow: false, findings: [], summary: '', hitFindingCap: false }
-  if (typeof laneText !== 'string' || laneText.trim() === '') {
+  if (typeof rawLaneText !== 'string' || rawLaneText.trim() === '') {
     return deadResponse
   }
-  const blockMatch = laneText.match(/STRUCTURED_FINDINGS:[ \t]*\n([\s\S]*?)(?:\nOVERALL_SUMMARY:|$)/)
-  if (!blockMatch) {
+  const laneText = withHeaderColons(rawLaneText)
+  const splitResponse = blockAndSummaryFrom(laneText)
+  if (!splitResponse) {
     return deadResponse
   }
-  if ((laneText.match(/OVERALL_SUMMARY:/g) || []).length !== 1) {
-    return deadResponse
-  }
-  const summary = summaryTextFrom(laneText)
+  const summary = splitResponse.summaryText
   if (summary === '') {
     return deadResponse
   }
-  const blockText = blockMatch[1].trim()
+  const blockText = splitResponse.blockText
   if (blockText === '(none)') {
     return { hasParseableBlock: true, hasUnparseableRow: false, findings: [], summary, hitFindingCap: false }
   }
@@ -293,17 +332,11 @@ function truncatedLaneTagsFrom(summaryText) {
   return new Set(declaredTagText.split(',').map((laneTag) => laneTag.trim().toLowerCase()).filter((laneTag) => laneTag !== ''))
 }
 
-function isConvergedBlock(judgmentText, cappedLaneNames, changedFileNames) {
-  if (typeof judgmentText !== 'string') {
+function isConvergedBlock(rawJudgmentText, cappedLaneNames, changedFileNames) {
+  if (typeof rawJudgmentText !== 'string') {
     return false
   }
-  if ((judgmentText.match(/STRUCTURED_FINDINGS:/g) || []).length !== 1) {
-    return false
-  }
-  if ((judgmentText.match(/OVERALL_SUMMARY:/g) || []).length !== 1) {
-    return false
-  }
-  const parsedJudgment = parseLaneResponse(judgmentText)
+  const parsedJudgment = parseLaneResponse(rawJudgmentText)
   if (!parsedJudgment.hasParseableBlock || parsedJudgment.hasUnparseableRow) {
     return false
   }
@@ -478,7 +511,7 @@ function buildJudgmentPrompt(routerResult, laneNames, skippedLaneNames, degradat
     : `For each contradiction, write both positions to a temp file and run ${grokTiebreakCommand}, then keep the finding its ruling supports.`
   return `Scope: converge findings for changed files ${formatLines(args.changedFiles)} under ${args.reviewCmd}
 Out of scope: findings outside that changed-file set, new review work, verdicts, fixes, and recommendations
-Definition of done: one final STRUCTURED_FINDINGS block followed by one OVERALL_SUMMARY paragraph with no trailing text
+Definition of done: one final block opened by the exact line STRUCTURED_FINDINGS: (with the trailing colon) followed by one paragraph opened by the exact line OVERALL_SUMMARY: (with the trailing colon), and no trailing text
 
 Grouped lane findings:
 ${JSON.stringify(groupedFindings)}
