@@ -89,6 +89,59 @@ test("a real commit is created from the message on stdin", () => {
   }
 });
 
+test("landing on an unborn feature branch creates the root commit", () => {
+  const repo = makeRepo("feature");
+  try {
+    writeFile(repo, "new.txt", "new\n");
+
+    const { code, result } = land(repo, ["--no-push"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(code, 0);
+    assert.equal(gitOutput(repo, ["rev-list", "--count", "HEAD"]), "1");
+    assert.equal(gitOutput(repo, ["log", "-1", "--format=%s"]), "feat: add a thing");
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("a path-scoped land on an unborn branch commits only the scoped file", () => {
+  const repo = makeRepo("feature");
+  try {
+    writeFile(repo, "in.txt", "in\n");
+    writeFile(repo, "out.txt", "out\n");
+    runGit(repo, ["add", "in.txt", "out.txt"]);
+
+    const { code, result } = land(repo, ["--no-push", "--paths", "in.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(code, 0);
+    assert.equal(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]), "in.txt");
+    assert.equal(fs.readFileSync(path.join(repo, "out.txt"), "utf8"), "out\n");
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("a path-scoped land on an unborn branch unstages a file modified after staging", () => {
+  const repo = makeRepo("feature");
+  try {
+    writeFile(repo, "in.txt", "in\n");
+    writeFile(repo, "out.txt", "out\n");
+    runGit(repo, ["add", "in.txt", "out.txt"]);
+    writeFile(repo, "out.txt", "out modified\n");
+
+    const { code, result } = land(repo, ["--no-push", "--paths", "in.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(code, 0);
+    assert.equal(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]), "in.txt");
+    assert.equal(fs.readFileSync(path.join(repo, "out.txt"), "utf8"), "out modified\n");
+  } finally {
+    cleanup(repo);
+  }
+});
+
 test("land refuses a stale forbidden-branch remedy before committing", () => {
   const repo = makeRepo("feature");
   const policyRoot = makePolicyRoot("legacy", {
