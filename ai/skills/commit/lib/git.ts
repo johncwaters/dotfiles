@@ -71,6 +71,8 @@ function withConfigEntries(
 export class Git {
   readonly repo: string;
 
+  private cachedEmptyTreeOid: string | null = null;
+
   constructor(repo: string) {
     this.repo = repo;
   }
@@ -112,7 +114,15 @@ export class Git {
   }
 
   currentBranch(): string {
+    const symbolicBranch = this.run(["symbolic-ref", "--short", "-q", "HEAD"]);
+    if (symbolicBranch.code === 0) {
+      return symbolicBranch.stdout.trim();
+    }
     return this.run(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.trim();
+  }
+
+  isHeadUnborn(): boolean {
+    return this.run(["rev-parse", "-q", "--verify", "HEAD"]).code !== 0;
   }
 
   verifyRef(ref: string): boolean {
@@ -127,8 +137,8 @@ export class Git {
     return proc.stdout.trim();
   }
 
-  revParseHead(): string {
-    return this.run(["rev-parse", "HEAD"]).stdout.trim();
+  revParseHead(): string | null {
+    return this.revParseRef("HEAD");
   }
 
   commonDir(): string {
@@ -199,11 +209,28 @@ export class Git {
     );
   }
 
+  // The empty tree oid differs between sha1 and sha256 repositories, so it is hashed per repo.
+  private emptyTreeOid(): string {
+    if (this.cachedEmptyTreeOid !== null) {
+      return this.cachedEmptyTreeOid;
+    }
+    const hashRun = this.run(["hash-object", "-t", "tree", os.devNull]);
+    const hashedEmptyTree = hashRun.stdout.trim();
+    if (hashRun.code !== 0 || !OID_PATTERN.test(hashedEmptyTree)) {
+      throw new Error(
+        `git hash-object -t tree failed (exit ${hashRun.code}): ${hashRun.stderr.trim()}`,
+      );
+    }
+    this.cachedEmptyTreeOid = hashedEmptyTree;
+    return hashedEmptyTree;
+  }
+
   diffNameOnly(options: { cached?: boolean; paths?: string[] } = {}): string[] {
-    const base = options.cached
-      ? ["diff", "--cached", "--name-only"]
-      : ["diff", "--name-only", "HEAD"];
-    return nonEmptyLines(this.run(scoped(base, options.paths ?? [])).stdout);
+    if (options.cached) {
+      return nonEmptyLines(this.run(scoped(["diff", "--cached", "--name-only"], options.paths ?? [])).stdout);
+    }
+    const base = this.isHeadUnborn() ? this.emptyTreeOid() : "HEAD";
+    return nonEmptyLines(this.run(scoped(["diff", "--name-only", base], options.paths ?? [])).stdout);
   }
 
   // --untracked-files=all, because the default collapses a new directory into one
@@ -222,6 +249,13 @@ export class Git {
 
   addPath(path: string): GitResult {
     return this.run(["add", "--", path]);
+  }
+
+  unstage(paths: string[]): GitResult {
+    if (this.isHeadUnborn()) {
+      return this.run(["rm", "--cached", "-r", "-f", "--quiet", "--", ...paths]);
+    }
+    return this.run(["restore", "--staged", "--", ...paths]);
   }
 
   commit(message: string): GitResult {

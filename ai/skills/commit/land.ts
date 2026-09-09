@@ -274,7 +274,7 @@ class Landing {
       gitCommonDir: this.git.commonDir(),
       branch: this.parkedFeatureBranch,
       mainline: this.mainline,
-      commit: this.commitHash ?? this.git.revParseHead(),
+      commit: this.commitHash ?? this.git.revParseHead() ?? "",
       outcome,
       pushed: this.pushed,
       conflicts: outcome === "PROMOTE_CONFLICT" ? this.conflicts : [],
@@ -331,7 +331,12 @@ class Landing {
       return "HOOK_FAILED";
     }
 
-    this.commitHash = this.git.revParseHead();
+    const committedHash = this.git.revParseHead();
+    if (committedHash === null) {
+      this.warnings.push("commit succeeded but HEAD did not resolve to a commit");
+      return "HOOK_FAILED";
+    }
+    this.commitHash = committedHash;
     return null;
   }
 
@@ -346,9 +351,9 @@ class Landing {
     if (outOfScope.length === 0) {
       return null;
     }
-    const restore = this.git.run(["restore", "--staged", "--", ...outOfScope]);
-    if (restore.code !== 0) {
-      this.warnings.push(`could not exclude staged files outside --paths: ${restore.stderr.trim()}`);
+    const unstage = this.git.unstage(outOfScope);
+    if (unstage.code !== 0) {
+      this.warnings.push(`could not exclude staged files outside --paths: ${unstage.stderr.trim()}`);
       return "HOOK_FAILED";
     }
     this.warnings.push(`excluded staged files outside --paths: ${outOfScope.join(", ")}`);
@@ -627,7 +632,14 @@ class Landing {
       return "PROMOTE_FAILED";
     }
     if (this.commitHash !== null) {
-      this.commitHash = this.git.revParseHead();
+      const rebasedHash = this.git.revParseHead();
+      if (rebasedHash === null) {
+        this.warnings.push(
+          `could not resolve HEAD after rebasing ${source} onto ${destination}; promotion stopped`,
+        );
+        return "PROMOTE_FAILED";
+      }
+      this.commitHash = rebasedHash;
     }
     return this.fastForwardDestination(source, destination);
   }

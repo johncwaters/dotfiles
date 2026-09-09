@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { Git } from "../lib/git.ts";
 import {
   cleanup,
   cloneRepo,
@@ -40,6 +41,23 @@ test("a detached HEAD is DETACHED_HEAD", () => {
     const { code, result } = preflight(repo);
     assert.equal(result.outcome, "DETACHED_HEAD");
     assert.equal(code, 11);
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("an unborn branch is READY and reports its branch name", () => {
+  const repo = makeRepo();
+  try {
+    writeFile(repo, "new.txt", "new\n");
+
+    const { code, result } = preflight(repo);
+
+    assert.equal(result.outcome, "READY");
+    assert.equal(code, 0);
+    assert.equal(result.branch, "main");
+    assert.deepEqual(result.changed, []);
+    assert.deepEqual(result.untracked, ["new.txt"]);
   } finally {
     cleanup(repo);
   }
@@ -482,5 +500,25 @@ test("--check-message does not fetch origin", () => {
     assert.equal(fs.existsSync(fetchMarkerPath), false);
   } finally {
     cleanup(repo, wrapperDirectory);
+  }
+});
+
+test("a failed empty tree hash on an unborn branch throws instead of reporting no changes", () => {
+  const repo = makeRepo();
+  try {
+    writeFile(repo, "new.txt", "new\n");
+    runGit(repo, ["add", "--", "new.txt"]);
+    const git = new Git(repo);
+    const realRun = git.run.bind(git);
+    git.run = (args, options) => {
+      if (args[0] === "hash-object") {
+        return { code: 128, stdout: "", stderr: "fatal: unable to hash the empty tree" };
+      }
+      return realRun(args, options);
+    };
+
+    assert.throws(() => git.diffNameOnly(), /hash-object .* unable to hash the empty tree/);
+  } finally {
+    cleanup(repo);
   }
 });
