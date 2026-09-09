@@ -31,6 +31,12 @@
     }
   },
   "permissions": {
+    "allow": [
+      "Read(~/.claude/workflows/**)",
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:unpkg.com)"
+    ],
     "deny": [
       "mcp__claude_ai_Gmail__send_message",
       "mcp__claude_ai_Gmail__reply",
@@ -65,11 +71,6 @@
       "Read(~/.config/gh/hosts.yml)",
       "Read(~/.glissa/config.json*)",
       "Read(~/.ssh/**)"
-    ],
-    "allow": [
-      "Bash(node:*)",
-      "Bash(ls:*)",
-      "WebFetch(domain:unpkg.com)"
     ],
     "defaultMode": "auto"
   },
