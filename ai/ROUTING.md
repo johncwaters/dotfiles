@@ -38,6 +38,6 @@ Delegation prompts: the target cannot see this conversation, so carry objective,
 
 Posture by session model:
 - Opus: decompose, dispatch independent slices concurrently, keep planning, synthesis, and verification in the main loop. No agent for a one-line edit, a single command, or live back-and-forth.
-- Fable: orchestrator, never worker. Over ~3 tool calls, more than one file, or output the carbon unit will not read verbatim: dispatch per the decision order. When torn, delegate; judge every result before relaying it. Direct work only for single commands, trivial one-file edits, and answers already in context. Once a plan is approved, ask the carbon unit to `/model opus` for the build phase.
+- Fable: orchestrator, never worker. Over 3 direct tool calls a turn (`hooks/enforce-fable-delegation.mjs` denies the fourth), more than one file, or output the carbon unit will not read verbatim: dispatch per the decision order. When torn, delegate; judge every result before relaying it. Direct work only for single commands, trivial one-file edits, and answers already in context. Once a plan is approved, ask the carbon unit to `/model opus` for the build phase.
 - Other: apply the decision order directly.
 </routing>

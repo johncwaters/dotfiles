@@ -1,0 +1,377 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, test } from "node:test";
+import { removeAll, runHook } from "./harness.mjs";
+
+const temporaryDirectories = [];
+const currentPromptId = "11111111-1111-4111-8111-111111111111";
+
+function writeTranscript(transcriptEntries) {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "fable-delegation-hook-"));
+  temporaryDirectories.push(temporaryDirectory);
+  const transcriptPath = path.join(temporaryDirectory, "transcript.jsonl");
+  fs.writeFileSync(
+    transcriptPath,
+    `${transcriptEntries.map((transcriptEntry) => JSON.stringify(transcriptEntry)).join("\n")}\n`,
+    "utf8",
+  );
+  return transcriptPath;
+}
+
+function toolUse(toolName, toolUseId, toolInput = {}) {
+  return { type: "tool_use", name: toolName, id: toolUseId, input: toolInput };
+}
+
+function assistantEntry(contentBlocks, sessionModel = "claude-fable-5-1") {
+  return { type: "assistant", message: { model: sessionModel, content: contentBlocks } };
+}
+
+function userEntry(promptId) {
+  return {
+    type: "user",
+    promptId,
+    promptSource: "typed",
+    userType: "external",
+    message: { content: "Do the work." },
+  };
+}
+
+function injectedTeammateEntry(promptId) {
+  return {
+    type: "user",
+    promptId,
+    userType: "external",
+    message: { content: "Another Claude session sent a message: check the hook." },
+  };
+}
+
+function toolResultEntry(promptId) {
+  return {
+    type: "user",
+    promptId,
+    message: { content: [{ type: "tool_result", content: "Done." }] },
+  };
+}
+
+function skillLoadMetaEntry(promptId) {
+  return {
+    type: "user",
+    promptId,
+    isMeta: true,
+    message: { content: [{ type: "text", text: "Skill loaded." }] },
+  };
+}
+
+function payloadFor(transcriptPath, payloadOverrides = {}) {
+  return {
+    prompt_id: currentPromptId,
+    transcript_path: transcriptPath,
+    tool_name: "Read",
+    tool_input: { file_path: "a.txt" },
+    tool_use_id: "current-call",
+    ...payloadOverrides,
+  };
+}
+
+function assertAllowed(hookPayload) {
+  const processResult = runHook("enforce-fable-delegation.mjs", hookPayload);
+  assert.equal(processResult.status, 0, processResult.stderr);
+  assert.equal(processResult.stdout, "");
+}
+
+function assertDenied(hookPayload) {
+  const processResult = runHook("enforce-fable-delegation.mjs", hookPayload);
+  assert.equal(processResult.status, 0, processResult.stderr);
+  const hookOutput = JSON.parse(processResult.stdout);
+  assert.equal(hookOutput.hookSpecificOutput.permissionDecision, "deny");
+  return hookOutput.hookSpecificOutput.permissionDecisionReason;
+}
+
+afterEach(() => {
+  removeAll(...temporaryDirectories.splice(0));
+});
+
+const failOpenCases = [
+  {
+    name: "A call inside a subagent is allowed",
+    createPayload: (transcriptPath) => payloadFor(transcriptPath, { agent_id: "subagent" }),
+  },
+  {
+    name: "A call in an Opus session is allowed",
+    createPayload: (transcriptPath) => payloadFor(transcriptPath),
+    model: "claude-opus-5",
+  },
+  {
+    name: "A call with a missing transcript file is allowed",
+    createPayload: () => payloadFor("/missing/fable-transcript.jsonl"),
+  },
+  {
+    name: "A call without a prompt identifier is allowed",
+    createPayload: (transcriptPath) => payloadFor(transcriptPath, { prompt_id: undefined }),
+  },
+];
+
+for (const failOpenCase of failOpenCases) {
+  test(failOpenCase.name, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry(
+        [toolUse("Read", "one"), toolUse("Edit", "two"), toolUse("Grep", "three")],
+        failOpenCase.model,
+      ),
+      toolResultEntry(currentPromptId),
+    ]);
+    assertAllowed(failOpenCase.createPayload(transcriptPath));
+  });
+}
+
+test("The third direct tool call is allowed", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([toolUse("Read", "one"), toolUse("Grep", "two")]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+test("The fourth direct tool call is denied with the budget in the reason", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Bash", "three", { command: "pwd" }),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /budget/);
+});
+
+test("The recorded current call is subtracted when it is the third call", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Read", "current-call"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+test("Agent Skill and Codex dispatch blocks do not spend the direct tool budget", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Agent", "agent"),
+      toolUse("Skill", "skill"),
+      toolUse("Bash", "dispatch", { command: "  codex exec --full-auto task" }),
+      toolUse("Grep", "two"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+test("Tool calls before an older prompt identifier do not spend the current budget", () => {
+  const transcriptPath = writeTranscript([
+    assistantEntry([
+      toolUse("Read", "old-one"),
+      toolUse("Edit", "old-two"),
+      toolUse("Write", "old-three"),
+      toolUse("Glob", "old-four"),
+    ]),
+    userEntry("22222222-2222-4222-8222-222222222222"),
+    userEntry(currentPromptId),
+    assistantEntry([toolUse("Read", "one"), toolUse("Grep", "two")]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+test("An assistant line straddling the sixty-four kilobyte boundary is parsed", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Bash", "one", { command: `printf %s ${"x".repeat(64 * 1024)}` }),
+      toolUse("Read", "two"),
+      toolUse("Grep", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /budget/);
+});
+
+test("Dispatch Bash calls anywhere in their command do not spend the budget", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Bash", "dispatch", {
+        command: "cd /repo && codex exec -m gpt-5.6-terra < prompt.md",
+      }),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+  const spentBudgetTranscriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+  assertAllowed(
+    payloadFor(spentBudgetTranscriptPath, {
+      tool_name: "Bash",
+      tool_input: { command: "cd /repo && codex exec -m gpt-5.6-terra < prompt.md" },
+    }),
+  );
+});
+
+const wrappedDispatchCommands = [
+  "systemd-run --user --unit=codex-1 --setenv=HOME=/home/jwaters codex exec --full-auto < prompt.md",
+  "timeout 1800 codex exec --full-auto task",
+  "nohup codex exec --full-auto task",
+  "XAI_API_KEY=x grok --prompt-file plan.md --always-approve",
+  "systemd-run --user --unit=codex-2 bash -lc 'codex exec --full-auto < prompt.md > log 2>&1; echo exit=$? > done'",
+  'bash -lc "grok --prompt-file plan.md"',
+  "codex  exec --full-auto task",
+];
+
+for (const wrappedDispatchCommand of wrappedDispatchCommands) {
+  test(`A wrapped dispatch is exempt once the budget is spent: ${wrappedDispatchCommand}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Edit", "three"),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assertAllowed(
+      payloadFor(transcriptPath, {
+        tool_name: "Bash",
+        tool_input: { command: wrappedDispatchCommand },
+      }),
+    );
+  });
+}
+
+test("A bare dispatch stays exempt once the budget is spent", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(
+    payloadFor(transcriptPath, {
+      tool_name: "Bash",
+      tool_input: { command: "codex exec --full-auto task" },
+    }),
+  );
+});
+
+test("Siblings of a parallel batch recorded after the current call are not prior calls", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([toolUse("Read", "current-call")]),
+    assistantEntry([toolUse("Read", "sibling-two")]),
+    assistantEntry([toolUse("Read", "sibling-three")]),
+    assistantEntry([toolUse("Read", "sibling-four")]),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+
+  const spentBudgetTranscriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+    assistantEntry([toolUse("Read", "current-call")]),
+    assistantEntry([toolUse("Read", "sibling-two")]),
+  ]);
+
+  assert.match(assertDenied(payloadFor(spentBudgetTranscriptPath)), /3 prior calls/);
+});
+
+test("An injected teammate message without a prompt source does not restart the budget", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    injectedTeammateEntry(currentPromptId),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+});
+
+test("A meta entry carrying the current prompt identifier does not restart the budget", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    skillLoadMetaEntry(currentPromptId),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /budget/);
+});
+
+test("A tool outside the direct work set is allowed once the budget is spent", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath, { tool_name: "Agent" }));
+});
+
+test("Assistant calls before the typed prompt do not spend the current budget", () => {
+  const transcriptPath = writeTranscript([
+    assistantEntry([
+      toolUse("Read", "old-one"),
+      toolUse("Edit", "old-two"),
+      toolUse("Write", "old-three"),
+    ]),
+    userEntry(currentPromptId),
+    assistantEntry([toolUse("Read", "one"), toolUse("Grep", "two")]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});

@@ -81,6 +81,15 @@
         ]
       },
       {
+        "matcher": "^(Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|Bash|WebFetch|WebSearch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/enforce-fable-delegation.mjs"
+          }
+        ]
+      },
+      {
         "matcher": "^ExitPlanMode$",
         "hooks": [
           {

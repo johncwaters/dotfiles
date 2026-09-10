@@ -2,6 +2,19 @@ import fs from "node:fs";
 
 export const SPAWN_TOOLS = new Set(["Agent", "Task"]);
 
+export const DIRECT_WORK_TOOLS = new Set([
+  "Read",
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "NotebookEdit",
+  "Grep",
+  "Glob",
+  "Bash",
+  "WebFetch",
+  "WebSearch",
+]);
+
 export function allow() {
   process.exit(0);
 }
