@@ -1,5 +1,5 @@
 [Unit]
-Description=Glissa dashboard
+Description=Glimmervoid dashboard
 After=network.target
 
 [Service]
@@ -9,7 +9,7 @@ WorkingDirectory=__APP_DIR__
 ExecStartPre=__NPM__ run build
 ExecStart=__NODE__ dist/server/index.js
 # Credentials live outside the dashboard config; the leading dash keeps a machine without the file bootable.
-EnvironmentFile=-%h/.glissa/secrets.env
+EnvironmentFile=-%h/.glimmervoid/secrets.env
 Environment=PATH=__PATH__
 KillMode=control-group
 TimeoutStopSec=10

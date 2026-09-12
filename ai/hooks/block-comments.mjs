@@ -2,9 +2,9 @@
 /**
  * PreToolUse guard for Write / Edit / MultiEdit that DENIES a tool call which
  * would add net-new comment lines to a code file. Seeded onto a fresh machine
- * from glissa/config.example.json (config.json `hooks`) and edited per-session
- * through the Glissa Hooks tab, NOT through ~/.claude/settings.json, so it
- * applies only to Glissa-spawned agent sessions.
+ * from glimmervoid/config.example.json (config.json `hooks`) and edited per-session
+ * through the Glimmervoid Hooks tab, NOT through ~/.claude/settings.json, so it
+ * applies only to Glimmervoid-spawned agent sessions.
  *
  * What counts: full lines that are comments (line markers `//`, `#`, `--`, and
  * block comments opening at line start) outside string regions (JS template

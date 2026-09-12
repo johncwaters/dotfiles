@@ -117,7 +117,7 @@ realHomePathsNoStubMayName=()
 
 realHomePathsToGuard() {
   printf '%s\n' "$realHomeOutsideTheSandbox/.config" "$realHomeOutsideTheSandbox/.local" \
-    "$realHomeOutsideTheSandbox/.glissa" "$realHomeOutsideTheSandbox/Projects" \
+    "$realHomeOutsideTheSandbox/.glimmervoid" "$realHomeOutsideTheSandbox/Projects" \
     "$realHomeOutsideTheSandbox/.gitconfig"
   if ((${#realHomePathsNoStubMayName[@]} == 0)); then
     return 0

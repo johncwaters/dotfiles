@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The timer is the one converge that runs outside glissa's cgroup, so it is what pays a restart a hosted run left owed.
+# The timer is the one converge that runs outside glimmervoid's cgroup, so it is what pays a restart a hosted run left owed.
 
 if [[ -z "${dotfilesRepo:-}" ]]; then
   # shellcheck source=../script/lib/context.sh

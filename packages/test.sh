@@ -321,8 +321,6 @@ for wantedNpmPackage in @ast-grep/napi @biomejs/biome @earendil-works/pi-coding-
   @openai/codex @xai-official/grok postiz typescript typescript-language-server; do
   check "$wantedNpmPackage is installed globally" logHas "npm install -g $wantedNpmPackage"
 done
-check "a git sourced package is packed before it is installed" logHas "npm pack github:johncwaters/glissa"
-check "the packed tarball is what gets installed" logHas "npm install -g $sandboxTemp/dotfiles-npm-pack"
 check "a retired package that is present is uninstalled" logHas "npm uninstall -g oh-my-claude-sisyphus"
 check "a retired package that is absent is left alone" logLacks "uninstall -g @vibe-kit/grok-cli"
 

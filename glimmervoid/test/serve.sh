@@ -1,31 +1,31 @@
 # shellcheck shell=bash
 mkdir -p "$stubState/$(basename -- "$unauthedHome")"
 touch "$stubState/$(basename -- "$unauthedHome")/tailscale-unauthed"
-makeGlissaApp "$unauthedHome"
+makeGlimmervoidApp "$unauthedHome"
 : > "$commandLog"
 unauthedStatus=0
 unauthedOutput="$(runInstall "$unauthedHome" server)" || unauthedStatus=$?
 check "an unauthenticated tailnet warns about the placeholder" \
   outputMatches "$unauthedOutput" '\[warn\].*publicHost still says CHANGEME'
-check "the warning names the config to edit" outputHas "$unauthedOutput" 'remote.publicHost in ~/.glissa/config.json'
+check "the warning names the config to edit" outputHas "$unauthedOutput" 'remote.publicHost in ~/.glimmervoid/config.json'
 check "the serve step names the command to run" \
   outputMatches "$unauthedOutput" '\[warn\].*tailscale up once, then tailscale serve --bg 3001'
 check "an unauthenticated tailnet is never served" logLacks "serve --bg"
 check "a placeholder host is never probed over TLS" logLacks "https://"
 check "a missing tailnet login exits non-zero" test "$unauthedStatus" -eq 1
 check "the placeholder is left in place for its owner" \
-  bash -c 'grep -q "CHANGEME" "$1/.glissa/config.json"' _ "$unauthedHome"
+  bash -c 'grep -q "CHANGEME" "$1/.glimmervoid/config.json"' _ "$unauthedHome"
 check "the merged server seed matches the previous example except for key order" \
   serverSeedMatchesPreviousExample "$unauthedHome"
 
 unauthedRerunOutput="$(runInstall "$unauthedHome" server)"
 check "a second unauthenticated run reports no change" reportsNoChanges "$unauthedRerunOutput"
 
-makeGlissaApp "$optOutHome"
-mkdir -p "$optOutHome/.glissa" "$optOutHome/.claude"
+makeGlimmervoidApp "$optOutHome"
+mkdir -p "$optOutHome/.glimmervoid" "$optOutHome/.claude"
 printf '{}\n' > "$optOutHome/.claude/.credentials.json"
 printf '%s\n' '{ "port": 3000, "remote": { "enabled": false, "port": 3001, "publicHost": "CHANGEME.ts.net" } }' \
-  > "$optOutHome/.glissa/config.json"
+  > "$optOutHome/.glimmervoid/config.json"
 optOutState="$stubState/$(basename -- "$optOutHome")"
 mkdir -p "$optOutState"
 printf '3001\n' > "$optOutState/serve-port"
@@ -44,11 +44,11 @@ check "an unauthenticated opt out withdraws no route it could not check first" \
 check "an unauthenticated run owing no withdrawal never says the tailnet could not be asked" \
   outputLacks "$optOutOutput" "cannot be checked before withdrawal"
 check "an unauthenticated run owing no withdrawal reports the serve step as skipped" \
-  outputHas "$optOutOutput" "skipped, glissa remote disabled"
+  outputHas "$optOutOutput" "skipped, glimmervoid remote disabled"
 check "the route an unauthenticated run could not check survives" \
   test -f "$optOutState/serve-port"
-optOutPendingState="$optOutHome/.local/state/dotfiles/glissa-serve-withdrawal-pending"
-optOutOwnedRecord="$optOutHome/.local/state/dotfiles/glissa-serve-owned"
+optOutPendingState="$optOutHome/.local/state/dotfiles/glimmervoid-serve-withdrawal-pending"
+optOutOwnedRecord="$optOutHome/.local/state/dotfiles/glimmervoid-serve-owned"
 check "a withdrawal of a route this topic never published is never marked pending" \
   test ! -e "$optOutPendingState"
 check "an opt out is never probed over TLS" logLacks "https://"
@@ -67,7 +67,7 @@ check "the route an owed withdrawal could not check survives" \
   test -f "$optOutState/serve-port"
 
 printf '%s\n' '{ "port": 3000, "remote": { "enabled": false } }' \
-  > "$optOutHome/.glissa/config.json"
+  > "$optOutHome/.glimmervoid/config.json"
 : > "$commandLog"
 portlessRemoteOutput="$(runInstall "$optOutHome" server)" || true
 check "a disabled remote with no remote.port still probes the local listener" \
@@ -75,7 +75,7 @@ check "a disabled remote with no remote.port still probes the local listener" \
 check "a disabled remote is never asked for a remote.port" \
   outputLacks "$portlessRemoteOutput" "set remote.port to 1-65535"
 printf '%s\n' '{ "port": 3000, "remote": { "enabled": false, "port": 3001, "publicHost": "CHANGEME.ts.net" } }' \
-  > "$optOutHome/.glissa/config.json"
+  > "$optOutHome/.glimmervoid/config.json"
 
 rm -f "$optOutState/tailscale-unauthed" "$optOutOwnedRecord"
 : > "$commandLog"
@@ -95,13 +95,13 @@ const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 config.remote.enabled = false;
 config.remote.port = 3002;
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-' "$serverHome/.glissa/config.json"
+' "$serverHome/.glimmervoid/config.json"
 : > "$commandLog"
 withdrawOutput="$(runInstall "$serverHome" server)" || true
 check "turning remote off takes the published route down after the port changed" \
   logHas "tailscale serve --https=443 off"
 check "the withdrawal is reported" \
-  outputHas "$withdrawOutput" 'route removed, glissa remote disabled'
+  outputHas "$withdrawOutput" 'route removed, glimmervoid remote disabled'
 check "the route is gone from serve status" test ! -f "$servePortState"
 check "turning remote off publishes nothing new" logLacks "serve --bg"
 
@@ -129,15 +129,15 @@ mkdir -p "$outsideConfigDirectory"
 printf 'a config file this topic never chose\n' > "$outsideConfigDirectory/config.json"
 chmod 755 "$outsideConfigDirectory"
 chmod 644 "$outsideConfigDirectory/config.json"
-ln -s "$outsideConfigDirectory" "$symlinkedHome/.glissa"
+ln -s "$outsideConfigDirectory" "$symlinkedHome/.glimmervoid"
 : > "$commandLog"
 symlinkedDirectoryStatus=0
 symlinkedDirectoryOutput="$(runInstall "$symlinkedHome" server)" || symlinkedDirectoryStatus=$?
-check "a symlinked ~/.glissa is refused" \
+check "a symlinked ~/.glimmervoid is refused" \
   outputMatches "$symlinkedDirectoryOutput" '\[warn\].*is not a directory, move it aside first'
-check "a symlinked ~/.glissa makes the topic exit non-zero" test "$symlinkedDirectoryStatus" -eq 1
-check "a symlinked ~/.glissa is left where it was" test -L "$symlinkedHome/.glissa"
-check "nothing is chmodded through a symlinked ~/.glissa" \
+check "a symlinked ~/.glimmervoid makes the topic exit non-zero" test "$symlinkedDirectoryStatus" -eq 1
+check "a symlinked ~/.glimmervoid is left where it was" test -L "$symlinkedHome/.glimmervoid"
+check "nothing is chmodded through a symlinked ~/.glimmervoid" \
   test "$(stat -c '%a' "$outsideConfigDirectory")" = "755"
 check "no config outside the home has its mode narrowed" \
   test "$(stat -c '%a' "$outsideConfigDirectory/config.json")" = "644"
@@ -147,21 +147,21 @@ check "a refused config directory stops before systemd work" logLacks "systemctl
 check "a refused config directory stops before Tailscale work" logLacks "tailscale "
 check "a refused config directory stops before reading the config with node" logLacks "node -p"
 
-rm -f "$symlinkedHome/.glissa"
-mkdir -p "$symlinkedHome/.glissa"
-ln -s "$symlinkedHome/.glissa/nothing-is-here" "$symlinkedHome/.glissa/config.json"
+rm -f "$symlinkedHome/.glimmervoid"
+mkdir -p "$symlinkedHome/.glimmervoid"
+ln -s "$symlinkedHome/.glimmervoid/nothing-is-here" "$symlinkedHome/.glimmervoid/config.json"
 : > "$commandLog"
 danglingConfigOutput="$(runInstall "$symlinkedHome" personal)" || true
 check "a dangling config symlink is backed up before it is replaced" \
-  bash -c 'compgen -G "$1.pre-dotfiles.bak*" > /dev/null' _ "$symlinkedHome/.glissa/config.json"
+  bash -c 'compgen -G "$1.pre-dotfiles.bak*" > /dev/null' _ "$symlinkedHome/.glimmervoid/config.json"
 check "the replacement config is a regular file" \
-  bash -c 'test -f "$1" && test ! -L "$1"' _ "$symlinkedHome/.glissa/config.json"
+  bash -c 'test -f "$1" && test ! -L "$1"' _ "$symlinkedHome/.glimmervoid/config.json"
 check "the backup of the dangling symlink is reported" \
-  outputHas "$danglingConfigOutput" "glissa config backup"
+  outputHas "$danglingConfigOutput" "glimmervoid config backup"
 
-makeGlissaApp "$brokenConfigHome"
-mkdir -p "$brokenConfigHome/.glissa"
-printf '{ "port": 3000, this is not json\n' > "$brokenConfigHome/.glissa/config.json"
+makeGlimmervoidApp "$brokenConfigHome"
+mkdir -p "$brokenConfigHome/.glimmervoid"
+printf '{ "port": 3000, this is not json\n' > "$brokenConfigHome/.glimmervoid/config.json"
 : > "$commandLog"
 brokenConfigStatus=0
 brokenConfigOutput="$(runInstall "$brokenConfigHome" server)" || brokenConfigStatus=$?
@@ -172,16 +172,16 @@ check "a config that will not parse never reads as remote disabled" \
 check "a config that will not parse exits non-zero" test "$brokenConfigStatus" -eq 1
 check "a config that will not parse withdraws no route" logLacks "serve --https"
 check "a config that will not parse installs no unit" \
-  test ! -e "$brokenConfigHome/.config/systemd/user/glissa.service"
+  test ! -e "$brokenConfigHome/.config/systemd/user/glimmervoid.service"
 check "a config that will not parse starts no service" logLacks "systemctl "
 
 writeRemoteConfig() {
   printf '{ "port": 3000, "remote": { "enabled": %s, "port": 3001, "publicHost": "testbox.tailnet-name.ts.net" } }\n' \
-    "$2" > "$1/.glissa/config.json"
+    "$2" > "$1/.glimmervoid/config.json"
 }
 
-makeGlissaApp "$unownedRouteHome"
-mkdir -p "$unownedRouteHome/.glissa"
+makeGlimmervoidApp "$unownedRouteHome"
+mkdir -p "$unownedRouteHome/.glimmervoid"
 writeRemoteConfig "$unownedRouteHome" false
 unownedRouteState="$stubState/$(basename -- "$unownedRouteHome")"
 mkdir -p "$unownedRouteState"
@@ -217,7 +217,7 @@ printf '3001\n' > "$unownedRouteState/serve-port"
 writeRemoteConfig "$unownedRouteHome" true
 : > "$commandLog"
 matchingUnownedOutput="$(runInstall "$unownedRouteHome" server)" || true
-matchingUnownedRecord="$unownedRouteHome/.local/state/dotfiles/glissa-serve-owned"
+matchingUnownedRecord="$unownedRouteHome/.local/state/dotfiles/glimmervoid-serve-owned"
 check "a matching pre-existing route is not republished" logLacks "serve --bg"
 check "a matching pre-existing route is reported as present" \
   outputHas "$matchingUnownedOutput" "remote port 3001"
@@ -233,7 +233,7 @@ check "the matching route another tool published survives the opt out" \
 check "the matching route refusal names the missing record" \
   outputHas "$matchingUnownedWithdrawalOutput" "no record of publishing"
 
-symlinkedOwnershipTarget="$toolingHome/glissa-ownership-target"
+symlinkedOwnershipTarget="$toolingHome/glimmervoid-ownership-target"
 printf '3001\n' > "$symlinkedOwnershipTarget"
 ln -s "$symlinkedOwnershipTarget" "$matchingUnownedRecord"
 : > "$commandLog"
@@ -248,7 +248,7 @@ check "the route covered only by a symlinked record survives" \
 rm -f "$matchingUnownedRecord" "$symlinkedOwnershipTarget"
 
 printf '%s\n' '{ "port": 3000, "remote": { "enabled": false } }' \
-  > "$unownedRouteHome/.glissa/config.json"
+  > "$unownedRouteHome/.glimmervoid/config.json"
 printf '9999\n' > "$unownedRouteState/serve-port"
 : > "$commandLog"
 noRecordWithdrawalOutput="$(runInstall "$unownedRouteHome" server)" || true
@@ -258,15 +258,15 @@ check "the withdrawal refusal names the missing record" \
 check "the route no record covers survives the withdrawal" \
   grep -qx '9999' "$unownedRouteState/serve-port"
 
-makeGlissaApp "$badStatusHome"
-mkdir -p "$badStatusHome/.glissa"
+makeGlimmervoidApp "$badStatusHome"
+mkdir -p "$badStatusHome/.glimmervoid"
 writeRemoteConfig "$badStatusHome" false
 badStatusState="$stubState/$(basename -- "$badStatusHome")"
 mkdir -p "$badStatusState"
 printf '3001\n' > "$badStatusState/serve-port"
 touch "$badStatusState/serve-malformed-status"
-badStatusPendingState="$badStatusHome/.local/state/dotfiles/glissa-serve-withdrawal-pending"
-badStatusOwnedRecord="$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
+badStatusPendingState="$badStatusHome/.local/state/dotfiles/glimmervoid-serve-withdrawal-pending"
+badStatusOwnedRecord="$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
 : > "$commandLog"
 unowedStatusOutput="$(runInstall "$badStatusHome" server)" || true
 check "a status query that fails marks nothing pending for a route this topic never published" \
@@ -283,7 +283,7 @@ malformedStatusOutput="$(runInstall "$badStatusHome" server)" || true
 check "a serve status that will not parse is reported as a failed query" \
   outputMatches "$malformedStatusOutput" '\[warn\].*serve status --json failed'
 check "a serve status that will not parse never reads as an absent route" \
-  outputLacks "$malformedStatusOutput" "skipped, glissa remote disabled"
+  outputLacks "$malformedStatusOutput" "skipped, glimmervoid remote disabled"
 check "a serve status that will not parse leaves the route up" logLacks "serve --https"
 check "a serve status that will not parse keeps an owed withdrawal pending" \
   test -f "$badStatusPendingState"
@@ -295,7 +295,7 @@ emptyStatusOutput="$(runInstall "$badStatusHome" server)" || true
 check "an empty serve status is a failed query, not an absent route" \
   outputMatches "$emptyStatusOutput" '\[warn\].*serve status --json failed'
 check "an empty serve status never reads as an absent route" \
-  outputLacks "$emptyStatusOutput" "skipped, glissa remote disabled"
+  outputLacks "$emptyStatusOutput" "skipped, glimmervoid remote disabled"
 check "an empty serve status leaves the route up" logLacks "serve --https"
 check "an empty serve status keeps the withdrawal pending" test -f "$badStatusPendingState"
 
@@ -324,12 +324,12 @@ check "a publication nothing can bound is refused rather than run unbounded" log
 check "the missing timeout names the command to run by hand" \
   outputMatches "$noTimeoutOutput" '\[warn\].*timeout not on PATH'
 check "a publication nothing can bound records no ownership" \
-  test ! -e "$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
+  test ! -e "$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
 linkCoreUtilities timeout
 
-refusedOwnershipRecord="$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
-refusedOwnershipPending="$badStatusHome/.local/state/dotfiles/glissa-serve-withdrawal-pending"
-refusedOwnershipTarget="$toolingHome/refused-glissa-ownership"
+refusedOwnershipRecord="$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
+refusedOwnershipPending="$badStatusHome/.local/state/dotfiles/glimmervoid-serve-withdrawal-pending"
+refusedOwnershipTarget="$toolingHome/refused-glimmervoid-ownership"
 mkdir -p "$(dirname -- "$refusedOwnershipRecord")"
 : > "$refusedOwnershipTarget"
 ln -s "$refusedOwnershipTarget" "$refusedOwnershipRecord"
@@ -352,7 +352,7 @@ runInstall "$badStatusHome" server "" "$consentInputPath" > /dev/null || true
 check "publishing the route reaches the tailnet" logHas "tailscale serve --bg 3001"
 check "publishing the route never reads the converge's stdin" logLacks "serve read stdin"
 check "publishing the route records what this topic owns" \
-  test "$(cat "$badStatusHome/.local/state/dotfiles/glissa-serve-owned")" = "3001"
+  test "$(cat "$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned")" = "3001"
 check "a recorded publication owes no withdrawal" test ! -e "$badStatusPendingState"
 
 writeRemoteConfig "$badStatusHome" false
@@ -360,9 +360,9 @@ writeRemoteConfig "$badStatusHome" false
 ownedWithdrawalOutput="$(runInstall "$badStatusHome" server)" || true
 check "the route this topic recorded as its own is withdrawn" logHas "tailscale serve --https=443 off"
 check "the withdrawal of an owned route is reported" \
-  outputHas "$ownedWithdrawalOutput" "route removed, glissa remote disabled"
+  outputHas "$ownedWithdrawalOutput" "route removed, glimmervoid remote disabled"
 check "a withdrawn route leaves no ownership record behind" \
-  test ! -e "$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
+  test ! -e "$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
 
 writeRemoteConfig "$badStatusHome" true
 : > "$badStatusState/serve-bg-fails"
@@ -371,7 +371,7 @@ failedPublishOutput="$(runInstall "$badStatusHome" server)" || true
 check "a publication that fails names the command to run by hand" \
   outputMatches "$failedPublishOutput" '\[warn\].*run: tailscale serve --bg 3001'
 check "a publication that fails records no ownership" \
-  test ! -e "$badStatusHome/.local/state/dotfiles/glissa-serve-owned"
+  test ! -e "$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
 check "a publication that fails keeps the withdrawal it cannot disprove pending" \
   test -f "$badStatusPendingState"
 rm -f "$badStatusState/serve-bg-fails"
@@ -391,7 +391,7 @@ runInstall "$badStatusHome" server > /dev/null || true
 check "a converge that publishes the route clears the marker its failed publish left" \
   test ! -e "$badStatusPendingState"
 check "the converge that cleared the marker owns the route it published" \
-  test "$(cat "$badStatusHome/.local/state/dotfiles/glissa-serve-owned")" = "3001"
+  test "$(cat "$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned")" = "3001"
 
 writeRemoteConfig "$badStatusHome" true
 : > "$commandLog"
@@ -411,7 +411,7 @@ check "the run that cleared the stale marker reports the route as it found it" \
   outputHas "$stalePendingOutput" "remote port 3001"
 
 printf '%s\n' '{ "port": 3000, "pairingNote": "CHANGEME once the device is paired", "remote": { "enabled": true, "port": 3001, "publicHost": "handset.tailnet-name.ts.net" } }' \
-  > "$badStatusHome/.glissa/config.json"
+  > "$badStatusHome/.glimmervoid/config.json"
 : > "$commandLog"
 handSetHostOutput="$(runInstall "$badStatusHome" server)" || true
 check "a hand set publicHost survives a CHANGEME somewhere else in the config" \
@@ -421,5 +421,5 @@ check "a hand set publicHost that differs from the tailnet is reported as drift"
   outputMatches "$handSetHostOutput" '\[warn\].*but the tailnet reports'
 
 check "no path in the real home is ever named" \
-  commandLogNamesNoPathUnder "$realHome/.glissa" "$realHome/.config/systemd" \
-  "$realHome/Projects/glissa"
+  commandLogNamesNoPathUnder "$realHome/.glimmervoid" "$realHome/.config/systemd" \
+  "$realHome/Projects/glimmervoid"

@@ -41,7 +41,7 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
   topics in listed order
 - `script/lib/`: shared helpers (logging, linking, rendering, profile parsing)
 - `script/lib/merge-json.mjs`: shared base-plus-overlay JSON merge with `{{HOME}}`
-  substitution, used by `ai` and `glissa`
+  substitution, used by `ai` and `glimmervoid`
 - `script/lib/packages.sh`: opt-in package tooling each software topic sources itself
 - `script/collect`: pulls live machine state back into the repo
 - `profiles/<name>/profile.json`: the topic list for that machine, in run order

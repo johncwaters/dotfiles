@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # What a converge still owes is this account's state, not its config, so it lives in one
 # directory instead of beside each file it tracks: some of those sit in root owned trees.
-# The repo dependency key is shared with glissa so its service waits for repos to finish.
+# The repo dependency key is shared with glimmervoid so its service waits for repos to finish.
 
 dotfilesStateDirectory() {
   local stateDirectory="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"

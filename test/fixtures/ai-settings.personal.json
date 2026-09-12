@@ -69,7 +69,7 @@
       "Read(~/.claude/.credentials.json)",
       "Read(~/.codex/auth.json)",
       "Read(~/.config/gh/hosts.yml)",
-      "Read(~/.glissa/config.json*)",
+      "Read(~/.glimmervoid/config.json*)",
       "Read(~/.ssh/**)"
     ],
     "defaultMode": "auto"

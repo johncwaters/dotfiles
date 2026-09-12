@@ -2,8 +2,8 @@
 # Format: one entry per line, <path relative to $HOME>=<clone url> [flags].
 # Copy this file to repos/repos.txt and list your own repos. repos.txt is gitignored,
 # so machine-specific (and private) clone urls never leave the machine; repos/collect.sh
-# regenerates it from the glissa project list.
+# regenerates it from the glimmervoid project list.
 # Either slash works in the path; install.sh translates backslashes.
 # The only flag today is "nodeps", which leaves the repo's dependencies alone.
-Projects\glissa=https://github.com/johncwaters/glissa
+Projects\glimmervoid=https://github.com/johncwaters/glimmervoid
 Projects/notes=https://github.com/johncwaters/notes nodeps

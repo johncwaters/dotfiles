@@ -377,7 +377,7 @@ test("a diverged mainline preserves mainline refs and safety-pushes the feature"
 });
 
 test("a rejected mainline push is PROMOTE_FAILED and pushes the feature branch", () => {
-  const featureBranch = "glissa/session/promotion-fallback";
+  const featureBranch = "glimmervoid/session/promotion-fallback";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
     const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);

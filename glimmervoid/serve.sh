@@ -1,20 +1,20 @@
 # shellcheck shell=bash
 tailnetServeStarted=0
-glissaServeHttpsPort=443
-glissaServeWithdrawalStateName="glissa-serve-withdrawal-pending"
-glissaServeOwnedStateName="glissa-serve-owned"
-glissaServeQueryFailed=2
-glissaServeQueryNodeMissing=3
+glimmervoidServeHttpsPort=443
+glimmervoidServeWithdrawalStateName="glimmervoid-serve-withdrawal-pending"
+glimmervoidServeOwnedStateName="glimmervoid-serve-owned"
+glimmervoidServeQueryFailed=2
+glimmervoidServeQueryNodeMissing=3
 
 # The text status gives no way to tell which https port a handler belongs to, and an exit status is the only way to tell an empty route from a question this run could not ask.
-glissaServeBackendsOnHttpsPort() {
+glimmervoidServeBackendsOnHttpsPort() {
   local statusJson
   local nodePath
-  if ! nodePath="$(resolveGlissaNodePath)"; then
-    return "$glissaServeQueryNodeMissing"
+  if ! nodePath="$(resolveGlimmervoidNodePath)"; then
+    return "$glimmervoidServeQueryNodeMissing"
   fi
   if ! statusJson="$(tailscale serve status --json 2>/dev/null)"; then
-    return "$glissaServeQueryFailed"
+    return "$glimmervoidServeQueryFailed"
   fi
   printf '%s' "$statusJson" | "$nodePath" -e '
 const wantedPort = process.argv[1];
@@ -43,11 +43,11 @@ for (const hostPort of Object.keys(webByHostPort)) {
   }
 }
 process.stdout.write(backends.join("\n"));
-' "$glissaServeHttpsPort" 2>/dev/null || return "$glissaServeQueryFailed"
+' "$glimmervoidServeHttpsPort" 2>/dev/null || return "$glimmervoidServeQueryFailed"
 }
 
-glissaServeQueryFailureReason() {
-  if (($1 == glissaServeQueryNodeMissing)); then
+glimmervoidServeQueryFailureReason() {
+  if (($1 == glimmervoidServeQueryNodeMissing)); then
     printf 'no node to read the serve status with\n'
     return 0
   fi
@@ -86,149 +86,149 @@ everyBackendTargetsPort() {
   ((sawAnyBackend == 1))
 }
 
-recordGlissaServeOwnership() {
-  writeDotfilesState "$glissaServeOwnedStateName" "$1"
+recordGlimmervoidServeOwnership() {
+  writeDotfilesState "$glimmervoidServeOwnedStateName" "$1"
 }
 
 # What this topic published is what it may withdraw; no record means no route is owned.
-glissaServeOwnedPort() {
+glimmervoidServeOwnedPort() {
   local ownedPort
-  ownedPort="$(readDotfilesState "$glissaServeOwnedStateName")" || ownedPort=""
+  ownedPort="$(readDotfilesState "$glimmervoidServeOwnedStateName")" || ownedPort=""
   printf '%s\n' "${ownedPort%%$'\n'*}"
 }
 
-glissaServeWithdrawalIsPending() {
-  dotfilesStateIsPending "$glissaServeWithdrawalStateName"
+glimmervoidServeWithdrawalIsPending() {
+  dotfilesStateIsPending "$glimmervoidServeWithdrawalStateName"
 }
 
-glissaServeWithdrawalIsOwed() {
-  if glissaServeWithdrawalIsPending; then
+glimmervoidServeWithdrawalIsOwed() {
+  if glimmervoidServeWithdrawalIsPending; then
     return 0
   fi
-  isValidGlissaPort "$(glissaServeOwnedPort)"
+  isValidGlimmervoidPort "$(glimmervoidServeOwnedPort)"
 }
 
 # A tailnet this run cannot ask is not evidence of a route: with nothing recorded as published and nothing already owed, there is nothing to withdraw and nothing to warn about.
-reportGlissaServeUncheckedRoute() {
+reportGlimmervoidServeUncheckedRoute() {
   local label="$1"
   local reason="$2"
-  if ! glissaServeWithdrawalIsOwed; then
-    notePresent "$label" "skipped, glissa remote disabled"
+  if ! glimmervoidServeWithdrawalIsOwed; then
+    notePresent "$label" "skipped, glimmervoid remote disabled"
     return 0
   fi
-  markDotfilesStatePending "$glissaServeWithdrawalStateName"
+  markDotfilesStatePending "$glimmervoidServeWithdrawalStateName"
   noteWarned "$label" "$reason"
 }
 
-attemptGlissaServeWithdrawal() {
+attemptGlimmervoidServeWithdrawal() {
   local label="$1"
   local reason="$2"
-  markDotfilesStatePending "$glissaServeWithdrawalStateName"
-  if ! tailscale serve --https="$glissaServeHttpsPort" off >/dev/null 2>&1; then
+  markDotfilesStatePending "$glimmervoidServeWithdrawalStateName"
+  if ! tailscale serve --https="$glimmervoidServeHttpsPort" off >/dev/null 2>&1; then
     noteWarned "$label" \
-      "$reason but the route could not be withdrawn, run: tailscale serve --https=$glissaServeHttpsPort off"
+      "$reason but the route could not be withdrawn, run: tailscale serve --https=$glimmervoidServeHttpsPort off"
     return 1
   fi
-  clearDotfilesState "$glissaServeWithdrawalStateName"
-  clearDotfilesState "$glissaServeOwnedStateName"
+  clearDotfilesState "$glimmervoidServeWithdrawalStateName"
+  clearDotfilesState "$glimmervoidServeOwnedStateName"
   noteApplied "$label" "route removed, $reason"
 }
 
 # A route left up keeps every paired device's tailnet access whatever backend port it names now, so only a status this run actually parsed authorises taking one down; "serve --https=<port> off" is the CLI's own name for this.
-withdrawGlissaServe() {
+withdrawGlimmervoidServe() {
   local label="$1"
   local backends
   local queryStatus=0
   if ! isTailscaleAuthed; then
-    reportGlissaServeUncheckedRoute "$label" \
-      "tailscale is not authenticated, so the route on $glissaServeHttpsPort cannot be checked before withdrawal; run sudo tailscale up, then tailscale serve --https=$glissaServeHttpsPort off"
+    reportGlimmervoidServeUncheckedRoute "$label" \
+      "tailscale is not authenticated, so the route on $glimmervoidServeHttpsPort cannot be checked before withdrawal; run sudo tailscale up, then tailscale serve --https=$glimmervoidServeHttpsPort off"
     return 0
   fi
-  backends="$(glissaServeBackendsOnHttpsPort)" || queryStatus=$?
+  backends="$(glimmervoidServeBackendsOnHttpsPort)" || queryStatus=$?
   if ((queryStatus != 0)); then
-    reportGlissaServeUncheckedRoute "$label" \
-      "$(glissaServeQueryFailureReason "$queryStatus"), run: tailscale serve --https=$glissaServeHttpsPort off"
+    reportGlimmervoidServeUncheckedRoute "$label" \
+      "$(glimmervoidServeQueryFailureReason "$queryStatus"), run: tailscale serve --https=$glimmervoidServeHttpsPort off"
     return 0
   fi
   if [[ -z "$backends" ]]; then
-    clearDotfilesState "$glissaServeWithdrawalStateName"
-    clearDotfilesState "$glissaServeOwnedStateName"
-    notePresent "$label" "skipped, glissa remote disabled"
+    clearDotfilesState "$glimmervoidServeWithdrawalStateName"
+    clearDotfilesState "$glimmervoidServeOwnedStateName"
+    notePresent "$label" "skipped, glimmervoid remote disabled"
     return 0
   fi
   if ! everyBackendTargetsPort "$backends" ""; then
     noteWarned "$label" \
-      "port $glissaServeHttpsPort proxies something other than a local backend, leaving it up"
+      "port $glimmervoidServeHttpsPort proxies something other than a local backend, leaving it up"
     return 0
   fi
-  if ! glissaServeRouteIsOursToReplace "$backends"; then
-    noteWarned "$label" "$(glissaServeNotOursReason)"
+  if ! glimmervoidServeRouteIsOursToReplace "$backends"; then
+    noteWarned "$label" "$(glimmervoidServeNotOursReason)"
     return 0
   fi
-  attemptGlissaServeWithdrawal "$label" "glissa remote disabled" || true
+  attemptGlimmervoidServeWithdrawal "$label" "glimmervoid remote disabled" || true
 }
 
 # Without HTTPS enabled on the tailnet this asks for consent on stdin, and a converge has nobody to answer it; unbounded, it would hang the whole run instead.
-publishGlissaServeRoute() {
+publishGlimmervoidServeRoute() {
   local remotePort="$1"
   local publishStatus=0
   timeout 30 tailscale serve --bg "$remotePort" </dev/null >/dev/null 2>&1 || publishStatus=$?
   return "$publishStatus"
 }
 
-glissaServeNotOursReason() {
+glimmervoidServeNotOursReason() {
   local ownedPort
-  ownedPort="$(glissaServeOwnedPort)"
-  if ! isValidGlissaPort "$ownedPort"; then
+  ownedPort="$(glimmervoidServeOwnedPort)"
+  if ! isValidGlimmervoidPort "$ownedPort"; then
     printf 'port %s proxies a backend this topic has no record of publishing, leaving it up\n' \
-      "$glissaServeHttpsPort"
+      "$glimmervoidServeHttpsPort"
     return 0
   fi
   printf 'port %s proxies a local backend other than the port %s this topic published, leaving it up\n' \
-    "$glissaServeHttpsPort" "$ownedPort"
+    "$glimmervoidServeHttpsPort" "$ownedPort"
 }
 
 # An empty 443 is free to take; anything else on it may be replaced only if it is the backend this topic recorded publishing.
-glissaServeRouteIsOursToReplace() {
+glimmervoidServeRouteIsOursToReplace() {
   local backends="$1"
   local ownedPort
   if [[ -z "$backends" ]]; then
     return 0
   fi
-  ownedPort="$(glissaServeOwnedPort)"
-  if ! isValidGlissaPort "$ownedPort"; then
+  ownedPort="$(glimmervoidServeOwnedPort)"
+  if ! isValidGlimmervoidPort "$ownedPort"; then
     return 1
   fi
   everyBackendTargetsPort "$backends" "$ownedPort"
 }
 
 # Serving the local port instead of remote.port exposes the dashboard unauthenticated.
-publishGlissaServe() {
+publishGlimmervoidServe() {
   local label="$1"
   local backends
   local queryStatus=0
-  if ! resolveGlissaPorts; then
+  if ! resolveGlimmervoidPorts; then
     return 0
   fi
   if ! isTailscaleAuthed; then
     noteWarned "$label" "run sudo tailscale up once, then tailscale serve --bg $resolvedRemotePort"
     return 0
   fi
-  backends="$(glissaServeBackendsOnHttpsPort)" || queryStatus=$?
+  backends="$(glimmervoidServeBackendsOnHttpsPort)" || queryStatus=$?
   if ((queryStatus != 0)); then
     noteWarned "$label" \
-      "$(glissaServeQueryFailureReason "$queryStatus"), leaving the route alone; run: tailscale serve status --json"
+      "$(glimmervoidServeQueryFailureReason "$queryStatus"), leaving the route alone; run: tailscale serve status --json"
     return 0
   fi
   if everyBackendTargetsPort "$backends" "$resolvedRemotePort"; then
-    clearDotfilesState "$glissaServeWithdrawalStateName"
+    clearDotfilesState "$glimmervoidServeWithdrawalStateName"
     tailnetServeStarted=1
     notePresent "$label" "remote port $resolvedRemotePort"
     return 0
   fi
-  if ! glissaServeRouteIsOursToReplace "$backends"; then
+  if ! glimmervoidServeRouteIsOursToReplace "$backends"; then
     noteWarned "$label" \
-      "port $glissaServeHttpsPort proxies a backend this topic has no record of publishing, leaving it up"
+      "port $glimmervoidServeHttpsPort proxies a backend this topic has no record of publishing, leaving it up"
     return 0
   fi
   if ! command -v timeout >/dev/null 2>&1; then
@@ -236,28 +236,28 @@ publishGlissaServe() {
     return 0
   fi
   # A failed serve --bg does not prove the route was not applied, so the withdrawal is owed from before the command runs until ownership is recorded.
-  markDotfilesStatePending "$glissaServeWithdrawalStateName"
-  if ! publishGlissaServeRoute "$resolvedRemotePort"; then
+  markDotfilesStatePending "$glimmervoidServeWithdrawalStateName"
+  if ! publishGlimmervoidServeRoute "$resolvedRemotePort"; then
     noteWarned "$label" "run: tailscale serve --bg $resolvedRemotePort"
     return 0
   fi
-  recordGlissaServeOwnership "$resolvedRemotePort"
-  if [[ "$(glissaServeOwnedPort)" != "$resolvedRemotePort" ]]; then
-    if ! tailscale serve --https="$glissaServeHttpsPort" off >/dev/null 2>&1; then
+  recordGlimmervoidServeOwnership "$resolvedRemotePort"
+  if [[ "$(glimmervoidServeOwnedPort)" != "$resolvedRemotePort" ]]; then
+    if ! tailscale serve --https="$glimmervoidServeHttpsPort" off >/dev/null 2>&1; then
       noteWarned "$label" \
-        "published route is live because its ownership record and withdrawal failed, run: tailscale serve --https=$glissaServeHttpsPort off"
+        "published route is live because its ownership record and withdrawal failed, run: tailscale serve --https=$glimmervoidServeHttpsPort off"
       return 0
     fi
-    clearDotfilesState "$glissaServeWithdrawalStateName"
+    clearDotfilesState "$glimmervoidServeWithdrawalStateName"
     noteWarned "$label" "published route was withdrawn because its ownership record could not be written"
     return 0
   fi
-  clearDotfilesState "$glissaServeWithdrawalStateName"
+  clearDotfilesState "$glimmervoidServeWithdrawalStateName"
   tailnetServeStarted=1
   noteApplied "$label" "remote port $resolvedRemotePort"
 }
 
-probeGlissaRemoteTls() {
+probeGlimmervoidRemoteTls() {
   local label="remote access"
   local publicHost
   local httpStatus
@@ -267,8 +267,8 @@ probeGlissaRemoteTls() {
   if ! command -v curl >/dev/null 2>&1; then
     return 0
   fi
-  publicHost="$(readGlissaPublicHost)"
-  if ! hasDottedGlissaHost "$publicHost"; then
+  publicHost="$(readGlimmervoidPublicHost)"
+  if ! hasDottedGlimmervoidHost "$publicHost"; then
     return 0
   fi
   if ! httpStatus="$(probeHttpStatus "https://$publicHost/")"; then
@@ -283,28 +283,28 @@ probeGlissaRemoteTls() {
   noteWarned "$label" "TLS probe returned HTTP $httpStatus for https://$publicHost/"
 }
 
-noteGlissaServeUnreadableConfig() {
+noteGlimmervoidServeUnreadableConfig() {
   local label="$1"
-  if glissaServeWithdrawalIsPending; then
+  if glimmervoidServeWithdrawalIsPending; then
     noteWarned "$label" \
-      "cannot read $glissaConfigDisplayPath and a withdrawal is still owed, run: tailscale serve --https=$glissaServeHttpsPort off"
+      "cannot read $glimmervoidConfigDisplayPath and a withdrawal is still owed, run: tailscale serve --https=$glimmervoidServeHttpsPort off"
     return 0
   fi
-  noteWarned "$label" "cannot read $glissaConfigDisplayPath, leaving the route as it is"
+  noteWarned "$label" "cannot read $glimmervoidConfigDisplayPath, leaving the route as it is"
 }
 
 # The route a previous run published still names the old remote port, which the restarted service answers on as its unauthenticated local listener whenever the ports moved by one.
-withdrawGlissaServeStrandedByOwedRestart() {
+withdrawGlimmervoidServeStrandedByOwedRestart() {
   local label="$1"
   local backends
   local queryStatus=0
-  if ! resolveGlissaPorts; then
+  if ! resolveGlimmervoidPorts; then
     return 0
   fi
   if ! isTailscaleAuthed; then
     return 0
   fi
-  backends="$(glissaServeBackendsOnHttpsPort)" || queryStatus=$?
+  backends="$(glimmervoidServeBackendsOnHttpsPort)" || queryStatus=$?
   if ((queryStatus != 0)); then
     return 0
   fi
@@ -314,44 +314,44 @@ withdrawGlissaServeStrandedByOwedRestart() {
   if everyBackendTargetsPort "$backends" "$resolvedRemotePort"; then
     return 0
   fi
-  if ! glissaServeRouteIsOursToReplace "$backends"; then
+  if ! glimmervoidServeRouteIsOursToReplace "$backends"; then
     return 0
   fi
-  attemptGlissaServeWithdrawal "$label" "the glissa restart is owed" || true
+  attemptGlimmervoidServeWithdrawal "$label" "the glimmervoid restart is owed" || true
 }
 
-# A run hosted by glissa.service leaves the restart owed, so the old process still holds its old listeners and a route published now would proxy the tailnet at whatever those answer on.
-publishGlissaServeUnlessRestartIsOwed() {
+# A run hosted by glimmervoid.service leaves the restart owed, so the old process still holds its old listeners and a route published now would proxy the tailnet at whatever those answer on.
+publishGlimmervoidServeUnlessRestartIsOwed() {
   local label="$1"
-  if userServiceActivationIsPending "glissa"; then
-    withdrawGlissaServeStrandedByOwedRestart "$label"
+  if userServiceActivationIsPending "glimmervoid"; then
+    withdrawGlimmervoidServeStrandedByOwedRestart "$label"
     noteWarned "$label" \
-      "the route waits on the owed glissa restart, run dot from outside the service rather than systemctl --user restart glissa, so the restart and the route move together"
+      "the route waits on the owed glimmervoid restart, run dot from outside the service rather than systemctl --user restart glimmervoid, so the restart and the route move together"
     return 0
   fi
-  publishGlissaServe "$label"
+  publishGlimmervoidServe "$label"
 }
 
 # One state machine: what the config says, then what the tailnet says, then publish, withdraw, or leave it alone.
-configureGlissaServe() {
+configureGlimmervoidServe() {
   local label="Tailscale serve"
   local remoteState
   if ! command -v tailscale >/dev/null 2>&1; then
     noteWarned "$label" "tailscale not on PATH"
     return 0
   fi
-  if [[ ! -f "$glissaConfigPath" ]]; then
-    noteWarned "$label" "no $glissaConfigDisplayPath, serve skipped"
+  if [[ ! -f "$glimmervoidConfigPath" ]]; then
+    noteWarned "$label" "no $glimmervoidConfigDisplayPath, serve skipped"
     return 0
   fi
-  remoteState="$(readGlissaRemoteState)"
+  remoteState="$(readGlimmervoidRemoteState)"
   if [[ "$remoteState" == "disabled" ]]; then
-    withdrawGlissaServe "$label"
+    withdrawGlimmervoidServe "$label"
     return 0
   fi
   if [[ "$remoteState" == "enabled" ]]; then
-    publishGlissaServeUnlessRestartIsOwed "$label"
+    publishGlimmervoidServeUnlessRestartIsOwed "$label"
     return 0
   fi
-  noteGlissaServeUnreadableConfig "$label"
+  noteGlimmervoidServeUnreadableConfig "$label"
 }

@@ -80,9 +80,9 @@ for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
     check "$(basename -- "$profileDirectoryPath") has package groups for its packages topic" \
       test -f "$profileDirectoryPath/packages.txt"
   fi
-  if grep -qx glissa <<< "$profileTopics"; then
-    check "$(basename -- "$profileDirectoryPath") has glissa settings for its glissa topic" \
-      test -f "$profileDirectoryPath/glissa.json"
+  if grep -qx glimmervoid <<< "$profileTopics"; then
+    check "$(basename -- "$profileDirectoryPath") has glimmervoid settings for its glimmervoid topic" \
+      test -f "$profileDirectoryPath/glimmervoid.json"
   fi
   if grep -qx vscodium <<< "$profileTopics"; then
     check "$(basename -- "$profileDirectoryPath") has vscodium settings for its vscodium topic" \
@@ -113,13 +113,13 @@ check "the repository map names the bubblewrap sandbox" \
   grep -q 'shared bubblewrap sandbox' "$repoRoot/AGENTS.md"
 check "the repository map no longer names a Docker matrix" \
   bash -c '! grep -q "Docker matrix" "$1/AGENTS.md"' _ "$repoRoot"
-check "the README profile file list names glissa settings" \
-  grep -qF '`glissa.json`' "$repoRoot/README.md"
-check "the README profile file list names glissa overlays" \
-  grep -qF '`glissa.overlay.json`' "$repoRoot/README.md"
+check "the README profile file list names glimmervoid settings" \
+  grep -qF '`glimmervoid.json`' "$repoRoot/README.md"
+check "the README profile file list names glimmervoid overlays" \
+  grep -qF '`glimmervoid.overlay.json`' "$repoRoot/README.md"
 check "the README profile file list names vscodium settings" \
   grep -qF '`vscodium.json`' "$repoRoot/README.md"
-for examplePath in repos/repos.example.txt glissa/config.example.json \
+for examplePath in repos/repos.example.txt glimmervoid/config.example.json \
   git/gitconfig.local.example shell/localrc.example; do
   check "the README names $examplePath" grep -qF "\`$examplePath\`" "$repoRoot/README.md"
 done
@@ -128,28 +128,28 @@ check "the README names the rendered Claude settings inputs" \
   _ "$repoRoot"
 check "the README says bootstrap writes the machine profile" \
   grep -qF '`.machine-profile` is written by' "$repoRoot/README.md"
-check "glissa reads tracked inputs through the checkout root" \
-  bash -c '! grep -q '\''\$dotfilesAlias'\'' "$1/glissa/install.sh"' _ "$repoRoot"
-check "glissa uses the shared JSON merger" \
-  grep -qF 'script/lib/merge-json.mjs' "$repoRoot/glissa/install.sh"
-check "the glissa seed has one shared home token" \
-  bash -c '! grep -q "__HOME__" "$1/glissa/config.example.json" && grep -q "{{HOME}}" "$1/glissa/config.example.json"' \
+check "glimmervoid reads tracked inputs through the checkout root" \
+  bash -c '! grep -q '\''\$dotfilesAlias'\'' "$1/glimmervoid/install.sh"' _ "$repoRoot"
+check "glimmervoid uses the shared JSON merger" \
+  grep -qF 'script/lib/merge-json.mjs' "$repoRoot/glimmervoid/install.sh"
+check "the glimmervoid seed has one shared home token" \
+  bash -c '! grep -q "__HOME__" "$1/glimmervoid/config.example.json" && grep -q "{{HOME}}" "$1/glimmervoid/config.example.json"' \
   _ "$repoRoot"
-check "glissa has no seed kind selector" \
-  bash -c '! grep -q "glissaSeedInputsFor" "$1/glissa/install.sh"' _ "$repoRoot"
-check "profile glissa settings have no seed key" \
-  bash -c '! grep -q '"'"'"seed"'"'"' "$1"/profiles/*/glissa.json' _ "$repoRoot"
-check "the server profile owns its glissa overlay" \
-  test -f "$repoRoot/profiles/server/glissa.overlay.json"
-check "the glissa topic owns no server overlay" \
-  test ! -e "$repoRoot/glissa/config.server.overlay.json"
-check "the generic glissa seed renderer has no server-only name" \
-  bash -c 'grep -q "^renderGlissaSeed()" "$1/glissa/install.sh" && ! grep -q "renderGlissaServerSeed" "$1/glissa/install.sh"' \
+check "glimmervoid has no seed kind selector" \
+  bash -c '! grep -q "glimmervoidSeedInputsFor" "$1/glimmervoid/install.sh"' _ "$repoRoot"
+check "profile glimmervoid settings have no seed key" \
+  bash -c '! grep -q '"'"'"seed"'"'"' "$1"/profiles/*/glimmervoid.json' _ "$repoRoot"
+check "the server profile owns its glimmervoid overlay" \
+  test -f "$repoRoot/profiles/server/glimmervoid.overlay.json"
+check "the glimmervoid topic owns no server overlay" \
+  test ! -e "$repoRoot/glimmervoid/config.server.overlay.json"
+check "the generic glimmervoid seed renderer has no server-only name" \
+  bash -c 'grep -q "^renderGlimmervoidSeed()" "$1/glimmervoid/install.sh" && ! grep -q "renderGlimmervoidServerSeed" "$1/glimmervoid/install.sh"' \
   _ "$repoRoot"
 
 mergedWithoutOverlayPath="$sandbox/merged-without-overlay.json"
 HOME="$sandbox" node "$repoRoot/script/lib/merge-json.mjs" \
-  "$repoRoot/glissa/config.example.json" "" "$mergedWithoutOverlayPath" /fixture/home
+  "$repoRoot/glimmervoid/config.example.json" "" "$mergedWithoutOverlayPath" /fixture/home
 check "the shared merger accepts a missing overlay" \
   grep -qF '"/fixture/home/Projects"' "$mergedWithoutOverlayPath"
 check "the shared merger escapes home paths inside JSON strings" \
@@ -161,17 +161,17 @@ const { mergeJsonFiles } = await import(`${repoRoot}/script/lib/merge-json.mjs`)
 const destinationPath = `${sandbox}/escaped-home.json`;
 for (const homePath of ['/fixture/carbon "unit"', '/fixture/line\nbreak', '/fixture/tab\tstop']) {
   mergeJsonFiles({
-    basePath: `${repoRoot}/glissa/config.example.json`,
+    basePath: `${repoRoot}/glimmervoid/config.example.json`,
     destinationPath,
     home: homePath,
   });
   const settings = JSON.parse(fs.readFileSync(destinationPath, "utf8"));
   assert.equal(settings.repoRoots[0], `${homePath}/Projects`);
-  assert.equal(settings.projects[0].path, `${homePath}/Projects/glissa`);
+  assert.equal(settings.projects[0].path, `${homePath}/Projects/glimmervoid`);
 }
 JS
-check "glissa creates no temporary empty overlay" \
-  bash -c '! grep -q "glissa-empty-overlay" "$1/glissa/install.sh"' _ "$repoRoot"
+check "glimmervoid creates no temporary empty overlay" \
+  bash -c '! grep -q "glimmervoid-empty-overlay" "$1/glimmervoid/install.sh"' _ "$repoRoot"
 check "the repository map names the shared JSON merger" \
   grep -qF '`script/lib/merge-json.mjs`' "$repoRoot/AGENTS.md"
 check "the repository map names cross-cutting suites" \

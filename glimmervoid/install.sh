@@ -1,0 +1,616 @@
+#!/usr/bin/env bash
+# Nothing prompts: a value only its owner can supply is warned about, naming the file to edit.
+
+if [[ -z "${dotfilesRepo:-}" ]]; then
+  # shellcheck source=../script/lib/context.sh
+  source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../script/lib" && pwd)/context.sh"
+  requireAliasResolvesToRepo
+fi
+
+# shellcheck source=../script/lib/systemd.sh
+source "$dotfilesRepo/script/lib/systemd.sh"
+# shellcheck source=../script/lib/packages.sh
+source "$dotfilesRepo/script/lib/packages.sh"
+# shellcheck source=./service.sh
+source "$dotfilesRepo/glimmervoid/service.sh"
+# shellcheck source=./serve.sh
+source "$dotfilesRepo/glimmervoid/serve.sh"
+
+glimmervoidConfigDirectory="$HOME/.glimmervoid"
+glimmervoidConfigPath="$glimmervoidConfigDirectory/config.json"
+glimmervoidConfigDisplayPath="~/.glimmervoid/config.json"
+glimmervoidSecretsPath="$glimmervoidConfigDirectory/secrets.env"
+glimmervoidSecretsDisplayPath="~/.glimmervoid/secrets.env"
+glimmervoidAppDirectory="$HOME/Projects/glimmervoid"
+glimmervoidAppDisplayPath="~/Projects/glimmervoid"
+remoteSettingsRewritten=0
+resolvedLocalPort=""
+resolvedRemotePort=""
+selectedGlimmervoidSeedPath=""
+selectedGlimmervoidOverlayPath=""
+selectedGlimmervoidSeedDescription=""
+selectedGlimmervoidWarningDescription=""
+
+glimmervoidProfileSettingsPathFor() {
+  printf '%s/profiles/%s/glimmervoid.json\n' "$dotfilesRepo" "$1"
+}
+
+profileServesGlimmervoid() {
+  local servesSetting
+  servesSetting="$(readProfileSetting "$(glimmervoidProfileSettingsPathFor "$1")" serves)" || return 1
+  [[ "$servesSetting" == "true" ]]
+}
+
+glimmervoidProfileSettingsAreUsable() {
+  local settingsPath
+  local servesSetting
+  if [[ -z "${profileName:-}" ]]; then
+    noteWarned "glimmervoid profile" "no profile resolved, config and service skipped"
+    return 1
+  fi
+  settingsPath="$(glimmervoidProfileSettingsPathFor "$profileName")"
+  if [[ ! -f "$settingsPath" ]]; then
+    noteWarned "glimmervoid profile" "no $settingsPath, config and service skipped"
+    return 1
+  fi
+  servesSetting="$(readProfileSetting "$settingsPath" serves)" || servesSetting=""
+  case "$servesSetting" in
+    true | false) return 0 ;;
+  esac
+  noteWarned "glimmervoid profile" "profiles/$profileName/glimmervoid.json has no usable serves setting"
+  return 1
+}
+
+# A symlinked ~/.glimmervoid points chmod and every write at a path this topic never chose.
+glimmervoidConfigDirectoryIsUsable() {
+  if [[ -L "$glimmervoidConfigDirectory" ]]; then
+    return 1
+  fi
+  [[ ! -e "$glimmervoidConfigDirectory" ]] || [[ -d "$glimmervoidConfigDirectory" ]]
+}
+
+# The seed carries this machine's absolute home, so it is rendered rather than linked.
+renderGlimmervoidSeed() {
+  local basePath="$1"
+  local overlayPath="$2"
+  local destinationPath="$3"
+  local nodePath
+  nodePath="$(resolveGlimmervoidNodePath)" || return 1
+  "$nodePath" "$dotfilesRepo/script/lib/merge-json.mjs" \
+    "$basePath" "$overlayPath" "$destinationPath" "$HOME"
+}
+
+selectGlimmervoidSeedInputs() {
+  local baseSeedPath="$1"
+  local machineLocalSeed="$2"
+  selectedGlimmervoidSeedPath="$baseSeedPath"
+  selectedGlimmervoidSeedDescription="config.example.json"
+  selectedGlimmervoidOverlayPath=""
+  selectedGlimmervoidWarningDescription="config.example.json"
+  if [[ -f "$machineLocalSeed" ]]; then
+    selectedGlimmervoidSeedPath="$machineLocalSeed"
+    selectedGlimmervoidSeedDescription="config.json"
+    selectedGlimmervoidWarningDescription=""
+    return 0
+  fi
+  local profileOverlayPath="$dotfilesRepo/profiles/$profileName/glimmervoid.overlay.json"
+  if [[ ! -f "$profileOverlayPath" ]]; then
+    return 0
+  fi
+  selectedGlimmervoidOverlayPath="$profileOverlayPath"
+  selectedGlimmervoidSeedDescription="config.example.json plus profiles/$profileName/glimmervoid.overlay.json"
+  selectedGlimmervoidWarningDescription="profiles/$profileName/glimmervoid.overlay.json"
+}
+
+renameLegacyGlimmervoidDatabase() {
+  local nameSuffix
+  local legacyPath
+  for nameSuffix in "" "-wal" "-shm"; do
+    legacyPath="$glimmervoidConfigDirectory/glissa.db$nameSuffix"
+    if [[ -f "$legacyPath" && ! -L "$legacyPath" ]] \
+      && ! mv -- "$legacyPath" "$glimmervoidConfigDirectory/glimmervoid.db$nameSuffix"; then
+      noteWarned "glimmervoid config" "rename ~/.glimmervoid/glissa.db$nameSuffix by hand"
+    fi
+  done
+}
+
+rewriteLegacyGlimmervoidSecretNames() {
+  local label="glimmervoid secrets"
+  local stagedPath
+  if [[ ! -f "$glimmervoidSecretsPath" || -L "$glimmervoidSecretsPath" ]]; then
+    return 0
+  fi
+  if ! grep -q 'GLISSA_' "$glimmervoidSecretsPath"; then
+    return 0
+  fi
+  stagedPath="$(mktemp "$glimmervoidConfigDirectory/.secrets.env.XXXXXX")"
+  chmod 600 -- "$stagedPath"
+  if ! sed -e 's/GLISSA_/GLIMMERVOID_/g' "$glimmervoidSecretsPath" > "$stagedPath"; then
+    rm -f -- "$stagedPath"
+    noteWarned "$label" "rename the GLISSA_ variables to GLIMMERVOID_ in $glimmervoidSecretsDisplayPath by hand"
+    return 0
+  fi
+  if ! mv -f -- "$stagedPath" "$glimmervoidSecretsPath"; then
+    rm -f -- "$stagedPath"
+    noteWarned "$label" "rename the GLISSA_ variables to GLIMMERVOID_ in $glimmervoidSecretsDisplayPath by hand"
+  fi
+}
+
+# The app dropped the old name with no migration, so a machine that served under it carries its live state across rather than taking a fresh seed over it.
+migrateLegacyGlimmervoidConfig() {
+  local label="glimmervoid config"
+  local legacyDirectory="$HOME/.glissa"
+  if [[ -e "$glimmervoidConfigDirectory" || -L "$glimmervoidConfigDirectory" ]]; then
+    if [[ -d "$legacyDirectory" && ! -L "$legacyDirectory" ]]; then
+      noteWarned "$label" "~/.glissa still holds state, move what it keeps into ~/.glimmervoid by hand"
+    fi
+    return 0
+  fi
+  if [[ ! -d "$legacyDirectory" || -L "$legacyDirectory" ]]; then
+    return 0
+  fi
+  if ! mv -- "$legacyDirectory" "$glimmervoidConfigDirectory"; then
+    noteWarned "$label" "move ~/.glissa to ~/.glimmervoid by hand"
+    return 0
+  fi
+  renameLegacyGlimmervoidDatabase
+  rewriteLegacyGlimmervoidSecretNames
+  noteApplied "$label" "migrated ~/.glissa to ~/.glimmervoid"
+}
+
+seedGlimmervoidConfig() {
+  local label="glimmervoid config"
+  local machineLocalSeed
+  local baseSeedPath="$dotfilesRepo/glimmervoid/config.example.json"
+  local overlayPath
+  local seedPath
+  local seedDescription
+  local seedWarningDescription
+  local stagedPath
+  machineLocalSeed="$(sandboxRedirectedPath "${DOTFILES_GLIMMERVOID_SEED_PATH:-}" \
+    "$dotfilesRepo/glimmervoid/config.json")"
+  if ! glimmervoidConfigDirectoryIsUsable; then
+    noteWarned "$label" "$glimmervoidConfigDisplayPath is not a directory, move it aside first"
+    return 0
+  fi
+  if [[ -f "$glimmervoidConfigPath" && ! -L "$glimmervoidConfigPath" ]]; then
+    notePresent "$label" "exists, runtime state kept"
+    return 0
+  fi
+  selectGlimmervoidSeedInputs "$baseSeedPath" "$machineLocalSeed"
+  seedPath="$selectedGlimmervoidSeedPath"
+  overlayPath="$selectedGlimmervoidOverlayPath"
+  seedDescription="$selectedGlimmervoidSeedDescription"
+  seedWarningDescription="$selectedGlimmervoidWarningDescription"
+  if [[ -n "$seedWarningDescription" ]]; then
+    noteWarned "$label" \
+      "no glimmervoid/config.json, seeding from $seedWarningDescription (edit repoRoots and projects)"
+  fi
+  if [[ ! -f "$seedPath" ]]; then
+    noteWarned "$label" "missing seed input: $seedPath"
+    return 0
+  fi
+  mkdir -p -- "$glimmervoidConfigDirectory"
+  if ! clearDestinationIfNotPlainFile "$label" "$glimmervoidConfigPath"; then
+    return 0
+  fi
+  stagedPath="$(mktemp "$glimmervoidConfigDirectory/.config.json.XXXXXX")"
+  chmod 600 -- "$stagedPath"
+  if ! renderGlimmervoidSeed "$seedPath" "$overlayPath" "$stagedPath"; then
+    rm -f -- "$stagedPath"
+    noteWarned "$label" "could not render $seedDescription"
+    return 0
+  fi
+  mv -f -- "$stagedPath" "$glimmervoidConfigPath"
+  noteApplied "$label" "seeded from $seedDescription"
+}
+
+chmodOwnerOnlyFile() {
+  local label="$1" path="$2" displayPath="$3"
+  if [[ -f "$path" && ! -L "$path" ]] && ! chmod 600 "$path" 2>/dev/null; then
+    noteWarned "$label" "chmod 600 $displayPath failed"
+  fi
+}
+
+protectGlimmervoidConfig() {
+  local label="glimmervoid config perms"
+  if ! glimmervoidConfigDirectoryIsUsable; then
+    return 0
+  fi
+  if [[ -d "$glimmervoidConfigDirectory" ]] && ! chmod 700 "$glimmervoidConfigDirectory" 2>/dev/null; then
+    noteWarned "$label" "chmod 700 $glimmervoidConfigDisplayPath failed"
+  fi
+  chmodOwnerOnlyFile "$label" "$glimmervoidConfigPath" "$glimmervoidConfigDisplayPath"
+  chmodOwnerOnlyFile "$label" "$glimmervoidSecretsPath" "$glimmervoidSecretsDisplayPath"
+}
+
+glimmervoidSecretsFileAssigns() {
+  [[ -f "$glimmervoidSecretsPath" ]] || return 1
+  local assignedValue
+  assignedValue="$(sed -n "s/^[[:space:]]*$1=//p" "$glimmervoidSecretsPath" 2>/dev/null | tail -n 1)"
+  assignedValue="${assignedValue#"${assignedValue%%[![:space:]]*}"}"
+  assignedValue="${assignedValue%"${assignedValue##*[![:space:]]}"}"
+  if [[ ${#assignedValue} -ge 2 && ( "$assignedValue" == \"*\" || "$assignedValue" == \'*\' ) ]]; then
+    assignedValue="${assignedValue:1:${#assignedValue}-2}"
+  fi
+  [[ -n "${assignedValue//[[:space:]]/}" ]]
+}
+
+# systemd loads this file into the service and nothing here can supply its values, so naming what is missing is all this topic can do.
+reportGlimmervoidSecrets() {
+  local label="glimmervoid secrets"
+  local variableName
+  local missingVariableNames=""
+  for variableName in GLIMMERVOID_TELEGRAM_BOT_TOKEN GLIMMERVOID_POSTHOG_API_KEY; do
+    if glimmervoidSecretsFileAssigns "$variableName"; then
+      continue
+    fi
+    missingVariableNames="${missingVariableNames:+$missingVariableNames and }$variableName"
+  done
+  if [[ -z "$missingVariableNames" ]]; then
+    notePresent "$label" "$glimmervoidSecretsDisplayPath carries every variable the unit loads"
+    return 0
+  fi
+  noteWarned "$label" "write $missingVariableNames into $glimmervoidSecretsDisplayPath"
+}
+
+requireGlimmervoidApp() {
+  if [[ ( -f "$glimmervoidAppDirectory/server/main.ts" || -f "$glimmervoidAppDirectory/server.js" ) \
+    && -f "$glimmervoidAppDirectory/package.json" \
+    && ( -d "$glimmervoidAppDirectory/.git" || -f "$glimmervoidAppDirectory/.git" ) ]]; then
+    notePresent "glimmervoid app" "$glimmervoidAppDisplayPath"
+    return 0
+  fi
+  noteWarned "glimmervoid app" \
+    "$glimmervoidAppDisplayPath is not a Glimmervoid checkout, list it in repos/repos.txt so the repos topic clones it"
+  return 1
+}
+
+readGlimmervoidLocalPort() {
+  local nodePath
+  nodePath="$(resolveGlimmervoidNodePath)" || return 0
+  "$nodePath" -p "String((require(process.argv[1]) || {}).port || '')" "$glimmervoidConfigPath" 2>/dev/null
+}
+
+readGlimmervoidRemotePort() {
+  local nodePath
+  nodePath="$(resolveGlimmervoidNodePath)" || return 0
+  "$nodePath" -p "String(((require(process.argv[1]) || {}).remote || {}).port || '')" "$glimmervoidConfigPath" 2>/dev/null
+}
+
+readGlimmervoidPublicHost() {
+  local nodePath
+  nodePath="$(resolveGlimmervoidNodePath)" || return 0
+  "$nodePath" -p "String(((require(process.argv[1]) || {}).remote || {}).publicHost || '')" "$glimmervoidConfigPath" 2>/dev/null
+}
+
+# A config this run cannot parse is not a config that says "disabled"; conflating them takes a live route down.
+readGlimmervoidRemoteState() {
+  local stateText
+  local nodePath
+  if [[ ! -f "$glimmervoidConfigPath" ]] || ! nodePath="$(resolveGlimmervoidNodePath)"; then
+    printf 'unknown\n'
+    return 0
+  fi
+  if ! stateText="$("$nodePath" -e '
+const requireObject = (value) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) process.exit(2);
+  return value;
+};
+let config;
+try {
+  config = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+} catch {
+  process.exit(2);
+}
+requireObject(config);
+const remote = config.remote === undefined ? {} : requireObject(config.remote);
+process.stdout.write(remote.enabled === true ? "enabled" : "disabled");
+' "$glimmervoidConfigPath" 2>/dev/null)"; then
+    printf 'unreadable\n'
+    return 0
+  fi
+  printf '%s\n' "$stateText"
+}
+
+isGlimmervoidRemoteEnabled() {
+  [[ "$(readGlimmervoidRemoteState)" == "enabled" ]]
+}
+
+glimmervoidConfigIsReadable() {
+  if [[ "$(readGlimmervoidRemoteState)" != "unreadable" ]]; then
+    return 0
+  fi
+  noteWarned "glimmervoid config" "$glimmervoidConfigDisplayPath is not valid JSON, service and serve work skipped"
+  return 1
+}
+
+hasDottedGlimmervoidHost() {
+  [[ "$1" == *.* && "$1" != *CHANGEME* ]]
+}
+
+isValidGlimmervoidPort() {
+  if [[ ! "$1" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  (($1 >= 1 && $1 <= 65535))
+}
+
+# The local listener is what a machine with remote access turned off still runs, so its port is validated without asking about remote.port.
+resolveGlimmervoidLocalPort() {
+  local label="glimmervoid config"
+  if ! resolveGlimmervoidNodePath >/dev/null; then
+    noteWarned "$label" "no node to read $glimmervoidConfigDisplayPath with"
+    return 1
+  fi
+  resolvedLocalPort="$(readGlimmervoidLocalPort)"
+  if ! isValidGlimmervoidPort "$resolvedLocalPort"; then
+    noteWarned "$label" "set port to 1-65535 in $glimmervoidConfigDisplayPath"
+    return 1
+  fi
+}
+
+resolveGlimmervoidPorts() {
+  local label="glimmervoid remote config"
+  if ! resolveGlimmervoidLocalPort; then
+    return 1
+  fi
+  resolvedRemotePort="$(readGlimmervoidRemotePort)"
+  if ! isValidGlimmervoidPort "$resolvedRemotePort"; then
+    noteWarned "$label" "set remote.port to 1-65535 in $glimmervoidConfigDisplayPath"
+    return 1
+  fi
+  if [[ "$resolvedLocalPort" == "$resolvedRemotePort" ]]; then
+    noteWarned "$label" "set remote.port to something other than port in $glimmervoidConfigDisplayPath"
+    return 1
+  fi
+}
+
+isTailscaleAuthed() {
+  tailscale status >/dev/null 2>&1
+}
+
+detectGlimmervoidTailnetHostname() {
+  local nodePath
+  if ! command -v tailscale >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! nodePath="$(resolveGlimmervoidNodePath)"; then
+    return 0
+  fi
+  if ! isTailscaleAuthed; then
+    return 0
+  fi
+  tailscale status --json 2>/dev/null | "$nodePath" -e 'try { const status = JSON.parse(require("fs").readFileSync(0, "utf8")); const dnsName = String((status.Self || {}).DNSName || "").replace(/\.$/, ""); if (dnsName) process.stdout.write(dnsName); } catch {}' 2>/dev/null || true
+}
+
+warnGlimmervoidRemotePlaceholder() {
+  noteWarned "glimmervoid remote config" \
+    "publicHost still says CHANGEME; authenticate Tailscale (sudo tailscale up) or set remote.publicHost in $glimmervoidConfigDisplayPath"
+}
+
+warnGlimmervoidDottedHostRequired() {
+  noteWarned "glimmervoid remote config" \
+    "publicHost '$1' is not a full tailnet name; set remote.publicHost in $glimmervoidConfigDisplayPath to host.tailnet-name.ts.net"
+}
+
+writeGlimmervoidRemoteSettings() {
+  local publicHost="$1"
+  local nodeStatus=0
+  local nodePath
+  if ! nodePath="$(resolveGlimmervoidNodePath)"; then
+    noteWarned "glimmervoid remote config" "no node to write $glimmervoidConfigDisplayPath with"
+    return 1
+  fi
+  "$nodePath" - "$glimmervoidConfigPath" "$resolvedLocalPort" "$resolvedRemotePort" "$publicHost" <<'NODE' || nodeStatus=$?
+const fs = require("fs");
+const path = require("path");
+
+const [configPath, localPortText, remotePortText, publicHost] = process.argv.slice(2);
+let config;
+try {
+  config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+} catch {
+  process.exit(2);
+}
+
+config.port = Number(localPortText);
+config.remote = config.remote && typeof config.remote === "object" ? config.remote : {};
+config.remote.port = Number(remotePortText);
+config.remote.publicHost = publicHost;
+config.remote.allowedOrigins = [`https://${publicHost}`];
+
+const tempPath = path.join(path.dirname(configPath), `.config.json.${process.pid}.tmp`);
+fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+fs.renameSync(tempPath, configPath);
+NODE
+  if ((nodeStatus == 0)); then
+    protectGlimmervoidConfig
+    return 0
+  fi
+  if ((nodeStatus == 2)); then
+    noteWarned "glimmervoid remote config" "config JSON is unreadable, leaving it unchanged"
+    return 1
+  fi
+  noteWarned "glimmervoid remote config" "update failed, leaving it unchanged"
+  return 1
+}
+
+# Repointing a live dashboard revokes every device already paired against the old name.
+reportGlimmervoidRemoteDrift() {
+  local detectedHost="$1"
+  local label="glimmervoid remote config"
+  local configuredHost
+  configuredHost="$(readGlimmervoidPublicHost)"
+  if ! hasDottedGlimmervoidHost "$configuredHost"; then
+    warnGlimmervoidDottedHostRequired "$configuredHost"
+    return 0
+  fi
+  if [[ -z "$detectedHost" || "${configuredHost,,}" == "${detectedHost,,}" ]]; then
+    notePresent "$label" "configured"
+    return 0
+  fi
+  noteWarned "$label" \
+    "publicHost $configuredHost but the tailnet reports $detectedHost; set remote.publicHost in $glimmervoidConfigDisplayPath"
+}
+
+configureGlimmervoidRemoteSettings() {
+  local detectedHost
+  if ! glimmervoidConfigDirectoryIsUsable; then
+    return 0
+  fi
+  if [[ ! -f "$glimmervoidConfigPath" || -L "$glimmervoidConfigPath" ]]; then
+    return 0
+  fi
+  if ! resolveGlimmervoidNodePath >/dev/null; then
+    noteWarned "glimmervoid remote config" "no node in ~/.npm-global/bin, ~/.local/bin, /usr/local/bin, /usr/bin or /bin"
+    return 0
+  fi
+  if ! isGlimmervoidRemoteEnabled; then
+    notePresent "glimmervoid remote config" "remote access disabled"
+    return 0
+  fi
+  detectedHost="$(detectGlimmervoidTailnetHostname)"
+  if hasDottedGlimmervoidHost "$(readGlimmervoidPublicHost)"; then
+    reportGlimmervoidRemoteDrift "$detectedHost"
+    return 0
+  fi
+  if [[ -z "$detectedHost" ]]; then
+    warnGlimmervoidRemotePlaceholder
+    return 0
+  fi
+  if ! resolveGlimmervoidPorts; then
+    return 0
+  fi
+  if ! writeGlimmervoidRemoteSettings "$detectedHost"; then
+    return 0
+  fi
+  remoteSettingsRewritten=1
+  noteApplied "glimmervoid remote config" "publicHost $detectedHost (detected on the tailnet)"
+}
+
+# command -v answers with whatever the converging shell had on PATH; every shell agrees on this.
+resolveGlimmervoidNodePath() {
+  local candidatePath
+  for candidatePath in "$HOME/.npm-global/bin/node" "$HOME/.local/bin/node" \
+    /usr/local/bin/node /usr/bin/node /bin/node; do
+    if [[ -x "$candidatePath" ]]; then
+      printf '%s\n' "$candidatePath"
+      return 0
+    fi
+  done
+  return 1
+}
+
+probeHttpStatus() {
+  local status
+  status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$1")" || return 1
+  printf '%s\n' "$status"
+}
+
+checkGlimmervoidClaudeState() {
+  local label="claude"
+  if ! command -v claude >/dev/null 2>&1; then
+    noteWarned "$label" "not on PATH, add \$HOME/.local/bin to PATH"
+    return 0
+  fi
+  if [[ ! -f "$HOME/.claude/.credentials.json" ]]; then
+    noteWarned "$label" "run claude login on this machine"
+    return 0
+  fi
+  notePresent "$label" "installed and logged in"
+}
+
+noteGlimmervoidPairingChecklist() {
+  if ! hasDottedGlimmervoidHost "$(readGlimmervoidPublicHost)"; then
+    return 0
+  fi
+  noteDetail "glimmervoid checklist" "run glimmervoid pair once per device"
+}
+
+# The previous implementation linked this path, so a symlink onto a plain file stays replaceable while one onto a directory would swallow the staged file.
+glimmervoidCliPathIsUsable() {
+  [[ ! -e "$1" ]] || [[ -f "$1" ]]
+}
+
+# The build emits dist/bin/glimmervoid.js without an exec bit and the global npm copy that used to chmod its bin is gone, so PATH gets a shim rather than a link no shell may run.
+installGlimmervoidCliShim() {
+  local label="glimmervoid cli"
+  local shimPath="$HOME/.local/bin/glimmervoid"
+  local builtCliPath="$glimmervoidAppDirectory/dist/bin/glimmervoid.js"
+  local nodePath
+  local stagedPath
+  if [[ ! -e "$builtCliPath" ]]; then
+    notePresent "$label" "waits on the first build of $glimmervoidAppDisplayPath"
+    return 0
+  fi
+  if ! nodePath="$(resolveGlimmervoidNodePath)"; then
+    noteWarned "$label" "no node in ~/.npm-global/bin, ~/.local/bin, /usr/local/bin, /usr/bin or /bin"
+    return 0
+  fi
+  if ! glimmervoidCliPathIsUsable "$shimPath"; then
+    noteWarned "$label" "$shimPath is not a plain file, move it aside first"
+    return 0
+  fi
+  if ! mkdir -p -- "$HOME/.local/bin"; then
+    noteWarned "$label" "cannot create ~/.local/bin"
+    return 0
+  fi
+  stagedPath="$(mktemp "$HOME/.local/bin/.glimmervoid.XXXXXX")"
+  printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$nodePath" "$builtCliPath" > "$stagedPath"
+  chmod 755 -- "$stagedPath"
+  if [[ -x "$shimPath" ]] && filesAreIdentical "$stagedPath" "$shimPath"; then
+    rm -f -- "$stagedPath"
+    notePresent "$label" "~/.local/bin/glimmervoid"
+    return 0
+  fi
+  if ! mv -f -- "$stagedPath" "$shimPath"; then
+    rm -f -- "$stagedPath"
+    noteWarned "$label" "cannot write $shimPath"
+    return 0
+  fi
+  if [[ ! -f "$shimPath" || ! -x "$shimPath" ]]; then
+    noteWarned "$label" "$shimPath is not an executable plain file"
+    return 0
+  fi
+  noteApplied "$label" "~/.local/bin/glimmervoid execs node against $glimmervoidAppDisplayPath/dist/bin/glimmervoid.js"
+}
+
+if ! glimmervoidProfileSettingsAreUsable; then
+  finishTopic
+fi
+
+if ! removeStaleGlimmervoidUnit; then
+  finishTopic
+fi
+
+if ! glimmervoidConfigDirectoryIsUsable; then
+  noteWarned "glimmervoid config" "$glimmervoidConfigDisplayPath is not a directory, move it aside first"
+  finishTopic
+fi
+
+migrateLegacyGlimmervoidConfig
+seedGlimmervoidConfig
+protectGlimmervoidConfig
+
+if ! profileServesGlimmervoid "$profileName"; then
+  notePresent "glimmervoid service" "skipped, profile does not serve glimmervoid"
+  finishTopic
+fi
+
+reportGlimmervoidSecrets
+
+if ! requireGlimmervoidApp; then
+  finishTopic
+fi
+installGlimmervoidCliShim
+if glimmervoidConfigIsReadable; then
+  configureGlimmervoidRemoteSettings
+  installGlimmervoidService
+  configureGlimmervoidServe
+  probeGlimmervoidRemoteTls
+fi
+checkGlimmervoidClaudeState
+noteGlimmervoidPairingChecklist
+
+finishTopic

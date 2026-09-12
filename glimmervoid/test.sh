@@ -12,40 +12,40 @@ source "$repoRoot/script/lib/state.sh"
 
 suiteSkipsTheRealHomeCheck=1
 
-startStubbedSandbox "glissa"
+startStubbedSandbox "glimmervoid"
 toolingHome="$sandbox"
-startSandboxHome "glissa-personal"
+startSandboxHome "glimmervoid-personal"
 personalHome="$sandbox"
-startSandboxHome "glissa-server"
+startSandboxHome "glimmervoid-server"
 serverHome="$sandbox"
-serverUnitPath="$serverHome/.config/systemd/user/glissa.service"
-startSandboxHome "glissa-unauthed"
+serverUnitPath="$serverHome/.config/systemd/user/glimmervoid.service"
+startSandboxHome "glimmervoid-unauthed"
 unauthedHome="$sandbox"
-startSandboxHome "glissa-optout"
+startSandboxHome "glimmervoid-optout"
 optOutHome="$sandbox"
-startSandboxHome "glissa-symlinked"
+startSandboxHome "glimmervoid-symlinked"
 symlinkedHome="$sandbox"
-startSandboxHome "glissa-broken"
+startSandboxHome "glimmervoid-broken"
 brokenConfigHome="$sandbox"
-startSandboxHome "glissa-unowned"
+startSandboxHome "glimmervoid-unowned"
 unownedRouteHome="$sandbox"
-startSandboxHome "glissa-badstatus"
+startSandboxHome "glimmervoid-badstatus"
 badStatusHome="$sandbox"
-startSandboxHome "glissa-unresolved"
+startSandboxHome "glimmervoid-unresolved"
 unresolvedProfileHome="$sandbox"
-startSandboxHome "glissa-pending-deps"
+startSandboxHome "glimmervoid-pending-deps"
 pendingDepsHome="$sandbox"
-startSandboxHome "glissa-missing-app"
+startSandboxHome "glimmervoid-missing-app"
 missingAppHome="$sandbox"
-startSandboxHome "glissa-invalid-app"
+startSandboxHome "glimmervoid-invalid-app"
 invalidAppHome="$sandbox"
-startSandboxHome "glissa-local-seed"
+startSandboxHome "glimmervoid-local-seed"
 localSeedHome="$sandbox"
 
 realHome="$HOME"
 realNodePath="$(command -v node 2>/dev/null || true)"
 if [[ -z "$realNodePath" ]]; then
-  printf 'glissa/test.sh needs node on PATH: the installer reads the dashboard config with it.\n' >&2
+  printf 'glimmervoid/test.sh needs node on PATH: the installer reads the dashboard config with it.\n' >&2
   exit 1
 fi
 
@@ -241,7 +241,7 @@ exit 0
 STUB
 provideCommand git
 
-for recordingOnlyCommand in claude glissa npm; do
+for recordingOnlyCommand in claude glimmervoid npm; do
   writeStub "$recordingOnlyCommand" <<STUB
 #!/usr/bin/env bash
 printf '$recordingOnlyCommand %s\n' "\$*" >> "\$DOTFILES_TEST_LOG"
@@ -259,18 +259,18 @@ for machineHomePath in "$toolingHome" "$personalHome" "$serverHome" "$unauthedHo
   ln -sf "$stubBin/node" "$machineHomePath/.local/bin/node"
 done
 
-makeGlissaApp() {
+makeGlimmervoidApp() {
   local machineHome="$1"
-  mkdir -p "$machineHome/Projects/glissa/.git" \
-    "$machineHome/Projects/glissa/server" \
-    "$machineHome/Projects/glissa/dist/server"
-  : > "$machineHome/Projects/glissa/server/main.ts"
-  : > "$machineHome/Projects/glissa/dist/server/index.js"
-  printf '{}\n' > "$machineHome/Projects/glissa/package.json"
+  mkdir -p "$machineHome/Projects/glimmervoid/.git" \
+    "$machineHome/Projects/glimmervoid/server" \
+    "$machineHome/Projects/glimmervoid/dist/server"
+  : > "$machineHome/Projects/glimmervoid/server/main.ts"
+  : > "$machineHome/Projects/glimmervoid/dist/server/index.js"
+  printf '{}\n' > "$machineHome/Projects/glimmervoid/package.json"
 }
 
-# The suite may itself be running under glissa.service, and the real cgroup must never decide what a sandboxed run does.
-outsideServiceCgroup="$sandboxTemp/outside-glissa.cgroup"
+# The suite may itself be running under glimmervoid.service, and the real cgroup must never decide what a sandboxed run does.
+outsideServiceCgroup="$sandboxTemp/outside-glimmervoid.cgroup"
 printf '0::/user.slice/user-1000.slice/session-1.scope\n' > "$outsideServiceCgroup"
 
 runInstall() {
@@ -292,11 +292,11 @@ runInstall() {
 }
 
 configValue() {
-  "$realNodePath" -p "String($2)" "$1/.glissa/config.json" 2>/dev/null
+  "$realNodePath" -p "String($2)" "$1/.glimmervoid/config.json" 2>/dev/null
 }
 
 serverSeedMatchesPreviousExample() {
-  "$realNodePath" - "$1/.glissa/config.json" "$1" <<'NODE'
+  "$realNodePath" - "$1/.glimmervoid/config.json" "$1" <<'NODE'
 const fs = require("fs");
 
 const [configPath, home] = process.argv.slice(2);
@@ -313,8 +313,8 @@ const expected = {
   repoRoots: [`${home}/Projects`],
   projects: [{
     id: "00000000-0000-4000-8000-000000000001",
-    name: "glissa",
-    path: `${home}/Projects/glissa`
+    name: "glimmervoid",
+    path: `${home}/Projects/glimmervoid`
   }],
   replayBufferKB: 512,
   scrollback: 50000,
@@ -354,7 +354,7 @@ if (JSON.stringify(canonical(actual)) !== JSON.stringify(canonical(expected))) p
 NODE
 }
 
-printf '\nglissa topic\n'
+printf '\nglimmervoid topic\n'
 [[ -s "$topicDir/test/install.sh" ]] || exit 1
 # shellcheck source=./test/install.sh
 source "$topicDir/test/install.sh" || exit 1
@@ -365,4 +365,4 @@ source "$topicDir/test/service.sh" || exit 1
 # shellcheck source=./test/serve.sh
 source "$topicDir/test/serve.sh" || exit 1
 
-reportTopicResults "glissa"
+reportTopicResults "glimmervoid"

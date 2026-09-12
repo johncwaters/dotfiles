@@ -1,15 +1,15 @@
 # shellcheck shell=bash
-collectWithoutGlissaStatus=0
-runCollect > /dev/null 2>&1 || collectWithoutGlissaStatus=$?
-check "collect without glissa exits clean" test "$collectWithoutGlissaStatus" -eq 0
-check "collect without glissa writes nothing" test ! -e "$collectList"
+collectWithoutGlimmervoidStatus=0
+runCollect > /dev/null 2>&1 || collectWithoutGlimmervoidStatus=$?
+check "collect without glimmervoid exits clean" test "$collectWithoutGlimmervoidStatus" -eq 0
+check "collect without glimmervoid writes nothing" test ! -e "$collectList"
 
-mkdir -p "$sandbox/.glissa" "$sandbox/.git"
+mkdir -p "$sandbox/.glimmervoid" "$sandbox/.git"
 printf 'https://github.com/johncwaters/home\n' > "$sandbox/.git/origin-url"
 makeExistingLinkedWorktree "Projects/collected-linked" \
   "https://github.com/johncwaters/collected-linked"
 mkdir -p "$sandbox/Projects/gamma/nested"
-cat > "$sandbox/.glissa/config.json" <<CONFIG
+cat > "$sandbox/.glimmervoid/config.json" <<CONFIG
 { "projects": [
   { "path": "$sandbox/Projects/gamma" },
   { "path": "$sandbox/Projects/alpha" },
@@ -46,9 +46,9 @@ runCollect "$mergedList" > /dev/null 2>&1
 check "a merge keeps the hand written comment" grep -qx '# a hand written header' "$mergedList"
 check "a merge keeps a nodeps flag" \
   grep -qx 'Projects/gamma=https://github.com/johncwaters/gamma nodeps' "$mergedList"
-check "a merge keeps an entry glissa never reported" \
+check "a merge keeps an entry glimmervoid never reported" \
   grep -qx 'Projects/handpicked=https://github.com/johncwaters/handpicked' "$mergedList"
-check "a merge adds what glissa did report" \
+check "a merge adds what glimmervoid did report" \
   grep -qx 'Projects/alpha=https://github.com/johncwaters/alpha' "$mergedList"
 check "a merge lists each path once" \
   bash -c 'test "$(grep -c "^Projects/gamma=" "$1")" -eq 1' _ "$mergedList"
@@ -59,7 +59,7 @@ printf 'Projects/handadded=https://github.com/johncwaters/handadded' >> "$unterm
 runCollect "$unterminatedList" > /dev/null 2>&1
 check "a merge keeps a last line with no trailing newline" \
   grep -qF 'Projects/handadded=https://github.com/johncwaters/handadded' "$unterminatedList"
-check "a merge still adds what glissa reported to an unterminated list" \
+check "a merge still adds what glimmervoid reported to an unterminated list" \
   grep -qx 'Projects/alpha=https://github.com/johncwaters/alpha' "$unterminatedList"
 
 tabFlagList="$sandbox/tab-flag.txt"

@@ -21,9 +21,9 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `block-comments.mjs`, `comment-scanner.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
 
-`block-comments.mjs` belongs to Glissa's per-session hooks in
-`glissa/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glissa sessions. Other event wiring lives in `ai/settings.base.json`.
+`block-comments.mjs` belongs to Glimmervoid's per-session hooks in
+`glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
+to Glimmervoid sessions. Other event wiring lives in `ai/settings.base.json`.
 
 ## Validator constraints
 

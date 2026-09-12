@@ -259,7 +259,7 @@ check "keeping an unpublished extension is a note, not a warning" \
 check "a retired extension that is present is uninstalled" \
   logHas "--uninstall-extension $retiredExtensionName"
 check "the list names no extension no marketplace serves" \
-  bash -c '! grep -qx "johnwaters.glissa-visions" "$1"' _ "$topicDir/extensions.txt"
+  bash -c '! grep -qx "johnwaters.glimmervoid-visions" "$1"' _ "$topicDir/extensions.txt"
 check "the vsix install nobody can automate is written down" \
   grep -q 'install-extension <path>.vsix' "$repoRoot/README.md"
 

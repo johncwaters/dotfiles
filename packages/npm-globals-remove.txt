@@ -1,2 +1,3 @@
 oh-my-claude-sisyphus
 @vibe-kit/grok-cli
+glissa

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Merges rather than replaces: flags, comments and entries glissa never reported are the machine owner's, not this script's.
+# Merges rather than replaces: flags, comments and entries glimmervoid never reported are the machine owner's, not this script's.
 
 set -euo pipefail
 
@@ -11,10 +11,10 @@ source "$topicDirectory/../script/lib/log.sh"
 # shellcheck source=../script/lib/state.sh
 source "$topicDirectory/../script/lib/state.sh"
 repoListPath="$(reposListPath)"
-glissaConfigPath="$HOME/.glissa/config.json"
+glimmervoidConfigPath="$HOME/.glimmervoid/config.json"
 
-if [[ ! -f "$glissaConfigPath" ]]; then
-  printf 'repos: no %s, nothing to collect\n' "$glissaConfigPath" >&2
+if [[ ! -f "$glimmervoidConfigPath" ]]; then
+  printf 'repos: no %s, nothing to collect\n' "$glimmervoidConfigPath" >&2
   exit 0
 fi
 
@@ -23,13 +23,13 @@ if ! command -v git >/dev/null 2>&1; then
   exit 0
 fi
 
-glissaProjectPaths() {
-  grep -o '"path"[[:space:]]*:[[:space:]]*"[^"]*"' "$glissaConfigPath" \
+glimmervoidProjectPaths() {
+  grep -o '"path"[[:space:]]*:[[:space:]]*"[^"]*"' "$glimmervoidConfigPath" \
     | sed 's/^[^"]*"path"[[:space:]]*:[[:space:]]*"//; s/"$//' \
     | sort -u
 }
 
-# The home directory itself is not a repo entry, whatever glissa reports.
+# The home directory itself is not a repo entry, whatever glimmervoid reports.
 pathRelativeToHome() {
   local projectPath="$1"
   if [[ "$projectPath" != "$HOME/"* ]]; then
@@ -121,11 +121,11 @@ while IFS= read -r projectPath; do
     continue
   fi
   printf '%s=%s\n' "$relativeProjectPath" "$originUrl" >> "$collectedEntries"
-done < <(glissaProjectPaths)
+done < <(glimmervoidProjectPaths)
 
-# An empty probe means glissa changed its config shape, not that the machine has no repos.
+# An empty probe means glimmervoid changed its config shape, not that the machine has no repos.
 if [[ ! -s "$collectedEntries" ]]; then
-  printf 'repos: no glissa projects found, keeping the existing repos.txt\n' >&2
+  printf 'repos: no glimmervoid projects found, keeping the existing repos.txt\n' >&2
   exit 0
 fi
 

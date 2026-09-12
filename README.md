@@ -20,7 +20,7 @@ The [repository invariants and map](AGENTS.md) cover checkout safety and link ow
 ## Profiles
 
 Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `CLAUDE.md`,
-`commit-policy.json`, `settings.overlay.json`, `glissa.json`, `glissa.overlay.json`,
+`commit-policy.json`, `settings.overlay.json`, `glimmervoid.json`, `glimmervoid.overlay.json`,
 `vscodium.json`.
 
 - `personal`: this workstation
@@ -35,8 +35,8 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `CLAU
 | `git` | global gitconfig, with identity and credentials in `~/.gitconfig.local` |
 | `ai` | Claude Code and Codex: agents, commands, hooks, hud, skills, compiled-commit |
 | `vscodium` | settings, keybindings, mcp.json, extensions |
-| `glissa` | dashboard config, plus the user service on profiles that serve Glissa |
-| `converge` | a nightly user timer running `dot`, the one converge outside Glissa's cgroup that can pay a restart a hosted run left owed |
+| `glimmervoid` | dashboard config, plus the user service on profiles that serve Glimmervoid |
+| `converge` | a nightly user timer running `dot`, the one converge outside Glimmervoid's cgroup that can pay a restart a hosted run left owed |
 | `fonts` | CommitMono |
 | `dictation` | ydotoold user service |
 | `screenshot` | flameshot desktop entry and save path |
@@ -52,7 +52,7 @@ Vendored third-party skills are listed in [NOTICE.md](NOTICE.md).
 
 Anything holding a path, hostname, or credential is untracked, with a tracked
 example documenting its shape: `repos/repos.example.txt` for `repos/repos.txt`,
-`glissa/config.example.json` for `glissa/config.json`, `git/gitconfig.local.example`
+`glimmervoid/config.example.json` for `glimmervoid/config.json`, `git/gitconfig.local.example`
 for `~/.gitconfig.local`, and `shell/localrc.example` for `~/.localrc`.
 `~/.claude/settings.json` is rendered from `ai/settings.base.json` plus the active
 profile's `settings.overlay.json`. `.machine-profile` is written by `script/bootstrap`.
@@ -60,7 +60,7 @@ profile's `settings.overlay.json`. `.machine-profile` is written by `script/boot
 `vscodium/mcp.json` reads its PostHog token from the environment, so
 `POSTHOG_PERSONAL_API_KEY` has to be exported where VSCodium can see it.
 
-`johnwaters.glissa-visions` is built on this machine and published to no marketplace, so
+`johnwaters.glimmervoid-visions` is built on this machine and published to no marketplace, so
 `vscodium/extensions.txt` cannot name it. Install it by hand with
 `codium --install-extension <path>.vsix`; exact sync keeps it, because an extension whose
 manifest says `private` is never pruned.

@@ -107,7 +107,7 @@ function seedUnionOverwriteDivergence(): PromotionSetup {
 }
 
 test("mainline promotion deletes a merged remote branch", () => {
-  const featureBranch = "glissa/session/delete-after-mainline";
+  const featureBranch = "glimmervoid/session/delete-after-mainline";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
     writeFile(local, "base.txt", "base\nfeature change\n");
@@ -122,7 +122,7 @@ test("mainline promotion deletes a merged remote branch", () => {
 });
 
 test("a refused merged remote branch deletion is only a warning", () => {
-  const featureBranch = "glissa/session/delete-rejected";
+  const featureBranch = "glimmervoid/session/delete-rejected";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
     writeOriginHook(origin, "update", rejectDeleteHook(featureBranch));

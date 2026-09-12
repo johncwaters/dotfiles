@@ -335,12 +335,12 @@ stateHome="$sandbox/.local/state"
 stateRecordDirectory="$stateHome/dotfiles"
 mkdir -p "$stateRecordDirectory"
 
-firstCollidingStateName="$(HOME="$sandbox" repoDepsPendingStateNameForPath "$sandbox/Projects/glissa")"
-secondCollidingStateName="$(HOME="$sandbox" repoDepsPendingStateNameForPath "$sandbox/Projects-glissa")"
+firstCollidingStateName="$(HOME="$sandbox" repoDepsPendingStateNameForPath "$sandbox/Projects/glimmervoid")"
+secondCollidingStateName="$(HOME="$sandbox" repoDepsPendingStateNameForPath "$sandbox/Projects-glimmervoid")"
 check "repo dependency records include the full path hash" \
   test "$firstCollidingStateName" != "$secondCollidingStateName"
 check "a repo dependency record name is stable" \
-  test "$firstCollidingStateName" = "$(HOME="$sandbox" repoDepsPendingStateNameForPath "$sandbox/Projects/glissa")"
+  test "$firstCollidingStateName" = "$(HOME="$sandbox" repoDepsPendingStateNameForPath "$sandbox/Projects/glimmervoid")"
 
 longRepoPathSegment="$(printf 'a%.0s' {1..300})"
 longRepoStateName="$(HOME="$sandbox" repoDepsPendingStateNameForPath "$sandbox/$longRepoPathSegment")"
@@ -359,8 +359,8 @@ check "a repo dependency record slug is capped at 80 bytes" \
   test "${#longRepoStateSlug}" -eq 80
 check "a bounded repo dependency record keeps its full hash suffix" \
   test "$longRepoStateHash" = "$longRepoExpectedHash"
-check "the shared repo dependency key names glissa's gate" \
-  grep -q 'shared with glissa' "$repoRoot/script/lib/state.sh"
+check "the shared repo dependency key names glimmervoid's gate" \
+  grep -q 'shared with glimmervoid' "$repoRoot/script/lib/state.sh"
 
 stateTargetPath="$sandbox/a-file-the-state-writer-never-chose"
 printf 'a file the state writer never chose\n' > "$stateTargetPath"
