@@ -76,25 +76,47 @@ readGlissaBootOnlySettings() {
   printf '%s\n' "$renderedSettings"
 }
 
-# The server hot-reloads most of config.json and rewrites it on every session event; the app checkout and the keys glissa reads once at boot are what a restart is owed for.
+# The token is stored in cleartext under ~/.local/state, so the secrets file travels as a digest and never as its values.
+readGlissaSecretsDigest() {
+  local nodePath
+  local digest
+  if [[ ! -f "$glissaSecretsPath" ]]; then
+    printf 'absent\n'
+    return 0
+  fi
+  if ! nodePath="$(resolveGlissaNodePath)"; then
+    printf 'unreadable\n'
+    return 0
+  fi
+  digest="$("$nodePath" -e 'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))' "$glissaSecretsPath" 2>/dev/null)" || digest=""
+  if [[ -z "$digest" ]]; then
+    printf 'unreadable\n'
+    return 0
+  fi
+  printf '%s\n' "$digest"
+}
+
+# The server hot-reloads most of config.json and rewrites it on every session event; the app checkout, the keys glissa reads once at boot, and the environment file systemd loads once at boot are what a restart is owed for.
 glissaServiceInputsToken() {
   local checkoutToken="absent"
   if command -v git >/dev/null 2>&1; then
     checkoutToken="$(git -C "$glissaAppDirectory" rev-parse HEAD 2>/dev/null || true)"
   fi
-  printf 'checkout %s\nboot-only %s\n' "$checkoutToken" "$(readGlissaBootOnlySettings)"
+  printf 'checkout %s\nboot-only %s\nsecrets %s\n' "$checkoutToken" \
+    "$(readGlissaBootOnlySettings)" "$(readGlissaSecretsDigest)"
 }
 
 glissaServiceInputsChanged() {
+  local inputsToken="$1"
   local recordedInputs
   if ! recordedInputs="$(readDotfilesState "$glissaServiceInputsStateName")"; then
     return 0
   fi
-  [[ "$recordedInputs" != "$(glissaServiceInputsToken)" ]]
+  [[ "$recordedInputs" != "$inputsToken" ]]
 }
 
 recordGlissaServiceInputs() {
-  writeDotfilesState "$glissaServiceInputsStateName" "$(glissaServiceInputsToken)"
+  writeDotfilesState "$glissaServiceInputsStateName" "$1"
 }
 
 glissaAppDepsArePending() {
@@ -104,6 +126,7 @@ glissaAppDepsArePending() {
 startGlissaService() {
   local unitChanged="$1"
   local label="glissa service"
+  local inputsToken
   if glissaAppDepsArePending; then
     noteWarned "$label" \
       "dependencies or build are pending for $glissaAppDisplayPath, run the repos topic before starting it"
@@ -124,13 +147,15 @@ startGlissaService() {
     noteWarned "$label" "user service manager not reachable, unit installed but not started"
     return 1
   fi
-  if ((remoteSettingsRewritten == 1)) || glissaServiceInputsChanged; then
+  # A secrets file written while the restart runs must stay owed, so the compared token is the one recorded.
+  inputsToken="$(glissaServiceInputsToken)"
+  if ((remoteSettingsRewritten == 1)) || glissaServiceInputsChanged "$inputsToken"; then
     unitChanged=1
   fi
   if ! enableUserService "$label" "glissa" "$unitChanged"; then
     return 1
   fi
-  recordGlissaServiceInputs
+  recordGlissaServiceInputs "$inputsToken"
 }
 
 installGlissaService() {

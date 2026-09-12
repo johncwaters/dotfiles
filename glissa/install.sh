@@ -19,6 +19,8 @@ source "$dotfilesRepo/glissa/serve.sh"
 glissaConfigDirectory="$HOME/.glissa"
 glissaConfigPath="$glissaConfigDirectory/config.json"
 glissaConfigDisplayPath="~/.glissa/config.json"
+glissaSecretsPath="$glissaConfigDirectory/secrets.env"
+glissaSecretsDisplayPath="~/.glissa/secrets.env"
 glissaAppDirectory="$HOME/Projects/glissa"
 glissaAppDisplayPath="~/Projects/glissa"
 remoteSettingsRewritten=0
@@ -147,6 +149,13 @@ seedGlissaConfig() {
   noteApplied "$label" "seeded from $seedDescription"
 }
 
+chmodOwnerOnlyFile() {
+  local label="$1" path="$2" displayPath="$3"
+  if [[ -f "$path" && ! -L "$path" ]] && ! chmod 600 "$path" 2>/dev/null; then
+    noteWarned "$label" "chmod 600 $displayPath failed"
+  fi
+}
+
 protectGlissaConfig() {
   local label="glissa config perms"
   if ! glissaConfigDirectoryIsUsable; then
@@ -155,10 +164,38 @@ protectGlissaConfig() {
   if [[ -d "$glissaConfigDirectory" ]] && ! chmod 700 "$glissaConfigDirectory" 2>/dev/null; then
     noteWarned "$label" "chmod 700 $glissaConfigDisplayPath failed"
   fi
-  if [[ -f "$glissaConfigPath" && ! -L "$glissaConfigPath" ]] \
-    && ! chmod 600 "$glissaConfigPath" 2>/dev/null; then
-    noteWarned "$label" "chmod 600 $glissaConfigDisplayPath failed"
+  chmodOwnerOnlyFile "$label" "$glissaConfigPath" "$glissaConfigDisplayPath"
+  chmodOwnerOnlyFile "$label" "$glissaSecretsPath" "$glissaSecretsDisplayPath"
+}
+
+glissaSecretsFileAssigns() {
+  [[ -f "$glissaSecretsPath" ]] || return 1
+  local assignedValue
+  assignedValue="$(sed -n "s/^[[:space:]]*$1=//p" "$glissaSecretsPath" 2>/dev/null | tail -n 1)"
+  assignedValue="${assignedValue#"${assignedValue%%[![:space:]]*}"}"
+  assignedValue="${assignedValue%"${assignedValue##*[![:space:]]}"}"
+  if [[ ${#assignedValue} -ge 2 && ( "$assignedValue" == \"*\" || "$assignedValue" == \'*\' ) ]]; then
+    assignedValue="${assignedValue:1:${#assignedValue}-2}"
   fi
+  [[ -n "${assignedValue//[[:space:]]/}" ]]
+}
+
+# systemd loads this file into the service and nothing here can supply its values, so naming what is missing is all this topic can do.
+reportGlissaSecrets() {
+  local label="glissa secrets"
+  local variableName
+  local missingVariableNames=""
+  for variableName in GLISSA_TELEGRAM_BOT_TOKEN GLISSA_POSTHOG_API_KEY; do
+    if glissaSecretsFileAssigns "$variableName"; then
+      continue
+    fi
+    missingVariableNames="${missingVariableNames:+$missingVariableNames and }$variableName"
+  done
+  if [[ -z "$missingVariableNames" ]]; then
+    notePresent "$label" "$glissaSecretsDisplayPath carries every variable the unit loads"
+    return 0
+  fi
+  noteWarned "$label" "write $missingVariableNames into $glissaSecretsDisplayPath"
 }
 
 requireGlissaApp() {
@@ -451,6 +488,8 @@ if ! profileServesGlissa "$profileName"; then
   notePresent "glissa service" "skipped, profile does not serve glissa"
   finishTopic
 fi
+
+reportGlissaSecrets
 
 if ! requireGlissaApp; then
   finishTopic

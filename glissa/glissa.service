@@ -8,6 +8,8 @@ WorkingDirectory=__APP_DIR__
 # dist/ is gitignored build output; rebuilding at start heals a stale or wiped dist instead of crash-looping.
 ExecStartPre=__NPM__ run build
 ExecStart=__NODE__ dist/server/index.js
+# Credentials live outside the dashboard config; the leading dash keeps a machine without the file bootable.
+EnvironmentFile=-%h/.glissa/secrets.env
 Environment=PATH=__PATH__
 KillMode=control-group
 TimeoutStopSec=10

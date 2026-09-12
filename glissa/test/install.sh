@@ -2,6 +2,10 @@
 makeGlissaApp "$personalHome"
 mkdir -p "$personalHome/.claude"
 printf '{}\n' > "$personalHome/.claude/.credentials.json"
+mkdir -p "$personalHome/.glissa"
+printf 'GLISSA_TELEGRAM_BOT_TOKEN=placeholder\nGLISSA_POSTHOG_API_KEY=placeholder\n' \
+  > "$personalHome/.glissa/secrets.env"
+chmod 644 "$personalHome/.glissa/secrets.env"
 : > "$commandLog"
 personalStatus=0
 personalOutput="$(runInstall "$personalHome" personal)" || personalStatus=$?
@@ -20,7 +24,13 @@ check "the config directory is owner only" \
   test "$(stat -c '%a' "$personalHome/.glissa")" = "700"
 check "the config file is owner only" \
   test "$(stat -c '%a' "$personalHome/.glissa/config.json")" = "600"
+check "the secrets file is owner only" \
+  test "$(stat -c '%a' "$personalHome/.glissa/secrets.env")" = "600"
+check "a secrets file carrying every variable draws no warning" \
+  outputLacks "$personalOutput" "write GLISSA_"
 check "a personal machine installs the unit" test -f "$personalHome/.config/systemd/user/glissa.service"
+check "the unit loads the secrets file without requiring it" \
+  grep -qxF 'EnvironmentFile=-%h/.glissa/secrets.env' "$personalHome/.config/systemd/user/glissa.service"
 check "a personal machine enables the service" logHas "systemctl --user enable --now glissa"
 check "a config without a remote block is remote-disabled" \
   outputHas "$personalOutput" 'remote access disabled'
@@ -32,6 +42,35 @@ personalRerunStatus=0
 personalRerunOutput="$(runInstall "$personalHome" personal)" || personalRerunStatus=$?
 check "a second personal run reports no change" reportsNoChanges "$personalRerunOutput"
 check "a second personal run exits clean" test "$personalRerunStatus" -eq 0
+
+printf 'GLISSA_TELEGRAM_BOT_TOKEN=\nGLISSA_POSTHOG_API_KEY=placeholder\n' \
+  > "$personalHome/.glissa/secrets.env"
+emptyAssignmentOutput="$(runInstall "$personalHome" personal)" || true
+check "a variable assigned no value is named as still missing" \
+  outputMatches "$emptyAssignmentOutput" '\[warn\].*write GLISSA_TELEGRAM_BOT_TOKEN into'
+check "a variable assigned a value beside an empty one is left out of the warning" \
+  outputLacks "$emptyAssignmentOutput" "GLISSA_POSTHOG_API_KEY"
+
+printf 'GLISSA_TELEGRAM_BOT_TOKEN=""\nGLISSA_POSTHOG_API_KEY=placeholder\n' \
+  > "$personalHome/.glissa/secrets.env"
+emptyDoubleQuotedOutput="$(runInstall "$personalHome" personal)" || true
+check "a variable assigned empty double quotes is named as still missing" \
+  outputMatches "$emptyDoubleQuotedOutput" '\[warn\].*write GLISSA_TELEGRAM_BOT_TOKEN into'
+
+printf "GLISSA_TELEGRAM_BOT_TOKEN=''\nGLISSA_POSTHOG_API_KEY=placeholder\n" \
+  > "$personalHome/.glissa/secrets.env"
+emptySingleQuotedOutput="$(runInstall "$personalHome" personal)" || true
+check "a variable assigned empty single quotes is named as still missing" \
+  outputMatches "$emptySingleQuotedOutput" '\[warn\].*write GLISSA_TELEGRAM_BOT_TOKEN into'
+
+printf 'GLISSA_TELEGRAM_BOT_TOKEN="placeholder"\nGLISSA_POSTHOG_API_KEY=placeholder\n' \
+  > "$personalHome/.glissa/secrets.env"
+quotedValueOutput="$(runInstall "$personalHome" personal)" || true
+check "a variable assigned a quoted value draws no warning" \
+  outputLacks "$quotedValueOutput" "write GLISSA_"
+
+printf 'GLISSA_TELEGRAM_BOT_TOKEN=placeholder\nGLISSA_POSTHOG_API_KEY=placeholder\n' \
+  > "$personalHome/.glissa/secrets.env"
 
 printf '{ "port": 3000, "editorCommand": "hand-edited" }\n' > "$personalHome/.glissa/config.json"
 runInstall "$personalHome" personal > /dev/null || true
@@ -100,6 +139,10 @@ check "a refused start names the pending app dependencies" \
 check "a refused start leaves the service input token unrecorded" \
   test ! -e "$pendingDepsHome/.local/state/dotfiles/glissa-service-inputs-record"
 check "a refused start exits non-zero" test "$pendingDepsStatus" -eq 1
+check "a serving machine with no secrets file names the file to write" \
+  outputMatches "$pendingDepsOutput" '\[warn\].*~/\.glissa/secrets\.env'
+check "the missing secrets warning names every variable the unit loads" \
+  outputHas "$pendingDepsOutput" "GLISSA_TELEGRAM_BOT_TOKEN and GLISSA_POSTHOG_API_KEY"
 
 rm -f "$pendingDepsMarker"
 : > "$commandLog"

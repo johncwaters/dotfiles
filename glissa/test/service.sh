@@ -145,6 +145,28 @@ check "the boot only restart is reported" \
 runInstall "$serverHome" server > /dev/null
 check "a settled boot only key restarts nothing" logLacks "restart glissa"
 
+printf 'GLISSA_TELEGRAM_BOT_TOKEN=first-token\n' > "$serverHome/.glissa/secrets.env"
+: > "$commandLog"
+writtenSecretsOutput="$(runInstall "$serverHome" server)"
+check "a written secrets file restarts the service" logHas "systemctl --user restart glissa"
+check "the secrets restart is reported" \
+  outputMatches "$writtenSecretsOutput" '\[ ok \].*glissa service.*restarted'
+: > "$commandLog"
+settledSecretsOutput="$(runInstall "$serverHome" server)"
+check "a settled secrets file restarts nothing" logLacks "restart glissa"
+check "a settled secrets file reports no change" reportsNoChanges "$settledSecretsOutput"
+
+printf 'GLISSA_TELEGRAM_BOT_TOKEN=rotated-token\n' > "$serverHome/.glissa/secrets.env"
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+check "a rotated secret restarts the service" logHas "systemctl --user restart glissa"
+check "no secret value reaches the recorded service input token" \
+  bash -c '! grep -q "rotated-token" "$1"' _ \
+  "$serverHome/.local/state/dotfiles/glissa-service-inputs-record"
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+check "a settled rotated secret restarts nothing" logLacks "restart glissa"
+
 serverStubState="$stubState/$(basename -- "$serverHome")"
 printf 'b22b22b22b22b22b22b22b22b22b22b22b22b22b\n' > "$serverStubState/app-head"
 insideServiceCgroup="$sandboxTemp/inside-glissa.cgroup"
@@ -239,6 +261,29 @@ check "what the service was started from is recorded under the shared state dire
   test -f "$serverHome/.local/state/dotfiles/glissa-service-inputs-record"
 check "nothing is recorded beside the unit systemd reads" \
   bash -c '! compgen -G "$(dirname -- "$1")/.*dotfiles*"' _ "$serverUnitPath"
+
+cat > "$stubBin/systemctl" <<STUB
+#!/usr/bin/env bash
+if [[ "\${2:-}" == "restart" ]]; then
+  printf 'GLISSA_TELEGRAM_BOT_TOKEN=written-mid-restart\nGLISSA_POSTHOG_API_KEY=written-mid-restart\n' \
+    > "$serverHome/.glissa/secrets.env"
+fi
+exec "$stubState/available/systemctl" "\$@"
+STUB
+chmod +x "$stubBin/systemctl"
+printf 'b22b22b22b22b22b22b22b22b22b22b22b22b22b\n' > "$stubState/$(basename -- "$serverHome")/app-head"
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+provideCommand systemctl
+check "a checkout moved under a racing restart is restarted" logHas "systemctl --user restart glissa"
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+check "a secrets file written during the restart still owes the next run a restart" \
+  logHas "systemctl --user restart glissa"
+: > "$commandLog"
+settledAfterRaceOutput="$(runInstall "$serverHome" server)"
+check "the run that pays the raced restart settles the recorded inputs" \
+  reportsNoChanges "$settledAfterRaceOutput"
 
 serviceInputsRecord="$serverHome/.local/state/dotfiles/glissa-service-inputs-record"
 serviceInputsRecordTarget="$toolingHome/service-inputs-record-target"
