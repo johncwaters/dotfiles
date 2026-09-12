@@ -90,13 +90,19 @@ gate.
      and then stops rather than landing a review that never completed. Hand every surviving
      `ACTIONABLE` finding at MEDIUM or higher to `finding-fixer` the same way. Decide each
      surviving `AMBIGUOUS` finding at MEDIUM or higher yourself, from the caller context and
-     the code: one tagged `necessity` or `necessity/<category>` and carrying no answer from
-     the carbon unit is never re-dispositioned `ACTIONABLE` and is recorded as a NIT with the
-     reading you chose, because a CUT is the carbon unit's call and round 3 has nobody to
-     ask; any other one with a bounded fix inside the changed-file list is re-dispositioned
-     `ACTIONABLE`, with the reading you chose written into its body, before it joins the
-     writer's batch, since a finding still marked `AMBIGUOUS` when it arrives is declined on
-     sight; a MEDIUM one without such a fix is recorded as a NIT with the reading you chose;
+     the code: one tagged `necessity`, `necessity/unasked`, or any necessity category other
+     than `necessity/dead` and `necessity/redundant-test`, carrying no answer from the carbon
+     unit, is never re-dispositioned `ACTIONABLE` and is recorded as a NIT with the reading
+     you chose, because cutting work that may have been wanted is the carbon unit's call and
+     round 3 has nobody to ask; one tagged `necessity/dead` or `necessity/redundant-test`
+     is recorded as a NIT the same way, since a mechanical cut still `AMBIGUOUS` this late
+     carries either `Confidence: low` or a writer's `DECLINED` receipt, and round 3 can
+     neither re-run the evidence that would clear the first nor overrule the refusal behind
+     the second; any other one with a bounded fix inside the changed-file list is
+     re-dispositioned `ACTIONABLE`, with the
+     reading you chose written into its body, before it joins the writer's batch, since a
+     finding still marked `AMBIGUOUS` when it arrives is declined on sight; a MEDIUM one
+     without such a fix is recorded as a NIT with the reading you chose;
      and a HIGH or CRITICAL one without such a fix is recorded with its reading in the commit
      message body. When the receipt is back, go to **Step 3: write the message**; no fourth
      review runs. Every finding that receipt marks `FIXED` goes in the message's `Not-tested`
