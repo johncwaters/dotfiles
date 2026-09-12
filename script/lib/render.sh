@@ -84,8 +84,6 @@ commitRenderedFile() {
   recordRenderedCopy "$label" "$destination"
 }
 
-# The tail every engine shares: put the staged file in place, lock it down, and report
-# whether this run moved the destination or found it already converged.
 commitStagedFile() {
   local label="$1"
   local stagedPath="$2"
@@ -103,8 +101,6 @@ commitStagedFile() {
   notePresent "$label" "up to date"
 }
 
-# Places a byte-for-byte copy of a repo file where a symlink cannot serve, converging
-# like any render: our own link is replaced silently, a hand edit earns a backup.
 copyEntry() {
   local label="$1"
   local repoRelativeSource="$2"

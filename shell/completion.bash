@@ -4,7 +4,8 @@ if ! shopt -oq posix && [[ -f /usr/share/bash-completion/bash_completion ]]; the
 fi
 
 _completeProjectNames() {
-  local current="${COMP_WORDS[COMP_CWORD]}"
-  mapfile -t COMPREPLY < <(compgen -d -- "$PROJECTS/$current" | sed "s#^$PROJECTS/##")
+  local currentWord="${COMP_WORDS[COMP_CWORD]}"
+  mapfile -t COMPREPLY < <(compgen -d -- "$PROJECTS/$currentWord")
+  COMPREPLY=("${COMPREPLY[@]#"$PROJECTS/"}")
 }
 complete -o nospace -o filenames -F _completeProjectNames c

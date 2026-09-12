@@ -53,29 +53,13 @@ if [[ -z "$profileName" ]]; then
   exit 1
 fi
 
-requireSafeName "profile" "$profileName" || exit 1
-requireUsableMarkerPath || exit 1
-
-profileDir="$(profileDirectory "$profileName")"
-profileJson="$profileDir/profile.json"
-if [[ ! -f "$profileJson" ]]; then
-  printf 'bootstrap: no such profile %s (expected %s).\n' "$profileName" "$profileJson" >&2
-  exit 1
-fi
-
-topicsOutput=""
-topicsStatus=0
-topicsOutput="$(readProfileTopics "$profileJson")" || topicsStatus=$?
-if ((topicsStatus != 0)); then
-  printf 'bootstrap: could not read the topics list in %s.\n' "$profileJson" >&2
-  exit 1
-fi
+topicsOutput="$(resolveProfileTopics "bootstrap" "$profileName")" || exit 1
 profileTopics=()
 if [[ -n "$topicsOutput" ]]; then
   mapfile -t profileTopics <<< "$topicsOutput"
 fi
 if ((${#profileTopics[@]} == 0)); then
-  printf 'bootstrap: %s lists no topics.\n' "$profileJson" >&2
+  printf 'bootstrap: %s/profile.json lists no topics.\n' "$(profileDirectory "$profileName")" >&2
   exit 1
 fi
 

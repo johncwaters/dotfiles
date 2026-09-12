@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Runs shell/install.sh against a sandbox HOME and asserts the loader's contract:
-# ~/.localrc first, then the listed topics' path.bash, then the rest, then completion.bash.
 
 set -euo pipefail
 
@@ -66,6 +64,11 @@ mkdir -p "$sandbox/Projects/alpha-repo" "$sandbox/Projects/beta-repo"
 check "c jumps into a project" test "$(interactiveShell 'c alpha-repo && pwd')" = "$sandbox/Projects/alpha-repo"
 completions="$(interactiveShell 'COMP_WORDS=(c al); COMP_CWORD=1; _completeProjectNames; printf "%s\n" "${COMPREPLY[@]}"')"
 check "c completes project names" test "$completions" = "alpha-repo"
+
+mkdir -p "$sandbox/Projects.[literal]#/alpha repo"
+literalPathCompletions="$(interactiveShell 'PROJECTS="$HOME/Projects.[literal]#"; COMP_WORDS=(c al); COMP_CWORD=1; _completeProjectNames; printf "%s\n" "${COMPREPLY[@]}"')"
+check "c completes names under a project root containing pattern characters" \
+  test "$literalPathCompletions" = "alpha repo"
 
 printf 'loginProfileMarker=seen\n' > "$sandbox/.profile"
 loginShellOutput="$(env -i HOME="$sandbox" PATH="/usr/bin:/bin" TERM=dumb \

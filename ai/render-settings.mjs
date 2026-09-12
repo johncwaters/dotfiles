@@ -2,10 +2,7 @@ import os from "node:os";
 import { mergeJsonFiles } from "../script/lib/merge-json.mjs";
 
 function mergeHookEvents(baseHooks, overlayHooks) {
-  const mergedHooks = {};
-  for (const event of Object.keys(baseHooks)) {
-    mergedHooks[event] = baseHooks[event];
-  }
+  const mergedHooks = { ...baseHooks };
   for (const event of Object.keys(overlayHooks)) {
     const baseEventHooks = Array.isArray(mergedHooks[event]) ? mergedHooks[event] : [];
     const overlayEventHooks = Array.isArray(overlayHooks[event]) ? overlayHooks[event] : [];

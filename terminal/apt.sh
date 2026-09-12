@@ -1,5 +1,4 @@
 # shellcheck shell=bash
-# Requires packages.sh, which sources this file.
 
 # Root owned paths these name, so a test run inside a marked sandbox home points them elsewhere; outside one the redirect is ignored.
 aptSourcesDirectory() {

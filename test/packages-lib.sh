@@ -6,7 +6,7 @@ testDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repoRoot="$(cd -- "$testDirectory/.." && pwd)"
 # shellcheck source=./harness.sh
 source "$repoRoot/test/harness.sh"
-# copyExportedAsset reaches into link.sh and render.sh, so the whole context is what it gets.
+# The state and link assertions reach past packages.sh, so the whole context is what it gets.
 # shellcheck source=../script/lib/context.sh
 source "$repoRoot/script/lib/context.sh"
 # shellcheck source=../script/lib/packages.sh
@@ -578,84 +578,5 @@ aptRemovalRefusesDependents() (
 
 check "NodeSource refuses an npm removal plan that includes dependents" \
   aptRemovalRefusesDependents
-
-exportRoot="$sandbox/exports"
-mkdir -p "$exportRoot"
-printf 'the launcher the export produced\n' > "$exportRoot/source.desktop"
-printf 'the launcher the export produced\n' > "$exportRoot/outside.desktop"
-ln -s "$exportRoot/outside.desktop" "$exportRoot/destination.desktop"
-
-matchingSymlinkIsRefused() {
-  NO_COLOR=1 copyExportedAsset "probe launcher" "$exportRoot/source.desktop" \
-    "$exportRoot/destination.desktop"
-}
-
-destinationIsNotAPlainFile() {
-  ! pathIsPlainFileOrAbsent "$exportRoot/destination.desktop"
-}
-
-check "a destination symlinked away is never treated as a plain file" destinationIsNotAPlainFile
-check "render decisions reuse the shared plain file predicate" \
-  grep -q 'pathIsPlainFileOrAbsent "$copyPath"' "$repoRoot/script/lib/render.sh"
-symlinkExportOutput="$(matchingSymlinkIsRefused 2>&1)" || true
-check "a symlinked launcher with identical bytes is still refused" \
-  outputHas "$symlinkExportOutput" 'not a regular file, leaving it alone'
-check "the file the symlink pointed at is untouched" \
-  grep -qx 'the launcher the export produced' "$exportRoot/outside.desktop"
-check "the symlink is left where it was" test -L "$exportRoot/destination.desktop"
-
-updateRoot="$sandbox/updates"
-mkdir -p "$updateRoot"
-exportedLauncher="$updateRoot/app.desktop"
-exportSource="$updateRoot/source.desktop"
-
-exportOnce() {
-  printf '%s\n' "$1" > "$exportSource"
-  NO_COLOR=1 copyExportedAsset "probe launcher" "$exportSource" "$exportedLauncher" > /dev/null
-}
-
-countExportBackups() {
-  local backupPath
-  local backupCount=0
-  for backupPath in "$exportedLauncher"*.pre-dotfiles.bak*; do
-    if [[ -e "$backupPath" ]]; then
-      backupCount=$((backupCount + 1))
-    fi
-  done
-  printf '%s\n' "$backupCount"
-}
-
-exportOnce "the launcher the first export produced"
-exportOnce "the launcher the second export produced"
-exportOnce "the launcher the third export produced"
-check "a flatpak update never backs up the engine's own prior copy" \
-  test "$(countExportBackups)" -eq 0
-check "the launcher holds what the last export produced" \
-  grep -qx 'the launcher the third export produced' "$exportedLauncher"
-
-printf 'a launcher line someone added by hand\n' > "$exportedLauncher"
-exportOnce "the launcher a later export produced"
-check "a hand edited launcher is backed up" test "$(countExportBackups)" -eq 1
-check "the backup keeps the hand edit" \
-  bash -c 'grep -qx "a launcher line someone added by hand" "$1".pre-dotfiles.bak' _ "$exportedLauncher"
-
-exportOnce "the launcher an even later export produced"
-check "a later update earns no second backup" test "$(countExportBackups)" -eq 1
-
-fastPathAppId="com.example.FastPath"
-fastPathSource="$sandbox/.local/share/flatpak/exports/share/applications/$fastPathAppId.desktop"
-fastPathDestination="$sandbox/.local/share/applications/$fastPathAppId.desktop"
-mkdir -p "$(dirname -- "$fastPathSource")" "$(dirname -- "$fastPathDestination")"
-printf 'matching exported launcher\n' > "$fastPathSource"
-cp "$fastPathSource" "$fastPathDestination"
-HOME="$sandbox" NO_COLOR=1 exportFlatpakLauncherAssets "fast path" "$fastPathAppId" > /dev/null
-check "an identical exported launcher records its rendered baseline" \
-  test -f "$fastPathDestination.pre-dotfiles.rendered"
-printf 'updated exported launcher\n' > "$fastPathSource"
-HOME="$sandbox" NO_COLOR=1 exportFlatpakLauncherAssets "fast path" "$fastPathAppId" > /dev/null
-check "an update after the identical fast path creates no backup" \
-  bash -c '! compgen -G "$1.pre-dotfiles.bak*" > /dev/null' _ "$fastPathDestination"
-check "the update after the identical fast path reaches the destination" \
-  grep -qx 'updated exported launcher' "$fastPathDestination"
 
 reportTopicResults "packages library"

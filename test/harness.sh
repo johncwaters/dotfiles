@@ -42,7 +42,6 @@ outputMatches() {
 
 changeMarkerPattern='\[ (ok|\+\+) \]'
 
-# grep -E prints the offending lines, so a failure names the change it saw.
 reportsNoChanges() {
   ! grep -E -- "$changeMarkerPattern" <<< "$1"
 }
@@ -71,8 +70,10 @@ removeSandboxHomes() {
 }
 
 trackSandboxHome() {
+  if ((${#sandboxHomePaths[@]} == 0)); then
+    registerCleanup removeSandboxHomes
+  fi
   sandboxHomePaths+=("$1")
-  registerCleanup removeSandboxHomes
 }
 
 # The marker is what opens the stub seam in production code, so it is written where only this account can: inside the sandbox home.
@@ -146,14 +147,7 @@ runTopicInstallWithoutProfile() {
 }
 
 checkRerunIsQuiet() {
-  local description="$1"
-  local output="$2"
-  if ! printf '%s\n' "$output" | grep -qE "$changeMarkerPattern"; then
-    pass "$description"
-    return 0
-  fi
-  fail "$description"
-  printf '%s\n' "$output" | grep -E "$changeMarkerPattern"
+  check "$1" reportsNoChanges "$2"
 }
 
 reportTopicResults() {

@@ -1,40 +1,9 @@
 #!/usr/bin/env node
-/**
- * PreToolUse validator for Write / Edit / MultiEdit.
- *
- * Works out the FINAL content a tool call would write and DENIES the call
- * before anything touches disk when the result is malformed. Stops corrupted
- * JSON and files with stray invalid/control characters from ever being saved.
- * (PreToolUse is the only hook that can block a write -- PostToolUse fires
- * after the bytes already hit disk.)
- *
- * On rejection it emits strong, located, actionable feedback (what / where
- * line:col / why / how to fix). The allow/deny DECISION comes from a fast
- * stdin pass; on a Biome-type failure the precise message is HARVESTED from a
- * throwaway temp-file `biome check --reporter=json` run (Biome suppresses
- * located diagnostics on stdin but emits them for real files). Harvest is
- * message-only and pure fail-soft: it can never change the decision.
- *
- * Validation engines (`format` subcommands used as pure syntax gates):
- *   - Biome  -> JSON(C), JS, TS, JSX, CSS  (`biome format` decides; `biome check` explains)
- *   - Ruff   -> Python via `python -m ruff format`
- *   - Dart   -> Flutter/Dart via `dart format` (~0.2s; the heaviest engine -- Dart VM startup)
- *   - inline -> reject NUL, U+FFFD, stray control chars in any text file
- *   - inline -> reject a write that grows an always-loaded instruction file
- *               past its DOC_SIZE_CAPS budget (shrinking writes always pass)
- *   - JSON   -> JSON.parse fallback when Biome can't be located
- *
- * Fail-open by design: if the hook errors, can't read the content, or an engine
- * is missing, it ALLOWS the write (exit 0, no output). Fail-open governs the
- * DECISION engine's availability -- NOT message harvest: once the decision is
- * deny, a harvest error keeps the deny with a generic message, never allow.
- * Point BIOME_BIN at a biome launcher to override discovery.
- */
-
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
 
 const TEXT_EXTS = new Set([
   ".json", ".jsonc", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".mts", ".cts",
@@ -42,7 +11,6 @@ const TEXT_EXTS = new Set([
   ".sh", ".env", ".xml", ".svg",
 ]);
 
-// Extensions Biome can parse (matched against the stdin filename it expects).
 const BIOME_EXTS = new Set([
   ".json", ".jsonc", ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".tsx", ".jsx", ".css",
 ]);
@@ -50,9 +18,6 @@ const BIOME_EXTS = new Set([
 const FIX_CTRL =
   "Remove the character (it usually comes from a bad copy-paste or a non-UTF-8 source), re-type the affected text, and save as UTF-8.";
 
-// Instruction files loaded into every session, so every byte is charged to every
-// run. Basename (lowercased) -> byte cap; only the copies at a repo root or in
-// ~/.claude are capped, never a directory-scoped nested one.
 const DOC_SIZE_CAPS = {
   "agents.md": 16384,
   "claude.md": 16384,
@@ -60,44 +25,27 @@ const DOC_SIZE_CAPS = {
   "routing.md": 9216,
 };
 
-function allow() {
-  process.exit(0); // no output => tool proceeds
-}
-
-// r: { where?: string, why: string, fix?: string }
-function deny(filePath, r) {
+function deny(filePath, diagnostic) {
   const reason = [
     `File-format guard blocked this write to ${path.basename(filePath)}.`,
-    r.where ? `Where: ${r.where}` : null,
-    `Why: ${r.why}`,
-    r.fix ? `Fix: ${r.fix}` : null,
+    diagnostic.where ? `Where: ${diagnostic.where}` : null,
+    `Why: ${diagnostic.why}`,
+    diagnostic.fix ? `Fix: ${diagnostic.fix}` : null,
     "(Only syntax/format, invalid characters, and instruction-file size are gated here, not type or lint errors.)",
   ]
     .filter(Boolean)
     .join("\n");
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: reason,
-      },
-    })
-  );
-  process.exit(0);
+  denyPreToolUse(reason);
 }
 
 function applyEdit(text, oldStr, newStr, replaceAll) {
   if (oldStr === undefined) return text;
   if (replaceAll) return text.split(oldStr).join(newStr ?? "");
   const i = text.indexOf(oldStr);
-  if (i === -1) return text; // tool would fail anyway; don't second-guess
+  if (i === -1) return text;
   return text.slice(0, i) + (newStr ?? "") + text.slice(i + oldStr.length);
 }
 
-// Final content a tool call would write, or undefined for tools we don't guard.
-// Prefers an explicit `content` field (Write, and any payload that ships the
-// resulting text); otherwise replays the edit(s) over the current file.
 function reconstruct(ti, filePath) {
   if (typeof ti.content === "string") return ti.content;
   if (!ti.edits && ti.old_string === undefined) return undefined;
@@ -108,7 +56,6 @@ function reconstruct(ti, filePath) {
   return applyEdit(orig, ti.old_string, ti.new_string, ti.replace_all);
 }
 
-// 1-based line/column for a string index.
 function posOf(content, index) {
   let line = 1;
   let col = 1;
@@ -124,14 +71,10 @@ function posOf(content, index) {
   return { line, column: col };
 }
 
-// Canonical "line N, column M" phrase. Single source of truth -- the README and
-// AGENTS.md assert this exact wording, so every locator formats through here.
 function loc(line, column) {
   return `line ${line}, column ${column}`;
 }
 
-// classify(code) returns a { why, fix } descriptor for a banned code point or
-// null.
 function charScanError(text, classify) {
   for (let i = 0; i < text.length; i++) {
     const hit = classify(text.charCodeAt(i));
@@ -143,9 +86,7 @@ function charScanError(text, classify) {
 }
 
 function classifyControlChar(c) {
-  // Allowed whitespace controls: tab(0x09) LF(0x0A) FF(0x0C) CR(0x0D).
-  // Forbidden: other C0 (<=0x1F), DEL+C1 (0x7F-0x9F), and U+FFFD.
-  if (c >= 0x20 && c < 0x7f) return null; // printable ASCII: never a control char
+  if (c >= 0x20 && c < 0x7f) return null;
   const allowed = c === 0x09 || c === 0x0a || c === 0x0c || c === 0x0d;
   const bad = c === 0xfffd || (c <= 0x1f && !allowed) || (c >= 0x7f && c <= 0x9f);
   if (!bad) return null;
@@ -164,8 +105,6 @@ function controlCharError(content) {
   return charScanError(content, classifyControlChar);
 }
 
-// Denies only writes that both exceed the cap and grow the file, so an oversized
-// instruction file can always be edited back down.
 function realPathOrSelf(dir) {
   try {
     return fs.realpathSync(dir);
@@ -174,8 +113,6 @@ function realPathOrSelf(dir) {
   }
 }
 
-// ~/.claude and whatever directory its instruction files link back to, so editing
-// the linked original is capped exactly like editing it through ~/.claude.
 function alwaysLoadedDocDirs() {
   const claudeDir = path.join(os.homedir(), ".claude");
   const dirs = [claudeDir];
@@ -187,8 +124,6 @@ function alwaysLoadedDocDirs() {
   return dirs;
 }
 
-// A repo root, ~/.claude, or a link source for it. Anywhere else the file is
-// directory-scoped, loaded on demand rather than every session, so no cap applies.
 function holdsAlwaysLoadedDocs(dir) {
   const resolvedDir = realPathOrSelf(dir);
   for (const candidate of alwaysLoadedDocDirs()) {
@@ -226,11 +161,6 @@ function exists(p) {
   }
 }
 
-// How to invoke biome, as [bin, ...prefixArgs]. Honors BIOME_BIN, then checks
-// known npm-global roots without spawning npm. Prefers the platform exe (run
-// directly, fast) whose package name is deterministic: `@biomejs/cli-<platform>-<arch>`
-// matches Node's process.platform/arch, so no directory globbing is needed.
-// Falls back to the portable JS launcher (run via node) only if the exe is absent.
 function biomeGlobalRoots() {
   const nodeDir = path.dirname(process.execPath);
   const roots = [];
@@ -290,11 +220,6 @@ function validateJson(content) {
   }
 }
 
-// Message-only. Writes the failing content to an isolated temp file (named with
-// the real basename so Biome's parser/JSONC selection matches the decision
-// path) and harvests the located parse diagnostic. Pure fail-soft: returns null
-// on any anomaly (no parse diagnostic, parse success = decision divergence,
-// throw, timeout, unreadable reporter output). Never surfaces a lint rule.
 function harvestBiomeDiagnostic(content, filePath, cmd) {
   if (!cmd) return null;
   let dir = null;
@@ -309,7 +234,7 @@ function harvestBiomeDiagnostic(content, filePath, cmd) {
     if (at < 0) return null;
     const j = JSON.parse(out.slice(at));
     const d = (j.diagnostics || []).find((x) => x && x.category === "parse");
-    if (!d) return null; // parsed OK (divergence) or lint-only -> no leak
+    if (!d) return null;
     const start = d.location && d.location.start;
     const where = start ? loc(start.line, start.column) : null;
     const why = typeof d.message === "string" ? d.message : String(d.message || "parse error");
@@ -336,11 +261,11 @@ function harvestBiomeDiagnostic(content, filePath, cmd) {
 function validateWithBiome(content, ext, filePath) {
   const cmd = biomeCmd();
   const jsonFallback = () => (ext === ".json" ? validateJson(content) : null);
-  if (!cmd) return jsonFallback(); // fail open / json fallback
+  if (!cmd) return jsonFallback();
   const [bin, ...pre] = cmd;
   const r = runStdin(bin, [...pre, "format", `--stdin-file-path=${path.basename(filePath)}`], content);
-  if (r.error) return jsonFallback(); // couldn't spawn
-  if (r.status === 0) return null; // valid
+  if (r.error) return jsonFallback();
+  if (r.status === 0) return null;
   // A project biome.json can disable the formatter outright (formatter.enabled=false).
   // Biome then exits 1 ("formatter is currently disabled") WITHOUT parsing, which is
   // not a syntax verdict: fall back / fail open, never deny.
@@ -369,7 +294,7 @@ function pythonBin() {
 
 function validatePython(content) {
   const r = runStdin(pythonBin(), ["-m", "ruff", "format", "--stdin-filename", "f.py", "-"], content);
-  if (r.error || r.status === 0) return null; // no python/ruff or valid -> allow
+  if (r.error || r.status === 0) return null;
   const err = (r.stderr || r.stdout || "").trim();
   // python present but ruff not installed: engine absent, not a parse failure.
   // Fail open per the decision-engine contract (a missing engine must never deny).
@@ -404,10 +329,8 @@ function dartBin() {
 
 function validateDart(content) {
   const bin = dartBin();
-  if (!bin) return null; // no dart -> fail open
+  if (!bin) return null;
   const r = runStdin(bin, ["format", "--output=none", "--stdin-name=main.dart"], content);
-  // dart format exits 65 specifically on a parse failure. Anything else (0 =
-  // valid, spawn error, other non-zero tool error) -> allow / fail open.
   if (r.error || r.status !== 65) return null;
   const out = (r.stderr || r.stdout || "").trim();
   const m = /line (\d+), column (\d+) of [^:]*:\s*(.*)/.exec(out);
@@ -429,8 +352,6 @@ function validate(filePath, content) {
   const ext = path.extname(filePath).toLowerCase();
   const size = docSizeError(filePath, content);
   if (size) return size;
-  // Control-char scan runs before Biome/Ruff for text files, so a file with both
-  // a control char and a syntax error reports the control char (deterministic).
   if (TEXT_EXTS.has(ext)) {
     const cc = controlCharError(content);
     if (cc) return cc;
@@ -441,38 +362,19 @@ function validate(filePath, content) {
   return null;
 }
 
-// ---------- entry ----------
+try {
+  const payload = readPayload();
+  if (!payload || typeof payload !== "object") allow();
+  const toolInput = payload.tool_input || {};
+  const filePath = toolInput.file_path || toolInput.filePath;
+  if (!filePath) allow();
 
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (d) => (raw += d));
-process.stdin.on("end", () => {
-  let payload;
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    return allow();
-  }
+  const content = reconstruct(toolInput, filePath);
+  if (content === undefined) allow();
 
-  const ti = payload.tool_input || {};
-  const filePath = ti.file_path || ti.filePath;
-  if (!filePath) return allow();
-
-  let content;
-  try {
-    content = reconstruct(ti, filePath);
-  } catch {
-    return allow(); // can't read content -> don't block
-  }
-  if (content === undefined) return allow(); // unguarded tool
-
-  let error = null;
-  try {
-    error = validate(filePath, content);
-  } catch {
-    return allow(); // validator crash -> don't block
-  }
-
-  if (error) return deny(filePath, error);
+  const diagnostic = validate(filePath, content);
+  if (diagnostic) deny(filePath, diagnostic);
   allow();
-});
+} catch {
+  allow();
+}

@@ -1,5 +1,4 @@
 # shellcheck shell=bash
-# Requires packages.sh, which sources this file.
 
 refreshUserDesktopAssets() {
   if command -v update-desktop-database >/dev/null 2>&1; then
@@ -43,8 +42,7 @@ exportFlatpakLauncherAssets() {
   local iconSource
   local iconDestination
   local iconRelativePath
-  local exportedAnything=0
-  local iconCount=0
+  local hasExportedAsset=0
   if [[ ! -f "$desktopSource" ]]; then
     noteWarned "$label launcher" "flatpak desktop export missing"
     return 0
@@ -57,7 +55,7 @@ exportFlatpakLauncherAssets() {
   if ! pathIsPlainFileOrAbsent "$desktopDestination" \
     || ! filesAreIdentical "$desktopSource" "$desktopDestination"; then
     if copyExportedAsset "$label launcher" "$desktopSource" "$desktopDestination"; then
-      exportedAnything=1
+      hasExportedAsset=1
     fi
   fi
   local iconRoot="$exportShare/icons/hicolor"
@@ -68,7 +66,6 @@ exportFlatpakLauncherAssets() {
     mapfile -t iconFiles < <(find -L "$iconRoot" -type f -path "*/apps/$appId.*" 2>/dev/null)
   fi
   for iconSource in ${iconFiles[@]+"${iconFiles[@]}"}; do
-    iconCount=$((iconCount + 1))
     iconRelativePath="hicolor/${iconSource#"$iconRoot/"}"
     iconDestination="$HOME/.local/share/icons/$iconRelativePath"
     mkdir -p -- "$(dirname -- "$iconDestination")"
@@ -77,14 +74,14 @@ exportFlatpakLauncherAssets() {
       continue
     fi
     if copyExportedAsset "$label icon" "$iconSource" "$iconDestination"; then
-      exportedAnything=1
+      hasExportedAsset=1
     fi
   done
-  if ((iconCount == 0)); then
+  if ((${#iconFiles[@]} == 0)); then
     noteWarned "$label icons" "flatpak icon export missing"
   fi
   refreshUserDesktopAssets
-  if ((exportedAnything == 1)); then
+  if ((hasExportedAsset == 1)); then
     noteApplied "$label launcher" "exported"
     return 0
   fi

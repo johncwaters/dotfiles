@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Links Claude Code and Codex config into place. Every destination under ~/.claude is
-# named one by one so the runtime state living beside them is never touched.
+# Per-entry links preserve the runtime state beside them in ~/.claude (AGENTS.md).
 
 if [[ -z "${dotfilesRepo:-}" ]]; then
   # shellcheck source=../script/lib/context.sh
@@ -28,9 +27,7 @@ if [[ -z "${profileName:-}" ]]; then
   finishTopic
 fi
 
-# Claude Code silently drops every @import in a memory file that is itself a symlink,
-# so CLAUDE.md is the one entry copied real; the @AGENTS.md inside it still resolves
-# through the AGENTS.md link above, which imports do follow.
+# CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
 copyEntry "CLAUDE.md" "profiles/$profileName/CLAUDE.md" "$claudeHome/CLAUDE.md"
 renderJsonTemplate "settings.json" \
   "$dotfilesRepo/ai/render-settings.mjs" \

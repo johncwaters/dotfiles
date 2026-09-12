@@ -193,15 +193,11 @@ installSystemPackages() {
   return 1
 }
 
-# packageInstallLog was set and cleared by hand in three topics, and an early return left the next caller writing into a deleted log.
 withPackageInstallLog() {
-  local scopedInstallLog="$1"
+  local packageInstallLog="$1"
   shift
-  local previousInstallLog="$packageInstallLog"
   local commandStatus=0
-  packageInstallLog="$scopedInstallLog"
   "$@" || commandStatus=$?
-  packageInstallLog="$previousInstallLog"
   return "$commandStatus"
 }
 
@@ -592,21 +588,6 @@ currentNpmPrefix() {
   npm config get prefix 2>/dev/null | head -n 1 | tr -d '\r' || true
 }
 
-# The prefix in effect can be the per-account one ensureUserNpmPrefix moved to, so ask npm.
-npmGlobalBinDir() {
-  local npmPrefix
-  if ! command -v npm >/dev/null 2>&1; then
-    printf '%s\n' "$(userNpmPrefixDirectory)/bin"
-    return 0
-  fi
-  npmPrefix="$(npm prefix -g 2>/dev/null | head -n 1 | tr -d '\r' || true)"
-  if [[ -n "$npmPrefix" ]]; then
-    printf '%s\n' "$npmPrefix/bin"
-    return 0
-  fi
-  printf '%s\n' "$(userNpmPrefixDirectory)/bin"
-}
-
 recordNpmPrefixOnLoginPath() {
   if [[ -f "$HOME/.bashrc" ]] && grep -q '\.npm-global/bin' "$HOME/.bashrc"; then
     return 0
@@ -680,8 +661,3 @@ npmFailureReason() {
   reason="$(sed -E 's/^npm (error|ERR!) //' <<< "$reason")"
   printf '%.120s\n' "$reason"
 }
-
-# shellcheck source=./apt.sh
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/apt.sh"
-# shellcheck source=./flatpak.sh
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/flatpak.sh"

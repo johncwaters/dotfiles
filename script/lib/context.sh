@@ -1,6 +1,4 @@
 # shellcheck shell=bash
-# Shared context every topic installer needs, whether bootstrap ran it as its own
-# process or the installer was run on its own.
 
 set -euo pipefail
 

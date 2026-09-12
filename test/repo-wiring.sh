@@ -107,6 +107,8 @@ done
 check "README points rendered destinations at the render engine" \
   bash -c 'grep -q "rendered" "$1/README.md" && grep -q "script/lib/render.sh" "$1/README.md"' \
   _ "$repoRoot"
+check "render decisions reuse the shared plain file predicate" \
+  grep -q 'pathIsPlainFileOrAbsent "$copyPath"' "$repoRoot/script/lib/render.sh"
 check "the repository map names the bubblewrap sandbox" \
   grep -q 'shared bubblewrap sandbox' "$repoRoot/AGENTS.md"
 check "the repository map no longer names a Docker matrix" \
@@ -150,6 +152,24 @@ HOME="$sandbox" node "$repoRoot/script/lib/merge-json.mjs" \
   "$repoRoot/glissa/config.example.json" "" "$mergedWithoutOverlayPath" /fixture/home
 check "the shared merger accepts a missing overlay" \
   grep -qF '"/fixture/home/Projects"' "$mergedWithoutOverlayPath"
+check "the shared merger escapes home paths inside JSON strings" \
+  node --input-type=module - "$repoRoot" "$sandbox" <<'JS'
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const [repoRoot, sandbox] = process.argv.slice(2);
+const { mergeJsonFiles } = await import(`${repoRoot}/script/lib/merge-json.mjs`);
+const destinationPath = `${sandbox}/escaped-home.json`;
+for (const homePath of ['/fixture/carbon "unit"', '/fixture/line\nbreak', '/fixture/tab\tstop']) {
+  mergeJsonFiles({
+    basePath: `${repoRoot}/glissa/config.example.json`,
+    destinationPath,
+    home: homePath,
+  });
+  const settings = JSON.parse(fs.readFileSync(destinationPath, "utf8"));
+  assert.equal(settings.repoRoots[0], `${homePath}/Projects`);
+  assert.equal(settings.projects[0].path, `${homePath}/Projects/glissa`);
+}
+JS
 check "glissa creates no temporary empty overlay" \
   bash -c '! grep -q "glissa-empty-overlay" "$1/glissa/install.sh"' _ "$repoRoot"
 check "the repository map names the shared JSON merger" \

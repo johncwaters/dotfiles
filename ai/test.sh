@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Runs ai/install.sh against a sandbox HOME and asserts the link engine's contract:
-# every destination is a link through the alias, runtime state survives, reruns are quiet.
 
 set -euo pipefail
 
@@ -16,14 +14,10 @@ printf 'runtime\n' > "$sandbox/.claude/projects/live-work/state.json"
 printf '{"token":"keep-me"}\n' > "$sandbox/.claude/.credentials.json"
 printf 'pre-existing user notes\n' > "$sandbox/.claude/AGENTS.md"
 
-runInstall() {
-  runTopicInstall "$topicDir"
-}
-
 printf '\nai topic\n'
 
 installStatus=0
-firstRunOutput="$(runInstall)" || installStatus=$?
+firstRunOutput="$(runTopicInstall "$topicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
 
@@ -144,14 +138,9 @@ renderProfileSettings() {
     "$topicDir/settings.base.json" "$1" "$2" /fixture/home > /dev/null
 }
 
-renderKeepsEveryBaseDenyEntry() {
-  node -e 'const readJson=(path)=>JSON.parse(require("fs").readFileSync(path,"utf8"));const baseDenyList=readJson(process.argv[1]).permissions.deny;const renderedDenyList=readJson(process.argv[2]).permissions.deny||[];process.exit(baseDenyList.length>0&&baseDenyList.every((denyEntry)=>renderedDenyList.includes(denyEntry))?0:1)' \
-    "$topicDir/settings.base.json" "$1"
-}
-
-renderKeepsEveryBaseAllowEntry() {
-  node -e 'const readJson=(path)=>JSON.parse(require("fs").readFileSync(path,"utf8"));const baseAllowList=readJson(process.argv[1]).permissions.allow;const renderedAllowList=readJson(process.argv[2]).permissions.allow||[];process.exit(baseAllowList.length>0&&baseAllowList.every((allowEntry)=>renderedAllowList.includes(allowEntry))?0:1)' \
-    "$topicDir/settings.base.json" "$1"
+renderKeepsEveryBasePermission() {
+  node -e 'const readJson=(path)=>JSON.parse(require("fs").readFileSync(path,"utf8"));const permissionName=process.argv[3];const basePermissions=readJson(process.argv[1]).permissions[permissionName];const renderedPermissions=readJson(process.argv[2]).permissions[permissionName]||[];process.exit(basePermissions.length>0&&basePermissions.every((permission)=>renderedPermissions.includes(permission))?0:1)' \
+    "$topicDir/settings.base.json" "$2" "$1"
 }
 
 overlayDefinesNoDenyList() {
@@ -164,9 +153,9 @@ for profileOverlayPath in "$repoRoot"/profiles/*/settings.overlay.json; do
   check "the $profileName overlay renders" \
     renderProfileSettings "$profileOverlayPath" "$renderedProfilePath"
   check "the $profileName render keeps every base deny entry" \
-    renderKeepsEveryBaseDenyEntry "$renderedProfilePath"
+    renderKeepsEveryBasePermission deny "$renderedProfilePath"
   check "the $profileName render keeps every base allow entry" \
-    renderKeepsEveryBaseAllowEntry "$renderedProfilePath"
+    renderKeepsEveryBasePermission allow "$renderedProfilePath"
   check "the $profileName overlay defines no deny list of its own" \
     overlayDefinesNoDenyList "$profileOverlayPath"
 done
@@ -174,7 +163,7 @@ done
 check "settings.json keeps the personal permissions allow list" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.allow.includes("Bash(node:*)")?0:1)' "$settingsPath"
 check "settings.json keeps the base allow list through the overlay merge" \
-  renderKeepsEveryBaseAllowEntry "$settingsPath"
+  renderKeepsEveryBasePermission allow "$settingsPath"
 check "settings.json keeps the personal permissions default mode" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.defaultMode==="auto"?0:1)' "$settingsPath"
 check "settings.json has no unrendered token" bash -c '! grep -q "{{HOME}}" "$1"' _ "$settingsPath"
@@ -195,29 +184,27 @@ check "commit and pr attribution render empty from the base" \
 
 rm -f "$sandbox/.claude/AGENTS.md"
 printf 'later hand written notes\n' > "$sandbox/.claude/AGENTS.md"
-runInstall > /dev/null
+runTopicInstall "$topicDir" > /dev/null
 check "a later displaced file gets its own backup" test -f "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak.2"
 check "the later backup holds the later content" grep -q 'later hand written notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak.2"
 check "the first backup is untouched" grep -q 'pre-existing user notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak"
 
-# A machine converged before the copy switch still holds the old CLAUDE.md symlink;
-# it is ours, so the rerun replaces it with the copy and leaves no backup behind.
 rm -f "$claudeMdPath"
 ln -s "$sandbox/.dotfiles/profiles/personal/CLAUDE.md" "$claudeMdPath"
-runInstall > /dev/null
+runTopicInstall "$topicDir" > /dev/null
 check "an old CLAUDE.md symlink converges to a plain file" \
   bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$claudeMdPath"
 check "converging the old symlink leaves no backup" \
   bash -c '! ls "$1".pre-dotfiles.bak* >/dev/null 2>&1' _ "$claudeMdPath"
 
 printf 'hand edited claude memory\n' > "$claudeMdPath"
-runInstall > /dev/null
+runTopicInstall "$topicDir" > /dev/null
 check "a hand edited CLAUDE.md is backed up before the copy returns" \
   grep -qs 'hand edited claude memory' "$claudeMdPath".pre-dotfiles.bak*
 check "the copy wins over the hand edit" \
   cmp -s "$claudeMdPath" "$repoRoot/profiles/personal/CLAUDE.md"
 
-checkRerunIsQuiet "second run reports no changes" "$(runInstall)"
+checkRerunIsQuiet "second run reports no changes" "$(runTopicInstall "$topicDir")"
 
 warnedRunStatus=0
 runTopicInstallWithoutProfile "$topicDir" > /dev/null \
@@ -229,9 +216,9 @@ settingsBackupHolds() {
 }
 
 printf '{"handEdit":"first-edit-to-settings"}\n' > "$settingsPath"
-runInstall > /dev/null
+runTopicInstall "$topicDir" > /dev/null
 printf '{"handEdit":"second-edit-to-settings"}\n' > "$settingsPath"
-runInstall > /dev/null
+runTopicInstall "$topicDir" > /dev/null
 check "the first hand edited settings.json is still recoverable" \
   settingsBackupHolds 'first-edit-to-settings'
 check "the second hand edited settings.json is still recoverable" \
@@ -318,8 +305,6 @@ check "a directory at the sidecar path does not wedge later runs" \
   test "$rerunAfterDirectorySidecarStatus" -eq 0
 check "the destination still holds what the renderer produced" grep -q 'second' "$renderDestination"
 
-# A profile overlay's hooks join the base's for the same event; replacing them would
-# silently drop every hook the base ships, which is how the base earns its hooks.
 hookBase="$renderSandbox/hooks-base.json"
 hookOverlay="$renderSandbox/hooks-overlay.json"
 hookDestination="$renderSandbox/hooks-settings.json"
@@ -334,10 +319,12 @@ check "an overlay hook renders alongside the base hook it shares an event with" 
 
 shopt -s nullglob
 hookTestFiles=("$topicDir"/hooks/test/*.test.mjs)
+commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
 shopt -u nullglob
 check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
-if [ "${#hookTestFiles[@]}" -gt 0 ]; then
-  check "hook behavior tests pass" node --test "${hookTestFiles[@]}"
+check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
+if ((${#hookTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0)); then
+  check "hook and commit behavior tests pass" node --test "${hookTestFiles[@]}" "${commitTestFiles[@]}"
 fi
 
 reportTopicResults "ai"

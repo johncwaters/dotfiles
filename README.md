@@ -1,8 +1,6 @@
 # dotfiles
 
-Personal machine setup: Claude Code, editor, shell tooling, fonts, services, and the
-bootstrap that puts them on a fresh machine. Replaces `claude-setup`, which outgrew its
-name.
+Personal machine setup: Claude Code, editor, shell tooling, fonts, and services.
 
 Linux, with mac seams left open. No Windows.
 
@@ -14,46 +12,16 @@ One command on any machine, fresh or converged:
 curl -fsSL https://raw.githubusercontent.com/johncwaters/dotfiles/main/bin/dot | bash -s -- --profile server
 ```
 
-On a fresh machine it clones the repo to `~/Projects/dotfiles`, points `~/.dotfiles` at it and
-bootstraps. After that `dot` is on PATH in any new interactive shell: it pulls mainline and reruns
-bootstrap, and `dot status` says how far the machine stands from `origin/main` and what a converge
-still owes, exiting 1 on any drift.
-
-Every `~/.claude` entry is a symlink into the checkout, so whatever branch the checkout holds is
-the live config. `dot` therefore refuses to converge a checkout that is off mainline or dirty;
-develop in a worktree and let the checkout stay on `main`. `dot --as-is` converges it anyway.
-
-`bootstrap` points `~/.dotfiles` at the clone and every link it creates resolves through
-that alias, never through the clone path. So the checkout lives wherever you want it and
-moving it later means repointing one symlink instead of rewriting every link on the
-machine.
-
-## How it works
-
-Each top-level dir is a topic that owns one concern: its config files, its `install.sh`,
-its `test.sh`. `script/bootstrap` reads the machine's profile, runs that profile's topics
-in listed order, and each topic links its config into place.
-
-Almost everything is a symlink, so a `git pull` updates the machine and `script/bootstrap`
-only ensures the links exist. Destinations that carry a machine-specific value are rendered
-or copied instead, and those go through `script/lib/render.sh`, which keeps a sidecar of what
-it last wrote so a hand edit is backed up and its own output is not. `~/.gitconfig`,
-`~/.bashrc`, `~/.bash_profile` are small stubs that include the repo copy, because git
-and installers append to those files in place and a link would send the appends into the
-repo.
+Entry points: [converge and status](bin/dot), [bootstrap](script/bootstrap),
+[collect](script/collect), [test suite](test/run-all.sh).
+The [repository invariants and map](AGENTS.md) cover checkout safety and link ownership;
+[script/lib/render.sh](script/lib/render.sh) owns rendered destinations.
 
 ## Profiles
 
-`profiles/<name>/profile.json` lists the topics that profile runs, in order. Ordering is
-load-bearing: `packages` installs node before `ai` needs it, git before `repos` clones.
-Alongside it sit the files that genuinely differ per machine: `packages.txt`, `CLAUDE.md`,
+Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `CLAUDE.md`,
 `commit-policy.json`, `settings.overlay.json`, `glissa.json`, `glissa.overlay.json`,
 `vscodium.json`.
-
-The active profile comes from `--profile`, then `$DOTFILES_PROFILE`, then the untracked
-`.machine-profile`. An existing `.machine-profile` is never rewritten, so a differing
-`--profile` or `$DOTFILES_PROFILE` applies to that one run and the machine keeps its
-profile.
 
 - `personal`: this workstation
 - `server`: headless, no editor or desktop topics
@@ -88,9 +56,6 @@ example documenting its shape: `repos/repos.example.txt` for `repos/repos.txt`,
 for `~/.gitconfig.local`, and `shell/localrc.example` for `~/.localrc`.
 `~/.claude/settings.json` is rendered from `ai/settings.base.json` plus the active
 profile's `settings.overlay.json`. `.machine-profile` is written by `script/bootstrap`.
-
-`~/.localrc` is where a machine's own exports go. The shell topic sources it before
-anything else. The git topic seeds `~/.gitconfig.local` from the previous `~/.gitconfig`.
 
 `vscodium/mcp.json` reads its PostHog token from the environment, so
 `POSTHOG_PERSONAL_API_KEY` has to be exported where VSCodium can see it.

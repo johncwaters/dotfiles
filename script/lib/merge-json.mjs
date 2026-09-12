@@ -64,9 +64,10 @@ export function mergeJsonFiles({
     mergeProperty,
   );
   const normalizedHome = home.replace(/\\/g, "/");
+  const escapedHome = JSON.stringify(normalizedHome).slice(1, -1);
   const renderedText = (JSON.stringify(mergedValue, null, 2) + "\n")
     .split("{{HOME}}")
-    .join(normalizedHome);
+    .join(escapedHome);
   fs.writeFileSync(destinationPath, renderedText, { encoding: "utf8", mode: 0o600 });
 }
 

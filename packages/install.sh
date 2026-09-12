@@ -7,6 +7,8 @@ if [[ -z "${dotfilesRepo:-}" ]]; then
 fi
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
+# shellcheck source=./flatpak.sh
+source "$dotfilesRepo/packages/flatpak.sh"
 
 packagesDirectory="$dotfilesRepo/packages"
 nodeSourceMajor=22
