@@ -243,6 +243,216 @@ test("Dispatch Bash calls anywhere in their command do not spend the budget", ()
   );
 });
 
+const commitPreflightCommand = `node "$HOME/.claude/skills/commit/preflight.ts" --paths a.mjs`;
+const commitLandCommand = `node "$HOME/.claude/skills/commit/land.ts" --promote <<'MSG'\nfeat(x): y\nMSG`;
+
+test("Commit skill preflight and land Bash calls do not spend the direct tool budget", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Bash", "preflight", { command: commitPreflightCommand }),
+      toolUse("Bash", "land", { command: commitLandCommand }),
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "current-call"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+test("A commit skill land call is exempt once the budget is spent", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(
+    payloadFor(transcriptPath, {
+      tool_name: "Bash",
+      tool_input: { command: commitLandCommand },
+    }),
+  );
+});
+
+const commitPathMentionCommand = `git diff "$HOME/.claude/skills/commit/land.ts"`;
+
+test("A Bash call that only names the commit land path spends the direct tool budget", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Bash", "three", { command: commitPathMentionCommand }),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+});
+
+test("A Bash call that only names the commit land path is denied once the budget is spent", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assert.match(
+    assertDenied(
+      payloadFor(transcriptPath, {
+        tool_name: "Bash",
+        tool_input: { command: commitPathMentionCommand },
+      }),
+    ),
+    /budget/,
+  );
+});
+
+const commitDocumentationSearchCommand = `grep -n 'node "$HOME/.claude/skills/commit/land.ts"' ai/skills/commit/SKILL.md`;
+const commitMentionPipelineCommand = "echo node skills/commit/land.ts | cat";
+
+for (const commitMentionCommand of [
+  commitDocumentationSearchCommand,
+  commitMentionPipelineCommand,
+]) {
+  test(`A Bash call that only quotes the commit invocation spends the direct tool budget: ${commitMentionCommand}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Bash", "three", { command: commitMentionCommand }),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+  });
+
+  test(`A Bash call that only quotes the commit invocation is denied once the budget is spent: ${commitMentionCommand}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Edit", "three"),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assert.match(
+      assertDenied(
+        payloadFor(transcriptPath, {
+          tool_name: "Bash",
+          tool_input: { command: commitMentionCommand },
+        }),
+      ),
+      /budget/,
+    );
+  });
+}
+
+test("A commit skill land call behind a directory change is exempt once the budget is spent", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(
+    payloadFor(transcriptPath, {
+      tool_name: "Bash",
+      tool_input: { command: `cd /repo && ${commitLandCommand}` },
+    }),
+  );
+});
+
+const commitHeredocBodyCommand = `cat > notes.md <<'DOC'\nnode ~/.claude/skills/commit/land.ts --promote\nDOC`;
+const commitAfterUnrelatedSegmentCommand = `rm -rf build; node $HOME/.claude/skills/commit/land.ts --help`;
+
+for (const commitLookalikeCommand of [
+  commitHeredocBodyCommand,
+  commitAfterUnrelatedSegmentCommand,
+]) {
+  test(`A Bash call carrying the commit invocation outside its own segment spends the direct tool budget: ${commitLookalikeCommand}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Bash", "three", { command: commitLookalikeCommand }),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+  });
+
+  test(`A Bash call carrying the commit invocation outside its own segment is denied once the budget is spent: ${commitLookalikeCommand}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Edit", "three"),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assert.match(
+      assertDenied(
+        payloadFor(transcriptPath, {
+          tool_name: "Bash",
+          tool_input: { command: commitLookalikeCommand },
+        }),
+      ),
+      /budget/,
+    );
+  });
+}
+
+const wrappedCommitWorkflowCommands = [
+  `cd /some/dir && ${commitLandCommand}`,
+  `NODE_OPTIONS=--no-warnings node $HOME/.claude/skills/commit/land.ts`,
+  "/usr/bin/node $HOME/.claude/skills/commit/land.ts",
+];
+
+for (const wrappedCommitWorkflowCommand of wrappedCommitWorkflowCommands) {
+  test(`A wrapped commit workflow call is exempt once the budget is spent: ${wrappedCommitWorkflowCommand}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Edit", "three"),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assertAllowed(
+      payloadFor(transcriptPath, {
+        tool_name: "Bash",
+        tool_input: { command: wrappedCommitWorkflowCommand },
+      }),
+    );
+  });
+}
+
 const wrappedDispatchCommands = [
   "systemd-run --user --unit=codex-1 --setenv=HOME=/home/jwaters codex exec --full-auto < prompt.md",
   "timeout 1800 codex exec --full-auto task",

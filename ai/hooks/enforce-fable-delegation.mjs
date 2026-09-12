@@ -14,26 +14,72 @@ const MAX_TRANSCRIPT_SCAN_BYTES = 4 * 1024 * 1024;
 const DIRECT_TOOL_BUDGET = 3;
 const QUOTE_CHARACTER = /['"]/g;
 const DISPATCH_COMMAND = /(?:^|[\s;&|(])(?:codex\s+exec|grok)\b/;
+const COMMAND_SEGMENT_SEPARATOR = /\n|;|&&|\|\||\||\(|\)/;
+const COMMAND_TOKEN_SEPARATOR = /\s+/;
+const COMMIT_WORKFLOW_INTERPRETERS = new Set(["bun", "node"]);
+const COMMIT_WORKFLOW_SCRIPT_PATHS = ["skills/commit/preflight.ts", "skills/commit/land.ts"];
+const ENVIRONMENT_ASSIGNMENT_TOKEN = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const HEREDOC_OPERATOR = "<<";
 
-function isDispatchBash(toolName, toolInput) {
+function basenameOf(token) {
+  return token.slice(token.lastIndexOf("/") + 1);
+}
+
+function isCommitWorkflowSegment(commandSegment) {
+  const segmentTokens = commandSegment.trim().split(COMMAND_TOKEN_SEPARATOR);
+  const invocationStartIndex = segmentTokens.findIndex(
+    (segmentToken) => !ENVIRONMENT_ASSIGNMENT_TOKEN.test(segmentToken),
+  );
+  if (invocationStartIndex < 0) return false;
+  const [interpreterToken, scriptToken] = segmentTokens.slice(invocationStartIndex);
+  if (!COMMIT_WORKFLOW_INTERPRETERS.has(basenameOf(interpreterToken))) return false;
+  if (typeof scriptToken !== "string") return false;
+  return COMMIT_WORKFLOW_SCRIPT_PATHS.some((scriptPath) => scriptToken.endsWith(scriptPath));
+}
+
+function isDirectoryChangeSegment(commandSegment) {
+  return commandSegment.split(COMMAND_TOKEN_SEPARATOR)[0] === "cd";
+}
+
+function withoutHeredocBody(command) {
+  const commandLines = command.split("\n");
+  const heredocOpenerIndex = commandLines.findIndex((commandLine) =>
+    commandLine.includes(HEREDOC_OPERATOR),
+  );
+  if (heredocOpenerIndex < 0) return command;
+  return commandLines.slice(0, heredocOpenerIndex + 1).join("\n");
+}
+
+function isCommitWorkflowCommand(command) {
+  const commandSegments = withoutHeredocBody(command)
+    .split(COMMAND_SEGMENT_SEPARATOR)
+    .map((commandSegment) => commandSegment.trim())
+    .filter((commandSegment) => commandSegment !== "");
+  if (commandSegments.length === 0) return false;
+  if (!isCommitWorkflowSegment(commandSegments.at(-1))) return false;
+  return commandSegments.slice(0, -1).every(isDirectoryChangeSegment);
+}
+
+function isExemptBash(toolName, toolInput) {
   if (toolName !== "Bash") return false;
   if (!toolInput || typeof toolInput !== "object") return false;
   if (typeof toolInput.command !== "string") return false;
   const commandWithoutQuoteCharacters = toolInput.command.replace(QUOTE_CHARACTER, "");
-  return DISPATCH_COMMAND.test(commandWithoutQuoteCharacters);
+  if (DISPATCH_COMMAND.test(commandWithoutQuoteCharacters)) return true;
+  return isCommitWorkflowCommand(commandWithoutQuoteCharacters);
 }
 
 function isCountedToolUse(contentBlock) {
   if (!contentBlock || typeof contentBlock !== "object") return false;
   if (contentBlock.type !== "tool_use") return false;
   if (!DIRECT_WORK_TOOLS.has(contentBlock.name)) return false;
-  return !isDispatchBash(contentBlock.name, contentBlock.input);
+  return !isExemptBash(contentBlock.name, contentBlock.input);
 }
 
 function denyForBudget(priorCalls) {
   denyPreToolUse(
     `Fable direct-tool budget exceeded: ${priorCalls} prior calls; budget is ${DIRECT_TOOL_BUDGET}.\n` +
-      "Dispatch per ROUTING.md: Codex for coding, Explore for reads; Agent, Skill, Workflow, and `codex exec`/`grok` Bash dispatches are not counted.",
+      "Dispatch per ROUTING.md: Codex for coding, Explore for reads; Agent, Skill, Workflow, `codex exec`/`grok` Bash dispatches, and the commit skill's preflight.ts and land.ts steps are not counted.",
   );
 }
 
@@ -174,7 +220,7 @@ function main() {
   if (typeof payload.tool_use_id !== "string" || payload.tool_use_id === "") allow();
   if (typeof payload.transcript_path !== "string" || payload.transcript_path === "") allow();
   if (!DIRECT_WORK_TOOLS.has(payload.tool_name)) allow();
-  if (isDispatchBash(payload.tool_name, payload.tool_input)) allow();
+  if (isExemptBash(payload.tool_name, payload.tool_input)) allow();
   enforceFromTranscript(payload);
 }
 
