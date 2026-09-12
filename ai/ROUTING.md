@@ -32,7 +32,7 @@ Decision order for any delegated task:
 2. Work kept off Codex, or after 1a: `opus` by default, including anything of uncertain complexity. `sonnet` only for one-shot slices with simple checkable output where opus changes nothing; a cheaper tier that fails once costs more than one that one-shots. `haiku` only for one-shot short answers checkable at a glance (classify, label, extract a field), never code, debugging, review, or a completion-gating judgment.
 3. A concrete failure on a lower tier reruns one tier up (`luna`, `terra`, `sol`, `astra`; `haiku`, `sonnet`, `opus`), never the same tier again, never a tier below these floors.
 4. Read-only sweeps use `Explore`, not `general-purpose`. Every spawn pins `model`; `hooks/enforce-spawn-model.mjs` denies one without it. A Workflow script pins `model` on every `agent()` call, and `ai/test.sh` pins that.
-5. Change a default only on `evals/` evidence (same tasks, competing routes, judged output). No eval covers the slice: write the task first, then reroute.
+5. Change a default only on eval evidence: the same tasks run through the competing routes with judged output. No eval covers the slice: write the task first, then reroute.
 
 Delegation prompts: the target cannot see this conversation, so carry objective, definition of done, paths, prior decisions, constraints, an output contract that fits back into context, and boundaries. Agent prompts carry literal `Scope:`, `Out of scope:`, and `Definition of done:` lines or `hooks/enforce-spawn-model.mjs` denies them. Do not restate AGENTS.md rules Claude subagents and Codex already read (global plus repo copy); Grok reads only the repo copy, so a Grok prompt carries any global rule it must follow.
 
