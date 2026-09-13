@@ -182,5 +182,7 @@ check "the personal ai settings golden fixture exists" \
 
 check "no profile overlay owns caveman" \
   bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
+check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \
+  bash -c '! grep -qil telegram@claude-plugins-official "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 
 reportTopicResults "repo wiring"

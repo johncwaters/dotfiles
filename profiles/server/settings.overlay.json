@@ -7,8 +7,5 @@
     ],
     "defaultMode": "auto"
   },
-  "enabledPlugins": {
-    "telegram@claude-plugins-official": true
-  },
   "alwaysThinkingEnabled": true
 }
