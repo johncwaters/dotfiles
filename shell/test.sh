@@ -184,4 +184,91 @@ check "a symlinked topics file is not written through" grep -qx 'unrelated conte
 check "the symlinked topics file was replaced by a plain file" \
   bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$sandbox/.config/dotfiles/topics"
 
+startSandboxHome "shell-darwin"
+darwinHomebrewPrefix="$sandbox/homebrew"
+darwinApplicationsDirectory="$sandbox/Applications"
+darwinShellsFile="$sandbox/etc-shells"
+darwinStubBin="$sandbox/darwin-stub-bin"
+darwinCommandLog="$sandbox/darwin-commands.log"
+mkdir -p "$darwinHomebrewPrefix/bin" "$darwinHomebrewPrefix/sbin" \
+  "$darwinHomebrewPrefix/etc/profile.d" \
+  "$darwinApplicationsDirectory/VSCodium.app/Contents/Resources/app/bin" "$darwinStubBin"
+: > "$darwinShellsFile"
+: > "$darwinCommandLog"
+printf 'darwinCompletionLoaded=1\n' > "$darwinHomebrewPrefix/etc/profile.d/bash_completion.sh"
+cat > "$darwinStubBin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+printf 'sudo %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+exec "$@"
+SUDO
+cat > "$darwinStubBin/chsh" <<'CHSH'
+#!/usr/bin/env bash
+printf 'chsh %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+CHSH
+chmod +x "$darwinStubBin/sudo" "$darwinStubBin/chsh"
+
+runDarwinInstall() {
+  env HOME="$sandbox" PATH="$darwinStubBin:/usr/bin:/bin" SHELL="${1:-/bin/zsh}" \
+    DOTFILES_PROFILE=personal DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+    DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+    DOTFILES_TEST_SHELLS_FILE="$darwinShellsFile" DOTFILES_TEST_LOG="$darwinCommandLog" \
+    NO_COLOR=1 bash "$topicDir/install.sh"
+}
+
+darwinInstallStatus=0
+darwinInstallOutput="$(runDarwinInstall)" || darwinInstallStatus=$?
+check "the darwin shell install exits clean when sudo and chsh succeed" test "$darwinInstallStatus" -eq 0
+check "darwin registers Homebrew bash in the accepted shell list" \
+  grep -qxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile"
+check "darwin appends to the shell list through sudo" \
+  grep -qx "sudo tee -a $darwinShellsFile" "$darwinCommandLog"
+check "darwin requests Homebrew bash as the login shell" \
+  grep -qx "chsh -s $darwinHomebrewPrefix/bin/bash" "$darwinCommandLog"
+check "the login shell change is reported" outputHas "$darwinInstallOutput" 'changed to'
+
+darwinInteractiveShell() {
+  env -i HOME="$sandbox" PATH="/usr/bin:/bin" TERM=dumb DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+    DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+    bash -i -c "$1" 2>/dev/null
+}
+
+darwinPath="$(darwinInteractiveShell 'printf %s "$PATH"')"
+check "darwin puts Homebrew bin first on PATH" \
+  bash -c '[[ "$1" == "$2/bin:"* ]]' _ "$darwinPath" "$darwinHomebrewPrefix"
+check "darwin puts Homebrew sbin on PATH" \
+  bash -c '[[ ":$1:" == *":$2/sbin:"* ]]' _ "$darwinPath" "$darwinHomebrewPrefix"
+check "darwin puts the VSCodium CLI directory on PATH" \
+  bash -c '[[ ":$1:" == *":$2/VSCodium.app/Contents/Resources/app/bin:"* ]]' \
+    _ "$darwinPath" "$darwinApplicationsDirectory"
+check "darwin loads Homebrew bash completion" \
+  test "$(darwinInteractiveShell 'printf %s "${darwinCompletionLoaded:-0}"')" = "1"
+
+: > "$darwinCommandLog"
+darwinSecondOutput="$(runDarwinInstall "$darwinHomebrewPrefix/bin/bash")"
+check "a settled darwin shell rerun reports no changes" reportsNoChanges "$darwinSecondOutput"
+check "a settled darwin shell rerun does not use sudo" \
+  bash -c '! grep -q "^sudo " "$1"' _ "$darwinCommandLog"
+check "a settled darwin shell rerun does not call chsh" \
+  bash -c '! grep -q "^chsh " "$1"' _ "$darwinCommandLog"
+
+grep -vxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile" > "$darwinShellsFile.next" || true
+mv "$darwinShellsFile.next" "$darwinShellsFile"
+cat > "$darwinStubBin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+exit 1
+SUDO
+cat > "$darwinStubBin/chsh" <<'CHSH'
+#!/usr/bin/env bash
+exit 1
+CHSH
+chmod +x "$darwinStubBin/sudo" "$darwinStubBin/chsh"
+darwinRefusalStatus=0
+darwinRefusalOutput="$(runDarwinInstall)" || darwinRefusalStatus=$?
+check "darwin shell policy failures fail the topic after installing stubs" test "$darwinRefusalStatus" -eq 1
+check "a refused accepted-shell update is reported" outputHas "$darwinRefusalOutput" 'could not add'
+check "a refused login-shell change is reported" outputHas "$darwinRefusalOutput" 'chsh refused'
+check "darwin policy failures leave the bashrc stub installed" test -f "$sandbox/.bashrc"
+
 reportTopicResults "shell"

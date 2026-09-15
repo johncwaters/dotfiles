@@ -24,6 +24,36 @@ displacedBackupNames=()
 installShellStub ".bashrc"
 installShellStub ".bash_profile"
 
+shellsFilePath() {
+  trustedPlatformTestPath "${DOTFILES_TEST_SHELLS_FILE:-}" || printf '/etc/shells\n'
+}
+
+ensureDarwinLoginShell() {
+  if ! isDarwin; then
+    return 0
+  fi
+  local homebrewBash
+  local shellsFile
+  homebrewBash="$(homebrewPrefix)/bin/bash"
+  shellsFile="$(shellsFilePath)"
+  if ! grep -qxF "$homebrewBash" "$shellsFile" 2>/dev/null; then
+    if ! command -v sudo >/dev/null 2>&1 || ! printf '%s\n' "$homebrewBash" | sudo tee -a "$shellsFile" >/dev/null; then
+      noteWarned "login shell" "could not add $homebrewBash to $shellsFile"
+    fi
+  fi
+  if [[ "${SHELL:-}" == "$homebrewBash" ]]; then
+    notePresent "login shell" "$homebrewBash"
+    return 0
+  fi
+  if ! chsh -s "$homebrewBash"; then
+    noteWarned "login shell" "chsh refused $homebrewBash"
+    return 0
+  fi
+  noteApplied "login shell" "changed to $homebrewBash"
+}
+
+ensureDarwinLoginShell
+
 renderTopicList() {
   local topicsFile="$HOME/.config/dotfiles/topics"
   local wanted
