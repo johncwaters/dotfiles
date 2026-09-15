@@ -355,6 +355,47 @@ check "the work profile installs no system package" logLacks "install -y"
 check "the work profile installs no flatpak" logLacks "flatpak install"
 check "the work profile still installs its python tools" outputHas "$workRunOutput" "ruff"
 
+writeStub brew <<'STUB'
+#!/usr/bin/env bash
+printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+for packageName in "$@"; do
+  case "$packageName" in
+    git | gh | python3)
+      cp "$DOTFILES_TEST_STATE/available/$packageName" "$DOTFILES_TEST_STUB_BIN/$packageName"
+      ;;
+    node)
+      cp "$DOTFILES_TEST_STATE/available/node" "$DOTFILES_TEST_STUB_BIN/node"
+      cp "$DOTFILES_TEST_STATE/available/npm" "$DOTFILES_TEST_STUB_BIN/npm"
+      ;;
+  esac
+done
+STUB
+writeStub dscl <<STUB
+#!/usr/bin/env bash
+printf 'dscl %s\n' "\$*" >> "\$DOTFILES_TEST_LOG"
+printf 'NFSHomeDirectory: %s\n' "$realHome"
+STUB
+provideCommand brew
+provideCommand dscl
+for commandName in git gh python3 node npm; do
+  withdrawCommand "$commandName"
+done
+rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml" \
+  "$stubState/npm-installed/@biomejs%biome"
+: > "$commandLog"
+darwinRunStatus=0
+darwinRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+  DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDir/install.sh")" || darwinRunStatus=$?
+check "the work profile converges through Homebrew on darwin" test "$darwinRunStatus" -eq 0
+for brewPackage in git gh python3 node; do
+  check "darwin installs $brewPackage through Homebrew" logHas "brew install $brewPackage"
+done
+check "darwin chooses Homebrew even while apt-get is visible" logLacks 'apt-get '
+check "darwin never runs Homebrew through sudo" logLacks 'sudo '
+check "darwin takes the non-NodeSource Node path" logLacks 'nodesource.com'
+check "darwin installs biome after Homebrew provides npm" logHas 'npm install -g @biomejs/biome'
+check "darwin installs the work profile's Python tools" outputHas "$darwinRunOutput" 'ruff'
+
 touch "$stubState/gh-unauthed"
 unauthedRunStatus=0
 unauthedRunOutput="$(runInstall)" || unauthedRunStatus=$?

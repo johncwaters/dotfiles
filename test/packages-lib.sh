@@ -30,6 +30,11 @@ check "pacman installs python with its pip" packageNamesAre pacman python "pytho
 check "apt-get installs node with npm beside it" packageNamesAre apt-get node "nodejs npm"
 check "pacman calls the GitHub CLI github-cli" packageNamesAre pacman gh "github-cli"
 check "apt-get calls the GitHub CLI gh" packageNamesAre apt-get gh "gh"
+check "brew installs git" packageNamesAre brew git "git"
+check "brew installs the GitHub CLI" packageNamesAre brew gh "gh"
+check "brew installs Python 3" packageNamesAre brew python "python3"
+check "brew installs Node with npm" packageNamesAre brew node "node"
+check "brew installs VSCodium as a cask" packageNamesAre brew vscodium "--cask vscodium"
 
 unmappedToolResolvesToNothing() {
   ! packageNamesForTool apt-get nosuchtool >/dev/null 2>&1
@@ -42,6 +47,45 @@ forgetPackageIndexRefresh
 check "forgetting the package index refresh resets its shared state" test "$aptUpdated" -eq 0
 
 startSandboxHome "packages-lib"
+
+managerProbeBin="$sandbox/manager-probe-bin"
+mkdir -p "$managerProbeBin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$managerProbeBin/brew"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$managerProbeBin/apt-get"
+chmod +x "$managerProbeBin/brew" "$managerProbeBin/apt-get"
+
+darwinPrefersBrew() {
+  detectedPackageManager=""
+  [[ "$(PATH="$managerProbeBin" DOTFILES_PLATFORM=darwin detectPackageManager)" == "brew" ]]
+}
+
+linuxKeepsItsNativeManagerPreference() {
+  detectedPackageManager=""
+  [[ "$(PATH="$managerProbeBin" DOTFILES_PLATFORM=linux detectPackageManager)" == "apt-get" ]]
+}
+
+check "darwin prefers Homebrew when another manager is visible" darwinPrefersBrew
+check "linux keeps the existing native manager preference" linuxKeepsItsNativeManagerPreference
+
+brewInstallLog="$sandbox/brew-install.log"
+sudoInstallLog="$sandbox/sudo-install.log"
+cat > "$managerProbeBin/brew" <<BREW
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$brewInstallLog"
+BREW
+cat > "$managerProbeBin/sudo" <<SUDO
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$sudoInstallLog"
+exit 1
+SUDO
+chmod +x "$managerProbeBin/brew" "$managerProbeBin/sudo"
+PATH="$managerProbeBin:$PATH" installSystemPackages brew git
+check "Homebrew installs as the current account" grep -qx 'install git' "$brewInstallLog"
+check "Homebrew never reaches sudo" test ! -s "$sudoInstallLog"
+
+check "darwin's system command path includes the Apple Silicon Homebrew bins" \
+  outputHas "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="" systemCommandSearchPath)" \
+  '/opt/homebrew/bin:/opt/homebrew/sbin'
 
 virtualEnvironmentBin="$sandbox/virtual-environment-bin"
 mkdir -p "$virtualEnvironmentBin"
@@ -204,10 +248,27 @@ hostileIdCannotChooseThePasswdAccount() {
   [[ "$(PATH="$hostileSystemBin:$PATH" accountPasswdHome)" == "$(accountPasswdHome)" ]]
 }
 
+cat > "$hostileSystemBin/dscl" <<DSCL
+#!/usr/bin/env bash
+printf 'NFSHomeDirectory: %s\n' "$realHomeOutsideTheSandbox"
+DSCL
+chmod +x "$hostileSystemBin/dscl"
+
+darwinReadsTheAccountHomeFromDirectoryServices() {
+  [[ "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$hostileSystemBin" accountPasswdHome)" \
+    == "$realHomeOutsideTheSandbox" ]]
+}
+
+darwinFailsClosedWithoutDirectoryServices() {
+  HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="" homeIsTheAccountsOwnHome
+}
+
 check "the account's own home is read from the passwd database" \
   theAccountsOwnHomeIsRecognisedFromThePasswdDatabase
 check "a hostile id on PATH cannot choose the passwd account" \
   hostileIdCannotChooseThePasswdAccount
+check "darwin reads the account home through dscl" darwinReadsTheAccountHomeFromDirectoryServices
+check "darwin treats an unknown account home as the account's own" darwinFailsClosedWithoutDirectoryServices
 check "a sandbox home is never mistaken for the account's own home" \
   aSandboxHomeIsNotTheAccountsOwnHome
 check "the stub seam stays shut in the account's own home" \

@@ -52,9 +52,31 @@ canInstallSystemPackages() {
   return 1
 }
 
-# getent is named absolutely: a PATH this account controls must not decide whether the account's own home is recognised.
+testDsclCommand() {
+  local testDsclPath="${DOTFILES_TEST_STUB_BIN:-}/dscl"
+  local sandboxMarker="$HOME/.dotfiles-test-sandbox"
+  if [[ -z "${DOTFILES_TEST_STUB_BIN:-}" || ! -x "$testDsclPath" ]]; then
+    return 1
+  fi
+  if [[ -L "$sandboxMarker" || ! -f "$sandboxMarker" || ! -O "$sandboxMarker" || ! -O "$HOME" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$testDsclPath"
+}
+
 accountPasswdHome() {
   local passwdFields=()
+  local dsclCommand="/usr/bin/dscl"
+  local directoryRecord
+  if isDarwin; then
+    dsclCommand="$(testDsclCommand || printf '/usr/bin/dscl\n')"
+    if [[ ! -x "$dsclCommand" ]]; then
+      return 1
+    fi
+    directoryRecord="$("$dsclCommand" . -read "/Users/$USER" NFSHomeDirectory 2>/dev/null)" || return 1
+    sed -n 's/^NFSHomeDirectory:[[:space:]]*//p' <<< "$directoryRecord"
+    return 0
+  fi
   if [[ ! -x /usr/bin/getent ]]; then
     return 1
   fi
@@ -69,8 +91,13 @@ forgetPackageIndexRefresh() {
 # The harness always runs out of a directory it made, so a marker in the account's own home is somebody planting one.
 homeIsTheAccountsOwnHome() {
   local passwdHome
-  passwdHome="$(accountPasswdHome)"
-  [[ -n "$passwdHome" && "$passwdHome" == "$HOME" ]]
+  if ! passwdHome="$(accountPasswdHome)"; then
+    return 0
+  fi
+  if [[ -z "$passwdHome" ]]; then
+    return 0
+  fi
+  [[ "$passwdHome" == "$HOME" ]]
 }
 
 # An environment variable alone must never redirect what runs as root, so the seam opens only inside a home the test harness marked and this account owns.
@@ -106,8 +133,12 @@ sandboxRedirectedPath() {
 # sudo resolves a bare name against a PATH this account controls, so what runs as root is named by absolute path.
 systemCommandSearchPath() {
   local stubBinDirectory
+  local systemPath="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   stubBinDirectory="$(sandboxStubBinDirectory || true)"
-  printf '%s\n' "${stubBinDirectory:+$stubBinDirectory:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  if isDarwin; then
+    systemPath="/opt/homebrew/bin:/opt/homebrew/sbin:$systemPath"
+  fi
+  printf '%s\n' "${stubBinDirectory:+$stubBinDirectory:}$systemPath"
 }
 
 resolveSystemCommand() {
@@ -151,7 +182,12 @@ detectPackageManager() {
     return 0
   fi
   local candidateManager
-  for candidateManager in apt-get dnf pacman zypper; do
+  if isDarwin && command -v brew >/dev/null 2>&1; then
+    detectedPackageManager="brew"
+    printf '%s\n' "$detectedPackageManager"
+    return 0
+  fi
+  for candidateManager in apt-get dnf pacman zypper brew; do
     if command -v "$candidateManager" >/dev/null 2>&1; then
       detectedPackageManager="$candidateManager"
       printf '%s\n' "$detectedPackageManager"
@@ -187,6 +223,15 @@ installSystemPackages() {
       ;;
     zypper)
       runPackageManagerCommand zypper --non-interactive install "$@" >>"$outputSink" 2>&1
+      return $?
+      ;;
+    brew)
+      local brewCommand
+      brewCommand="$(command -v brew 2>/dev/null || true)"
+      if [[ -z "$brewCommand" ]]; then
+        return 1
+      fi
+      "$brewCommand" install "$@" >>"$outputSink" 2>&1
       return $?
       ;;
   esac
@@ -306,12 +351,16 @@ packageNamesForTool() {
   local manager="$1"
   local toolKey="$2"
   case "$toolKey:$manager" in
-    git:apt-get | git:dnf | git:pacman | git:zypper)
+    git:apt-get | git:dnf | git:pacman | git:zypper | git:brew)
       printf 'git\n'
       return 0
       ;;
     node:apt-get | node:dnf | node:pacman | node:zypper)
       printf 'nodejs\nnpm\n'
+      return 0
+      ;;
+    node:brew)
+      printf 'node\n'
       return 0
       ;;
     python:apt-get | python:dnf | python:zypper)
@@ -322,12 +371,24 @@ packageNamesForTool() {
       printf 'python\npython-pip\n'
       return 0
       ;;
+    python:brew)
+      printf 'python3\n'
+      return 0
+      ;;
     gh:apt-get | gh:dnf)
       printf 'gh\n'
       return 0
       ;;
     gh:pacman)
       printf 'github-cli\n'
+      return 0
+      ;;
+    gh:brew)
+      printf 'gh\n'
+      return 0
+      ;;
+    vscodium:brew)
+      printf '%s\n' '--cask' 'vscodium'
       return 0
       ;;
     solaar:apt-get)
@@ -484,7 +545,7 @@ installPackageTool() {
     noteWarned "$label" "not available via $manager, $manualHint"
     return 0
   fi
-  if ! canInstallSystemPackages; then
+  if [[ "$manager" != "brew" ]] && ! canInstallSystemPackages; then
     noteWarned "$label" "$manager needs root or sudo, $manualHint"
     return 0
   fi
