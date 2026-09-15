@@ -7,7 +7,7 @@ dotfilesShellLoaded=1
 export DOTFILES="$HOME/.dotfiles"
 export PROJECTS="${PROJECTS:-$HOME/Projects}"
 # shellcheck source=../script/lib/platform.sh
-[[ -f "$DOTFILES/script/lib/platform.sh" ]] && source "$DOTFILES/script/lib/platform.sh"
+source "$DOTFILES/script/lib/platform.sh"
 
 prependToPathOnce() {
   case ":$PATH:" in

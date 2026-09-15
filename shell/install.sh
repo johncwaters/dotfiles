@@ -28,6 +28,34 @@ shellsFilePath() {
   trustedPlatformTestPath "${DOTFILES_TEST_SHELLS_FILE:-}" || printf '/etc/shells\n'
 }
 
+# sudo -n, so an unattended converge fails into a warning instead of a password prompt no carbon unit will answer.
+# Only root may terminate the shells file, so the newline an unterminated last line needs rides in front of the appended path.
+registerAcceptedLoginShell() {
+  local loginShellPath="$1"
+  local shellsFile="$2"
+  local appendedText="$loginShellPath"
+  if ! command -v sudo >/dev/null 2>&1; then
+    return 1
+  fi
+  if [[ -s "$shellsFile" ]] && [[ -n "$(tail -c 1 -- "$shellsFile" 2>/dev/null)" ]]; then
+    appendedText=$'\n'"$loginShellPath"
+  fi
+  printf '%s\n' "$appendedText" | sudo -n tee -a "$shellsFile" >/dev/null
+}
+
+# $SHELL is the shell that launched this run, not the shell the account logs in with, so a converged machine would rerun chsh forever.
+accountLoginShell() {
+  local recordedLoginShell=""
+  if isDarwin; then
+    recordedLoginShell="$(darwinAccountRecord UserShell || true)"
+  fi
+  if [[ -n "$recordedLoginShell" ]]; then
+    printf '%s\n' "$recordedLoginShell"
+    return 0
+  fi
+  printf '%s\n' "${SHELL:-}"
+}
+
 ensureDarwinLoginShell() {
   if ! isDarwin; then
     return 0
@@ -37,11 +65,11 @@ ensureDarwinLoginShell() {
   homebrewBash="$(homebrewPrefix)/bin/bash"
   shellsFile="$(shellsFilePath)"
   if ! grep -qxF "$homebrewBash" "$shellsFile" 2>/dev/null; then
-    if ! command -v sudo >/dev/null 2>&1 || ! printf '%s\n' "$homebrewBash" | sudo tee -a "$shellsFile" >/dev/null; then
+    if ! registerAcceptedLoginShell "$homebrewBash" "$shellsFile"; then
       noteWarned "login shell" "could not add $homebrewBash to $shellsFile"
     fi
   fi
-  if [[ "${SHELL:-}" == "$homebrewBash" ]]; then
+  if [[ "$(accountLoginShell)" == "$homebrewBash" ]]; then
     notePresent "login shell" "$homebrewBash"
     return 0
   fi

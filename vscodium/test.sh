@@ -93,6 +93,13 @@ STUB
 writeStub curl <<'STUB'
 #!/usr/bin/env bash
 printf 'curl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+stubbedFileMode() {
+  if [[ "${DOTFILES_PLATFORM:-linux}" == "darwin" ]]; then
+    stat -f %Lp "$1"
+    return $?
+  fi
+  stat -c %a "$1"
+}
 requestedUrl=""
 outputPath=""
 while (($# > 0)); do
@@ -103,7 +110,7 @@ while (($# > 0)); do
   fi
   if [[ "$1" == "--config" ]]; then
     if grep -q '^header = "Authorization: Bearer ' "$2"; then
-      configMode="$(bash -c 'source "$1"; fileModeOf "$2"' _ "$DOTFILES_TEST_HARNESS" "$2")"
+      configMode="$(stubbedFileMode "$2")"
       printf 'curl was handed an authorization header in mode %s\n' "$configMode" \
         >> "$DOTFILES_TEST_LOG"
     fi

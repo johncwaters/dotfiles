@@ -10,6 +10,15 @@ launchAgentIsLoaded() {
   launchctl print "$domain/$label" >/dev/null 2>&1
 }
 
+# The converge topic runs inside this agent, so booting it out here kills the run before it can bootstrap it again.
+runningInsideLaunchAgent() {
+  local agentLabel="$1"
+  if [[ "${DOTFILES_CONVERGE_AGENT:-}" == "1" ]]; then
+    return 0
+  fi
+  [[ "${XPC_SERVICE_NAME:-}" == "$agentLabel" ]]
+}
+
 installLaunchAgent() {
   local noteLabel="$1"
   local agentLabel="$2"
@@ -33,6 +42,10 @@ installLaunchAgent() {
     clearDotfilesState "$pendingState"
     notePresent "$noteLabel" "loaded"
     return 0
+  fi
+  if runningInsideLaunchAgent "$agentLabel"; then
+    noteWarned "$noteLabel" "reload owed, run dot by hand to reload it"
+    return 1
   fi
   if ((wasLoaded == 1)) && ! launchctl bootout "$domain" "$plistPath" >/dev/null 2>&1; then
     noteWarned "$noteLabel" "launchctl bootout failed"

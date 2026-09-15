@@ -133,6 +133,7 @@ esac
 STUB
 provideCommand id
 provideCommand launchctl
+writeDarwinDirectoryServiceStub "$stubBin"
 
 darwinHomebrewPrefix="$sandbox/homebrew"
 launchAgentPath="$sandbox/Library/LaunchAgents/dev.dotfiles.converge.plist"
@@ -162,6 +163,8 @@ check "the launch agent does not run immediately when loaded" \
 check "the launch agent PATH contains Homebrew and the systemd unit entries" \
   grep -qF "$darwinHomebrewPrefix/bin:$darwinHomebrewPrefix/sbin:$sandbox/.npm-global/bin:$sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     "$launchAgentPath"
+check "the launch agent tells the converge it runs as the agent" \
+  bash -c 'grep -A1 "<key>DOTFILES_CONVERGE_AGENT</key>" "$1" | grep -q "<string>1</string>"' _ "$launchAgentPath"
 check "the launch agent writes stdout under dotfiles state" \
   grep -qF "$sandbox/.local/state/dotfiles/converge.stdout.log" "$launchAgentPath"
 check "the launch agent writes stderr under dotfiles state" \
@@ -209,5 +212,45 @@ check "a later darwin run retries owed launchctl work" test "$retriedDarwinStatu
 check "the retry bootstraps the launch agent" \
   logHas "launchctl bootstrap gui/501 $launchAgentPath"
 check "a successful retry clears launchd debt" test ! -e "$launchAgentPending"
+
+printf 'hand edit inside the agent\n' >> "$launchAgentPath"
+: > "$commandLog"
+insideAgentStatus=0
+insideAgentOutput="$(runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin \
+  DOTFILES_CONVERGE_AGENT=1 DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDir/install.sh")" || insideAgentStatus=$?
+check "a converge running as the agent never boots itself out" logLacks 'launchctl bootout'
+check "a converge running as the agent loads nothing either" logLacks 'launchctl bootstrap'
+check "a converge running as the agent says the reload is owed" \
+  outputHas "$insideAgentOutput" 'run dot by hand to reload it'
+check "a converge running as the agent fails the topic" test "$insideAgentStatus" -eq 1
+check "a converge running as the agent leaves the reload owed" test -f "$launchAgentPending"
+
+: > "$commandLog"
+handReloadStatus=0
+runDarwinInstall > /dev/null || handReloadStatus=$?
+check "a hand run pays the reload the agent could not" \
+  logHas "launchctl bootout gui/501 $launchAgentPath"
+check "the hand run loads the agent again" \
+  logHas "launchctl bootstrap gui/501 $launchAgentPath"
+check "the hand run clears the owed reload" test ! -e "$launchAgentPending"
+check "the hand run exits clean" test "$handReloadStatus" -eq 0
+
+unusableStateHome="$sandbox/unusable-state-home"
+mkdir -p "$unusableStateHome/.local/state" "$unusableStateHome/Library/LaunchAgents"
+ln -s "$testRepoRoot" "$unusableStateHome/.dotfiles"
+: > "$unusableStateHome/.dotfiles-test-sandbox"
+ln -s "$unusableStateHome/no-such-state" "$unusableStateHome/.local/state/dotfiles"
+: > "$commandLog"
+unusableStateStatus=0
+unusableStateOutput="$(runInStubbedSandbox "$unusableStateHome" DOTFILES_PLATFORM=darwin \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDir/install.sh")" || unusableStateStatus=$?
+check "a launch agent that could not be rendered names why" \
+  outputHas "$unusableStateOutput" 'is not a plain directory'
+check "a launch agent that could not be rendered fails the topic" test "$unusableStateStatus" -eq 1
+check "a launch agent that could not be rendered reaches no launchctl" logLacks 'launchctl '
+check "a launch agent that could not be rendered is never written" \
+  test ! -e "$unusableStateHome/Library/LaunchAgents/dev.dotfiles.converge.plist"
 
 reportTopicResults "converge"

@@ -115,7 +115,6 @@ runInStubbedSandbox() {
     DOTFILES_TEST_STATE="$stubState" \
     DOTFILES_TEST_STUB_BIN="$stubBin" \
     DOTFILES_TEST_CORE_BIN="$coreBin" \
-    DOTFILES_TEST_HARNESS="$testRepoRoot/test/harness.sh" \
     "$@"
 }
 
@@ -171,14 +170,43 @@ reportTopicResults() {
 
 # type -P, not command -v: the latter answers with a builtin name that symlinks nowhere.
 linkCoreUtilities() {
+  local destinationDirectory="$coreBin"
   local utilityName
   local utilityPath
+  if [[ "${1:-}" == "--into" ]]; then
+    destinationDirectory="$2"
+    shift 2
+  fi
   for utilityName in "$@"; do
     utilityPath="$(type -P "$utilityName" 2>/dev/null || true)"
     if [[ -n "$utilityPath" ]]; then
-      ln -sf "$utilityPath" "$coreBin/$utilityName"
+      ln -sf "$utilityPath" "$destinationDirectory/$utilityName"
     fi
   done
+}
+
+# Every darwin override asks directory services whose home this is, so a darwin sandbox needs a dscl that answers for an account living elsewhere.
+writeDarwinDirectoryServiceStub() {
+  local stubDirectory="$1"
+  printf '%s\n' "${2:-/Users/the-account-this-sandbox-is-not}" > "$stubDirectory/.dscl-account-home"
+  printf '%s\n' "${3:-/bin/zsh}" > "$stubDirectory/.dscl-login-shell"
+  cat > "$stubDirectory/dscl" <<'STUB'
+#!/usr/bin/env bash
+stubDirectory="${0%/*}"
+answer=""
+if [[ "${4:-}" == "UserShell" ]]; then
+  IFS= read -r answer < "$stubDirectory/.dscl-login-shell"
+  printf 'UserShell: %s\n' "$answer"
+  exit 0
+fi
+IFS= read -r answer < "$stubDirectory/.dscl-account-home"
+printf 'NFSHomeDirectory: %s\n' "$answer"
+STUB
+  chmod +x "$stubDirectory/dscl"
+}
+
+setStubbedDarwinLoginShell() {
+  printf '%s\n' "$2" > "$1/.dscl-login-shell"
 }
 
 writeStub() {

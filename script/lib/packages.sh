@@ -52,71 +52,12 @@ canInstallSystemPackages() {
   return 1
 }
 
-testDsclCommand() {
-  local testDsclPath="${DOTFILES_TEST_STUB_BIN:-}/dscl"
-  local sandboxMarker="$HOME/.dotfiles-test-sandbox"
-  if [[ -z "${DOTFILES_TEST_STUB_BIN:-}" || ! -x "$testDsclPath" ]]; then
-    return 1
-  fi
-  if [[ -L "$sandboxMarker" || ! -f "$sandboxMarker" || ! -O "$sandboxMarker" || ! -O "$HOME" ]]; then
-    return 1
-  fi
-  printf '%s\n' "$testDsclPath"
-}
-
-accountPasswdHome() {
-  local passwdFields=()
-  local dsclCommand="/usr/bin/dscl"
-  local directoryRecord
-  if isDarwin; then
-    dsclCommand="$(testDsclCommand || printf '/usr/bin/dscl\n')"
-    if [[ ! -x "$dsclCommand" ]]; then
-      return 1
-    fi
-    directoryRecord="$("$dsclCommand" . -read "/Users/$USER" NFSHomeDirectory 2>/dev/null)" || return 1
-    sed -n 's/^NFSHomeDirectory:[[:space:]]*//p' <<< "$directoryRecord"
-    return 0
-  fi
-  if [[ ! -x /usr/bin/getent ]]; then
-    return 1
-  fi
-  IFS=: read -r -a passwdFields < <(/usr/bin/getent passwd "$EUID" 2>/dev/null)
-  printf '%s\n' "${passwdFields[5]:-}"
-}
-
 forgetPackageIndexRefresh() {
   aptUpdated=0
 }
 
-# The harness always runs out of a directory it made, so a marker in the account's own home is somebody planting one.
-homeIsTheAccountsOwnHome() {
-  local passwdHome
-  if ! passwdHome="$(accountPasswdHome)"; then
-    return 0
-  fi
-  if [[ -z "$passwdHome" ]]; then
-    return 0
-  fi
-  [[ "$passwdHome" == "$HOME" ]]
-}
-
-# An environment variable alone must never redirect what runs as root, so the seam opens only inside a home the test harness marked and this account owns.
 sandboxStubBinDirectory() {
-  local stubBinDirectory="${DOTFILES_TEST_STUB_BIN:-}"
-  local sandboxMarker="$HOME/.dotfiles-test-sandbox"
-  if [[ -z "$stubBinDirectory" ]]; then
-    return 1
-  fi
-  if homeIsTheAccountsOwnHome; then
-    return 1
-  fi
-  if [[ -L "$sandboxMarker" || ! -f "$sandboxMarker" || ! -O "$sandboxMarker" ]]; then
-    return 1
-  fi
-  if [[ ! -O "$HOME" ]]; then
-    return 1
-  fi
-  printf '%s\n' "$stubBinDirectory"
+  trustedPlatformTestPath "${DOTFILES_TEST_STUB_BIN:-}"
 }
 
 # A caller-supplied path that redirects a root write opens the same seam the stubs do, so it is honoured only inside the home the harness marked.
@@ -133,10 +74,12 @@ sandboxRedirectedPath() {
 # sudo resolves a bare name against a PATH this account controls, so what runs as root is named by absolute path.
 systemCommandSearchPath() {
   local stubBinDirectory
+  local homebrewRoot
   local systemPath="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   stubBinDirectory="$(sandboxStubBinDirectory || true)"
   if isDarwin; then
-    systemPath="/opt/homebrew/bin:/opt/homebrew/sbin:$systemPath"
+    homebrewRoot="$(homebrewPrefix)"
+    systemPath="$homebrewRoot/bin:$homebrewRoot/sbin:$systemPath"
   fi
   printf '%s\n' "${stubBinDirectory:+$stubBinDirectory:}$systemPath"
 }
@@ -550,7 +493,7 @@ toolIsPresent() {
     if command -v "$commandName" >/dev/null 2>&1; then
       return 0
     fi
-    [[ -x "$(applicationsDirectory)/VSCodium.app/Contents/Resources/app/bin/codium" ]]
+    [[ -x "$(codiumBundleBinDirectory)/codium" ]]
     return $?
   fi
   command -v "$commandName" >/dev/null 2>&1

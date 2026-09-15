@@ -288,13 +288,88 @@ pullMainline() {
 }
 
 # Two converges at once (a timer and a hand run) would both rewrite the same links and state.
-convergeMkdirLockPath=""
+convergeLockPath=""
 
-releaseConvergeMkdirLock() {
-  if [[ -z "$convergeMkdirLockPath" ]]; then
+# A reclaimer that took this lock over leaves a lock naming itself, and removing that would free a run still working.
+releaseConvergeLock() {
+  if [[ -z "$convergeLockPath" ]]; then
     return 0
   fi
-  rmdir -- "$convergeMkdirLockPath" 2>/dev/null || true
+  if [[ "$(convergeLockHolderPid || true)" != "$$" ]]; then
+    return 0
+  fi
+  rm -f -- "$convergeLockPath"
+}
+
+# The pid is the link target, so one syscall both takes the lock and publishes who holds it; a two step lock has a window where it looks abandoned.
+takeConvergeLock() {
+  # ln -s drops the link inside whatever directory already sits at that path instead of refusing.
+  if [[ -e "$convergeLockPath" || -L "$convergeLockPath" ]]; then
+    return 1
+  fi
+  if ! ln -s "$$" "$convergeLockPath" 2>/dev/null; then
+    return 1
+  fi
+  if [[ "$(convergeLockHolderPid || true)" != "$$" ]]; then
+    rm -f -- "$convergeLockPath/$$"
+    return 1
+  fi
+  trap releaseConvergeLock EXIT
+}
+
+convergeLockHolderPid() {
+  local holderPid
+  if [[ ! -L "$convergeLockPath" ]]; then
+    return 1
+  fi
+  holderPid="$(readlink -- "$convergeLockPath" 2>/dev/null)" || return 1
+  case "$holderPid" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$holderPid"
+}
+
+convergeLockTarget() {
+  readlink -- "$convergeLockPath" 2>/dev/null || true
+}
+
+# Only one reclaimer can rename the same lock away, and a lock that changed under that read goes back rather than being destroyed.
+discardStaleConvergeLock() {
+  local staleLockTarget="$1"
+  local trashPath="$convergeLockPath.stale.$$"
+  local trashTarget
+  rm -rf -- "$trashPath"
+  if ! mv -- "$convergeLockPath" "$trashPath" 2>/dev/null; then
+    return 1
+  fi
+  trashTarget="$(readlink -- "$trashPath" 2>/dev/null || true)"
+  if [[ "$trashTarget" != "$staleLockTarget" ]]; then
+    mv -- "$trashPath" "$convergeLockPath" 2>/dev/null || rm -rf -- "$trashPath"
+    return 1
+  fi
+  rm -rf -- "$trashPath"
+}
+
+# A run killed outright leaves the lock behind, and without this every later run would refuse forever.
+refuseOrReclaimConvergeLock() {
+  local holderPid
+  local staleLockTarget
+  holderPid="$(convergeLockHolderPid || true)"
+  if [[ -n "$holderPid" ]] && kill -0 "$holderPid" 2>/dev/null; then
+    printf 'dotfiles: another dot run holds %s (pid %s)\n' "$convergeLockPath" "$holderPid" >&2
+    exit 1
+  fi
+  staleLockTarget="$(convergeLockTarget)"
+  printf 'dotfiles: reclaiming %s; no live run holds it\n' "$convergeLockPath" >&2
+  if ! discardStaleConvergeLock "$staleLockTarget"; then
+    printf 'dotfiles: another dot run took %s first\n' "$convergeLockPath" >&2
+    exit 1
+  fi
+  if takeConvergeLock; then
+    return 0
+  fi
+  printf 'dotfiles: another dot run took %s first\n' "$convergeLockPath" >&2
+  exit 1
 }
 
 holdConvergeLock() {
@@ -308,14 +383,11 @@ holdConvergeLock() {
     printf 'dotfiles: another dot run holds %s\n' "$dotfilesStateDirectoryPath" >&2
     exit 1
   fi
-  convergeMkdirLockPath="$dotfilesStateDirectoryPath/converge.lock"
-  if mkdir -- "$convergeMkdirLockPath" 2>/dev/null; then
-    trap releaseConvergeMkdirLock EXIT
+  convergeLockPath="$dotfilesStateDirectoryPath/converge.lock"
+  if takeConvergeLock; then
     return 0
   fi
-  printf 'dotfiles: another dot run holds %s; if no run is active, remove this stale lock directory\n' \
-    "$convergeMkdirLockPath" >&2
-  exit 1
+  refuseOrReclaimConvergeLock
 }
 
 converge() {
@@ -324,7 +396,7 @@ converge() {
     guardCheckoutIsMainlineAndClean
     pullMainline
   fi
-  if [[ -n "$convergeMkdirLockPath" ]]; then
+  if [[ -n "$convergeLockPath" ]]; then
     "$dotfilesRepo/script/bootstrap" "${bootstrapArguments[@]+"${bootstrapArguments[@]}"}"
     return $?
   fi

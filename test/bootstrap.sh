@@ -278,14 +278,30 @@ bashFourConstructPattern='mapfile|readarray|declare[[:space:]]+-A|\$\{[^}]*,,|\$
 bootstrapPrelude="$(sed '/^# Bash 4 starts here\.$/,$d' "$repoRoot/script/bootstrap")"
 check "the bootstrap prelude stays bash 3.2 clean" \
   bash -c '! grep -Eq "$1" <<< "$2"' _ "$bashFourConstructPattern" "$bootstrapPrelude"
+check "the platform library the prelude sources stays bash 3.2 clean" \
+  bash -c '! grep -Eq "$1" "$2"' _ "$bashFourConstructPattern" "$repoRoot/script/lib/platform.sh"
 check "dot stays bash 3.2 clean" \
   bash -c '! grep -Eq "$1" "$2"' _ "$bashFourConstructPattern" "$repoRoot/bin/dot"
+
+homebrewPrefixProbe="$sandbox/homebrew-prefix-probe"
+mkdir -p "$homebrewPrefixProbe/silicon/bin" "$homebrewPrefixProbe/intel/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$homebrewPrefixProbe/intel/bin/brew"
+chmod +x "$homebrewPrefixProbe/intel/bin/brew"
+check "the Homebrew prefix is the first candidate that holds brew" \
+  test "$(firstHomebrewPrefixHoldingBrew "$homebrewPrefixProbe/silicon" "$homebrewPrefixProbe/intel")" \
+  = "$homebrewPrefixProbe/intel"
+check "a machine holding no brew keeps the first candidate" \
+  test "$(firstHomebrewPrefixHoldingBrew "$homebrewPrefixProbe/silicon" "$homebrewPrefixProbe/missing")" \
+  = "$homebrewPrefixProbe/silicon"
 
 modernBashHome="$sandbox/modern-bash-home"
 modernBashPrefix="$modernBashHome/homebrew"
 modernBashLog="$modernBashHome/exec.log"
 mkdir -p "$modernBashPrefix/bin"
 : > "$modernBashHome/.dotfiles-test-sandbox"
+modernBashStubBin="$modernBashHome/stub-bin"
+mkdir -p "$modernBashStubBin"
+writeDarwinDirectoryServiceStub "$modernBashStubBin"
 cat > "$modernBashPrefix/bin/bash" <<'MODERN_BASH'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-c" ]]; then
@@ -295,6 +311,7 @@ printf '%s\n' "$*" >> "$DOTFILES_TEST_MODERN_BASH_LOG"
 MODERN_BASH
 chmod +x "$modernBashPrefix/bin/bash"
 env HOME="$modernBashHome" DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_TEST_STUB_BIN="$modernBashStubBin" \
   DOTFILES_TEST_HOMEBREW_PREFIX="$modernBashPrefix" \
   DOTFILES_TEST_MODERN_BASH_LOG="$modernBashLog" \
   bash "$repoRoot/script/bootstrap" --profile work
@@ -306,7 +323,9 @@ brewInstallPrefix="$brewInstallHome/homebrew"
 brewInstallBin="$brewInstallHome/bin"
 brewInstallLog="$brewInstallHome/brew.log"
 brewExecLog="$brewInstallHome/exec.log"
-mkdir -p "$brewInstallBin"
+brewInstallStubBin="$brewInstallHome/stub-bin"
+mkdir -p "$brewInstallBin" "$brewInstallStubBin"
+writeDarwinDirectoryServiceStub "$brewInstallStubBin"
 : > "$brewInstallHome/.dotfiles-test-sandbox"
 cat > "$brewInstallBin/brew" <<'BREW'
 #!/usr/bin/env bash
@@ -317,7 +336,8 @@ chmod +x "$DOTFILES_TEST_HOMEBREW_PREFIX/bin/bash"
 BREW
 chmod +x "$brewInstallBin/brew"
 env HOME="$brewInstallHome" PATH="$brewInstallBin:/usr/bin:/bin" DOTFILES_PLATFORM=darwin \
-  DOTFILES_TEST_BASH_MAJOR=3 DOTFILES_TEST_HOMEBREW_PREFIX="$brewInstallPrefix" \
+  DOTFILES_TEST_BASH_MAJOR=3 DOTFILES_TEST_STUB_BIN="$brewInstallStubBin" \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$brewInstallPrefix" \
   DOTFILES_TEST_BREW_LOG="$brewInstallLog" \
   DOTFILES_TEST_MODERN_BASH_LOG="$brewExecLog" \
   DOTFILES_TEST_MODERN_BASH_SOURCE="$modernBashPrefix/bin/bash" \
@@ -326,6 +346,82 @@ check "bootstrap asks Homebrew for bash when darwin has no modern bash" \
   grep -qx 'install bash' "$brewInstallLog"
 check "bootstrap re-execs the bash Homebrew installed" \
   grep -qx "$repoRoot/script/bootstrap --profile work" "$brewExecLog"
+
+mkdir -p "$fakeRepo/interpreter" "$fakeRepo/profiles/interpreter"
+printf '{ "topics": ["interpreter"] }\n' > "$fakeRepo/profiles/interpreter/profile.json"
+cat > "$fakeRepo/interpreter/install.sh" <<'TOPIC'
+#!/usr/bin/env bash
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../script/lib" && pwd)/context.sh"
+printf '%s\n' "$BASH" > "$HOME/topic-interpreter"
+printf '%s\n' "$(command -v bash)" > "$HOME/topic-path-bash"
+notePresent "interpreter" "recorded"
+finishTopic
+TOPIC
+
+interpreterHome="$sandbox/interpreter-home"
+interpreterPrefix="$interpreterHome/homebrew"
+interpreterStubBin="$interpreterHome/stub-bin"
+mkdir -p "$interpreterPrefix/bin" "$interpreterStubBin"
+: > "$interpreterHome/.dotfiles-test-sandbox"
+ln -s "$fakeRepo" "$interpreterHome/.dotfiles"
+writeDarwinDirectoryServiceStub "$interpreterStubBin"
+ln -s "$(type -P bash)" "$interpreterPrefix/bin/bash-4"
+# The re-exec carries the forced major with it, so the stub drops it rather than looping through the prelude forever.
+cat > "$interpreterPrefix/bin/bash" <<'HOMEBREW_BASH'
+#!/usr/bin/env bash
+exec /usr/bin/env -u DOTFILES_TEST_BASH_MAJOR "${0%/*}/bash-4" "$@"
+HOMEBREW_BASH
+chmod +x "$interpreterPrefix/bin/bash"
+
+env HOME="$interpreterHome" XDG_STATE_HOME="$interpreterHome/.local/state" \
+  DOTFILES_MARKER_PATH="$interpreterHome/.machine-profile" DOTFILES_PROFILE=interpreter \
+  DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_TEST_STUB_BIN="$interpreterStubBin" \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$interpreterPrefix" NO_COLOR=1 \
+  bash "$fakeRepo/script/bootstrap" > /dev/null 2>&1 || true
+check "a topic runs under the interpreter the prelude re-execed into" \
+  test "$(cat "$interpreterHome/topic-interpreter")" = "$interpreterPrefix/bin/bash-4"
+check "a topic asking PATH for bash gets that interpreter's directory first" \
+  test "$(cat "$interpreterHome/topic-path-bash")" = "$interpreterPrefix/bin/bash"
+
+brewFailureHome="$sandbox/brew-failure-home"
+brewFailureBin="$brewFailureHome/bin"
+brewFailureStubBin="$brewFailureHome/stub-bin"
+mkdir -p "$brewFailureBin" "$brewFailureStubBin"
+: > "$brewFailureHome/.dotfiles-test-sandbox"
+writeDarwinDirectoryServiceStub "$brewFailureStubBin"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$brewFailureBin/brew"
+chmod +x "$brewFailureBin/brew"
+brewFailureStatus=0
+brewFailureOutput="$(env HOME="$brewFailureHome" PATH="$brewFailureBin:/usr/bin:/bin" \
+  DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_TEST_STUB_BIN="$brewFailureStubBin" \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$brewFailureHome/missing" \
+  bash "$repoRoot/script/bootstrap" 2>&1)" || brewFailureStatus=$?
+check "a refused brew install bash stops the bootstrap" test "$brewFailureStatus" -eq 1
+check "a refused brew install bash names the install that failed" \
+  outputHas "$brewFailureOutput" 'brew install bash failed'
+check "a refused brew install bash does not blame the search that never ran" \
+  outputLacks "$brewFailureOutput" 'no bash 4 or newer was found'
+
+failedDownloadHome="$sandbox/failed-download-home"
+failedDownloadBin="$failedDownloadHome/stub-bin"
+mkdir -p "$failedDownloadBin"
+: > "$failedDownloadHome/.dotfiles-test-sandbox"
+writeDarwinDirectoryServiceStub "$failedDownloadBin"
+printf '#!/usr/bin/env bash\nexit 22\n' > "$failedDownloadBin/curl"
+chmod +x "$failedDownloadBin/curl"
+failedDownloadStatus=0
+failedDownloadOutput="$(env HOME="$failedDownloadHome" PATH="$failedDownloadBin:/usr/bin:/bin" \
+  DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_TEST_STUB_BIN="$failedDownloadBin" \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$failedDownloadHome/missing" \
+  bash "$repoRoot/script/bootstrap" 2>&1)" || failedDownloadStatus=$?
+check "a failed Homebrew installer download stops the bootstrap" test "$failedDownloadStatus" -eq 1
+check "a failed Homebrew installer download names what it could not fetch" \
+  outputHas "$failedDownloadOutput" 'downloading the Homebrew installer'
+check "a failed Homebrew installer download never asks brew for bash" \
+  outputLacks "$failedDownloadOutput" 'no bash 4 or newer was found'
 
 linuxBashFloorStatus=0
 linuxBashFloorOutput="$(env HOME="$brewInstallHome" PATH="/usr/bin:/bin" DOTFILES_PLATFORM=linux \

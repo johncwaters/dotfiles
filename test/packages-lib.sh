@@ -67,6 +67,10 @@ linuxKeepsItsNativeManagerPreference() {
 check "darwin prefers Homebrew when another manager is visible" darwinPrefersBrew
 check "linux keeps the existing native manager preference" linuxKeepsItsNativeManagerPreference
 
+darwinDirectoryServiceBin="$sandbox/directory-service-bin"
+mkdir -p "$darwinDirectoryServiceBin"
+writeDarwinDirectoryServiceStub "$darwinDirectoryServiceBin"
+
 absoluteBrewPrefix="$sandbox/absolute-homebrew"
 mkdir -p "$absoluteBrewPrefix/bin" "$absoluteBrewPrefix/sbin"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$absoluteBrewPrefix/bin/brew"
@@ -75,12 +79,14 @@ chmod +x "$absoluteBrewPrefix/bin/brew"
 darwinFindsHomebrewOutsideTheInheritedPath() {
   detectedPackageManager=""
   [[ "$(HOME="$sandbox" PATH="/usr/bin:/bin" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_STUB_BIN="$darwinDirectoryServiceBin" \
     DOTFILES_TEST_HOMEBREW_PREFIX="$absoluteBrewPrefix" detectPackageManager)" == "brew" ]]
 }
 
 check "darwin finds Homebrew before its prefix reaches PATH" darwinFindsHomebrewOutsideTheInheritedPath
 
 refreshedDarwinPath="$(HOME="$sandbox" PATH="/usr/bin:/bin" DOTFILES_PLATFORM=darwin \
+  DOTFILES_TEST_STUB_BIN="$darwinDirectoryServiceBin" \
   DOTFILES_TEST_HOMEBREW_PREFIX="$absoluteBrewPrefix" bash -c '
     source "$1/script/lib/context.sh"
     source "$1/script/lib/packages.sh"
@@ -108,9 +114,11 @@ PATH="$managerProbeBin:$PATH" installSystemPackages brew git
 check "Homebrew installs as the current account" grep -qx 'install git' "$brewInstallLog"
 check "Homebrew never reaches sudo" test ! -s "$sudoInstallLog"
 
-check "darwin's system command path includes the Apple Silicon Homebrew bins" \
-  outputHas "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="" systemCommandSearchPath)" \
-  '/opt/homebrew/bin:/opt/homebrew/sbin'
+check "darwin's system command path is built from the Homebrew prefix it detected" \
+  outputHas "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_STUB_BIN="$darwinDirectoryServiceBin" \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$absoluteBrewPrefix" systemCommandSearchPath)" \
+  "$absoluteBrewPrefix/bin:$absoluteBrewPrefix/sbin"
 
 virtualEnvironmentBin="$sandbox/virtual-environment-bin"
 mkdir -p "$virtualEnvironmentBin"
@@ -320,6 +328,63 @@ redirectIgnoredWithNoStubDirectoryNamed() {
     sandboxRedirectedPath "$sandbox/redirected-rules" /etc/udev/rules.d/70-headset.rules)" \
     == "/etc/udev/rules.d/70-headset.rules" ]]
 }
+
+ownHomeDirectoryServiceBin="$sandbox/own-home-directory-service-bin"
+mkdir -p "$ownHomeDirectoryServiceBin"
+writeDarwinDirectoryServiceStub "$ownHomeDirectoryServiceBin" "$sandbox"
+
+anOverrideIsHonouredWhereTheAccountDoesNotLive() {
+  [[ "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_STUB_BIN="$darwinDirectoryServiceBin" \
+    trustedPlatformTestPath "$sandbox/redirected-shells")" == "$sandbox/redirected-shells" ]]
+}
+
+anOverrideIsRefusedWhereTheAccountLives() {
+  ! HOME="$sandbox" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_STUB_BIN="$ownHomeDirectoryServiceBin" \
+    trustedPlatformTestPath "$sandbox/redirected-shells"
+}
+
+wrappedRecordBin="$sandbox/wrapped-record-bin"
+mkdir -p "$wrappedRecordBin"
+wrappedAccountHome="$sandbox/Users/an account/with spaces"
+cat > "$wrappedRecordBin/dscl" <<STUB
+#!/usr/bin/env bash
+if [[ "\${4:-}" == "UserShell" ]]; then
+  printf 'UserShell: %s\n' '/bin/zsh'
+  exit 0
+fi
+printf 'NFSHomeDirectory:\n    %s\n' '$wrappedAccountHome'
+STUB
+chmod +x "$wrappedRecordBin/dscl"
+
+darwinReadsAValueDirectoryServicesWrappedOntoItsOwnLine() {
+  [[ "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$wrappedRecordBin" \
+    accountPasswdHome)" == "$wrappedAccountHome" ]]
+}
+
+darwinStillReadsAValueOnTheAttributeLine() {
+  [[ "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$wrappedRecordBin" \
+    darwinAccountRecord UserShell)" == "/bin/zsh" ]]
+}
+
+aHomeDirectoryServicesWrappedIsStillRecognisedAsTheAccountsOwn() {
+  HOME="$wrappedAccountHome" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$wrappedRecordBin" \
+    homeIsTheAccountsOwnHome
+}
+
+mkdir -p "$wrappedAccountHome"
+check "a value directory services wrapped onto its own line is read whole" \
+  darwinReadsAValueDirectoryServicesWrappedOntoItsOwnLine
+check "a value directory services left on the attribute line is still read" \
+  darwinStillReadsAValueOnTheAttributeLine
+check "a wrapped account home is still recognised as the account's own" \
+  aHomeDirectoryServicesWrappedIsStillRecognisedAsTheAccountsOwn
+
+check "an override is honoured in a marked home the account does not live in" \
+  anOverrideIsHonouredWhereTheAccountDoesNotLive
+check "an override is refused once the marked home is the account's own" \
+  anOverrideIsRefusedWhereTheAccountLives
 
 check "a redirected root write target is honoured inside a marked sandbox home" \
   redirectHonouredInsideAMarkedSandboxHome

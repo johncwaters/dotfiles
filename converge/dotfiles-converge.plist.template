@@ -11,6 +11,8 @@
   </array>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>DOTFILES_CONVERGE_AGENT</key>
+    <string>1</string>
     <key>DOTFILES_REQUIRE_ORIGIN</key>
     <string>1</string>
     <key>NO_COLOR</key>

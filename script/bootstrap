@@ -2,18 +2,18 @@
 
 selfDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+# shellcheck source=./lib/platform.sh
+source "$selfDirectory/lib/platform.sh"
+
 bootstrapBashMajor="${BASH_VERSINFO[0]}"
-bootstrapHomebrewPrefix="/opt/homebrew"
-if [[ -n "${DOTFILES_TEST_BASH_MAJOR:-}" && -f "$HOME/.dotfiles-test-sandbox" && -O "$HOME/.dotfiles-test-sandbox" ]]; then
-  bootstrapBashMajor="$DOTFILES_TEST_BASH_MAJOR"
-fi
-if [[ -n "${DOTFILES_TEST_HOMEBREW_PREFIX:-}" && -f "$HOME/.dotfiles-test-sandbox" && -O "$HOME/.dotfiles-test-sandbox" ]]; then
-  bootstrapHomebrewPrefix="$DOTFILES_TEST_HOMEBREW_PREFIX"
+bootstrapTestBashMajor="$(trustedPlatformTestPath "${DOTFILES_TEST_BASH_MAJOR:-}" || true)"
+if [[ -n "$bootstrapTestBashMajor" ]]; then
+  bootstrapBashMajor="$bootstrapTestBashMajor"
 fi
 
 findModernBootstrapBash() {
   local candidateBash
-  for candidateBash in "$bootstrapHomebrewPrefix/bin/bash" /usr/local/bin/bash; do
+  for candidateBash in "$(homebrewPrefix)/bin/bash" /usr/local/bin/bash; do
     if [[ -x "$candidateBash" ]] && "$candidateBash" -c '((BASH_VERSINFO[0] >= 4))' >/dev/null 2>&1; then
       printf '%s\n' "$candidateBash"
       return 0
@@ -22,22 +22,43 @@ findModernBootstrapBash() {
   return 1
 }
 
+# Piping the download straight into bash hides curl's status, and an empty body then runs as an empty script.
+installHomebrew() {
+  local installerPath
+  local installerUrl="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+  installerPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-homebrew-install.XXXXXX")" || return 1
+  if ! curl -fsSL "$installerUrl" -o "$installerPath" || [[ ! -s "$installerPath" ]]; then
+    rm -f -- "$installerPath"
+    printf 'bootstrap: downloading the Homebrew installer from %s failed.\n' "$installerUrl" >&2
+    return 1
+  fi
+  if ! /bin/bash "$installerPath"; then
+    rm -f -- "$installerPath"
+    printf 'bootstrap: the Homebrew installer failed.\n' >&2
+    return 1
+  fi
+  rm -f -- "$installerPath"
+}
+
 if ((bootstrapBashMajor < 4)); then
   modernBootstrapBash="$(findModernBootstrapBash || true)"
   if [[ -n "$modernBootstrapBash" ]]; then
     exec "$modernBootstrapBash" "$0" "$@"
   fi
-  bootstrapPlatform="$(/bin/bash "$selfDirectory/lib/platform.sh")" || exit 1
+  bootstrapPlatform="$(platformName)" || exit 1
   if [[ "$bootstrapPlatform" != "darwin" ]]; then
     printf 'bootstrap: bash 4 or newer is required.\n' >&2
     exit 1
   fi
   bootstrapBrew="$(command -v brew 2>/dev/null || true)"
   if [[ -z "$bootstrapBrew" ]]; then
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    bootstrapBrew="$bootstrapHomebrewPrefix/bin/brew"
+    installHomebrew || exit 1
+    bootstrapBrew="$(homebrewPrefix)/bin/brew"
   fi
-  "$bootstrapBrew" install bash
+  if ! "$bootstrapBrew" install bash; then
+    printf 'bootstrap: brew install bash failed.\n' >&2
+    exit 1
+  fi
   modernBootstrapBash="$(findModernBootstrapBash || true)"
   if [[ -z "$modernBootstrapBash" ]]; then
     printf 'bootstrap: Homebrew installed bash, but no bash 4 or newer was found.\n' >&2
@@ -215,7 +236,7 @@ runTopic() {
   fi
   local warnedTallyBeforeTopic=$warnedTally
   local topicStatus=0
-  bash "$dotfilesRepo/$topicName/install.sh" || topicStatus=$?
+  "$BASH" "$dotfilesRepo/$topicName/install.sh" || topicStatus=$?
   drainCountsIntoTally
   if ((topicStatus == 0)); then
     return 0
@@ -226,6 +247,19 @@ runTopic() {
   fi
   noteWarned "$topicName" "install.sh exited $topicStatus"
 }
+
+# The first darwin converge installs Homebrew's bash during this run, so PATH still answers bash with the 3.2 a topic cannot use.
+putRunningBashFirstOnPath() {
+  local runningBashDirectory="${BASH%/*}"
+  if [[ ! -d "$runningBashDirectory" || ":$PATH:" == *":$runningBashDirectory:"* ]]; then
+    return 0
+  fi
+  PATH="$runningBashDirectory:$PATH"
+  export PATH
+  hash -r 2>/dev/null || true
+}
+
+putRunningBashFirstOnPath
 
 for topicName in "${profileTopics[@]}"; do
   writeSection "$topicName"

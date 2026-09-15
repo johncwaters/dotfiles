@@ -24,6 +24,14 @@ makeConvergeableRepo() {
   cat > "$repoPath/quiet/install.sh" <<'TOPIC'
 #!/usr/bin/env bash
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../script/lib" && pwd)/context.sh"
+convergeLockPath="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/converge.lock"
+if [[ -L "$convergeLockPath" ]]; then
+  readlink -- "$convergeLockPath" > "$HOME/lock-holder-while-converging"
+fi
+if [[ -n "${DOTFILES_TEST_STEAL_LOCK_PID:-}" && -L "$convergeLockPath" ]]; then
+  rm -f -- "$convergeLockPath"
+  ln -s "$DOTFILES_TEST_STEAL_LOCK_PID" "$convergeLockPath"
+fi
 notePresent "quiet" "converged $(git -C "$dotfilesRepo" rev-parse --short HEAD)"
 finishTopic
 TOPIC
@@ -155,23 +163,84 @@ check "the flock path requests a nonblocking lock" grep -qx -- '-n 9' "$flockStu
 check "the flock-locked run converges nothing" outputLacks "$lockedRunOutput" 'converged'
 
 noFlockBin="$sandbox/no-flock-bin"
-coreBin="$noFlockBin"
 mkdir -p "$noFlockBin"
-linkCoreUtilities awk bash basename cat chmod cmp cp cut date dirname env git grep head ln mkdir \
-  mktemp mv node od readlink rm rmdir sed sort tail tr true
-mkdir "$convergeLockDirectory/converge.lock"
-mkdirLockedStatus=0
-mkdirLockedOutput="$(PATH="$noFlockBin" runDot "$dotHome" 2>&1)" || mkdirLockedStatus=$?
-check "the mkdir lock refuses a concurrent converge" test "$mkdirLockedStatus" -eq 1
-check "the mkdir refusal names stale-lock recovery" \
-  outputHas "$mkdirLockedOutput" 'if no run is active, remove this stale lock directory'
-check "the mkdir-locked run converges nothing" outputLacks "$mkdirLockedOutput" 'converged'
-rmdir "$convergeLockDirectory/converge.lock"
+linkCoreUtilities --into "$noFlockBin" awk bash basename cat chmod cmp cp cut date dirname env git \
+  grep head ln mkdir mktemp mv node od readlink rm rmdir sed sort tail tr true
+convergeLockPath="$convergeLockDirectory/converge.lock"
+ln -s "$$" "$convergeLockPath"
+liveLockStatus=0
+liveLockOutput="$(PATH="$noFlockBin" runDot "$dotHome" 2>&1)" || liveLockStatus=$?
+check "the fallback lock refuses a converge while a live run holds it" test "$liveLockStatus" -eq 1
+check "the refusal names the process holding the lock" \
+  outputHas "$liveLockOutput" "(pid $$)"
+check "the locked-out run converges nothing" outputLacks "$liveLockOutput" 'converged'
+check "a refused run leaves the lock where it found it" test -L "$convergeLockPath"
+rm -f "$convergeLockPath"
+
+bash -c 'exit 0' &
+deadHolderPid=$!
+wait "$deadHolderPid" 2>/dev/null || true
+ln -s "$deadHolderPid" "$convergeLockPath"
+staleLockStatus=0
+staleLockOutput="$(PATH="$noFlockBin" runDot "$dotHome" 2>&1)" || staleLockStatus=$?
+check "a lock no live process holds is reclaimed" test "$staleLockStatus" -eq 0
+check "the reclaim says what it took over" \
+  outputHas "$staleLockOutput" "reclaiming $convergeLockPath"
+check "the reclaimed run converges" outputHas "$staleLockOutput" 'converged'
+check "the reclaimed lock is removed when converge exits" test ! -e "$convergeLockPath"
+
+# A lock is published with its holder's pid in one syscall, so a lock naming nobody was never a live run.
+mkdir "$convergeLockPath"
+namelessLockStatus=0
+namelessLockOutput="$(PATH="$noFlockBin" runDot "$dotHome" 2>&1)" || namelessLockStatus=$?
+check "a lock naming no holder is reclaimed rather than obeyed forever" test "$namelessLockStatus" -eq 0
+check "the reclaim of a holderless lock is reported" \
+  outputHas "$namelessLockOutput" "reclaiming $convergeLockPath"
+check "a reclaimed holderless lock leaves the fallback lock behind it" test ! -e "$convergeLockPath"
+
+lockHolderWhileConverging="$(cat "$dotHome/lock-holder-while-converging")"
+check "a converge names its own process in the lock from the moment it holds it" \
+  bash -c '[[ "$1" =~ ^[0-9]+$ ]]' _ "$lockHolderWhileConverging"
 
 mkdirLockRunStatus=0
 PATH="$noFlockBin" runDot "$dotHome" > /dev/null 2>&1 || mkdirLockRunStatus=$?
-check "the mkdir lock permits an uncontended converge" test "$mkdirLockRunStatus" -eq 0
-check "the mkdir lock is removed when converge exits" test ! -e "$convergeLockDirectory/converge.lock"
+check "the fallback lock permits an uncontended converge" test "$mkdirLockRunStatus" -eq 0
+check "the fallback lock is removed when converge exits" test ! -e "$convergeLockPath"
+
+# Two runs finding the same stale lock must not both reclaim it, so the reclaim reads the lock again after moving it aside.
+realReadlinkPath="$(type -P readlink)"
+rm -f "$noFlockBin/readlink"
+cat > "$noFlockBin/readlink" <<STUB
+#!/usr/bin/env bash
+if [[ "\${2:-}" == *".stale."* ]]; then
+  printf '%s\n' "\$DOTFILES_TEST_LOCK_TARGET_AFTER_RENAME"
+  exit 0
+fi
+exec "$realReadlinkPath" "\$@"
+STUB
+chmod +x "$noFlockBin/readlink"
+ln -s "$deadHolderPid" "$convergeLockPath"
+racedReclaimStatus=0
+racedReclaimOutput="$(PATH="$noFlockBin" DOTFILES_TEST_LOCK_TARGET_AFTER_RENAME="$$" \
+  runDot "$dotHome" 2>&1)" || racedReclaimStatus=$?
+check "a lock that changed under the reclaim is not removed" \
+  test "$(readlink "$convergeLockPath")" = "$deadHolderPid"
+check "a reclaim that lost the race refuses rather than converging" test "$racedReclaimStatus" -eq 1
+check "the lost reclaim says another run took the lock" \
+  outputHas "$racedReclaimOutput" "another dot run took $convergeLockPath first"
+check "a lost reclaim leaves no lock aside" \
+  bash -c 'compgen -G "$1.stale.*" > /dev/null && exit 1; exit 0' _ "$convergeLockPath"
+rm -f "$noFlockBin/readlink" "$convergeLockPath"
+ln -sf "$realReadlinkPath" "$noFlockBin/readlink"
+
+stolenLockStatus=0
+PATH="$noFlockBin" DOTFILES_TEST_STEAL_LOCK_PID="$$" runDot "$dotHome" > /dev/null 2>&1 \
+  || stolenLockStatus=$?
+check "a converge whose lock was taken over exits clean" test "$stolenLockStatus" -eq 0
+check "a converge leaves a lock naming another run alone" test -L "$convergeLockPath"
+check "the lock the converge left behind still names the run that took it" \
+  test "$(readlink "$convergeLockPath")" = "$$"
+rm -f "$convergeLockPath"
 
 dotStatusDrift=0
 dotStatusOutput="$(runDot "$dotHome" status 2>&1)" || dotStatusDrift=$?

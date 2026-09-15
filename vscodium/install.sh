@@ -130,7 +130,7 @@ useBundledCodiumOnDarwin() {
     return 0
   fi
   local bundledCodiumDirectory
-  bundledCodiumDirectory="$(applicationsDirectory)/VSCodium.app/Contents/Resources/app/bin"
+  bundledCodiumDirectory="$(codiumBundleBinDirectory)"
   if [[ ! -x "$bundledCodiumDirectory/codium" ]]; then
     return 0
   fi

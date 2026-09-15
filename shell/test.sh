@@ -199,6 +199,9 @@ printf 'darwinCompletionLoaded=1\n' > "$darwinHomebrewPrefix/etc/profile.d/bash_
 cat > "$darwinStubBin/sudo" <<'SUDO'
 #!/usr/bin/env bash
 printf 'sudo %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "-n" ]]; then
+  shift
+fi
 exec "$@"
 SUDO
 cat > "$darwinStubBin/chsh" <<'CHSH'
@@ -206,10 +209,12 @@ cat > "$darwinStubBin/chsh" <<'CHSH'
 printf 'chsh %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 CHSH
 chmod +x "$darwinStubBin/sudo" "$darwinStubBin/chsh"
+writeDarwinDirectoryServiceStub "$darwinStubBin"
 
 runDarwinInstall() {
   env HOME="$sandbox" PATH="$darwinStubBin:/usr/bin:/bin" SHELL="${1:-/bin/zsh}" \
     DOTFILES_PROFILE=personal DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_STUB_BIN="$darwinStubBin" \
     DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
     DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
     DOTFILES_TEST_SHELLS_FILE="$darwinShellsFile" DOTFILES_TEST_LOG="$darwinCommandLog" \
@@ -221,14 +226,15 @@ darwinInstallOutput="$(runDarwinInstall)" || darwinInstallStatus=$?
 check "the darwin shell install exits clean when sudo and chsh succeed" test "$darwinInstallStatus" -eq 0
 check "darwin registers Homebrew bash in the accepted shell list" \
   grep -qxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile"
-check "darwin appends to the shell list through sudo" \
-  grep -qx "sudo tee -a $darwinShellsFile" "$darwinCommandLog"
+check "darwin appends to the shell list through an unattended sudo" \
+  grep -qx "sudo -n tee -a $darwinShellsFile" "$darwinCommandLog"
 check "darwin requests Homebrew bash as the login shell" \
   grep -qx "chsh -s $darwinHomebrewPrefix/bin/bash" "$darwinCommandLog"
 check "the login shell change is reported" outputHas "$darwinInstallOutput" 'changed to'
 
 darwinInteractiveShell() {
   env -i HOME="$sandbox" PATH="/usr/bin:/bin" TERM=dumb DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_STUB_BIN="$darwinStubBin" \
     DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
     DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
     bash -i -c "$1" 2>/dev/null
@@ -246,13 +252,17 @@ check "darwin loads Homebrew bash completion" \
   test "$(darwinInteractiveShell 'printf %s "${darwinCompletionLoaded:-0}"')" = "1"
 
 : > "$darwinCommandLog"
-darwinSecondOutput="$(runDarwinInstall "$darwinHomebrewPrefix/bin/bash")"
+setStubbedDarwinLoginShell "$darwinStubBin" "$darwinHomebrewPrefix/bin/bash"
+darwinSecondOutput="$(runDarwinInstall)"
 check "a settled darwin shell rerun reports no changes" reportsNoChanges "$darwinSecondOutput"
 check "a settled darwin shell rerun does not use sudo" \
   bash -c '! grep -q "^sudo " "$1"' _ "$darwinCommandLog"
-check "a settled darwin shell rerun does not call chsh" \
+check "the login shell directory services report ends the rerun, whatever launched it" \
   bash -c '! grep -q "^chsh " "$1"' _ "$darwinCommandLog"
+check "a settled darwin shell rerun names the login shell it found" \
+  outputHas "$darwinSecondOutput" "$darwinHomebrewPrefix/bin/bash"
 
+setStubbedDarwinLoginShell "$darwinStubBin" /bin/zsh
 grep -vxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile" > "$darwinShellsFile.next" || true
 mv "$darwinShellsFile.next" "$darwinShellsFile"
 cat > "$darwinStubBin/sudo" <<'SUDO'
@@ -270,5 +280,28 @@ check "darwin shell policy failures fail the topic after installing stubs" test 
 check "a refused accepted-shell update is reported" outputHas "$darwinRefusalOutput" 'could not add'
 check "a refused login-shell change is reported" outputHas "$darwinRefusalOutput" 'chsh refused'
 check "darwin policy failures leave the bashrc stub installed" test -f "$sandbox/.bashrc"
+
+cat > "$darwinStubBin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+printf 'sudo %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "-n" ]]; then
+  shift
+fi
+exec "$@"
+SUDO
+cat > "$darwinStubBin/chsh" <<'CHSH'
+#!/usr/bin/env bash
+printf 'chsh %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+CHSH
+chmod +x "$darwinStubBin/sudo" "$darwinStubBin/chsh"
+printf '/bin/sh' > "$darwinShellsFile"
+: > "$darwinCommandLog"
+runDarwinInstall > /dev/null || true
+check "an unterminated shells file keeps its last line whole" \
+  grep -qxF '/bin/sh' "$darwinShellsFile"
+check "the registered login shell stands on a line of its own" \
+  grep -qxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile"
+check "an unterminated shells file gains one line, not a fused one" \
+  test "$(wc -l < "$darwinShellsFile")" -eq 2
 
 reportTopicResults "shell"
