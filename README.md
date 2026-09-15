@@ -16,10 +16,7 @@ curl -fsSL https://raw.githubusercontent.com/johncwaters/dotfiles/main/bin/dot |
 
 Run as the account that will own the machine; the profile is `work`. Apple ships bash 3.2,
 so `bootstrap` installs Homebrew and a current bash and re-execs itself before any topic
-runs. The first run asks for the account password twice, at `sudo -v` and at `chsh`, so a
-carbon unit sits at the keyboard for it; an agent can drive it only with someone there to
-type them. The `/etc/shells` append and the Homebrew installer run on the credential
-`sudo -v` caches and never prompt themselves.
+runs.
 
 ```sh
 xcode-select --install
@@ -27,13 +24,16 @@ sudo -v
 curl -fsSL https://raw.githubusercontent.com/johncwaters/dotfiles/main/bin/dot | bash -s -- --profile work
 ```
 
+`sudo -v` asks the account password once and the Homebrew installer runs on that
+credential; if it has lapsed by the time the shell topic appends `/etc/shells`, that step
+asks again; `chsh` asks the account password itself. So a carbon unit sits at the keyboard
+for the first run.
+
 The first line opens Apple's installer dialog and returns at once; wait for it to finish
 before the next two, since the curl line needs `git` and would otherwise open the same
-dialog and stop. The sudo credential lasts five minutes and the Homebrew install can
-outlive it, so the run may warn that the `/etc/shells` append or `chsh` was refused; the
-cure is a fresh `sudo -v` and then `dot`, which redoes both. Then open a new terminal, which
-is now Homebrew bash, and run `dot status`. Converging again is the same `curl` line or
-plain `dot`.
+dialog and stop. An unattended run warns instead of asking and a later hand `dot` finishes
+it. Then open a new terminal, which is now Homebrew bash, and run `dot status`. Converging
+again is the same `curl` line or plain `dot`.
 
 Entry points: [converge and status](bin/dot), [bootstrap](script/bootstrap),
 [collect](script/collect), [test suite](test/run-all.sh).

@@ -221,16 +221,81 @@ runDarwinInstall() {
     NO_COLOR=1 bash "$topicDir/install.sh"
 }
 
+runDarwinInstallInPty() {
+  env HOME="$sandbox" PATH="$darwinStubBin:/usr/bin:/bin" SHELL="${1:-/bin/bash}" \
+    DOTFILES_PROFILE=personal DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_STUB_BIN="$darwinStubBin" \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+    DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+    DOTFILES_TEST_SHELLS_FILE="$darwinShellsFile" DOTFILES_TEST_LOG="$darwinCommandLog" \
+    NO_COLOR=1 script -qec "bash $(printf '%q' "$topicDir/install.sh") < /dev/null" /dev/null < /dev/null
+}
+
 darwinInstallStatus=0
 darwinInstallOutput="$(runDarwinInstall)" || darwinInstallStatus=$?
 check "the darwin shell install exits clean when sudo and chsh succeed" test "$darwinInstallStatus" -eq 0
 check "darwin registers Homebrew bash in the accepted shell list" \
   grep -qxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile"
 check "darwin appends to the shell list through an unattended sudo" \
-  grep -qx "sudo -n tee -a $darwinShellsFile" "$darwinCommandLog"
+  grep -qx "sudo -n /usr/bin/tee -a $darwinShellsFile" "$darwinCommandLog"
 check "darwin requests Homebrew bash as the login shell" \
   grep -qx "chsh -s $darwinHomebrewPrefix/bin/bash" "$darwinCommandLog"
 check "the login shell change is reported" outputHas "$darwinInstallOutput" 'changed to'
+
+setStubbedDarwinLoginShell "$darwinStubBin" /bin/zsh
+grep -vxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile" > "$darwinShellsFile.next" || true
+mv "$darwinShellsFile.next" "$darwinShellsFile"
+cat > "$darwinStubBin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+printf 'sudo %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "-n" ]]; then
+  exit 1
+fi
+exec "$@"
+SUDO
+chmod +x "$darwinStubBin/sudo"
+
+utilLinuxScriptIsUsable=yes
+script -qec true /dev/null < /dev/null >/dev/null 2>&1 || utilLinuxScriptIsUsable=no
+
+if [[ "$utilLinuxScriptIsUsable" == no ]]; then
+  printf '  skipped interactive sudo fallback: script does not take the util-linux -qec flags\n'
+fi
+if [[ "$utilLinuxScriptIsUsable" == yes ]]; then
+  : > "$darwinCommandLog"
+  darwinInteractiveRetryStatus=0
+  darwinInteractiveRetryOutput="$(runDarwinInstallInPty)" || darwinInteractiveRetryStatus=$?
+  check "interactive darwin retries the shell-list append after unattended sudo fails" \
+    test "$darwinInteractiveRetryStatus" -eq 0
+  check "interactive darwin appends through plain sudo after unattended sudo fails" \
+    grep -qx "sudo /usr/bin/tee -a $darwinShellsFile" "$darwinCommandLog"
+  check "interactive darwin reports the login shell change after the retry" \
+    outputHas "$darwinInteractiveRetryOutput" 'changed to'
+fi
+
+setStubbedDarwinLoginShell "$darwinStubBin" /bin/zsh
+grep -vxF "$darwinHomebrewPrefix/bin/bash" "$darwinShellsFile" > "$darwinShellsFile.next" || true
+mv "$darwinShellsFile.next" "$darwinShellsFile"
+: > "$darwinCommandLog"
+darwinNoninteractiveRetryStatus=0
+darwinNoninteractiveRetryOutput="$(runDarwinInstall < /dev/null 2>&1)" || darwinNoninteractiveRetryStatus=$?
+check "non-interactive darwin warns when unattended sudo cannot append the shell list" \
+  test "$darwinNoninteractiveRetryStatus" -eq 1
+check "non-interactive darwin never retries the shell-list append with plain sudo" \
+  bash -c '! grep -qx "sudo /usr/bin/tee -a $2" "$1"' _ "$darwinCommandLog" "$darwinShellsFile"
+check "non-interactive darwin reports the accepted-shell warning" \
+  outputHas "$darwinNoninteractiveRetryOutput" 'could not add'
+
+cat > "$darwinStubBin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+printf 'sudo %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "-n" ]]; then
+  shift
+fi
+exec "$@"
+SUDO
+chmod +x "$darwinStubBin/sudo"
+printf '%s\n' "$darwinHomebrewPrefix/bin/bash" >> "$darwinShellsFile"
 
 darwinInteractiveShell() {
   env -i HOME="$sandbox" PATH="/usr/bin:/bin" TERM=dumb DOTFILES_PLATFORM=darwin \

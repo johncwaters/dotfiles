@@ -30,6 +30,7 @@ shellsFilePath() {
 
 # sudo -n, so an unattended converge fails into a warning instead of a password prompt no carbon unit will answer.
 # Only root may terminate the shells file, so the newline an unterminated last line needs rides in front of the appended path.
+# sudo reads the password from /dev/tty, so the retry is gated on that and on stderr, never on stdin, which curl | bash hands to the pipe.
 registerAcceptedLoginShell() {
   local loginShellPath="$1"
   local shellsFile="$2"
@@ -40,7 +41,13 @@ registerAcceptedLoginShell() {
   if [[ -s "$shellsFile" ]] && [[ -n "$(tail -c 1 -- "$shellsFile" 2>/dev/null)" ]]; then
     appendedText=$'\n'"$loginShellPath"
   fi
-  printf '%s\n' "$appendedText" | sudo -n tee -a "$shellsFile" >/dev/null
+  if printf '%s\n' "$appendedText" | sudo -n /usr/bin/tee -a "$shellsFile" >/dev/null; then
+    return 0
+  fi
+  if [[ ! -t 2 ]] || ! { : < /dev/tty; } 2>/dev/null; then
+    return 1
+  fi
+  printf '%s\n' "$appendedText" | sudo /usr/bin/tee -a "$shellsFile" >/dev/null
 }
 
 # $SHELL is the shell that launched this run, not the shell the account logs in with, so a converged machine would rerun chsh forever.
