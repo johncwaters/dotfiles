@@ -14,10 +14,14 @@ const MAX_TRANSCRIPT_SCAN_BYTES = 4 * 1024 * 1024;
 const DIRECT_TOOL_BUDGET = 3;
 const QUOTE_CHARACTER = /['"]/g;
 const DISPATCH_COMMAND = /(?:^|[\s;&|(])(?:codex\s+exec|grok)\b/;
-const COMMAND_SEGMENT_SEPARATOR = /\n|;|&&|\|\||\||\(|\)/;
+const COMMAND_SEGMENT_SEPARATOR = /\n|;|&&|\|\||\(|\)/;
+const SINGLE_PIPE_SEPARATOR = /(?<!\|)\|(?!\|)/;
 const COMMAND_TOKEN_SEPARATOR = /\s+/;
 const COMMIT_WORKFLOW_INTERPRETERS = new Set(["bun", "node"]);
 const COMMIT_WORKFLOW_SCRIPT_PATHS = ["skills/commit/preflight.ts", "skills/commit/land.ts"];
+const COMMIT_SKILL_NAMES = new Set(["commit", "/commit"]);
+const READ_ONLY_PIPELINE_CONSUMERS = new Set(["head", "tail", "cat", "grep", "cut", "wc", "jq"]);
+const UNSAFE_PIPELINE_STAGE_PATTERN = /[>`<]|\$\(/;
 const ENVIRONMENT_ASSIGNMENT_TOKEN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const HEREDOC_OPERATOR = "<<";
 
@@ -38,7 +42,14 @@ function isCommitWorkflowSegment(commandSegment) {
 }
 
 function isDirectoryChangeSegment(commandSegment) {
+  if (SINGLE_PIPE_SEPARATOR.test(commandSegment)) return false;
   return commandSegment.split(COMMAND_TOKEN_SEPARATOR)[0] === "cd";
+}
+
+function isReadOnlyPipelineStage(pipelineStage) {
+  if (UNSAFE_PIPELINE_STAGE_PATTERN.test(pipelineStage)) return false;
+  const [consumerToken] = pipelineStage.trim().split(COMMAND_TOKEN_SEPARATOR);
+  return READ_ONLY_PIPELINE_CONSUMERS.has(consumerToken);
 }
 
 function withoutHeredocBody(command) {
@@ -56,8 +67,21 @@ function isCommitWorkflowCommand(command) {
     .map((commandSegment) => commandSegment.trim())
     .filter((commandSegment) => commandSegment !== "");
   if (commandSegments.length === 0) return false;
-  if (!isCommitWorkflowSegment(commandSegments.at(-1))) return false;
+  const [invocationStage, ...downstreamPipelineStages] = commandSegments
+    .at(-1)
+    .split(SINGLE_PIPE_SEPARATOR);
+  if (!isCommitWorkflowSegment(invocationStage)) return false;
+  if (!downstreamPipelineStages.every(isReadOnlyPipelineStage)) return false;
   return commandSegments.slice(0, -1).every(isDirectoryChangeSegment);
+}
+
+function isCommitSkillInvocation(contentBlock) {
+  if (!contentBlock || typeof contentBlock !== "object") return false;
+  if (contentBlock.type !== "tool_use") return false;
+  if (contentBlock.name !== "Skill") return false;
+  if (!contentBlock.input || typeof contentBlock.input !== "object") return false;
+  if (typeof contentBlock.input.skill !== "string") return false;
+  return COMMIT_SKILL_NAMES.has(contentBlock.input.skill.trimEnd());
 }
 
 function isExemptBash(toolName, toolInput) {
@@ -79,7 +103,7 @@ function isCountedToolUse(contentBlock) {
 function denyForBudget(priorCalls) {
   denyPreToolUse(
     `Fable direct-tool budget exceeded: ${priorCalls} prior calls; budget is ${DIRECT_TOOL_BUDGET}.\n` +
-      "Dispatch per ROUTING.md: Codex for coding, Explore for reads; Agent, Skill, Workflow, `codex exec`/`grok` Bash dispatches, and the commit skill's preflight.ts and land.ts steps are not counted.",
+      "Dispatch per ROUTING.md: Codex for coding, Explore for reads; Agent, Skill, Workflow, `codex exec`/`grok` Bash dispatches, commit preflight/land steps, and direct calls after a `commit` Skill invocation are not counted.",
   );
 }
 
@@ -99,14 +123,15 @@ function enforceFromTranscript(payload) {
   let callsRecordedAfterCurrent = 0;
   let isCurrentCallRecorded = false;
   let isSessionModelKnown = false;
-
-  function denyIfBudgetSpent(spentCalls) {
-    if (spentCalls >= DIRECT_TOOL_BUDGET) denyForBudget(spentCalls);
-  }
+  let hasCommitInvocationBeforeCurrent = false;
+  let hasCommitInvocationWhileCurrentCallIsUnseen = false;
 
   function finishDecision() {
     if (!isSessionModelKnown) allow();
-    denyIfBudgetSpent(isCurrentCallRecorded ? priorCalls : callsRecordedAfterCurrent);
+    if (hasCommitInvocationBeforeCurrent) allow();
+    if (!isCurrentCallRecorded && hasCommitInvocationWhileCurrentCallIsUnseen) allow();
+    const spentCalls = isCurrentCallRecorded ? priorCalls : callsRecordedAfterCurrent;
+    if (spentCalls >= DIRECT_TOOL_BUDGET) denyForBudget(spentCalls);
     allow();
   }
 
@@ -141,13 +166,20 @@ function enforceFromTranscript(payload) {
         isCurrentCallRecorded = true;
         continue;
       }
+      if (isCommitSkillInvocation(contentBlock)) {
+        if (isCurrentCallRecorded) {
+          hasCommitInvocationBeforeCurrent = true;
+          continue;
+        }
+        hasCommitInvocationWhileCurrentCallIsUnseen = true;
+        continue;
+      }
       if (!isCountedToolUse(contentBlock)) continue;
       if (!isCurrentCallRecorded) {
         callsRecordedAfterCurrent += 1;
         continue;
       }
       priorCalls += 1;
-      denyIfBudgetSpent(priorCalls);
     }
   }
 
@@ -205,7 +237,6 @@ function enforceFromTranscript(payload) {
       }
     }
 
-    if (unreadEndOffset > 0) allow();
     finishDecision();
   } finally {
     closeSync(transcriptDescriptor);

