@@ -133,18 +133,45 @@ check "dot converges the pulled commit" outputHas "$pullOutput" "converged $(git
 check "a converge with nothing to warn exits clean" test "$pullStatus" -eq 0
 
 convergeLockDirectory="$dotHome/.local/state/dotfiles"
-if command -v flock > /dev/null 2>&1; then
-  exec 8< "$convergeLockDirectory"
-  flock -n 8
-  lockedRunStatus=0
-  lockedRunOutput="$(runDot "$dotHome" 2>&1)" || lockedRunStatus=$?
-  exec 8<&-
-  check "a converge refuses while another run holds the state directory" \
-    test "$lockedRunStatus" -eq 1
-  check "the locked out run names the directory it waited on" \
-    outputHas "$lockedRunOutput" "another dot run holds $convergeLockDirectory"
-  check "the locked out run converges nothing" outputLacks "$lockedRunOutput" 'converged'
-fi
+flockStubBin="$sandbox/flock-stub-bin"
+flockStubLog="$sandbox/flock-stub.log"
+flockHeldMarker="$sandbox/flock-held"
+mkdir -p "$flockStubBin"
+cat > "$flockStubBin/flock" <<'FLOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOTFILES_TEST_FLOCK_LOG"
+[[ ! -f "$DOTFILES_TEST_FLOCK_HELD_MARKER" ]]
+FLOCK
+chmod +x "$flockStubBin/flock"
+touch "$flockHeldMarker"
+lockedRunStatus=0
+lockedRunOutput="$(PATH="$flockStubBin:$PATH" DOTFILES_TEST_FLOCK_LOG="$flockStubLog" \
+  DOTFILES_TEST_FLOCK_HELD_MARKER="$flockHeldMarker" runDot "$dotHome" 2>&1)" || lockedRunStatus=$?
+check "a flock converge refuses while another run holds the state directory" \
+  test "$lockedRunStatus" -eq 1
+check "the flock refusal names the directory it waited on" \
+  outputHas "$lockedRunOutput" "another dot run holds $convergeLockDirectory"
+check "the flock path requests a nonblocking lock" grep -qx -- '-n 9' "$flockStubLog"
+check "the flock-locked run converges nothing" outputLacks "$lockedRunOutput" 'converged'
+
+noFlockBin="$sandbox/no-flock-bin"
+coreBin="$noFlockBin"
+mkdir -p "$noFlockBin"
+linkCoreUtilities awk bash basename cat chmod cmp cp cut date dirname env git grep head ln mkdir \
+  mktemp mv node od readlink rm rmdir sed sort tail tr true
+mkdir "$convergeLockDirectory/converge.lock"
+mkdirLockedStatus=0
+mkdirLockedOutput="$(PATH="$noFlockBin" runDot "$dotHome" 2>&1)" || mkdirLockedStatus=$?
+check "the mkdir lock refuses a concurrent converge" test "$mkdirLockedStatus" -eq 1
+check "the mkdir refusal names stale-lock recovery" \
+  outputHas "$mkdirLockedOutput" 'if no run is active, remove this stale lock directory'
+check "the mkdir-locked run converges nothing" outputLacks "$mkdirLockedOutput" 'converged'
+rmdir "$convergeLockDirectory/converge.lock"
+
+mkdirLockRunStatus=0
+PATH="$noFlockBin" runDot "$dotHome" > /dev/null 2>&1 || mkdirLockRunStatus=$?
+check "the mkdir lock permits an uncontended converge" test "$mkdirLockRunStatus" -eq 0
+check "the mkdir lock is removed when converge exits" test ! -e "$convergeLockDirectory/converge.lock"
 
 dotStatusDrift=0
 dotStatusOutput="$(runDot "$dotHome" status 2>&1)" || dotStatusDrift=$?

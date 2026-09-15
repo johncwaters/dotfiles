@@ -288,15 +288,33 @@ pullMainline() {
 }
 
 # Two converges at once (a timer and a hand run) would both rewrite the same links and state.
-holdConvergeLock() {
-  command -v flock >/dev/null 2>&1 || return 0
-  dotfilesStateDirectory >/dev/null 2>&1 || return 0
-  # The directory itself is the lock: a lock file at a path a symlink can claim would be truncated.
-  exec 9< "$dotfilesStateDirectoryPath"
-  if flock -n 9; then
+convergeMkdirLockPath=""
+
+releaseConvergeMkdirLock() {
+  if [[ -z "$convergeMkdirLockPath" ]]; then
     return 0
   fi
-  printf 'dotfiles: another dot run holds %s\n' "$dotfilesStateDirectoryPath" >&2
+  rmdir -- "$convergeMkdirLockPath" 2>/dev/null || true
+}
+
+holdConvergeLock() {
+  dotfilesStateDirectory >/dev/null 2>&1 || return 0
+  if command -v flock >/dev/null 2>&1; then
+    # The directory itself is the lock: a lock file at a path a symlink can claim would be truncated.
+    exec 9< "$dotfilesStateDirectoryPath"
+    if flock -n 9; then
+      return 0
+    fi
+    printf 'dotfiles: another dot run holds %s\n' "$dotfilesStateDirectoryPath" >&2
+    exit 1
+  fi
+  convergeMkdirLockPath="$dotfilesStateDirectoryPath/converge.lock"
+  if mkdir -- "$convergeMkdirLockPath" 2>/dev/null; then
+    trap releaseConvergeMkdirLock EXIT
+    return 0
+  fi
+  printf 'dotfiles: another dot run holds %s; if no run is active, remove this stale lock directory\n' \
+    "$convergeMkdirLockPath" >&2
   exit 1
 }
 
@@ -305,6 +323,10 @@ converge() {
   if ((convergeAsIs == 0)); then
     guardCheckoutIsMainlineAndClean
     pullMainline
+  fi
+  if [[ -n "$convergeMkdirLockPath" ]]; then
+    "$dotfilesRepo/script/bootstrap" "${bootstrapArguments[@]+"${bootstrapArguments[@]}"}"
+    return $?
   fi
   exec "$dotfilesRepo/script/bootstrap" "${bootstrapArguments[@]+"${bootstrapArguments[@]}"}"
 }
