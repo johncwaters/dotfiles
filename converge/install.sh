@@ -6,6 +6,56 @@ if [[ -z "${dotfilesRepo:-}" ]]; then
   source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../script/lib" && pwd)/context.sh"
   requireAliasResolvesToRepo
 fi
+renderLaunchAgent() {
+  local templatePath="$dotfilesRepo/converge/dotfiles-converge.plist.template"
+  local destination="$HOME/Library/LaunchAgents/dev.dotfiles.converge.plist"
+  local stagedPath
+  local renderedLine
+  local escapedHome
+  local escapedBash
+  local escapedBrew
+  local escapedState
+  escapedHome="$(printf '%s' "$HOME" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
+  escapedBrew="$(printf '%s' "$(homebrewPrefix)" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
+  escapedBash="$escapedBrew/bin/bash"
+  dotfilesStateDirectory || return 1
+  escapedState="$(printf '%s' "$dotfilesStateDirectoryPath" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
+  mkdir -p -- "$(dirname -- "$destination")"
+  clearDestinationIfNotPlainFile "converge launch agent" "$destination" || return 1
+  stagedPath="$(mktemp "$(dirname -- "$destination")/.dotfiles-launch-agent.XXXXXX")"
+  while IFS= read -r renderedLine || [[ -n "$renderedLine" ]]; do
+    renderedLine="${renderedLine//\{\{HOME\}\}/$escapedHome}"
+    renderedLine="${renderedLine//\{\{BASH\}\}/$escapedBash}"
+    renderedLine="${renderedLine//\{\{BREW\}\}/$escapedBrew}"
+    renderedLine="${renderedLine//\{\{STATE\}\}/$escapedState}"
+    printf '%s\n' "$renderedLine"
+  done < "$templatePath" > "$stagedPath"
+  if commitRenderedFile "converge launch agent" "$stagedPath" "$destination"; then
+    chmod 600 -- "$destination"
+    noteApplied "converge launch agent" "rendered"
+    return 0
+  fi
+  chmod 600 -- "$destination"
+  notePresent "converge launch agent" "rendered"
+  return 1
+}
+
+installDarwinConvergeAgent() {
+  local plistPath="$HOME/Library/LaunchAgents/dev.dotfiles.converge.plist"
+  local plistChanged=0
+  # shellcheck source=../script/lib/launchd.sh
+  source "$dotfilesRepo/script/lib/launchd.sh"
+  if renderLaunchAgent; then
+    plistChanged=1
+  fi
+  installLaunchAgent "converge launch agent" "dev.dotfiles.converge" "$plistPath" "$plistChanged"
+}
+
+if isDarwin; then
+  installDarwinConvergeAgent
+  finishTopic
+fi
+
 # shellcheck source=../script/lib/systemd.sh
 source "$dotfilesRepo/script/lib/systemd.sh"
 

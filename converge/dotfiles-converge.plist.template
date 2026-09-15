@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.dotfiles.converge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{BASH}}</string>
+    <string>{{HOME}}/.dotfiles/bin/dot</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DOTFILES_REQUIRE_ORIGIN</key>
+    <string>1</string>
+    <key>NO_COLOR</key>
+    <string>1</string>
+    <key>PATH</key>
+    <string>{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <!-- RandomizedDelaySec and Persistent are omitted because launchd has no equivalents. -->
+  <key>StandardOutPath</key>
+  <string>{{STATE}}/converge.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{STATE}}/converge.stderr.log</string>
+</dict>
+</plist>

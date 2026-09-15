@@ -9,8 +9,8 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "converge"
 
-linkCoreUtilities basename bash cat chmod cp dirname env grep head ln mkdir mv readlink rm \
-  touch tr true
+linkCoreUtilities basename bash cat chmod cmp cp dirname env grep head ln mkdir mktemp mv readlink rm \
+  sed touch tr true
 
 runInstall() {
   runInStubbedSandbox "$sandbox" \
@@ -104,5 +104,110 @@ noSystemctlStatus=0
 noSystemctlOutput="$(runInstall)" || noSystemctlStatus=$?
 check "a machine without systemctl warns" grep -q '\[warn\].*systemctl --user unavailable' <<< "$noSystemctlOutput"
 check "a machine without systemctl fails the topic" test "$noSystemctlStatus" -eq 1
+
+writeStub id <<'STUB'
+#!/usr/bin/env bash
+printf 'id %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "-u" ]]; then
+  printf '501\n'
+fi
+STUB
+writeStub launchctl <<'STUB'
+#!/usr/bin/env bash
+printf 'launchctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+loadedMarker="$DOTFILES_TEST_STATE/launch-agent-loaded"
+case "${1:-}" in
+  print)
+    [[ -f "$loadedMarker" ]]
+    ;;
+  bootout)
+    rm -f "$loadedMarker"
+    ;;
+  bootstrap)
+    if [[ -f "$DOTFILES_TEST_STATE/launch-bootstrap-fails" ]]; then
+      exit 1
+    fi
+    touch "$loadedMarker"
+    ;;
+esac
+STUB
+provideCommand id
+provideCommand launchctl
+
+darwinHomebrewPrefix="$sandbox/homebrew"
+launchAgentPath="$sandbox/Library/LaunchAgents/dev.dotfiles.converge.plist"
+launchAgentPending="$sandbox/.local/state/dotfiles/launchd-dev.dotfiles.converge-pending"
+
+runDarwinInstall() {
+  runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+    DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDir/install.sh"
+}
+
+: > "$commandLog"
+darwinFirstStatus=0
+darwinFirstOutput="$(runDarwinInstall)" || darwinFirstStatus=$?
+check "the first darwin install exits clean" test "$darwinFirstStatus" -eq 0
+check "darwin renders a launch agent instead of systemd links" test -f "$launchAgentPath"
+check "darwin runs dot with Homebrew bash" \
+  grep -qF "<string>$darwinHomebrewPrefix/bin/bash</string>" "$launchAgentPath"
+check "darwin runs dot through the relocatable alias" \
+  grep -qF "<string>$sandbox/.dotfiles/bin/dot</string>" "$launchAgentPath"
+check "the launch agent fires at hour four" \
+  bash -c 'grep -A1 "<key>Hour</key>" "$1" | grep -q "<integer>4</integer>"' _ "$launchAgentPath"
+check "the launch agent fires at minute zero" \
+  bash -c 'grep -A1 "<key>Minute</key>" "$1" | grep -q "<integer>0</integer>"' _ "$launchAgentPath"
+check "the launch agent does not run immediately when loaded" \
+  bash -c 'grep -A1 "<key>RunAtLoad</key>" "$1" | grep -q "<false/>"' _ "$launchAgentPath"
+check "the launch agent PATH contains Homebrew and the systemd unit entries" \
+  grep -qF "$darwinHomebrewPrefix/bin:$darwinHomebrewPrefix/sbin:$sandbox/.npm-global/bin:$sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+    "$launchAgentPath"
+check "the launch agent writes stdout under dotfiles state" \
+  grep -qF "$sandbox/.local/state/dotfiles/converge.stdout.log" "$launchAgentPath"
+check "the launch agent writes stderr under dotfiles state" \
+  grep -qF "$sandbox/.local/state/dotfiles/converge.stderr.log" "$launchAgentPath"
+check "the template names launchd's missing timer semantics" \
+  grep -qF 'launchd has no equivalents' "$topicDir/dotfiles-converge.plist.template"
+check "darwin probes the agent before loading it" \
+  test "$(grep '^launchctl ' "$commandLog" | head -n 1)" = 'launchctl print gui/501/dev.dotfiles.converge'
+check "darwin bootstraps the launch agent" \
+  logHas "launchctl bootstrap gui/501 $launchAgentPath"
+check "darwin never calls systemctl" logLacks 'systemctl '
+check "the first darwin load is reported" outputHas "$darwinFirstOutput" 'loaded'
+
+: > "$commandLog"
+darwinSecondOutput="$(runDarwinInstall)"
+check "a settled launch agent rerun reports no changes" reportsNoChanges "$darwinSecondOutput"
+check "a settled launch agent is probed" \
+  logHas 'launchctl print gui/501/dev.dotfiles.converge'
+check "a settled launch agent is not booted out" logLacks 'launchctl bootout'
+check "a settled launch agent is not bootstrapped again" logLacks 'launchctl bootstrap'
+
+printf 'hand edit\n' >> "$launchAgentPath"
+: > "$commandLog"
+changedDarwinOutput="$(runDarwinInstall)"
+check "changed launch agent content is booted out" \
+  logHas "launchctl bootout gui/501 $launchAgentPath"
+check "changed launch agent content is bootstrapped again" \
+  logHas "launchctl bootstrap gui/501 $launchAgentPath"
+check "a changed launch agent is reported as reloaded" outputHas "$changedDarwinOutput" 'reloaded'
+check "a hand-edited launch agent is backed up" test -f "$launchAgentPath.pre-dotfiles.bak"
+
+rm -f "$stubState/launch-agent-loaded"
+touch "$stubState/launch-bootstrap-fails"
+: > "$commandLog"
+failedDarwinStatus=0
+failedDarwinOutput="$(runDarwinInstall)" || failedDarwinStatus=$?
+check "a launchctl bootstrap failure fails the topic" test "$failedDarwinStatus" -eq 1
+check "a launchctl bootstrap failure is reported" outputHas "$failedDarwinOutput" 'launchctl bootstrap failed'
+check "a failed launchctl bootstrap remains owed" test -f "$launchAgentPending"
+rm -f "$stubState/launch-bootstrap-fails"
+: > "$commandLog"
+retriedDarwinStatus=0
+runDarwinInstall > /dev/null || retriedDarwinStatus=$?
+check "a later darwin run retries owed launchctl work" test "$retriedDarwinStatus" -eq 0
+check "the retry bootstraps the launch agent" \
+  logHas "launchctl bootstrap gui/501 $launchAgentPath"
+check "a successful retry clears launchd debt" test ! -e "$launchAgentPending"
 
 reportTopicResults "converge"
