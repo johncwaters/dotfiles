@@ -4,6 +4,9 @@ testRepoRoot="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../script/lib/platform.sh
 source "$testRepoRoot/script/lib/platform.sh"
 
+: "${DOTFILES_PLATFORM:=linux}"
+export DOTFILES_PLATFORM
+
 failures=0
 sandbox=""
 stubBin=""
