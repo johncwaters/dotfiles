@@ -493,4 +493,43 @@ check "the extra extension survives a run with no profile resolved" \
   grep -qx 'strayextension.with-no-profile-resolved' "$installedExtensionsFile"
 check "a run with no profile resolved exits non-zero" test "$noProfileStatus" -eq 1
 
+darwinApplicationsDirectory="$sandbox/Applications"
+darwinCodiumDirectory="$darwinApplicationsDirectory/VSCodium.app/Contents/Resources/app/bin"
+darwinUserDirectory="$sandbox/Library/Application Support/VSCodium/User"
+writeStub brew <<'STUB'
+#!/usr/bin/env bash
+printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+mkdir -p "$DOTFILES_TEST_APPLICATIONS_DIRECTORY/VSCodium.app/Contents/Resources/app/bin"
+cp "$DOTFILES_TEST_STATE/available/codium" \
+  "$DOTFILES_TEST_APPLICATIONS_DIRECTORY/VSCodium.app/Contents/Resources/app/bin/codium"
+STUB
+writeStub dscl <<STUB
+#!/usr/bin/env bash
+printf 'dscl %s\n' "\$*" >> "\$DOTFILES_TEST_LOG"
+printf 'NFSHomeDirectory: %s\n' "$realHome"
+STUB
+provideCommand brew
+provideCommand dscl
+withdrawCommand codium
+: > "$commandLog"
+darwinStatus=0
+darwinOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+  DOTFILES_PROFILE=work GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
+  NO_COLOR=1 bash "$topicDir/install.sh")" || darwinStatus=$?
+check "darwin installs and configures VSCodium cleanly" test "$darwinStatus" -eq 0
+check "darwin installs VSCodium as a Homebrew cask" logHas 'brew install --cask vscodium'
+check "darwin does not run Homebrew through sudo" logLacks 'sudo '
+check "darwin uses the CLI inside the application bundle" logHas 'codium --list-extensions'
+for configurationFile in settings.json keybindings.json mcp.json; do
+  check "darwin links $configurationFile into Application Support" \
+    test -L "$darwinUserDirectory/$configurationFile"
+done
+check "darwin reports no missing codium CLI" outputLacks "$darwinOutput" 'not on PATH'
+checkRerunIsQuiet "a darwin rerun reports no config changes" \
+  "$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+    DOTFILES_PROFILE=work GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
+    NO_COLOR=1 bash "$topicDir/install.sh")"
+
 reportTopicResults "vscodium"

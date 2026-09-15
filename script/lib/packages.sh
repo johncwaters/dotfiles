@@ -517,6 +517,13 @@ toolIsPresent() {
     nodeIsCurrentEnough
     return $?
   fi
+  if [[ "$toolKey" == "vscodium" ]] && isDarwin; then
+    if command -v "$commandName" >/dev/null 2>&1; then
+      return 0
+    fi
+    [[ -x "$(applicationsDirectory)/VSCodium.app/Contents/Resources/app/bin/codium" ]]
+    return $?
+  fi
   command -v "$commandName" >/dev/null 2>&1
 }
 

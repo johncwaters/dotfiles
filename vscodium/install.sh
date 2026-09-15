@@ -9,6 +9,9 @@ source "$dotfilesRepo/script/lib/packages.sh"
 
 topicDirectory="$dotfilesRepo/vscodium"
 codiumUserDirectory="$HOME/.config/VSCodium/User"
+if isDarwin; then
+  codiumUserDirectory="$HOME/Library/Application Support/VSCodium/User"
+fi
 codiumExtensionsDirectory="$HOME/.vscode-oss/extensions"
 vscodiumManualUrl="https://vscodium.com/#install"
 wantedExtensions=()
@@ -117,6 +120,23 @@ installVscodium() {
     return 0
   fi
   installPackageTool "VSCodium" "codium" "vscodium" "$vscodiumManualUrl"
+}
+
+useBundledCodiumOnDarwin() {
+  if command -v codium >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! isDarwin; then
+    return 0
+  fi
+  local bundledCodiumDirectory
+  bundledCodiumDirectory="$(applicationsDirectory)/VSCodium.app/Contents/Resources/app/bin"
+  if [[ ! -x "$bundledCodiumDirectory/codium" ]]; then
+    return 0
+  fi
+  PATH="$bundledCodiumDirectory:$PATH"
+  export PATH
+  hash -r 2>/dev/null || true
 }
 
 # An absent profile file means exact, the long-standing default; an unreadable one is different, because pruning on a guess uninstalls what the owner wanted.
@@ -245,10 +265,12 @@ inspectExtensionManifest() {
 # An unpublished extension comes from a vsix no marketplace serves, so pruning it is not reversible by rerunning this topic; a manifest that will not parse says nothing either way.
 extensionPublishState() {
   local extensionName="$1"
+  local lowercaseExtensionName
   local manifestPath
   local inspectStatus
   local manifestsRead=0
-  for manifestPath in "$codiumExtensionsDirectory/${extensionName,,}"-[0-9]*/package.json; do
+  lowercaseExtensionName="$(printf '%s\n' "$extensionName" | tr '[:upper:]' '[:lower:]')"
+  for manifestPath in "$codiumExtensionsDirectory/$lowercaseExtensionName"-[0-9]*/package.json; do
     if [[ ! -f "$manifestPath" ]]; then
       continue
     fi
@@ -324,7 +346,9 @@ syncExtensions() {
   fi
 }
 
+useBundledCodiumOnDarwin
 installVscodium
+useBundledCodiumOnDarwin
 
 linkEntry "VSCodium settings" "vscodium/settings.json" "$codiumUserDirectory/settings.json"
 linkEntry "VSCodium keybindings" "vscodium/keybindings.json" "$codiumUserDirectory/keybindings.json"
