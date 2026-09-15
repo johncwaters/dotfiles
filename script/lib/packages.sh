@@ -176,13 +176,30 @@ runGitNetworkCommand() {
   runBatchNetworkCommand git "$@"
 }
 
+brewCommandPath() {
+  local pathCommand
+  pathCommand="$(command -v brew 2>/dev/null || true)"
+  if [[ -n "$pathCommand" ]]; then
+    printf '%s\n' "$pathCommand"
+    return 0
+  fi
+  if ! isDarwin; then
+    return 1
+  fi
+  pathCommand="$(homebrewPrefix)/bin/brew"
+  if [[ ! -x "$pathCommand" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$pathCommand"
+}
+
 detectPackageManager() {
   if [[ -n "$detectedPackageManager" ]]; then
     printf '%s\n' "$detectedPackageManager"
     return 0
   fi
   local candidateManager
-  if isDarwin && command -v brew >/dev/null 2>&1; then
+  if isDarwin && brewCommandPath >/dev/null; then
     detectedPackageManager="brew"
     printf '%s\n' "$detectedPackageManager"
     return 0
@@ -227,7 +244,7 @@ installSystemPackages() {
       ;;
     brew)
       local brewCommand
-      brewCommand="$(command -v brew 2>/dev/null || true)"
+      brewCommand="$(brewCommandPath || true)"
       if [[ -z "$brewCommand" ]]; then
         return 1
       fi
@@ -306,9 +323,21 @@ lastLogLine() {
 }
 
 refreshSessionPath() {
+  local homebrewBin
+  local homebrewSbin
   local userLocalBin="$HOME/.local/bin"
   local npmGlobalBin
   npmGlobalBin="$(userNpmPrefixDirectory)/bin"
+  if isDarwin; then
+    homebrewBin="$(homebrewPrefix)/bin"
+    homebrewSbin="$(homebrewPrefix)/sbin"
+    if [[ -d "$homebrewSbin" && ":$PATH:" != *":$homebrewSbin:"* ]]; then
+      PATH="$homebrewSbin:$PATH"
+    fi
+    if [[ -d "$homebrewBin" && ":$PATH:" != *":$homebrewBin:"* ]]; then
+      PATH="$homebrewBin:$PATH"
+    fi
+  fi
   if [[ -d "$userLocalBin" && ":$PATH:" != *":$userLocalBin:"* ]]; then
     PATH="$userLocalBin:$PATH"
   fi

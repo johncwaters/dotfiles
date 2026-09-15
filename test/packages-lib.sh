@@ -67,6 +67,31 @@ linuxKeepsItsNativeManagerPreference() {
 check "darwin prefers Homebrew when another manager is visible" darwinPrefersBrew
 check "linux keeps the existing native manager preference" linuxKeepsItsNativeManagerPreference
 
+absoluteBrewPrefix="$sandbox/absolute-homebrew"
+mkdir -p "$absoluteBrewPrefix/bin" "$absoluteBrewPrefix/sbin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$absoluteBrewPrefix/bin/brew"
+chmod +x "$absoluteBrewPrefix/bin/brew"
+
+darwinFindsHomebrewOutsideTheInheritedPath() {
+  detectedPackageManager=""
+  [[ "$(HOME="$sandbox" PATH="/usr/bin:/bin" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$absoluteBrewPrefix" detectPackageManager)" == "brew" ]]
+}
+
+check "darwin finds Homebrew before its prefix reaches PATH" darwinFindsHomebrewOutsideTheInheritedPath
+
+refreshedDarwinPath="$(HOME="$sandbox" PATH="/usr/bin:/bin" DOTFILES_PLATFORM=darwin \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$absoluteBrewPrefix" bash -c '
+    source "$1/script/lib/context.sh"
+    source "$1/script/lib/packages.sh"
+    refreshSessionPath
+    printf "%s\n" "$PATH"
+  ' _ "$repoRoot")"
+check "darwin session refresh adds the Homebrew bin directory" \
+  bash -c '[[ ":$1:" == *":$2/bin:"* ]]' _ "$refreshedDarwinPath" "$absoluteBrewPrefix"
+check "darwin session refresh adds the Homebrew sbin directory" \
+  bash -c '[[ ":$1:" == *":$2/sbin:"* ]]' _ "$refreshedDarwinPath" "$absoluteBrewPrefix"
+
 brewInstallLog="$sandbox/brew-install.log"
 sudoInstallLog="$sandbox/sudo-install.log"
 cat > "$managerProbeBin/brew" <<BREW
