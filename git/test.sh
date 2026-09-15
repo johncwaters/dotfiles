@@ -33,7 +33,7 @@ gitConfigValue() {
 }
 
 modeOf() {
-  stat -c %a "$1"
+  fileModeOf "$1"
 }
 
 printf '\ngit topic\n'

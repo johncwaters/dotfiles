@@ -103,7 +103,8 @@ while (($# > 0)); do
   fi
   if [[ "$1" == "--config" ]]; then
     if grep -q '^header = "Authorization: Bearer ' "$2"; then
-      printf 'curl was handed an authorization header in mode %s\n' "$(stat -c '%a' "$2")" \
+      configMode="$(bash -c 'source "$1"; fileModeOf "$2"' _ "$DOTFILES_TEST_HARNESS" "$2")"
+      printf 'curl was handed an authorization header in mode %s\n' "$configMode" \
         >> "$DOTFILES_TEST_LOG"
     fi
     shift 2
@@ -303,7 +304,7 @@ check "an unreadable manifest makes the topic exit non-zero" \
   test "$unreadableManifestStatus" -eq 1
 check "the extension with an unreadable manifest is still on the machine" \
   grep -qx "$unreadableManifestName" "$installedExtensionsFile"
-sed -i "/^$unreadableManifestName\$/d" "$installedExtensionsFile"
+removeMatchingLines "^$unreadableManifestName\$" "$installedExtensionsFile"
 rm -rf -- "$unreadableManifestDirectory"
 
 nestedProfile="$repoRoot/profiles/nested-vscodium"
@@ -420,7 +421,7 @@ check "an extension with no manifest makes the topic exit non-zero" \
   test "$manifestlessStatus" -eq 1
 check "the extension with no manifest is still on the machine" \
   grep -qx "$manifestlessExtensionName" "$installedExtensionsFile"
-sed -i "/^$manifestlessExtensionName\$/d" "$installedExtensionsFile"
+removeMatchingLines "^$manifestlessExtensionName\$" "$installedExtensionsFile"
 
 listingFailureExtension="someone.listed-only-when-codium-answers"
 printf '%s\n' "$listingFailureExtension" >> "$installedExtensionsFile"
@@ -436,7 +437,7 @@ check "a listing that failed prunes nothing" logLacks "--uninstall-extension"
 check "the extension the failed listing never saw is still on the machine" \
   grep -qx "$listingFailureExtension" "$installedExtensionsFile"
 rm -f "$stubState/list-extensions-fails"
-sed -i "/^$listingFailureExtension\$/d" "$installedExtensionsFile"
+removeMatchingLines "^$listingFailureExtension\$" "$installedExtensionsFile"
 
 rm -f "$stubBin/codium"
 touch "$stubState/apt-install-fails"

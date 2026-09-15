@@ -1,6 +1,52 @@
 #!/usr/bin/env bash
 
 selfDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+bootstrapBashMajor="${BASH_VERSINFO[0]}"
+bootstrapHomebrewPrefix="/opt/homebrew"
+if [[ -n "${DOTFILES_TEST_BASH_MAJOR:-}" && -f "$HOME/.dotfiles-test-sandbox" && -O "$HOME/.dotfiles-test-sandbox" ]]; then
+  bootstrapBashMajor="$DOTFILES_TEST_BASH_MAJOR"
+fi
+if [[ -n "${DOTFILES_TEST_HOMEBREW_PREFIX:-}" && -f "$HOME/.dotfiles-test-sandbox" && -O "$HOME/.dotfiles-test-sandbox" ]]; then
+  bootstrapHomebrewPrefix="$DOTFILES_TEST_HOMEBREW_PREFIX"
+fi
+
+findModernBootstrapBash() {
+  local candidateBash
+  for candidateBash in "$bootstrapHomebrewPrefix/bin/bash" /usr/local/bin/bash; do
+    if [[ -x "$candidateBash" ]] && "$candidateBash" -c '((BASH_VERSINFO[0] >= 4))' >/dev/null 2>&1; then
+      printf '%s\n' "$candidateBash"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ((bootstrapBashMajor < 4)); then
+  modernBootstrapBash="$(findModernBootstrapBash || true)"
+  if [[ -n "$modernBootstrapBash" ]]; then
+    exec "$modernBootstrapBash" "$0" "$@"
+  fi
+  bootstrapPlatform="$(/bin/bash "$selfDirectory/lib/platform.sh")" || exit 1
+  if [[ "$bootstrapPlatform" != "darwin" ]]; then
+    printf 'bootstrap: bash 4 or newer is required.\n' >&2
+    exit 1
+  fi
+  bootstrapBrew="$(command -v brew 2>/dev/null || true)"
+  if [[ -z "$bootstrapBrew" ]]; then
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    bootstrapBrew="$bootstrapHomebrewPrefix/bin/brew"
+  fi
+  "$bootstrapBrew" install bash
+  modernBootstrapBash="$(findModernBootstrapBash || true)"
+  if [[ -z "$modernBootstrapBash" ]]; then
+    printf 'bootstrap: Homebrew installed bash, but no bash 4 or newer was found.\n' >&2
+    exit 1
+  fi
+  exec "$modernBootstrapBash" "$0" "$@"
+fi
+
+# Bash 4 starts here.
 # shellcheck source=./lib/context.sh
 source "$selfDirectory/lib/context.sh"
 

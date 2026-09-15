@@ -267,4 +267,92 @@ check "the shared stub runner owns all sandbox paths and environment" stubEnviro
 check "a sandboxed run writes no state into the runner's own state directory" \
   test ! -d "$sandbox/state-the-runner-inherited"
 
+check "the platform override pins darwin" test "$(DOTFILES_PLATFORM=darwin platformName)" = "darwin"
+check "the platform override pins linux" test "$(DOTFILES_PLATFORM=linux platformName)" = "linux"
+darwinOverrideIsRecognised() {
+  DOTFILES_PLATFORM=darwin isDarwin
+}
+check "isDarwin recognises the darwin override" darwinOverrideIsRecognised
+
+bashFourConstructPattern='mapfile|readarray|declare[[:space:]]+-A|\$\{[^}]*,,|\$\{[^}]*\^\^|\|&|;;&|coproc'
+bootstrapPrelude="$(sed '/^# Bash 4 starts here\.$/,$d' "$repoRoot/script/bootstrap")"
+check "the bootstrap prelude stays bash 3.2 clean" \
+  bash -c '! grep -Eq "$1" <<< "$2"' _ "$bashFourConstructPattern" "$bootstrapPrelude"
+check "dot stays bash 3.2 clean" \
+  bash -c '! grep -Eq "$1" "$2"' _ "$bashFourConstructPattern" "$repoRoot/bin/dot"
+
+modernBashHome="$sandbox/modern-bash-home"
+modernBashPrefix="$modernBashHome/homebrew"
+modernBashLog="$modernBashHome/exec.log"
+mkdir -p "$modernBashPrefix/bin"
+: > "$modernBashHome/.dotfiles-test-sandbox"
+cat > "$modernBashPrefix/bin/bash" <<'MODERN_BASH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-c" ]]; then
+  exit 0
+fi
+printf '%s\n' "$*" >> "$DOTFILES_TEST_MODERN_BASH_LOG"
+MODERN_BASH
+chmod +x "$modernBashPrefix/bin/bash"
+env HOME="$modernBashHome" DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$modernBashPrefix" \
+  DOTFILES_TEST_MODERN_BASH_LOG="$modernBashLog" \
+  bash "$repoRoot/script/bootstrap" --profile work
+check "bootstrap re-execs an existing Homebrew bash with the same arguments" \
+  grep -qx "$repoRoot/script/bootstrap --profile work" "$modernBashLog"
+
+brewInstallHome="$sandbox/brew-install-home"
+brewInstallPrefix="$brewInstallHome/homebrew"
+brewInstallBin="$brewInstallHome/bin"
+brewInstallLog="$brewInstallHome/brew.log"
+brewExecLog="$brewInstallHome/exec.log"
+mkdir -p "$brewInstallBin"
+: > "$brewInstallHome/.dotfiles-test-sandbox"
+cat > "$brewInstallBin/brew" <<'BREW'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOTFILES_TEST_BREW_LOG"
+mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/bin"
+cp "$DOTFILES_TEST_MODERN_BASH_SOURCE" "$DOTFILES_TEST_HOMEBREW_PREFIX/bin/bash"
+chmod +x "$DOTFILES_TEST_HOMEBREW_PREFIX/bin/bash"
+BREW
+chmod +x "$brewInstallBin/brew"
+env HOME="$brewInstallHome" PATH="$brewInstallBin:/usr/bin:/bin" DOTFILES_PLATFORM=darwin \
+  DOTFILES_TEST_BASH_MAJOR=3 DOTFILES_TEST_HOMEBREW_PREFIX="$brewInstallPrefix" \
+  DOTFILES_TEST_BREW_LOG="$brewInstallLog" \
+  DOTFILES_TEST_MODERN_BASH_LOG="$brewExecLog" \
+  DOTFILES_TEST_MODERN_BASH_SOURCE="$modernBashPrefix/bin/bash" \
+  bash "$repoRoot/script/bootstrap" --profile work
+check "bootstrap asks Homebrew for bash when darwin has no modern bash" \
+  grep -qx 'install bash' "$brewInstallLog"
+check "bootstrap re-execs the bash Homebrew installed" \
+  grep -qx "$repoRoot/script/bootstrap --profile work" "$brewExecLog"
+
+linuxBashFloorStatus=0
+linuxBashFloorOutput="$(env HOME="$brewInstallHome" PATH="/usr/bin:/bin" DOTFILES_PLATFORM=linux \
+  DOTFILES_TEST_BASH_MAJOR=3 DOTFILES_TEST_HOMEBREW_PREFIX="$brewInstallHome/missing" \
+  bash "$repoRoot/script/bootstrap" 2>&1)" || linuxBashFloorStatus=$?
+check "bootstrap refuses bash 3 on linux when no modern bash exists" test "$linuxBashFloorStatus" -eq 1
+check "the linux refusal names the bash floor" outputHas "$linuxBashFloorOutput" 'bash 4 or newer is required'
+
+portableModePath="$sandbox/portable-mode"
+printf 'mode probe\n' > "$portableModePath"
+chmod 600 "$portableModePath"
+check "fileModeOf uses GNU stat on linux" test "$(DOTFILES_PLATFORM=linux fileModeOf "$portableModePath")" = "600"
+portableStatBin="$sandbox/portable-stat-bin"
+mkdir -p "$portableStatBin"
+cat > "$portableStatBin/stat" <<'STAT'
+#!/usr/bin/env bash
+[[ "$1" == "-f" && "$2" == "%Lp" ]] || exit 1
+printf '600\n'
+STAT
+chmod +x "$portableStatBin/stat"
+check "fileModeOf uses BSD stat on darwin" \
+  test "$(PATH="$portableStatBin:$PATH" DOTFILES_PLATFORM=darwin fileModeOf "$portableModePath")" = "600"
+
+rewriteProbe="$sandbox/rewrite-probe"
+printf 'keep\nremove\nkeep-too\n' > "$rewriteProbe"
+removeMatchingLines '^remove$' "$rewriteProbe"
+check "portable rewrites remove only matching lines" \
+  test "$(cat "$rewriteProbe")" = "$(printf 'keep\nkeep-too')"
+
 reportTopicResults "bootstrap"

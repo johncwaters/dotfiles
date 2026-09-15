@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 
 testRepoRoot="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../script/lib/platform.sh
+source "$testRepoRoot/script/lib/platform.sh"
 
 failures=0
 sandbox=""
@@ -99,14 +101,18 @@ startStubbedSandbox() {
 # XDG_STATE_HOME is pinned into the sandbox: inheriting the runner's would write converge state into the real home.
 runInStubbedSandbox() {
   local sandboxHome="$1"
+  local sandboxPlatform
   shift
+  sandboxPlatform="$(platformName)"
   env HOME="$sandboxHome" \
     PATH="$stubBin:$coreBin" \
     XDG_STATE_HOME="$sandboxHome/.local/state" \
+    DOTFILES_PLATFORM="$sandboxPlatform" \
     DOTFILES_TEST_LOG="$commandLog" \
     DOTFILES_TEST_STATE="$stubState" \
     DOTFILES_TEST_STUB_BIN="$stubBin" \
     DOTFILES_TEST_CORE_BIN="$coreBin" \
+    DOTFILES_TEST_HARNESS="$testRepoRoot/test/harness.sh" \
     "$@"
 }
 
@@ -262,4 +268,21 @@ logLacks() {
 
 countLogLines() {
   grep -cE -- "$1" "$commandLog" || true
+}
+
+fileModeOf() {
+  if isDarwin; then
+    stat -f %Lp "$1"
+    return $?
+  fi
+  stat -c %a "$1"
+}
+
+removeMatchingLines() {
+  local pattern="$1"
+  local filePath="$2"
+  local rewrittenPath
+  rewrittenPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-rewrite.XXXXXX")"
+  sed "/$pattern/d" "$filePath" > "$rewrittenPath"
+  mv -- "$rewrittenPath" "$filePath"
 }

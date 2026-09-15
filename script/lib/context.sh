@@ -7,6 +7,8 @@ dotfilesRepo="$(cd -- "$libDirectory/../.." && pwd)"
 dotfilesAlias="$HOME/.dotfiles"
 backupSuffix=".pre-dotfiles.bak"
 
+# shellcheck source=./platform.sh
+source "$libDirectory/platform.sh"
 # shellcheck source=./log.sh
 source "$libDirectory/log.sh"
 # shellcheck source=./state.sh

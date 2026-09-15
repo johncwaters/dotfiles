@@ -22,6 +22,8 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
 - A topic owns its concern completely: config, `install.sh`, `test.sh`. Deleting the dir
   deletes the feature.
 - Machine-specific values are rendered or untracked, never committed.
+- Platform branches go through `script/lib/platform.sh`, so tests can pin both systems without replacing `uname`.
+- Bash 4 is the floor; bootstrap re-execs through Homebrew bash on macOS so topic code keeps one shell dialect.
 - Link targets are written as `~/.dotfiles/...`, never as the clone path. The alias is
   what makes the checkout relocatable and lets a machine keep the repo wherever its owner
   works; `bootstrap` creates it and repoints it if the clone moved.

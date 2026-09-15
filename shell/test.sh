@@ -38,7 +38,7 @@ check ".bashrc sources the repo rc through the alias" grep -qF 'source "$HOME/.d
 check ".bash_profile sources the repo profile through the alias" \
   grep -qF 'source "$HOME/.dotfiles/shell/bash_profile"' "$sandbox/.bash_profile"
 check "the displaced bashrc was backed up" grep -q 'distro default bashrc' "$sandbox/.bashrc.pre-dotfiles.bak"
-check "the backup is not world readable" test "$(stat -c %a "$sandbox/.bashrc.pre-dotfiles.bak")" = "600"
+check "the backup is not world readable" test "$(fileModeOf "$sandbox/.bashrc.pre-dotfiles.bak")" = "600"
 personalTopicList="$(node -e 'const topics = require(process.argv[1]).topics; process.stdout.write(topics.join("\n"))' \
   "$repoRoot/profiles/personal/profile.json")"
 check "the topic list was rendered from the profile" \
