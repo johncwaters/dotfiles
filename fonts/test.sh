@@ -100,4 +100,27 @@ settledCacheOutput="$(runInstall)" || true
 check "the run after a settled refresh leaves fc-cache alone" test ! -s "$fontCacheLog"
 check "the run after a settled refresh reports no change" reportsNoChanges "$settledCacheOutput"
 
+startStubbedSandbox "fonts-darwin"
+linkCoreUtilities bash dirname mkdir mv ln readlink rm
+darwinPendingState="$sandbox/.local/state/dotfiles/fonts-cache-refresh-pending"
+mkdir -p "$(dirname -- "$darwinPendingState")"
+: > "$darwinPendingState"
+
+runDarwinInstall() {
+  runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_PROFILE=work NO_COLOR=1 \
+    bash "$topicDir/install.sh"
+}
+
+darwinStatus=0
+darwinOutput="$(runDarwinInstall)" || darwinStatus=$?
+check "darwin installs fonts without fontconfig" test "$darwinStatus" -eq 0
+for fontFile in "${fontFiles[@]}"; do
+  check "darwin links $fontFile for CoreText" \
+    fontLinksThroughTheAlias "$sandbox/Library/Fonts/$fontFile"
+done
+check "darwin does not populate the Linux font directory" test ! -d "$sandbox/.local/share/fonts"
+check "darwin clears stale font-cache debt" test ! -e "$darwinPendingState"
+check "darwin does not warn about fc-cache" outputLacks "$darwinOutput" 'fc-cache'
+checkRerunIsQuiet "a darwin rerun reports no changes" "$(runDarwinInstall)"
+
 reportTopicResults "fonts"

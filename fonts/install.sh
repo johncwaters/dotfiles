@@ -6,6 +6,9 @@ if [[ -z "${dotfilesRepo:-}" ]]; then
 fi
 
 fontDirectory="$HOME/.local/share/fonts"
+if isDarwin; then
+  fontDirectory="$HOME/Library/Fonts"
+fi
 fontFiles=(
   "CommitMono-400-Italic.otf"
   "CommitMono-400-Regular.otf"
@@ -23,6 +26,11 @@ for fontFile in "${fontFiles[@]}"; do
     fontsChanged=1
   fi
 done
+
+if isDarwin; then
+  clearDotfilesState "$fontCacheStateName"
+  finishTopic
+fi
 
 # A cache the last run could not rebuild is still owed, whatever this run changed.
 if ((fontsChanged == 0)) && ! dotfilesStateIsPending "$fontCacheStateName"; then
