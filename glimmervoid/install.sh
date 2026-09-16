@@ -533,7 +533,7 @@ glimmervoidCliPathIsUsable() {
   [[ ! -e "$1" ]] || [[ -f "$1" ]]
 }
 
-# The build emits dist/bin/glimmervoid.js without an exec bit and the global npm copy that used to chmod its bin is gone, so PATH gets a shim rather than a link no shell may run.
+# The shim resolves Node so the CLI ignores caller PATH and keeps ~/.local/bin/glimmervoid a replaceable plain file.
 installGlimmervoidCliShim() {
   local label="glimmervoid cli"
   local shimPath="$HOME/.local/bin/glimmervoid"

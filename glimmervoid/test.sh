@@ -308,9 +308,6 @@ const [configPath, home] = process.argv.slice(2);
 const actual = JSON.parse(fs.readFileSync(configPath, "utf8"));
 const expected = {
   port: 3000,
-  attentionTimeoutSeconds: 60,
-  waitingEscalationSeconds: 300,
-  startingWatchdogSeconds: 30,
   autoRecoverSeconds: 3,
   inputGraceSeconds: 5,
   promptDetectionMs: 1500,
@@ -323,8 +320,6 @@ const expected = {
   }],
   replayBufferKB: 512,
   scrollback: 50000,
-  feedDebounceMs: 50,
-  noFlicker: true,
   cursorBlink: false,
   debugMode: false,
   teams: [],
@@ -337,10 +332,6 @@ const expected = {
     matcher: "Write|Edit|MultiEdit",
     command: `node ${home}/.claude/hooks/block-comments.mjs`
   }],
-  editorCommand: "",
-  headroomEasyStart: false,
-  proxyBaseUrl: "http://127.0.0.1:8787",
-  headroomPort: 8787,
   remote: {
     enabled: true,
     port: 3001,
