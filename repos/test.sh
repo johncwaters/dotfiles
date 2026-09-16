@@ -4,6 +4,7 @@ set -euo pipefail
 
 topicDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repoRoot="$(cd -- "$topicDir/.." && pwd)"
+export DOTFILES_PLATFORM=linux
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 # shellcheck source=../script/lib/state.sh
@@ -233,8 +234,10 @@ makeExistingLinkedWorktree() {
 runInstall() {
   local listPath="$1"
   local stdinPath="${2:-/dev/null}"
+  local machinePlatform="${3:-linux}"
   runInStubbedSandbox "$sandbox" \
     PATH="$stubBin:/usr/bin:/bin" \
+    DOTFILES_PLATFORM="$machinePlatform" \
     DOTFILES_PROFILE=personal \
     NO_COLOR=1 \
     DOTFILES_MARKER_PATH="$sandbox/.machine-profile" \
@@ -263,6 +266,16 @@ printf '\nrepos topic\n'
 [[ -s "$topicDir/test/install.sh" ]] || exit 1
 # shellcheck source=./test/install.sh
 source "$topicDir/test/install.sh" || exit 1
+
+darwinList="$sandbox/darwin-list.txt"
+printf 'Projects/darwin=https://github.com/johncwaters/darwin nodeps\n' > "$darwinList"
+: > "$commandLog"
+darwinInstallStatus=0
+darwinInstallOutput="$(runInstall "$darwinList" /dev/null darwin)" || darwinInstallStatus=$?
+check "repos converges on darwin" test "$darwinInstallStatus" -eq 0
+check "darwin clones the listed repo" test -d "$sandbox/Projects/darwin/.git"
+check "darwin reports no platform warning" outputLacks "$darwinInstallOutput" "unsupported platform"
+
 [[ -s "$topicDir/test/collect.sh" ]] || exit 1
 # shellcheck source=./test/collect.sh
 source "$topicDir/test/collect.sh" || exit 1

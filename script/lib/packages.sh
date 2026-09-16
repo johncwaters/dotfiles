@@ -367,8 +367,8 @@ packageNamesForTool() {
       printf 'gh\n'
       return 0
       ;;
-    vscodium:brew)
-      printf '%s\n' '--cask' 'vscodium'
+    vscodium:brew | tailscale:brew | ghostty:brew)
+      printf '%s\n' '--cask' "${toolKey/tailscale/tailscale-app}"
       return 0
       ;;
     solaar:apt-get)
@@ -542,6 +542,14 @@ toolIsPresent() {
       return 0
     fi
     [[ -x "$(codiumBundleBinDirectory)/codium" ]]
+    return $?
+  fi
+  if [[ "$toolKey" == "tailscale" ]] && isDarwin; then
+    [[ -x "$(tailscaleBundleCliPath)" ]]
+    return $?
+  fi
+  if [[ "$toolKey" == "ghostty" ]] && isDarwin; then
+    [[ -x "$(ghosttyBundleCliPath)" ]]
     return $?
   fi
   command -v "$commandName" >/dev/null 2>&1

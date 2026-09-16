@@ -21,8 +21,8 @@ knownPackageGroups=(
   claude-code
   zed
   flatpaks
+  casks
   npm-globals
-  biome
   python-tools
 )
 
@@ -219,6 +219,46 @@ installProfileFlatpaks() {
   done < <(readPackageList "$packagesDirectory/flatpaks.txt")
 }
 
+caskIsInstalledOrItsAppBundleIsAlreadyInPlace() {
+  local brewCommand="$1"
+  local caskToken="$2"
+  local bundleName="$3"
+  if "$brewCommand" list --cask "$caskToken" >/dev/null 2>&1; then
+    return 0
+  fi
+  [[ -d "$(applicationsDirectory)/$bundleName" ]]
+}
+
+installProfileCasks() {
+  local brewCommand
+  local caskToken
+  local bundleName
+  if ! isDarwin; then
+    notePresent "casks" "skipped, requires macOS"
+    return 0
+  fi
+  brewCommand="$(brewCommandPath || true)"
+  if [[ -z "$brewCommand" ]]; then
+    noteWarned "casks" "Homebrew not on PATH, install manually"
+    return 0
+  fi
+  while read -r caskToken bundleName; do
+    if [[ -z "$caskToken" || -z "$bundleName" ]]; then
+      continue
+    fi
+    if caskIsInstalledOrItsAppBundleIsAlreadyInPlace "$brewCommand" "$caskToken" "$bundleName"; then
+      notePresent "$caskToken" "already installed"
+      continue
+    fi
+    noteStarting "$caskToken" "installing via Homebrew"
+    if installSystemPackages brew --cask "$caskToken"; then
+      noteInstalled "$caskToken" "installed"
+      continue
+    fi
+    noteWarned "$caskToken" "Homebrew install failed"
+  done < <(readPackageList "$packagesDirectory/casks.txt")
+}
+
 npmToolingIsReady() {
   refreshSessionPath
   if ! command -v npm >/dev/null 2>&1; then
@@ -297,9 +337,18 @@ ensureNpmGlobals() {
   done
 }
 
+wantedNpmGlobalsPath() {
+  local profileListPath="$dotfilesRepo/profiles/${profileName:-}/npm-globals.txt"
+  if [[ -n "${profileName:-}" && -f "$profileListPath" ]]; then
+    printf '%s\n' "$profileListPath"
+    return 0
+  fi
+  printf '%s\n' "$packagesDirectory/npm-globals.txt"
+}
+
 installWantedNpmGlobals() {
   local wantedEntries=()
-  mapfile -t wantedEntries < <(readPackageList "$packagesDirectory/npm-globals.txt")
+  mapfile -t wantedEntries < <(readPackageList "$(wantedNpmGlobalsPath)")
   ensureNpmGlobals "packages" ${wantedEntries[@]+"${wantedEntries[@]}"}
 }
 
@@ -431,18 +480,16 @@ if packageGroupEnabled "flatpaks"; then
   installProfileFlatpaks
 fi
 
+if packageGroupEnabled "casks"; then
+  writeSection "Desktop apps"
+  installProfileCasks
+fi
+
 if packageGroupEnabled "npm-globals"; then
   writeSection "npm globals"
   if npmToolingIsReady; then
     installWantedNpmGlobals
     removeRetiredNpmGlobals
-  fi
-fi
-
-if packageGroupEnabled "biome"; then
-  writeSection "Hook deps"
-  if npmToolingIsReady; then
-    ensureNpmGlobals "biome" "@biomejs/biome"
   fi
 fi
 

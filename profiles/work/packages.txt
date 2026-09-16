@@ -1,5 +1,7 @@
 system-tools
 node
 claude-code
-biome
+zed
+casks
+npm-globals
 python-tools

@@ -4,6 +4,7 @@ set -euo pipefail
 
 topicDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repoRoot="$(cd -- "$topicDir/.." && pwd)"
+export DOTFILES_PLATFORM=linux
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 
@@ -207,5 +208,36 @@ check "a missing system map warns" \
 check "a missing system map makes the topic exit non-zero" test "$noSystemMapStatus" -eq 1
 
 check "no command was refused for reaching outside the stubs" logLacks "sudo refused"
+
+rm -rf "$sandbox/.config/cosmic" "$(dirname -- "$ghosttyConfigPath")"
+withdrawCommand ghostty
+darwinApplicationsDirectory="$sandbox/Applications"
+writeStub brew <<'STUB'
+#!/usr/bin/env bash
+printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+mkdir -p "$DOTFILES_TEST_APPLICATIONS_DIRECTORY/Ghostty.app/Contents/MacOS"
+cp "$DOTFILES_TEST_STATE/available/ghostty" \
+  "$DOTFILES_TEST_APPLICATIONS_DIRECTORY/Ghostty.app/Contents/MacOS/ghostty"
+STUB
+provideCommand brew
+writeDarwinDirectoryServiceStub "$stubBin" "$realHomeOutsideTheSandbox"
+: > "$commandLog"
+darwinStatus=0
+darwinOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$temporaryDirectory" DOTFILES_PLATFORM=darwin \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+  DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDir/install.sh")" || darwinStatus=$?
+check "darwin installs and configures Ghostty cleanly" test "$darwinStatus" -eq 0
+check "darwin installs Ghostty as a Homebrew cask" logHas 'brew install --cask ghostty'
+check "darwin does not run Homebrew through sudo" logLacks 'sudo '
+check "darwin does not invoke apt-get" logLacks 'apt-get '
+check "darwin keeps the cross-platform XDG config link" test -L "$ghosttyConfigPath"
+check "darwin reports no missing Ghostty CLI" outputLacks "$darwinOutput" 'not on PATH'
+
+: > "$commandLog"
+darwinRerunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$temporaryDirectory" DOTFILES_PLATFORM=darwin \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+  DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDir/install.sh")"
+check "a darwin rerun reports no changes" reportsNoChanges "$darwinRerunOutput"
+check "a darwin rerun does not invoke Homebrew" logLacks 'brew '
 
 reportTopicResults "terminal"

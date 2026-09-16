@@ -5,6 +5,7 @@ set -uo pipefail
 
 topicDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repoRoot="$(cd -- "$topicDir/.." && pwd)"
+export DOTFILES_PLATFORM=linux
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 # shellcheck source=../script/lib/state.sh
@@ -41,6 +42,8 @@ startSandboxHome "glimmervoid-invalid-app"
 invalidAppHome="$sandbox"
 startSandboxHome "glimmervoid-local-seed"
 localSeedHome="$sandbox"
+startSandboxHome "glimmervoid-work-darwin"
+darwinWorkHome="$sandbox"
 
 realHome="$HOME"
 realNodePath="$(command -v node 2>/dev/null || true)"
@@ -254,7 +257,7 @@ done
 for machineHomePath in "$toolingHome" "$personalHome" "$serverHome" "$unauthedHome" \
   "$optOutHome" "$symlinkedHome" "$brokenConfigHome" "$unownedRouteHome" "$badStatusHome" \
   "$unresolvedProfileHome" "$pendingDepsHome" "$missingAppHome" "$invalidAppHome" \
-  "$localSeedHome"; do
+  "$localSeedHome" "$darwinWorkHome"; do
   mkdir -p "$machineHomePath/.local/bin"
   ln -sf "$stubBin/node" "$machineHomePath/.local/bin/node"
 done
@@ -278,10 +281,12 @@ runInstall() {
   local machineProfile="$2"
   local extraPathPrefix="${3:-}"
   local stdinPath="${4:-/dev/null}"
+  local machinePlatform="${5:-linux}"
   runInStubbedSandbox "$machineHome" \
     PATH="${extraPathPrefix:+$extraPathPrefix:}$stubBin:$coreBin" \
     TMPDIR="$sandboxTemp" \
     USER="sandboxaccount" \
+    DOTFILES_PLATFORM="$machinePlatform" \
     DOTFILES_PROFILE="$machineProfile" \
     DOTFILES_MARKER_PATH="$machineHome/.machine-profile" \
     DOTFILES_TEST_MACHINE="$(basename -- "$machineHome")" \
@@ -358,6 +363,16 @@ printf '\nglimmervoid topic\n'
 [[ -s "$topicDir/test/install.sh" ]] || exit 1
 # shellcheck source=./test/install.sh
 source "$topicDir/test/install.sh" || exit 1
+
+: > "$commandLog"
+darwinWorkStatus=0
+darwinWorkOutput="$(runInstall "$darwinWorkHome" work "" /dev/null darwin)" || darwinWorkStatus=$?
+check "a fresh seed-only work profile warns on darwin" test "$darwinWorkStatus" -eq 1
+check "darwin seeds the work profile config" test -f "$darwinWorkHome/.glimmervoid/config.json"
+check "darwin exits through the non-serving path" \
+  outputHas "$darwinWorkOutput" "skipped, profile does not serve glimmervoid"
+check "darwin never touches systemd" logLacks "systemctl "
+
 [[ -s "$topicDir/test/service.sh" ]] || exit 1
 # shellcheck source=./test/service.sh
 source "$topicDir/test/service.sh" || exit 1

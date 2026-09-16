@@ -44,7 +44,7 @@ The [repository invariants and map](AGENTS.md) cover checkout safety and link ow
 
 ## Profiles
 
-Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `CLAUDE.md`,
+Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `npm-globals.txt`, `CLAUDE.md`,
 `commit-policy.json`, `settings.overlay.json`, `glimmervoid.json`, `glimmervoid.overlay.json`,
 `vscodium.json`.
 

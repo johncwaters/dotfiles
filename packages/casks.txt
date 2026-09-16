@@ -1,0 +1,4 @@
+zen Zen.app
+bitwarden Bitwarden.app
+discord Discord.app
+slack Slack.app

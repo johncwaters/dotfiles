@@ -157,3 +157,11 @@ applicationsDirectory() {
 codiumBundleBinDirectory() {
   printf '%s/VSCodium.app/Contents/Resources/app/bin\n' "$(applicationsDirectory)"
 }
+
+tailscaleBundleCliPath() {
+  printf '%s/Tailscale.app/Contents/MacOS/Tailscale\n' "$(applicationsDirectory)"
+}
+
+ghosttyBundleCliPath() {
+  printf '%s/Ghostty.app/Contents/MacOS/ghostty\n' "$(applicationsDirectory)"
+}

@@ -4,6 +4,7 @@ set -euo pipefail
 
 topicDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repoRoot="$(cd -- "$topicDir/.." && pwd)"
+export DOTFILES_PLATFORM=linux
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 
@@ -17,7 +18,8 @@ realHomePathsNoStubMayName=(
 sandboxTemp="$sandbox/tmp"
 
 mkdir -p "$stubState/package-commands" \
-  "$stubState/npm-installed" "$stubState/flatpak-installed" "$stubState/python-modules" \
+  "$stubState/npm-installed" "$stubState/flatpak-installed" "$stubState/cask-installed" \
+  "$stubState/python-modules" \
   "$sandboxTemp"
 
 coreUtilities=(
@@ -385,14 +387,23 @@ rm -f "$stubState/npm-installed/@biomejs%biome"
 workRunStatus=0
 workRunOutput="$(runInstall work)" || workRunStatus=$?
 check "a profile that varies the groups exits clean" test "$workRunStatus" -eq 0
-check "the work profile installs the hook's biome" logHas "npm install -g @biomejs/biome"
+check "the work profile installs biome through npm-globals" logHas "npm install -g @biomejs/biome"
 check "the work profile installs no system package" logLacks "install -y"
 check "the work profile installs no flatpak" logLacks "flatpak install"
+check "the work profile skips casks without warning on linux" \
+  outputMatches "$workRunOutput" '\[ -- \].*casks.*skipped, requires macOS'
 check "the work profile still installs its python tools" outputHas "$workRunOutput" "ruff"
 
 writeStub brew <<'STUB'
 #!/usr/bin/env bash
 printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-} ${2:-}" == "list --cask" ]]; then
+  [[ -f "$DOTFILES_TEST_STATE/cask-installed/${3:-}" ]]
+  exit $?
+fi
+if [[ "${1:-} ${2:-}" == "install --cask" ]]; then
+  touch "$DOTFILES_TEST_STATE/cask-installed/${3:-}"
+fi
 for packageName in "$@"; do
   case "$packageName" in
     git | gh)
@@ -425,14 +436,20 @@ for commandName in git gh node npm; do
   withdrawCommand "$commandName"
 done
 darwinHomebrewPrefix="$sandbox/homebrew"
-mkdir -p "$darwinHomebrewPrefix/bin"
+darwinApplicationsDirectory="$sandbox/Applications"
+mkdir -p "$darwinHomebrewPrefix/bin" "$darwinApplicationsDirectory/Slack.app/Contents/MacOS"
+rm -f "$stubState/npm-installed/typescript" "$stubState/npm-installed/@openai%codex" \
+  "$stubState/npm-installed/@xai-official%grok" \
+  "$stubState/npm-installed/@earendil-works%pi-coding-agent"
+touch "$stubState/cask-installed/zen"
 rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml" \
-  "$stubState/npm-installed/@biomejs%biome" "$sandbox/.local/bin/claude"
+  "$sandbox/.local/bin/claude" "$sandbox/.local/bin/zed"
 rm -rf "$sandbox/.local/share/dotfiles/python-tools"
 : > "$commandLog"
 darwinRunStatus=0
 darwinRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
   DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
   bash "$topicDir/install.sh")" || darwinRunStatus=$?
 check "the work profile converges through Homebrew on darwin" test "$darwinRunStatus" -eq 0
@@ -442,8 +459,25 @@ done
 check "darwin chooses Homebrew even while apt-get is visible" logLacks 'apt-get '
 check "darwin never runs Homebrew through sudo" logLacks 'sudo '
 check "darwin takes the non-NodeSource Node path" logLacks 'nodesource.com'
-check "darwin installs biome after Homebrew provides npm" logHas 'npm install -g @biomejs/biome'
+check "darwin installs typescript after Homebrew provides npm" \
+  logHas "npm install -g typescript"
+for forbiddenNpmPackage in @openai/codex @xai-official/grok @earendil-works/pi-coding-agent; do
+  check "the work profile installs no $forbiddenNpmPackage" \
+    logLacks "npm install -g $forbiddenNpmPackage"
+done
 check "darwin installs Claude Code from the work profile" logHas 'https://claude.ai/install.sh'
+check "darwin installs Zed from the work profile" logHas 'https://zed.dev/install.sh'
+check "darwin lands Zed in ~/.local/bin" test -x "$sandbox/.local/bin/zed"
+check "darwin reports a present cask" outputMatches "$darwinRunOutput" \
+  '\[ -- \].*zen.*already installed'
+check "darwin does not reinstall a present cask" logLacks 'brew install --cask zen'
+for missingCask in bitwarden discord; do
+  check "darwin installs the missing $missingCask cask" logHas "brew install --cask $missingCask"
+done
+check "darwin reports a cask whose app was installed by hand as present" \
+  outputMatches "$darwinRunOutput" '\[ -- \].*slack.*already installed'
+check "darwin does not install a cask over an app someone installed by hand" \
+  logLacks 'brew install --cask slack'
 check "darwin creates Python tools with Homebrew Python" \
   logHas "python3 -m venv --clear $sandbox/.local/share/dotfiles/python-tools"
 check "darwin installs ruff inside the Python tools environment" \
@@ -465,6 +499,7 @@ rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml"
 appleVenvRunStatus=0
 runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
   DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
   bash "$topicDir/install.sh" > /dev/null || appleVenvRunStatus=$?
 check "a converge over an Apple-built Python environment exits clean" test "$appleVenvRunStatus" -eq 0
@@ -478,6 +513,7 @@ check "the rebuilt environment gets the profile's Python tools back" \
 : > "$commandLog"
 runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
   DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
   bash "$topicDir/install.sh" > /dev/null || true
 check "a Homebrew-built Python environment is left alone" logLacks 'python3 -m venv'
@@ -491,6 +527,7 @@ leadingVenvRunStatus=0
 leadingVenvRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" \
   PATH="$pythonToolsEnvironment/bin:$darwinHomebrewPrefix/bin:$stubBin:$coreBin" DOTFILES_PLATFORM=darwin \
   DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
   bash "$topicDir/install.sh")" || leadingVenvRunStatus=$?
 check "a stale environment leading PATH still reports Homebrew Python present" \

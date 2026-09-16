@@ -10,14 +10,27 @@ fi
 source "$dotfilesRepo/script/lib/packages.sh"
 
 reportTailscaleAuthStatus() {
-  if tailscale status >/dev/null 2>&1; then
+  local authHint="run sudo tailscale up once"
+  local tailscaleCommand="tailscale"
+  if isDarwin; then
+    authHint="open the Tailscale app and sign in"
+    tailscaleCommand="$(tailscaleBundleCliPath)"
+  fi
+  if "$tailscaleCommand" status >/dev/null 2>&1; then
     notePresent "Tailscale auth" "authenticated"
     return 0
   fi
-  noteWarned "Tailscale auth" "run sudo tailscale up once"
+  noteWarned "Tailscale auth" "$authHint"
 }
 
 installTailscale() {
+  if isDarwin; then
+    installPackageTool "Tailscale" "tailscale" "tailscale" "https://tailscale.com/download/mac"
+    if toolIsPresent "tailscale" "tailscale"; then
+      reportTailscaleAuthStatus
+    fi
+    return 0
+  fi
   refreshSessionPath
   if command -v tailscale >/dev/null 2>&1; then
     notePresent "Tailscale" "already installed"

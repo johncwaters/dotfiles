@@ -40,6 +40,8 @@ check "brew installs Python 3" packageNamesAre brew python "python3"
 check "brew installs Bash completion 2" packageNamesAre brew bash-completion "bash-completion@2"
 check "brew installs Node with npm" packageNamesAre brew node "node"
 check "brew installs VSCodium as a cask" packageNamesAre brew vscodium "--cask vscodium"
+check "brew installs the Tailscale app as a cask" packageNamesAre brew tailscale "--cask tailscale-app"
+check "brew installs Ghostty as a cask" packageNamesAre brew ghostty "--cask ghostty"
 
 unmappedToolResolvesToNothing() {
   ! packageNamesForTool apt-get nosuchtool >/dev/null 2>&1
