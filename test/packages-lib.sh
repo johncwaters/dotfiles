@@ -27,12 +27,17 @@ packageNamesAre() {
 
 check "apt-get installs python3 with its pip" packageNamesAre apt-get python "python3 python3-pip"
 check "pacman installs python with its pip" packageNamesAre pacman python "python python-pip"
+for linuxPackageManager in apt-get dnf pacman zypper; do
+  check "$linuxPackageManager installs bash completion by its common name" \
+    packageNamesAre "$linuxPackageManager" bash-completion "bash-completion"
+done
 check "apt-get installs node with npm beside it" packageNamesAre apt-get node "nodejs npm"
 check "pacman calls the GitHub CLI github-cli" packageNamesAre pacman gh "github-cli"
 check "apt-get calls the GitHub CLI gh" packageNamesAre apt-get gh "gh"
 check "brew installs git" packageNamesAre brew git "git"
 check "brew installs the GitHub CLI" packageNamesAre brew gh "gh"
 check "brew installs Python 3" packageNamesAre brew python "python3"
+check "brew installs Bash completion 2" packageNamesAre brew bash-completion "bash-completion@2"
 check "brew installs Node with npm" packageNamesAre brew node "node"
 check "brew installs VSCodium as a cask" packageNamesAre brew vscodium "--cask vscodium"
 
@@ -133,6 +138,19 @@ pythonOutsideVirtualEnvironmentIsChosen() {
 
 check "a virtual environment cannot choose the Python used for package checks" \
   pythonOutsideVirtualEnvironmentIsChosen
+
+printf '#!/usr/bin/env bash\nexit 0\n' > "$absoluteBrewPrefix/bin/python3"
+chmod +x "$absoluteBrewPrefix/bin/python3"
+
+darwinHomebrewPythonOutsideVirtualEnvironmentIsChosen() {
+  [[ "$(HOME="$sandbox" VIRTUAL_ENV="$sandbox/venv" PATH="$virtualEnvironmentBin:$PATH" \
+    DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$darwinDirectoryServiceBin" \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$absoluteBrewPrefix" pythonCommandName)" \
+    == "$absoluteBrewPrefix/bin/python3" ]]
+}
+
+check "darwin escapes a virtual environment through Homebrew's bin directory" \
+  darwinHomebrewPythonOutsideVirtualEnvironmentIsChosen
 
 packagesLibraryLoadsItsContextWhenNeeded() (
   unset dotfilesRepo libDirectory

@@ -2,7 +2,9 @@
 
 Personal machine setup: Claude Code, editor, shell tooling, fonts, and services.
 
-Linux and macOS. No Windows.
+The `personal` and `server` profiles are Linux-only; `work` is macOS-only. Bootstrap
+refuses a mismatch because a partial cross-platform converge leaves the machine inconsistent.
+No Windows.
 
 ## Install
 
@@ -16,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/johncwaters/dotfiles/main/bin/dot |
 
 Run as the account that will own the machine; the profile is `work`. Apple ships bash 3.2,
 so `bootstrap` installs Homebrew and a current bash and re-execs itself before any topic
-runs.
+runs. `--profile work` is the only profile that converges there.
 
 ```sh
 xcode-select --install

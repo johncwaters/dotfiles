@@ -186,13 +186,17 @@ check "the symlinked topics file was replaced by a plain file" \
 
 startSandboxHome "shell-darwin"
 darwinHomebrewPrefix="$sandbox/homebrew"
+darwinPythonToolsBinDirectory="$sandbox/.local/share/dotfiles/python-tools/bin"
 darwinApplicationsDirectory="$sandbox/Applications"
 darwinShellsFile="$sandbox/etc-shells"
 darwinStubBin="$sandbox/darwin-stub-bin"
 darwinCommandLog="$sandbox/darwin-commands.log"
 mkdir -p "$darwinHomebrewPrefix/bin" "$darwinHomebrewPrefix/sbin" \
   "$darwinHomebrewPrefix/etc/profile.d" \
-  "$darwinApplicationsDirectory/VSCodium.app/Contents/Resources/app/bin" "$darwinStubBin"
+  "$darwinApplicationsDirectory/VSCodium.app/Contents/Resources/app/bin" \
+  "$darwinPythonToolsBinDirectory" "$darwinStubBin"
+touch "$darwinPythonToolsBinDirectory/python3" "$darwinPythonToolsBinDirectory/ruff"
+chmod +x "$darwinPythonToolsBinDirectory/python3" "$darwinPythonToolsBinDirectory/ruff"
 : > "$darwinShellsFile"
 : > "$darwinCommandLog"
 printf 'darwinCompletionLoaded=1\n' > "$darwinHomebrewPrefix/etc/profile.d/bash_completion.sh"
@@ -306,8 +310,14 @@ darwinInteractiveShell() {
 }
 
 darwinPath="$(darwinInteractiveShell 'printf %s "$PATH"')"
-check "darwin puts Homebrew bin first on PATH" \
-  bash -c '[[ "$1" == "$2/bin:"* ]]' _ "$darwinPath" "$darwinHomebrewPrefix"
+check "darwin puts its Python tools environment first on PATH" \
+  bash -c '[[ "$1" == "$2:"* ]]' _ "$darwinPath" "$darwinPythonToolsBinDirectory"
+check "darwin resolves python3 from its Python tools environment" \
+  test "$(darwinInteractiveShell 'command -v python3')" = "$darwinPythonToolsBinDirectory/python3"
+check "darwin resolves ruff from its Python tools environment" \
+  test "$(darwinInteractiveShell 'command -v ruff')" = "$darwinPythonToolsBinDirectory/ruff"
+check "darwin keeps Homebrew bin on PATH" \
+  bash -c '[[ ":$1:" == *":$2/bin:"* ]]' _ "$darwinPath" "$darwinHomebrewPrefix"
 check "darwin puts Homebrew sbin on PATH" \
   bash -c '[[ ":$1:" == *":$2/sbin:"* ]]' _ "$darwinPath" "$darwinHomebrewPrefix"
 check "darwin puts the VSCodium CLI directory on PATH" \

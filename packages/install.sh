@@ -342,6 +342,10 @@ ensurePythonPackage() {
     noteInstalled "$packageName" "installed"
     return 0
   fi
+  if isDarwin; then
+    noteWarned "$packageName" "pip install failed"
+    return 0
+  fi
   if "$pythonCommand" -m pip install --quiet --no-input --user --break-system-packages \
     "$packageName" </dev/null >/dev/null 2>&1; then
     noteInstalled "$packageName" "installed"
@@ -350,13 +354,44 @@ ensurePythonPackage() {
   noteWarned "$packageName" "pip install failed"
 }
 
+pythonToolsEnvironmentNeedsRebuild() {
+  local environmentPython="$1/bin/python3"
+  local interpreterItWouldBeBuiltFrom="$2"
+  if [[ ! -x "$environmentPython" ]]; then
+    return 0
+  fi
+  if pythonBasePrefixIsHomebrew "$environmentPython"; then
+    return 1
+  fi
+  pythonBasePrefixIsHomebrew "$interpreterItWouldBeBuiltFrom"
+}
+
 installPythonTools() {
   local pythonCommand
+  local pythonToolsEnvironment="$HOME/.local/share/dotfiles/python-tools"
+  local homebrewPython
   local moduleName
   local packageName
   if ! pythonCommand="$(pythonCommandName)"; then
     noteWarned "python" "not on PATH, skipping pip tools"
     return 0
+  fi
+  if isDarwin; then
+    if homebrewPython="$(homebrewPythonCommand)"; then
+      pythonCommand="$homebrewPython"
+    fi
+    if pythonToolsEnvironmentNeedsRebuild "$pythonToolsEnvironment" "$pythonCommand"; then
+      noteStarting "Python tools" "creating isolated environment"
+      if ! "$pythonCommand" -m venv --clear "$pythonToolsEnvironment"; then
+        noteWarned "Python tools" "could not create isolated environment"
+        return 0
+      fi
+      noteInstalled "Python tools" "isolated environment created"
+    fi
+    pythonCommand="$pythonToolsEnvironment/bin/python3"
+    PATH="$pythonToolsEnvironment/bin:$PATH"
+    export PATH
+    hash -r 2>/dev/null || true
   fi
   while read -r moduleName packageName; do
     if [[ -z "$moduleName" || -z "$packageName" ]]; then
@@ -373,6 +408,7 @@ fi
 if packageGroupEnabled "system-tools"; then
   writeSection "Tools"
   installPackageTool "git" "git" "git"
+  installPackageTool "Bash completion" "bash_completion" "bash-completion"
   installPackageTool "GitHub CLI" "gh" "gh" "https://cli.github.com"
   installPackageTool "Python" "python3" "python"
   reportGithubAuthStatus

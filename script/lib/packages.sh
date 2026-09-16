@@ -327,6 +327,14 @@ packageNamesForTool() {
       printf 'git\n'
       return 0
       ;;
+    bash-completion:apt-get | bash-completion:dnf | bash-completion:pacman | bash-completion:zypper)
+      printf 'bash-completion\n'
+      return 0
+      ;;
+    bash-completion:brew)
+      printf 'bash-completion@2\n'
+      return 0
+      ;;
     node:apt-get | node:dnf | node:pacman | node:zypper)
       printf 'nodejs\nnpm\n'
       return 0
@@ -405,8 +413,12 @@ packageNamesForTool() {
 
 pythonCommandName() {
   if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    local pythonSearchPath="/usr/local/bin:/usr/bin:/bin"
+    if isDarwin; then
+      pythonSearchPath="$(homebrewPrefix)/bin:$pythonSearchPath"
+    fi
     (
-      PATH=/usr/local/bin:/usr/bin:/bin
+      PATH="$pythonSearchPath"
       hash -r 2>/dev/null || true
       type -P python3 2>/dev/null
     )
@@ -429,6 +441,22 @@ pythonHasPip() {
     return 1
   fi
   "$pythonCommand" -m pip --version >/dev/null 2>&1
+}
+
+pythonBasePrefixIsHomebrew() {
+  local pythonCommand="$1"
+  local pythonBasePrefix
+  pythonBasePrefix="$("$pythonCommand" -c 'import sys; print(sys.base_prefix)' 2>/dev/null)" || return 1
+  [[ "$pythonBasePrefix" == "$(homebrewPrefix)/"* ]]
+}
+
+homebrewPythonCommand() {
+  local homebrewPython
+  homebrewPython="$(homebrewPrefix)/bin/python3"
+  if [[ ! -x "$homebrewPython" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$homebrewPython"
 }
 
 nodeMajorVersion() {
@@ -482,7 +510,27 @@ toolIsPresent() {
   local toolKey="$1"
   local commandName="$2"
   if [[ "$toolKey" == "python" ]]; then
-    pythonHasPip
+    if ! pythonHasPip; then
+      return 1
+    fi
+    if ! isDarwin; then
+      return 0
+    fi
+    local pythonCommand
+    pythonCommand="$(homebrewPythonCommand)" || pythonCommand="$(pythonCommandName)" || return 1
+    pythonBasePrefixIsHomebrew "$pythonCommand"
+    return $?
+  fi
+  if [[ "$toolKey" == "bash-completion" ]]; then
+    local completionScriptPath
+    if isDarwin; then
+      completionScriptPath="$(homebrewPrefix)/etc/profile.d/bash_completion.sh"
+      [[ -f "$completionScriptPath" ]]
+      return $?
+    fi
+    completionScriptPath="$(sandboxRedirectedPath "${DOTFILES_TEST_BASH_COMPLETION_PATH:-}" \
+      /usr/share/bash-completion/bash_completion)"
+    [[ -f "$completionScriptPath" ]]
     return $?
   fi
   if [[ "$toolKey" == "node" ]]; then

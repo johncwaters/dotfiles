@@ -302,9 +302,9 @@ countLogLines() {
 }
 
 fileModeOf() {
-  if isDarwin; then
+  if [[ "$(uname -s)" == "Darwin" ]]; then
     stat -f %Lp "$1"
-    return $?
+    return
   fi
   stat -c %a "$1"
 }

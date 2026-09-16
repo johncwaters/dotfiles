@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
 selfDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+dotfilesRepo="$(cd -- "$selfDirectory/.." && pwd)"
 
 # shellcheck source=./lib/platform.sh
 source "$selfDirectory/lib/platform.sh"
+# shellcheck source=./lib/profile.sh
+source "$selfDirectory/lib/profile.sh"
 
 bootstrapBashMajor="${BASH_VERSINFO[0]}"
 bootstrapTestBashMajor="$(trustedPlatformTestPath "${DOTFILES_TEST_BASH_MAJOR:-}" || true)"
@@ -40,7 +43,65 @@ installHomebrew() {
   rm -f -- "$installerPath"
 }
 
+refuseUnrunnableProfile() {
+  local gateProfileName="$1"
+  local declaredPlatform=""
+  local detectedPlatform
+  local declaredPlatformStatus=0
+  declaredPlatform="$(readProfilePlatform "$(profileDirectory "$gateProfileName")/profile.json")" \
+    || declaredPlatformStatus=$?
+  if ((declaredPlatformStatus == 1)); then
+    return 0
+  fi
+  detectedPlatform="$(platformName)" || exit 1
+  if ((declaredPlatformStatus > 1)); then
+    printf 'bootstrap: profile %s declares platform "%s", but detected %s.\n' \
+      "$gateProfileName" "${declaredPlatform:-unreadable}" "$detectedPlatform" >&2
+    exit 1
+  fi
+  if [[ "$declaredPlatform" == "$detectedPlatform" ]]; then
+    return 0
+  fi
+  printf 'bootstrap: profile %s declares platform %s, but detected %s.\n' \
+    "$gateProfileName" "$declaredPlatform" "$detectedPlatform" >&2
+  exit 1
+}
+
+# The gate runs before the argument parse validates anything, so this answers only for a profile the repo actually carries.
+profileNameForPlatformGate() {
+  local argument
+  local nextArgumentIsTheProfile=0
+  local gateProfileName=""
+  for argument in "$@"; do
+    if ((nextArgumentIsTheProfile == 1)); then
+      gateProfileName="$argument"
+      break
+    fi
+    if [[ "$argument" == "--profile" ]]; then
+      nextArgumentIsTheProfile=1
+    fi
+  done
+  if [[ -z "$gateProfileName" ]]; then
+    gateProfileName="${DOTFILES_PROFILE:-}"
+  fi
+  if [[ -z "$gateProfileName" ]]; then
+    gateProfileName="$(readMarkedProfileName)"
+  fi
+  if [[ -z "$gateProfileName" ]] || ! nameIsSafe "$gateProfileName"; then
+    return 1
+  fi
+  if [[ ! -f "$(profileDirectory "$gateProfileName")/profile.json" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$gateProfileName"
+}
+
 if ((bootstrapBashMajor < 4)); then
+  # This branch installs Homebrew and brew-installs bash, so a profile this machine cannot run is refused before any of that lands.
+  gateProfileName="$(profileNameForPlatformGate "$@" || true)"
+  if [[ -n "$gateProfileName" ]]; then
+    refuseUnrunnableProfile "$gateProfileName"
+  fi
   modernBootstrapBash="$(findModernBootstrapBash || true)"
   if [[ -n "$modernBootstrapBash" ]]; then
     exec "$modernBootstrapBash" "$0" "$@"
@@ -121,6 +182,7 @@ if [[ -z "$profileName" ]]; then
 fi
 
 topicsOutput="$(resolveProfileTopics "bootstrap" "$profileName")" || exit 1
+refuseUnrunnableProfile "$profileName"
 profileTopics=()
 if [[ -n "$topicsOutput" ]]; then
   mapfile -t profileTopics <<< "$topicsOutput"

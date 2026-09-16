@@ -1,6 +1,6 @@
 # dotfiles
 
-Personal machine setup. Linux, with mac seams left open; no Windows.
+Personal machine setup. Linux for the personal and server profiles, macOS for work; no Windows.
 
 ## Invariants
 
@@ -23,6 +23,7 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
   deletes the feature.
 - Machine-specific values are rendered or untracked, never committed.
 - Platform branches go through `script/lib/platform.sh`, so tests can pin both systems without replacing `uname`.
+- A profile may pin its platform because a converge on the wrong OS would half-apply before the first Darwin-only step failed.
 - Bash 4 is the floor; bootstrap re-execs through Homebrew bash on macOS so topic code keeps one shell dialect.
 - Link targets are written as `~/.dotfiles/...`, never as the clone path. The alias is
   what makes the checkout relocatable and lets a machine keep the repo wherever its owner
@@ -46,7 +47,7 @@ Personal machine setup. Linux, with mac seams left open; no Windows.
   substitution, used by `ai` and `glimmervoid`
 - `script/lib/packages.sh`: opt-in package tooling each software topic sources itself
 - `script/collect`: pulls live machine state back into the repo
-- `profiles/<name>/profile.json`: the topic list for that machine, in run order
+- `profiles/<name>/profile.json`: the topic list for that machine, in run order, and its optional platform pin
 - `profiles/<name>/packages.txt`: the package groups the `packages` topic installs there
 - `<topic>/install.sh`: idempotent, safe to rerun, no assumptions about run order beyond
   what the profile guarantees; ends at `finishTopic`, which exits non-zero when the topic

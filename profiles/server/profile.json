@@ -1,1 +1,1 @@
-{ "topics": ["shell", "packages", "ai", "git", "repos", "tailscale", "glimmervoid", "converge"] }
+{ "platform": "linux", "topics": ["shell", "packages", "ai", "git", "repos", "tailscale", "glimmervoid", "converge"] }

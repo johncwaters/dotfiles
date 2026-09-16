@@ -20,7 +20,7 @@ backupDirectory="$HOME/claude-backup"
 printf '\ncutover rehearsal\n'
 
 mkdir -p "$HOME/Projects"
-cp -a "$repoUnderTest" "$stagedRepo"
+cp -R "$repoUnderTest" "$stagedRepo"
 rm -rf "$stagedRepo/.git" "$stagedRepo/.machine-profile"
 printf 'personal\n' > "$stagedRepo/.machine-profile"
 # Every topic that converges a fresh home without reaching the network, so packages and repos stay out.
@@ -64,12 +64,12 @@ check "the credential survived intact" grep -q 'SANDBOX-CREDENTIAL' "$claudeHome
 check "the backup exists" test -d "$backupDirectory"
 check "the backup holds the credential" grep -q 'SANDBOX-CREDENTIAL' "$backupDirectory/.credentials.json"
 check "the backup kept the credential readable only by its owner" \
-  bash -c '[[ "$(stat -c %a "$1")" == "600" ]]' _ "$backupDirectory/.credentials.json"
+  test "$(fileModeOf "$backupDirectory/.credentials.json")" = "600"
 check "the backup holds the removed directory" test -e "$backupDirectory/setup"
 check "the backup holds the removed file" test -e "$backupDirectory/settings.base.json"
 check "the backup holds the clone" test -e "$backupDirectory/.git"
 check "the backup root is reachable only by its owner" \
-  bash -c '[[ "$(stat -c %a "$1")" == "700" ]]' _ "$backupDirectory"
+  test "$(fileModeOf "$backupDirectory")" = "700"
 check "a finished run left no lock behind" bash -c '! test -e "$1"' _ "$HOME/.adopt-claude-home.lock"
 
 check "adopting twice is safe" "$stagedRepo/script/adopt-claude-home" --yes --backup-dir "$HOME/second-backup"
@@ -90,7 +90,7 @@ check "the fonts topic converged" test -L "$HOME/.local/share/fonts/CommitMono-4
 brokenLinks=0
 cloneTargetedLinks=0
 while IFS= read -r linkPath; do
-  linkTarget="$(readlink -- "$linkPath")"
+  linkTarget="$(readlink "$linkPath")"
   if [[ ! -e "$linkPath" ]]; then
     brokenLinks=$((brokenLinks + 1))
     printf '    broken: %s -> %s\n' "$linkPath" "$linkTarget"
@@ -125,8 +125,8 @@ check "git reads the identity through the linked config" \
 check "skills resolve through the link" test -f "$claudeHome/skills/commit/SKILL.md"
 check "agents resolve through the link" test -f "$claudeHome/agents/code-reviewer.md"
 check "the codex mirror resolves" test -f "$HOME/.codex/AGENTS.md"
-check "AGENTS.md and its codex mirror are one file" bash -c '[[ "$(readlink -f "$1")" == "$(readlink -f "$2")" ]]' \
-  _ "$claudeHome/AGENTS.md" "$HOME/.codex/AGENTS.md"
+check "AGENTS.md and its codex mirror are one file" \
+  test "$claudeHome/AGENTS.md" -ef "$HOME/.codex/AGENTS.md"
 
 routingOutput="$(node "$claudeHome/hooks/inject-routing.mjs" </dev/null 2>/dev/null || true)"
 check "the routing loader injects ROUTING.md" bash -c '[[ "$1" == *"Routing rules for this session"* ]]' _ "$routingOutput"

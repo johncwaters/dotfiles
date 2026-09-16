@@ -26,7 +26,7 @@ makeConvergeableRepo() {
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../script/lib" && pwd)/context.sh"
 convergeLockPath="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/converge.lock"
 if [[ -L "$convergeLockPath" ]]; then
-  readlink -- "$convergeLockPath" > "$HOME/lock-holder-while-converging"
+  readlink "$convergeLockPath" > "$HOME/lock-holder-while-converging"
 fi
 if [[ -n "${DOTFILES_TEST_STEAL_LOCK_PID:-}" && -L "$convergeLockPath" ]]; then
   rm -f -- "$convergeLockPath"

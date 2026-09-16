@@ -159,6 +159,28 @@ writeStub python3 <<'STUB'
 #!/usr/bin/env bash
 printf 'python3 %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 moduleDir="$DOTFILES_TEST_STATE/python-modules"
+if [[ "${1:-}" == "-c" && "${2:-}" == 'import sys; print(sys.base_prefix)' ]]; then
+  case "$0" in
+    "$DOTFILES_TEST_HOMEBREW_PREFIX"/*)
+      printf '%s/Cellar/python/3.14\n' "$DOTFILES_TEST_HOMEBREW_PREFIX"
+      ;;
+    "$HOME/.local/share/dotfiles/python-tools"/*)
+      cat "${0%/*}/base-prefix" 2>/dev/null || printf '/usr\n'
+      ;;
+    *)
+      printf '/usr\n'
+      ;;
+  esac
+  exit 0
+fi
+if [[ "${1:-}" == "-m" && "${2:-}" == "venv" ]]; then
+  environmentDirectory="${*: -1}"
+  rm -rf "$environmentDirectory"
+  mkdir -p "$environmentDirectory/bin"
+  cp "$0" "$environmentDirectory/bin/python3"
+  "$0" -c 'import sys; print(sys.base_prefix)' > "$environmentDirectory/bin/base-prefix"
+  exit 0
+fi
 if [[ "${1:-}" == "-m" && "${2:-}" == "pip" && "${3:-}" == "--version" ]]; then
   printf 'pip 24.0\n'
   exit 0
@@ -169,7 +191,8 @@ if [[ "${1:-}" == "-c" ]]; then
   exit $?
 fi
 if [[ "${1:-}" == "-m" && "${2:-}" == "pip" && "${3:-}" == "install" ]]; then
-  if [[ "$*" == *" pyyaml" && "$*" != *" --user "* ]]; then
+  if [[ "$*" == *" pyyaml" && "$*" != *" --user "* \
+    && "$0" != "$HOME/.local/share/dotfiles/python-tools/"* ]]; then
     exit 1
   fi
   for argument in "$@"; do
@@ -179,6 +202,10 @@ if [[ "${1:-}" == "-m" && "${2:-}" == "pip" && "${3:-}" == "install" ]]; then
     mappingFile="$DOTFILES_TEST_STATE/pip-modules/$argument"
     if [[ -f "$mappingFile" ]]; then
       touch "$moduleDir/$(cat "$mappingFile")"
+    fi
+    if [[ "$argument" == "ruff" ]]; then
+      printf '#!/usr/bin/env bash\nexit 0\n' > "${0%/*}/ruff"
+      chmod +x "${0%/*}/ruff"
     fi
   done
   exit 0
@@ -239,6 +266,11 @@ printf 'zed %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 exit 0
 STUB
 
+writeStub bash_completion <<'STUB'
+#!/usr/bin/env bash
+:
+STUB
+
 for recordingOnlyCommand in dpkg systemctl update-desktop-database gtk-update-icon-cache; do
   writeStub "$recordingOnlyCommand" <<STUB
 #!/usr/bin/env bash
@@ -253,6 +285,7 @@ for presentFromTheStart in apt-get sudo curl flatpak dpkg systemctl \
 done
 
 mapPackageToCommands git "git"
+mapPackageToCommands bash-completion "bash_completion"
 mapPackageToCommands gh "gh"
 mapPackageToCommands nodejs "node npm"
 mapPackageToCommands npm "npm"
@@ -268,6 +301,7 @@ runInstall() {
   runInStubbedSandbox "$sandbox" \
     TMPDIR="$sandboxTemp" \
     DOTFILES_PROFILE="${1:-personal}" \
+    DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" \
     NO_COLOR=1 \
     bash "$topicDir/install.sh"
 }
@@ -291,6 +325,7 @@ check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
 
 check "git is installed through the package manager" logHas "apt-get -o DPkg::Lock::Timeout=180 install -y git"
+check "bash completion is installed through the package manager" logHas "install -y bash-completion"
 check "the GitHub CLI is installed" logHas "install -y gh"
 check "python arrives with pip" logHas "install -y python3 python3-pip"
 check "every package manager call goes through sudo" \
@@ -360,8 +395,17 @@ writeStub brew <<'STUB'
 printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 for packageName in "$@"; do
   case "$packageName" in
-    git | gh | python3)
+    git | gh)
       cp "$DOTFILES_TEST_STATE/available/$packageName" "$DOTFILES_TEST_STUB_BIN/$packageName"
+      ;;
+    bash-completion@2)
+      mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/etc/profile.d"
+      cp "$DOTFILES_TEST_STATE/available/bash_completion" \
+        "$DOTFILES_TEST_HOMEBREW_PREFIX/etc/profile.d/bash_completion.sh"
+      ;;
+    python3)
+      mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/bin"
+      cp "$DOTFILES_TEST_STATE/available/python3" "$DOTFILES_TEST_HOMEBREW_PREFIX/bin/python3"
       ;;
     node)
       cp "$DOTFILES_TEST_STATE/available/node" "$DOTFILES_TEST_STUB_BIN/node"
@@ -377,24 +421,84 @@ printf 'NFSHomeDirectory: %s\n' "$realHome"
 STUB
 provideCommand brew
 provideCommand dscl
-for commandName in git gh python3 node npm; do
+for commandName in git gh node npm; do
   withdrawCommand "$commandName"
 done
+darwinHomebrewPrefix="$sandbox/homebrew"
+mkdir -p "$darwinHomebrewPrefix/bin"
 rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml" \
-  "$stubState/npm-installed/@biomejs%biome"
+  "$stubState/npm-installed/@biomejs%biome" "$sandbox/.local/bin/claude"
+rm -rf "$sandbox/.local/share/dotfiles/python-tools"
 : > "$commandLog"
 darwinRunStatus=0
 darwinRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
-  DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDir/install.sh")" || darwinRunStatus=$?
+  DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
+  bash "$topicDir/install.sh")" || darwinRunStatus=$?
 check "the work profile converges through Homebrew on darwin" test "$darwinRunStatus" -eq 0
-for brewPackage in git gh python3 node; do
+for brewPackage in git bash-completion@2 gh python3 node; do
   check "darwin installs $brewPackage through Homebrew" logHas "brew install $brewPackage"
 done
 check "darwin chooses Homebrew even while apt-get is visible" logLacks 'apt-get '
 check "darwin never runs Homebrew through sudo" logLacks 'sudo '
 check "darwin takes the non-NodeSource Node path" logLacks 'nodesource.com'
 check "darwin installs biome after Homebrew provides npm" logHas 'npm install -g @biomejs/biome'
+check "darwin installs Claude Code from the work profile" logHas 'https://claude.ai/install.sh'
+check "darwin creates Python tools with Homebrew Python" \
+  logHas "python3 -m venv --clear $sandbox/.local/share/dotfiles/python-tools"
+check "darwin installs ruff inside the Python tools environment" \
+  test -x "$sandbox/.local/share/dotfiles/python-tools/bin/ruff"
 check "darwin installs the work profile's Python tools" outputHas "$darwinRunOutput" 'ruff'
+check "darwin never breaks Homebrew's externally managed Python" logLacks '--break-system-packages'
+check "darwin builds the Python tools on the Homebrew interpreter" \
+  grep -qx "$darwinHomebrewPrefix/Cellar/python/3.14" \
+  "$sandbox/.local/share/dotfiles/python-tools/bin/base-prefix"
+
+pythonToolsEnvironment="$sandbox/.local/share/dotfiles/python-tools"
+rm -rf "$pythonToolsEnvironment"
+mkdir -p "$pythonToolsEnvironment/bin"
+cp "$stubBin/python3" "$pythonToolsEnvironment/bin/python3"
+printf '/usr\n' > "$pythonToolsEnvironment/bin/base-prefix"
+: > "$pythonToolsEnvironment/bin/left-by-the-apple-python"
+rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml"
+: > "$commandLog"
+appleVenvRunStatus=0
+runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+  DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
+  bash "$topicDir/install.sh" > /dev/null || appleVenvRunStatus=$?
+check "a converge over an Apple-built Python environment exits clean" test "$appleVenvRunStatus" -eq 0
+check "an Apple-built Python environment is rebuilt on the Homebrew interpreter" \
+  grep -qx "$darwinHomebrewPrefix/Cellar/python/3.14" "$pythonToolsEnvironment/bin/base-prefix"
+check "the rebuild clears what the Apple-built environment left behind" \
+  test ! -e "$pythonToolsEnvironment/bin/left-by-the-apple-python"
+check "the rebuilt environment gets the profile's Python tools back" \
+  test -x "$pythonToolsEnvironment/bin/ruff"
+
+: > "$commandLog"
+runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+  DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
+  bash "$topicDir/install.sh" > /dev/null || true
+check "a Homebrew-built Python environment is left alone" logLacks 'python3 -m venv'
+
+rm -rf "$pythonToolsEnvironment"
+mkdir -p "$pythonToolsEnvironment/bin"
+cp "$stubBin/python3" "$pythonToolsEnvironment/bin/python3"
+printf '/usr\n' > "$pythonToolsEnvironment/bin/base-prefix"
+: > "$commandLog"
+leadingVenvRunStatus=0
+leadingVenvRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" \
+  PATH="$pythonToolsEnvironment/bin:$darwinHomebrewPrefix/bin:$stubBin:$coreBin" DOTFILES_PLATFORM=darwin \
+  DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
+  bash "$topicDir/install.sh")" || leadingVenvRunStatus=$?
+check "a stale environment leading PATH still reports Homebrew Python present" \
+  outputMatches "$leadingVenvRunOutput" 'Python.*already installed'
+check "a stale environment leading PATH reinstalls no Python" logLacks 'brew install python3'
+check "a stale environment leading PATH never blames the session PATH" \
+  outputLacks "$leadingVenvRunOutput" 'open a new shell for PATH'
+check "a converge behind a stale environment on PATH exits clean" test "$leadingVenvRunStatus" -eq 0
 
 touch "$stubState/gh-unauthed"
 unauthedRunStatus=0

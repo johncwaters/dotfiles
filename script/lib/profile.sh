@@ -92,6 +92,31 @@ readProfileTopics() {
   printf '%s\n' "$topicsRegion" | grep -o '"[^"]*"' | tr -d '"'
 }
 
+readProfilePlatform() {
+  local profileJsonPath="$1"
+  if [[ ! -f "$profileJsonPath" ]]; then
+    return 2
+  fi
+  local profileText
+  profileText="$(tr -d '\n' < "$profileJsonPath")"
+  if [[ ! "$profileText" =~ \"platform\"[[:space:]]*:[[:space:]]* ]]; then
+    return 1
+  fi
+  local rawPlatform
+  rawPlatform="$(sed -n 's/.*"platform"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p' \
+    <<< "$profileText" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  if [[ "$rawPlatform" == *'{'* || "$rawPlatform" == *'['* || "$rawPlatform" == *':'* ]]; then
+    printf '%s\n' "$rawPlatform"
+    return 2
+  fi
+  if [[ "$rawPlatform" =~ ^\"([^\"]*)\"$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  printf '%s\n' "$rawPlatform"
+  return 2
+}
+
 # Bootstrap can run before node is installed, so the fallback accepts only a flat object of string or boolean pairs.
 settingsFileIsWellFormed() {
   local settingsPath="$1"

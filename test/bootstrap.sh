@@ -16,12 +16,22 @@ markerPath="$fakeHome/.machine-profile"
 mkdir -p "$fakeRepo" "$fakeHome"
 cp -R "$repoRoot/script" "$fakeRepo/script"
 mkdir -p "$fakeRepo/profiles/personal" "$fakeRepo/profiles/work" \
-  "$fakeRepo/profiles/collector" "$fakeRepo/trapping"
+  "$fakeRepo/profiles/collector" "$fakeRepo/profiles/any-platform" \
+  "$fakeRepo/profiles/bad-platform" "$fakeRepo/trapping" "$fakeRepo/platform-probe"
 printf '{ "topics": ["trapping"] }\n' > "$fakeRepo/profiles/personal/profile.json"
-printf '{ "topics": ["trapping"] }\n' > "$fakeRepo/profiles/work/profile.json"
+printf '{ "platform": "darwin", "topics": ["platform-probe"] }\n' \
+  > "$fakeRepo/profiles/work/profile.json"
+printf '{ "topics": ["platform-probe"] }\n' > "$fakeRepo/profiles/any-platform/profile.json"
+printf '{ "platform": "windows", "topics": ["platform-probe"] }\n' \
+  > "$fakeRepo/profiles/bad-platform/profile.json"
 ln -s "$fakeRepo" "$fakeHome/.dotfiles"
 git -C "$fakeRepo" init -q
 git -C "$fakeRepo" -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m 'seed'
+
+cat > "$fakeRepo/platform-probe/install.sh" <<'TOPIC'
+#!/usr/bin/env bash
+printf '%s\n' ran >> "$HOME/platform-topic-runs"
+TOPIC
 
 cat > "$fakeRepo/trapping/install.sh" <<'TOPIC'
 #!/usr/bin/env bash
@@ -43,12 +53,47 @@ finishTopic
 TOPIC
 
 runFakeBootstrap() {
+  local selectedProfile="$1"
+  local selectedPlatform="${2:-linux}"
+  local selectedMarkerPath="${3:-$markerPath}"
   env HOME="$fakeHome" XDG_STATE_HOME="$fakeHome/.local/state" \
-    DOTFILES_MARKER_PATH="$markerPath" DOTFILES_PROFILE="$1" NO_COLOR=1 \
+    DOTFILES_MARKER_PATH="$selectedMarkerPath" DOTFILES_PROFILE="$selectedProfile" \
+    DOTFILES_PLATFORM="$selectedPlatform" NO_COLOR=1 \
     bash "$fakeRepo/script/bootstrap"
 }
 
 printf '\nbootstrap\n'
+
+workOnLinuxStatus=0
+workOnLinuxOutput="$(runFakeBootstrap work 2>&1)" || workOnLinuxStatus=$?
+check "a darwin profile is refused on linux" test "$workOnLinuxStatus" -eq 1
+check "the platform refusal names the profile, declaration and detection" \
+  outputHas "$workOnLinuxOutput" 'profile work declares platform darwin, but detected linux'
+check "a refused platform runs no topic" test ! -e "$fakeHome/platform-topic-runs"
+check "a refused platform writes no marker" test ! -e "$markerPath"
+
+darwinMarkerPath="$fakeHome/.darwin-machine-profile"
+runFakeBootstrap work darwin "$darwinMarkerPath" > /dev/null
+check "a darwin profile proceeds on darwin" grep -qx 'ran' "$fakeHome/platform-topic-runs"
+check "a darwin profile writes its marker after the platform check" grep -qx 'work' "$darwinMarkerPath"
+
+anyPlatformLinuxMarkerPath="$fakeHome/.any-platform-linux-machine-profile"
+anyPlatformDarwinMarkerPath="$fakeHome/.any-platform-darwin-machine-profile"
+runFakeBootstrap any-platform linux "$anyPlatformLinuxMarkerPath" > /dev/null
+runFakeBootstrap any-platform darwin "$anyPlatformDarwinMarkerPath" > /dev/null
+check "a profile without a platform proceeds on linux and darwin" \
+  test "$(grep -cx ran "$fakeHome/platform-topic-runs")" -eq 3
+
+badPlatformMarkerPath="$fakeHome/.bad-platform-machine-profile"
+badPlatformStatus=0
+badPlatformOutput="$(runFakeBootstrap bad-platform linux "$badPlatformMarkerPath" 2>&1)" \
+  || badPlatformStatus=$?
+check "an unknown declared platform is refused" test "$badPlatformStatus" -eq 1
+check "the unknown platform refusal names the profile, declaration and detection" \
+  outputHas "$badPlatformOutput" 'profile bad-platform declares platform windows, but detected linux'
+check "an unknown declared platform writes no marker" test ! -e "$badPlatformMarkerPath"
+check "an unknown declared platform runs no topic" \
+  test "$(grep -cx ran "$fakeHome/platform-topic-runs")" -eq 3
 
 bootstrapStatus=0
 bootstrapOutput="$(runFakeBootstrap personal)" || bootstrapStatus=$?
@@ -62,7 +107,7 @@ convergedRecord="$fakeHome/.local/state/dotfiles/converged"
 check "a run records the commit, profile, time and outcome it converged" \
   outputMatches "$(cat "$convergedRecord")" "^$(git -C "$fakeRepo" rev-parse HEAD) personal [0-9T:-]+Z warned$"
 
-runFakeBootstrap work > /dev/null || true
+runFakeBootstrap work darwin > /dev/null
 check "a one off profile does not repoint the machine" grep -qx 'personal' "$markerPath"
 
 vandalStatus=0
@@ -280,6 +325,8 @@ check "the bootstrap prelude stays bash 3.2 clean" \
   bash -c '! grep -Eq "$1" <<< "$2"' _ "$bashFourConstructPattern" "$bootstrapPrelude"
 check "the platform library the prelude sources stays bash 3.2 clean" \
   bash -c '! grep -Eq "$1" "$2"' _ "$bashFourConstructPattern" "$repoRoot/script/lib/platform.sh"
+check "the profile library the prelude sources stays bash 3.2 clean" \
+  bash -c '! grep -Eq "$1" "$2"' _ "$bashFourConstructPattern" "$repoRoot/script/lib/profile.sh"
 check "dot stays bash 3.2 clean" \
   bash -c '! grep -Eq "$1" "$2"' _ "$bashFourConstructPattern" "$repoRoot/bin/dot"
 
@@ -347,6 +394,33 @@ check "bootstrap asks Homebrew for bash when darwin has no modern bash" \
 check "bootstrap re-execs the bash Homebrew installed" \
   grep -qx "$repoRoot/script/bootstrap --profile work" "$brewExecLog"
 
+platformGateHome="$sandbox/platform-gate-home"
+platformGateBin="$platformGateHome/bin"
+platformGateStubBin="$platformGateHome/stub-bin"
+platformGateLog="$platformGateHome/installer.log"
+mkdir -p "$platformGateBin" "$platformGateStubBin"
+: > "$platformGateHome/.dotfiles-test-sandbox"
+writeDarwinDirectoryServiceStub "$platformGateStubBin"
+for interceptedCommand in brew curl; do
+  cat > "$platformGateBin/$interceptedCommand" <<STUB
+#!/usr/bin/env bash
+printf '$interceptedCommand %s\n' "\$*" >> "$platformGateLog"
+STUB
+  chmod +x "$platformGateBin/$interceptedCommand"
+done
+platformGateStatus=0
+platformGateOutput="$(env HOME="$platformGateHome" PATH="$platformGateBin:/usr/bin:/bin" \
+  DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_MARKER_PATH="$platformGateHome/.machine-profile" \
+  DOTFILES_TEST_STUB_BIN="$platformGateStubBin" \
+  DOTFILES_TEST_HOMEBREW_PREFIX="$platformGateHome/missing" \
+  bash "$repoRoot/script/bootstrap" --profile server 2>&1)" || platformGateStatus=$?
+check "a linux profile is refused on a bash 3 darwin machine" test "$platformGateStatus" -eq 1
+check "the bash 3 refusal names the profile, declaration and detection" \
+  outputHas "$platformGateOutput" 'profile server declares platform linux, but detected darwin'
+check "a refused profile reaches neither the Homebrew installer nor brew" \
+  test ! -e "$platformGateLog"
+
 mkdir -p "$fakeRepo/interpreter" "$fakeRepo/profiles/interpreter"
 printf '{ "topics": ["interpreter"] }\n' > "$fakeRepo/profiles/interpreter/profile.json"
 cat > "$fakeRepo/interpreter/install.sh" <<'TOPIC'
@@ -395,6 +469,7 @@ chmod +x "$brewFailureBin/brew"
 brewFailureStatus=0
 brewFailureOutput="$(env HOME="$brewFailureHome" PATH="$brewFailureBin:/usr/bin:/bin" \
   DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_MARKER_PATH="$brewFailureHome/.machine-profile" \
   DOTFILES_TEST_STUB_BIN="$brewFailureStubBin" \
   DOTFILES_TEST_HOMEBREW_PREFIX="$brewFailureHome/missing" \
   bash "$repoRoot/script/bootstrap" 2>&1)" || brewFailureStatus=$?
@@ -414,6 +489,7 @@ chmod +x "$failedDownloadBin/curl"
 failedDownloadStatus=0
 failedDownloadOutput="$(env HOME="$failedDownloadHome" PATH="$failedDownloadBin:/usr/bin:/bin" \
   DOTFILES_PLATFORM=darwin DOTFILES_TEST_BASH_MAJOR=3 \
+  DOTFILES_MARKER_PATH="$failedDownloadHome/.machine-profile" \
   DOTFILES_TEST_STUB_BIN="$failedDownloadBin" \
   DOTFILES_TEST_HOMEBREW_PREFIX="$failedDownloadHome/missing" \
   bash "$repoRoot/script/bootstrap" 2>&1)" || failedDownloadStatus=$?
@@ -426,6 +502,7 @@ check "a failed Homebrew installer download never asks brew for bash" \
 linuxBashFloorStatus=0
 linuxBashFloorOutput="$(env HOME="$brewInstallHome" PATH="/usr/bin:/bin" DOTFILES_PLATFORM=linux \
   DOTFILES_TEST_BASH_MAJOR=3 DOTFILES_TEST_HOMEBREW_PREFIX="$brewInstallHome/missing" \
+  DOTFILES_MARKER_PATH="$brewInstallHome/.machine-profile" \
   bash "$repoRoot/script/bootstrap" 2>&1)" || linuxBashFloorStatus=$?
 check "bootstrap refuses bash 3 on linux when no modern bash exists" test "$linuxBashFloorStatus" -eq 1
 check "the linux refusal names the bash floor" outputHas "$linuxBashFloorOutput" 'bash 4 or newer is required'
@@ -433,17 +510,31 @@ check "the linux refusal names the bash floor" outputHas "$linuxBashFloorOutput"
 portableModePath="$sandbox/portable-mode"
 printf 'mode probe\n' > "$portableModePath"
 chmod 600 "$portableModePath"
-check "fileModeOf uses GNU stat on linux" test "$(DOTFILES_PLATFORM=linux fileModeOf "$portableModePath")" = "600"
-portableStatBin="$sandbox/portable-stat-bin"
-mkdir -p "$portableStatBin"
-cat > "$portableStatBin/stat" <<'STAT'
+linuxStatBin="$sandbox/linux-stat-bin"
+mkdir -p "$linuxStatBin"
+cat > "$linuxStatBin/stat" <<'STAT'
+#!/usr/bin/env bash
+[[ "$1" == "-c" && "$2" == "%a" ]] || exit 1
+printf '600\n'
+STAT
+chmod +x "$linuxStatBin/stat"
+printf '#!/usr/bin/env bash\nprintf "Linux\\n"\n' > "$linuxStatBin/uname"
+chmod +x "$linuxStatBin/uname"
+check "fileModeOf uses GNU stat on a linux host" \
+  test "$(PATH="$linuxStatBin:$PATH" fileModeOf "$portableModePath")" = "600"
+
+darwinStatBin="$sandbox/darwin-stat-bin"
+mkdir -p "$darwinStatBin"
+cat > "$darwinStatBin/stat" <<'STAT'
 #!/usr/bin/env bash
 [[ "$1" == "-f" && "$2" == "%Lp" ]] || exit 1
 printf '600\n'
 STAT
-chmod +x "$portableStatBin/stat"
-check "fileModeOf uses BSD stat on darwin" \
-  test "$(PATH="$portableStatBin:$PATH" DOTFILES_PLATFORM=darwin fileModeOf "$portableModePath")" = "600"
+chmod +x "$darwinStatBin/stat"
+printf '#!/usr/bin/env bash\nprintf "Darwin\\n"\n' > "$darwinStatBin/uname"
+chmod +x "$darwinStatBin/uname"
+check "fileModeOf uses BSD stat on a darwin host" \
+  test "$(PATH="$darwinStatBin:$PATH" fileModeOf "$portableModePath")" = "600"
 
 rewriteProbe="$sandbox/rewrite-probe"
 printf 'keep\nremove\nkeep-too\n' > "$rewriteProbe"

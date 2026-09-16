@@ -1,4 +1,5 @@
 system-tools
 node
+claude-code
 biome
 python-tools

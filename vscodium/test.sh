@@ -195,7 +195,20 @@ runInstall() {
     bash "$topicDir/install.sh"
 }
 
-
+check "platform keybindings keep the same non-removal commands" \
+  "$realNodePath" -e '
+    const fs = require("fs");
+    const nonRemovalCommands = path => new Set(
+      JSON.parse(fs.readFileSync(path, "utf8"))
+        .map(binding => binding.command)
+        .filter(command => !command.startsWith("-"))
+    );
+    const linuxCommands = [...nonRemovalCommands(process.argv[1])].sort();
+    const darwinCommands = [...nonRemovalCommands(process.argv[2])].sort();
+    if (JSON.stringify(linuxCommands) !== JSON.stringify(darwinCommands)) {
+      process.exit(1);
+    }
+  ' "$topicDir/keybindings.json" "$topicDir/keybindings.darwin.json"
 
 wantedExtensionCount="$(grep -cve '^[[:space:]]*$' "$topicDir/extensions.txt")"
 
@@ -242,6 +255,9 @@ for destination in "${linkedDestinations[@]}"; do
   fi
   pass "$destination linked through the alias"
 done
+check "linux links the control-based keybindings" \
+  test "$(readlink "$codiumUserDirectory/keybindings.json")" \
+    = "$sandbox/.dotfiles/vscodium/keybindings.json"
 
 check "the displaced settings.json was backed up" \
   test -f "$codiumUserDirectory/settings.json.pre-dotfiles.bak"
@@ -532,6 +548,9 @@ for configurationFile in settings.json keybindings.json mcp.json; do
   check "darwin links $configurationFile into Application Support" \
     test -L "$darwinUserDirectory/$configurationFile"
 done
+check "darwin links the command-based keybindings" \
+  test "$(readlink "$darwinUserDirectory/keybindings.json")" \
+    = "$sandbox/.dotfiles/vscodium/keybindings.darwin.json"
 check "darwin reports no missing codium CLI" outputLacks "$darwinOutput" 'not on PATH'
 checkRerunIsQuiet "a darwin rerun reports no config changes" \
   "$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \

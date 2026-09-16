@@ -351,7 +351,11 @@ installVscodium
 useBundledCodiumOnDarwin
 
 linkEntry "VSCodium settings" "vscodium/settings.json" "$codiumUserDirectory/settings.json"
-linkEntry "VSCodium keybindings" "vscodium/keybindings.json" "$codiumUserDirectory/keybindings.json"
+keybindingsFile="vscodium/keybindings.json"
+if isDarwin; then
+  keybindingsFile="vscodium/keybindings.darwin.json"
+fi
+linkEntry "VSCodium keybindings" "$keybindingsFile" "$codiumUserDirectory/keybindings.json"
 linkEntry "VSCodium mcp.json" "vscodium/mcp.json" "$codiumUserDirectory/mcp.json"
 
 writeSection "Extensions"

@@ -169,7 +169,7 @@ check "settings.json keeps the personal permissions default mode" \
 check "settings.json has no unrendered token" bash -c '! grep -q "{{HOME}}" "$1"' _ "$settingsPath"
 check "settings.json points the commit policy at the alias" \
   grep -q "\"CLAUDE_COMMIT_POLICY_ROOT\": \"$sandbox/.dotfiles\"" "$settingsPath"
-check "settings.json is not world readable" bash -c '[[ "$(stat -c %a "$1")" == "600" ]]' _ "$settingsPath"
+check "settings.json is not world readable" test "$(fileModeOf "$settingsPath")" = "600"
 
 countSettingsCommand() {
   grep -c -- "$1" "$settingsPath"
