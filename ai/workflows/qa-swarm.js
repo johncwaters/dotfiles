@@ -188,30 +188,40 @@ function findingsHeaderMatchesIn(text) {
 }
 
 function summaryHeaderMatchesIn(text) {
-  return [...text.matchAll(/^[ \t#>*-]*OVERALL_SUMMARY:[ \t]*(.*)$/gm)]
+  return [...text.matchAll(/^[ \t#>*-]*OVERALL_SUMMARY:[ \t]*(?![*_]{1,2}[ \t]*$)(?:[*_]{1,2}[ \t]*)?(.*)$/gm)]
 }
 
-function withLastBareHeaderColonized(text, headerName, colonizedHeaderMatchesIn) {
-  if (colonizedHeaderMatchesIn(text).length > 0) {
+function headerLineCandidatesIn(text, headerName) {
+  const headerLines = new RegExp(`^[ \\t#>*_-]*${headerName}[ \\t]*(?::[ \\t]*(?:[*_]{1,2}[ \\t]*)?(?::[ \\t]*)?|[*_]{1,2}[ \\t]*(?::[ \\t]*)?|(?=$))(.*)$`, 'gm')
+  return [...text.matchAll(headerLines)]
+}
+
+function isStrayHeaderLine(blockLine) {
+  return headerLineCandidatesIn(blockLine, 'STRUCTURED_FINDINGS').length > 0 || headerLineCandidatesIn(blockLine, 'OVERALL_SUMMARY').length > 0
+}
+
+function withLastHeaderLineColonized(text, headerName, colonizedHeaderMatchesIn) {
+  if (colonizedHeaderMatchesIn(text).length === 1) {
     return text
   }
-  const bareHeaderLines = new RegExp(`^[ \\t#>*-]*${headerName}[ \\t]*$`, 'gm')
-  let lastBareHeaderMatch = null
-  for (const bareHeaderMatch of text.matchAll(bareHeaderLines)) {
-    lastBareHeaderMatch = bareHeaderMatch
+  const headerLineCandidates = headerLineCandidatesIn(text, headerName)
+  for (let candidateIndex = headerLineCandidates.length - 1; candidateIndex >= 0; candidateIndex -= 1) {
+    const headerLineCandidate = headerLineCandidates[candidateIndex]
+    const colonizedHeaderLine = `${headerName}: ${headerLineCandidate[1]}`.trimEnd()
+    const colonizedText = `${text.slice(0, headerLineCandidate.index)}${colonizedHeaderLine}${text.slice(headerLineCandidate.index + headerLineCandidate[0].length)}`
+    if (colonizedHeaderMatchesIn(colonizedText).length === 1) {
+      return colonizedText
+    }
   }
-  if (!lastBareHeaderMatch) {
-    return text
-  }
-  return `${text.slice(0, lastBareHeaderMatch.index)}${headerName}:${text.slice(lastBareHeaderMatch.index + lastBareHeaderMatch[0].length)}`
+  return text
 }
 
 function withHeaderColons(text) {
   const withoutWrappers = text
     .replace(/^[ \t]*```[a-z]*[ \t]*$\n?/gm, '')
     .replace(/^[ \t]*END_STRUCTURED_FINDINGS:?[ \t]*\n?/gm, '')
-  const withFindingsHeader = withLastBareHeaderColonized(withoutWrappers, 'STRUCTURED_FINDINGS', findingsHeaderMatchesIn)
-  const withBothHeaders = withLastBareHeaderColonized(withFindingsHeader, 'OVERALL_SUMMARY', summaryHeaderMatchesIn)
+  const withFindingsHeader = withLastHeaderLineColonized(withoutWrappers, 'STRUCTURED_FINDINGS', findingsHeaderMatchesIn)
+  const withBothHeaders = withLastHeaderLineColonized(withFindingsHeader, 'OVERALL_SUMMARY', summaryHeaderMatchesIn)
   return withBothHeaders.replace(/^[ \t]*(?:\((?:no findings|nothing|empty|none found)\)|\[\]|none)[ \t]*$/gmi, '(none)')
 }
 
@@ -326,7 +336,7 @@ function parseLaneResponse(rawLaneText) {
   if (blockText === '(none)') {
     return { hasParseableBlock: true, hasUnparseableRow: false, findings: [], summary, hitFindingCap: false }
   }
-  const parsedRows = blockText.split('\n').map((blockLine) => blockLine.trim()).filter((blockLine) => blockLine !== '').map(parseFindingLine)
+  const parsedRows = blockText.split('\n').map((blockLine) => blockLine.trim()).filter((blockLine) => blockLine !== '' && !isStrayHeaderLine(blockLine)).map(parseFindingLine)
   const hasUnparseableRow = parsedRows.some((parsedRow) => !parsedRow)
   const rankedFindings = parsedRows.filter(Boolean).sort((leftFinding, rightFinding) => severityRankOf(leftFinding) - severityRankOf(rightFinding))
   const keptFindings = rankedFindings.slice(0, maxFindingsPerLane)
