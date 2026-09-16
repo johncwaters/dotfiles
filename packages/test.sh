@@ -441,7 +441,6 @@ mkdir -p "$darwinHomebrewPrefix/bin" "$darwinApplicationsDirectory/Slack.app/Con
 rm -f "$stubState/npm-installed/typescript" "$stubState/npm-installed/@openai%codex" \
   "$stubState/npm-installed/@xai-official%grok" \
   "$stubState/npm-installed/@earendil-works%pi-coding-agent"
-touch "$stubState/cask-installed/zen"
 rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml" \
   "$sandbox/.local/bin/claude" "$sandbox/.local/bin/zed"
 rm -rf "$sandbox/.local/share/dotfiles/python-tools"
@@ -468,12 +467,6 @@ done
 check "darwin installs Claude Code from the work profile" logHas 'https://claude.ai/install.sh'
 check "darwin installs Zed from the work profile" logHas 'https://zed.dev/install.sh'
 check "darwin lands Zed in ~/.local/bin" test -x "$sandbox/.local/bin/zed"
-check "darwin reports a present cask" outputMatches "$darwinRunOutput" \
-  '\[ -- \].*zen.*already installed'
-check "darwin does not reinstall a present cask" logLacks 'brew install --cask zen'
-for missingCask in bitwarden discord; do
-  check "darwin installs the missing $missingCask cask" logHas "brew install --cask $missingCask"
-done
 check "darwin reports a cask whose app was installed by hand as present" \
   outputMatches "$darwinRunOutput" '\[ -- \].*slack.*already installed'
 check "darwin does not install a cask over an app someone installed by hand" \
@@ -487,6 +480,37 @@ check "darwin never breaks Homebrew's externally managed Python" logLacks '--bre
 check "darwin builds the Python tools on the Homebrew interpreter" \
   grep -qx "$darwinHomebrewPrefix/Cellar/python/3.14" \
   "$sandbox/.local/share/dotfiles/python-tools/bin/base-prefix"
+
+rm -rf "$darwinApplicationsDirectory/Slack.app"
+rm -f "$stubState/cask-installed/slack"
+: > "$commandLog"
+missingSlackRunStatus=0
+missingSlackRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+  DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+  DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
+  bash "$topicDir/install.sh")" || missingSlackRunStatus=$?
+check "a missing Slack cask converges through Homebrew on darwin" \
+  test "$missingSlackRunStatus" -eq 0
+check "darwin installs Slack when neither the app bundle nor a brew record exists" \
+  logHas 'brew install --cask slack'
+check "darwin reports Slack installed after Homebrew installs it" \
+  outputMatches "$missingSlackRunOutput" '\[ \+\+ \].*slack.*installed'
+
+touch "$stubState/cask-installed/slack"
+: > "$commandLog"
+brewRecordedSlackRunStatus=0
+brewRecordedSlackRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+  DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+  DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
+  bash "$topicDir/install.sh")" || brewRecordedSlackRunStatus=$?
+check "a brew-recorded Slack cask converges through Homebrew on darwin" \
+  test "$brewRecordedSlackRunStatus" -eq 0
+check "darwin reports a Slack cask recorded by Homebrew as present" \
+  outputMatches "$brewRecordedSlackRunOutput" '\[ -- \].*slack.*already installed'
+check "darwin does not reinstall Slack when Homebrew records it without an app bundle" \
+  logLacks 'brew install --cask slack'
 
 pythonToolsEnvironment="$sandbox/.local/share/dotfiles/python-tools"
 rm -rf "$pythonToolsEnvironment"
