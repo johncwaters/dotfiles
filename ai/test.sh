@@ -14,16 +14,33 @@ printf 'runtime\n' > "$sandbox/.claude/projects/live-work/state.json"
 printf '{"token":"keep-me"}\n' > "$sandbox/.claude/.credentials.json"
 printf 'pre-existing user notes\n' > "$sandbox/.claude/AGENTS.md"
 
+stagedRepo="$sandbox/staged-dotfiles"
+cp -R "$repoRoot" "$stagedRepo"
+rm -rf "$stagedRepo/.git"
+git init -q -b main "$stagedRepo"
+stagedTopicDir="$stagedRepo/ai"
+singleFileSkillPath="$stagedTopicDir/skills/single-file-skill-test.md"
+printf 'tracked single file skill\n' > "$singleFileSkillPath"
+git -C "$stagedRepo" add -A -- ai/skills
+
+foreignSkillName=".synced-cutover-test"
+foreignSkillPath="$stagedTopicDir/skills/$foreignSkillName"
+mkdir -p "$foreignSkillPath"
+printf 'synced runtime state\n' > "$foreignSkillPath/state.json"
+rm -f "$sandbox/.dotfiles"
+ln -s "$stagedRepo" "$sandbox/.dotfiles"
+ln -s "$sandbox/.dotfiles/ai/skills" "$sandbox/.claude/skills"
+
 printf '\nai topic\n'
 
 installStatus=0
-firstRunOutput="$(runTopicInstall "$topicDir")" || installStatus=$?
+firstRunOutput="$(runTopicInstall "$stagedTopicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
-  ".claude/agents" ".claude/workflows" ".claude/commands" ".claude/hooks" ".claude/hud" ".claude/skills"
+  ".claude/agents" ".claude/workflows" ".claude/commands" ".claude/hooks" ".claude/hud"
   ".codex/AGENTS.md"
 )
 
@@ -47,6 +64,98 @@ for destination in "${linkedDestinations[@]}"; do
   fi
   pass "$destination linked through the alias"
 done
+
+skillsPath="$sandbox/.claude/skills"
+check "skills is a plain directory, never a whole-directory link" \
+  bash -c '[[ -d "$1" && ! -L "$1" ]]' _ "$skillsPath"
+for repoSkillPath in "$stagedTopicDir"/skills/*; do
+  skillName="$(basename -- "$repoSkillPath")"
+  installedSkillPath="$skillsPath/$skillName"
+  check "skill $skillName is linked through the alias" \
+    bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
+    "$installedSkillPath" "$sandbox/.dotfiles/ai/skills/$skillName"
+done
+check "cutover preserves a foreign skill entry" \
+  grep -qx 'synced runtime state' "$skillsPath/$foreignSkillName/state.json"
+check "cutover removes the foreign skill entry from the repo" \
+  test ! -e "$foreignSkillPath"
+check "cutover leaves a tracked single file skill in the repo" \
+  grep -qx 'tracked single file skill' "$singleFileSkillPath"
+retiredSkillPath="$skillsPath/retired-skill-test"
+ln -s "$sandbox/.dotfiles/ai/skills/retired-skill-test" "$retiredSkillPath"
+runTopicInstall "$stagedTopicDir" > /dev/null
+check "a retired repo skill link is removed" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$retiredSkillPath"
+
+stagingPath="$sandbox/.claude/.skills-cutover"
+interruptedSkillPath="$stagingPath/interrupted-skill-test"
+mkdir -p "$interruptedSkillPath"
+printf 'interrupted runtime state\n' > "$interruptedSkillPath/state.json"
+runTopicInstall "$stagedTopicDir" > /dev/null
+check "a cutover interrupted after its link was replaced finishes on the next run" \
+  grep -qx 'interrupted runtime state' "$skillsPath/interrupted-skill-test/state.json"
+check "a finished cutover leaves nothing staged" bash -c '! test -e "$1"' _ "$stagingPath"
+
+rm -rf "$skillsPath"
+ln -s "$sandbox/.dotfiles/ai" "$skillsPath"
+misPointedStatus=0
+misPointedOutput="$(runTopicInstall "$stagedTopicDir")" || misPointedStatus=$?
+check "a skills link into the repo outside ai/skills warns" \
+  outputHas "$misPointedOutput" "outside ai/skills"
+check "a skills link into the repo outside ai/skills fails the topic" \
+  test "$misPointedStatus" -eq 1
+check "a mis-pointed skills link empties nothing out of the repo" \
+  test -f "$stagedTopicDir/AGENTS.md"
+check "a mis-pointed skills link writes no skill link into the repo" \
+  bash -c '! test -e "$1" && ! test -L "$1"' _ "$stagedTopicDir/commit"
+rm -f "$skillsPath"
+runTopicInstall "$stagedTopicDir" > /dev/null
+check "removing the mis-pointed link converges the skills directory again" \
+  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/commit" ]]' _ "$skillsPath"
+
+gitlessBin="$sandbox/gitless-bin"
+mkdir -p "$gitlessBin"
+linkCoreUtilities --into "$gitlessBin" bash basename dirname cat cmp cp chmod find grep head \
+  ln ls mkdir mktemp mv node readlink rm rmdir sed stat tr uname wc
+rm -rf "$skillsPath"
+ln -s "$sandbox/.dotfiles/ai/skills" "$skillsPath"
+gitlessStatus=0
+gitlessOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
+  bash "$stagedTopicDir/install.sh")" || gitlessStatus=$?
+check "a converge that cannot read the index warns" \
+  outputHas "$gitlessOutput" "git cannot name the tracked skills"
+check "a converge that cannot read the index moves no repo skill out" \
+  test -d "$stagedTopicDir/skills/commit"
+check "a converge that cannot read the index displaces no repo skill" \
+  bash -c '! ls "$1"/*.pre-dotfiles.bak* > /dev/null 2>&1' _ "$stagedTopicDir/skills"
+check "a converge that cannot read the index leaves the old link in place" test -L "$skillsPath"
+rm -f "$skillsPath"
+runTopicInstall "$stagedTopicDir" > /dev/null
+check "the skills directory converges again once git is back" \
+  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/commit" ]]' _ "$skillsPath"
+
+rm -rf "$skillsPath"
+ln -s "$sandbox/deleted-skills-directory" "$skillsPath"
+danglingLinkStatus=0
+runTopicInstall "$stagedTopicDir" > /dev/null || danglingLinkStatus=$?
+check "a dangling foreign skills link does not fail the topic" test "$danglingLinkStatus" -eq 0
+check "a dangling foreign skills link is backed up" \
+  bash -c 'ls "$1".pre-dotfiles.bak* > /dev/null 2>&1' _ "$skillsPath"
+check "a dangling foreign skills link converges to a plain directory" \
+  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/commit" ]]' _ "$skillsPath"
+
+foreignSkillsHome="$sandbox/foreign-skills-home"
+mkdir -p "$foreignSkillsHome"
+printf 'foreign skills state\n' > "$foreignSkillsHome/state.json"
+rm -rf "$skillsPath"
+ln -s "$foreignSkillsHome" "$skillsPath"
+runTopicInstall "$stagedTopicDir" > /dev/null
+check "a foreign skills link converges to a plain directory" \
+  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/commit" ]]' _ "$skillsPath"
+check "a foreign skills directory takes no repo skill link" \
+  bash -c '! test -e "$1/commit" && ! test -L "$1/commit"' _ "$foreignSkillsHome"
+check "a foreign skills directory keeps what it held" \
+  grep -qx 'foreign skills state' "$foreignSkillsHome/state.json"
 
 workflowPinsEveryAgentCall() {
   local workflowPath="$1"
@@ -184,30 +293,30 @@ check "commit and pr attribution render empty from the base" \
 
 rm -f "$sandbox/.claude/AGENTS.md"
 printf 'later hand written notes\n' > "$sandbox/.claude/AGENTS.md"
-runTopicInstall "$topicDir" > /dev/null
+runTopicInstall "$stagedTopicDir" > /dev/null
 check "a later displaced file gets its own backup" test -f "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak.2"
 check "the later backup holds the later content" grep -q 'later hand written notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak.2"
 check "the first backup is untouched" grep -q 'pre-existing user notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak"
 
 rm -f "$claudeMdPath"
 ln -s "$sandbox/.dotfiles/profiles/personal/CLAUDE.md" "$claudeMdPath"
-runTopicInstall "$topicDir" > /dev/null
+runTopicInstall "$stagedTopicDir" > /dev/null
 check "an old CLAUDE.md symlink converges to a plain file" \
   bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$claudeMdPath"
 check "converging the old symlink leaves no backup" \
   bash -c '! ls "$1".pre-dotfiles.bak* >/dev/null 2>&1' _ "$claudeMdPath"
 
 printf 'hand edited claude memory\n' > "$claudeMdPath"
-runTopicInstall "$topicDir" > /dev/null
+runTopicInstall "$stagedTopicDir" > /dev/null
 check "a hand edited CLAUDE.md is backed up before the copy returns" \
   grep -qs 'hand edited claude memory' "$claudeMdPath".pre-dotfiles.bak*
 check "the copy wins over the hand edit" \
   cmp -s "$claudeMdPath" "$repoRoot/profiles/personal/CLAUDE.md"
 
-checkRerunIsQuiet "second run reports no changes" "$(runTopicInstall "$topicDir")"
+checkRerunIsQuiet "second run reports no changes" "$(runTopicInstall "$stagedTopicDir")"
 
 warnedRunStatus=0
-runTopicInstallWithoutProfile "$topicDir" > /dev/null \
+runTopicInstallWithoutProfile "$stagedTopicDir" > /dev/null \
   || warnedRunStatus=$?
 check "a topic that emits a warning exits non-zero" test "$warnedRunStatus" -eq 1
 
@@ -216,9 +325,9 @@ settingsBackupHolds() {
 }
 
 printf '{"handEdit":"first-edit-to-settings"}\n' > "$settingsPath"
-runTopicInstall "$topicDir" > /dev/null
+runTopicInstall "$stagedTopicDir" > /dev/null
 printf '{"handEdit":"second-edit-to-settings"}\n' > "$settingsPath"
-runTopicInstall "$topicDir" > /dev/null
+runTopicInstall "$stagedTopicDir" > /dev/null
 check "the first hand edited settings.json is still recoverable" \
   settingsBackupHolds 'first-edit-to-settings'
 check "the second hand edited settings.json is still recoverable" \
