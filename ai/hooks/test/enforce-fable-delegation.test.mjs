@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
+import { DELEGATION_NEXT_CALL_BY_TOOL, DIRECT_WORK_TOOLS } from "../hook-io.mjs";
 import { removeAll, runHook } from "./harness.mjs";
 
 const temporaryDirectories = [];
@@ -151,6 +152,59 @@ test("The fourth direct tool call is denied with the budget in the reason", () =
   const denialReason = assertDenied(payloadFor(transcriptPath));
   assert.match(denialReason, /budget/);
   assert.match(denialReason, /after a `commit` Skill invocation/);
+});
+
+function writeSpentBudgetTranscript() {
+  return writeTranscript([
+    userEntry(currentPromptId),
+    assistantEntry([
+      toolUse("Read", "one"),
+      toolUse("Grep", "two"),
+      toolUse("Edit", "three"),
+    ]),
+    toolResultEntry(currentPromptId),
+  ]);
+}
+
+const deniedToolInputByName = { Bash: { command: "ls" } };
+
+function denialReasonForTool(deniedToolName) {
+  return assertDenied(
+    payloadFor(writeSpentBudgetTranscript(), {
+      tool_name: deniedToolName,
+      tool_input: deniedToolInputByName[deniedToolName] ?? { file_path: "a.txt" },
+    }),
+  );
+}
+
+test("A denied Read leads with the Explore Agent call to make instead", () => {
+  assert.match(
+    denialReasonForTool("Read"),
+    /^Next call: an `Agent` call with `subagent_type: "Explore"`\.\n/,
+  );
+});
+
+for (const writeToolName of ["Edit", "Bash"]) {
+  test(`A denied ${writeToolName} leads with an inline codex exec dispatch or an Agent call`, () => {
+    assert.match(
+      denialReasonForTool(writeToolName),
+      /^Next call: a Bash `codex exec --dangerously-bypass-approvals-and-sandbox -m <Codex id per ROUTING\.md rule 1> <<'EOF'` dispatch with the prompt inline and `run_in_background: true`, or an `Agent` call\.\n/,
+    );
+  });
+}
+
+test("A denied WebSearch leads with an inline grok dispatch or an Agent call", () => {
+  assert.match(
+    denialReasonForTool("WebSearch"),
+    /^Next call: a Bash `grok -p '<prompt>' --always-approve` dispatch with `run_in_background: true`, or an `Agent` call\.\n/,
+  );
+});
+
+test("The next call map covers exactly the direct work tool set", () => {
+  assert.deepEqual(
+    [...DELEGATION_NEXT_CALL_BY_TOOL.keys()].sort(),
+    [...DIRECT_WORK_TOOLS].sort(),
+  );
 });
 
 test("A commit Skill invocation in an earlier assistant entry exempts later direct calls", () => {

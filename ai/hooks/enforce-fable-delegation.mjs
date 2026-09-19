@@ -4,6 +4,7 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import {
   allow,
+  DELEGATION_NEXT_CALL_BY_TOOL,
   denyPreToolUse,
   DIRECT_WORK_TOOLS,
   readPayload,
@@ -100,9 +101,11 @@ function isCountedToolUse(contentBlock) {
   return !isExemptBash(contentBlock.name, contentBlock.input);
 }
 
-function denyForBudget(priorCalls) {
+function denyForBudget(priorCalls, deniedToolName) {
+  const nextCallSuggestion = DELEGATION_NEXT_CALL_BY_TOOL.get(deniedToolName);
   denyPreToolUse(
-    `Fable direct-tool budget exceeded: ${priorCalls} prior calls; budget is ${DIRECT_TOOL_BUDGET}.\n` +
+    `${nextCallSuggestion}\n` +
+      `Fable direct-tool budget exceeded: ${priorCalls} prior calls; budget is ${DIRECT_TOOL_BUDGET}.\n` +
       "Dispatch per ROUTING.md: Codex for coding, Explore for reads; Agent, Skill, Workflow, `codex exec`/`grok` Bash dispatches, commit preflight/land steps, and direct calls after a `commit` Skill invocation are not counted.",
   );
 }
@@ -131,7 +134,7 @@ function enforceFromTranscript(payload) {
     if (hasCommitInvocationBeforeCurrent) allow();
     if (!isCurrentCallRecorded && hasCommitInvocationWhileCurrentCallIsUnseen) allow();
     const spentCalls = isCurrentCallRecorded ? priorCalls : callsRecordedAfterCurrent;
-    if (spentCalls >= DIRECT_TOOL_BUDGET) denyForBudget(spentCalls);
+    if (spentCalls >= DIRECT_TOOL_BUDGET) denyForBudget(spentCalls, payload.tool_name);
     allow();
   }
 
