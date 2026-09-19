@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * SessionStart hook that turns on caveman ultra mode.
- *
- * Cannot block anything: it prints the ultra mode instruction to stdout and
- * writes "ultra" to ~/.claude/.caveman-active, the flag the caveman plugin
- * reads. Fails open on every error (never throws, never exits non-zero).
- */
 import {
   closeSync,
   constants,
@@ -19,11 +12,6 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-
-const message =
-  "CAVEMAN ULTRA MODE ACTIVE. Overrides any caveman-full activation this session. Rules: all full caveman rules (drop articles/filler/pleasantries/hedging, fragments OK, short synonyms) plus ultra: abbreviate (DB/auth/config/req/res/fn/impl), strip conjunctions, arrows for causality (X -> Y), one word when one word enough. Code/commits/PRs/security warnings: write normal. User says 'normal' or 'stop caveman' to deactivate.";
-
-process.stdout.write(message);
 
 const cavemanFlagPath = join(homedir(), ".claude", ".caveman-active");
 const pollIntervalMs = 100;

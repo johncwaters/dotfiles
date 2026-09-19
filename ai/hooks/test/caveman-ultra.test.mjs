@@ -16,7 +16,7 @@ function makeHomeHoldingUltraFlag(testContext) {
   return home;
 }
 
-test("the caveman flag is written for its owner only", (testContext) => {
+test("the caveman hook prints nothing and writes its owner-only ultra flag", (testContext) => {
   const home = makeHomeHoldingUltraFlag(testContext);
   const flagPath = path.join(home, ".claude", ".caveman-active");
   fs.writeFileSync(flagPath, "ultra", "utf8");
@@ -25,6 +25,7 @@ test("the caveman flag is written for its owner only", (testContext) => {
   const processResult = runCavemanUltraWithHome(home);
 
   assert.equal(processResult.status, 0);
+  assert.equal(processResult.stdout, "");
   assert.equal(fs.readFileSync(flagPath, "utf8"), "ultra");
   assert.equal(fs.statSync(flagPath).mode & 0o777, 0o600);
 });
