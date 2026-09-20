@@ -327,6 +327,10 @@ packageNamesForTool() {
       printf 'git\n'
       return 0
       ;;
+    ripgrep:apt-get | ripgrep:dnf | ripgrep:pacman | ripgrep:zypper | ripgrep:brew)
+      printf 'ripgrep\n'
+      return 0
+      ;;
     bash-completion:apt-get | bash-completion:dnf | bash-completion:pacman | bash-completion:zypper)
       printf 'bash-completion\n'
       return 0

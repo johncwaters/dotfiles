@@ -236,6 +236,11 @@ fi
 exit 0
 STUB
 
+writeStub rg <<'STUB'
+#!/usr/bin/env bash
+:
+STUB
+
 writeStub flatpak <<'STUB'
 #!/usr/bin/env bash
 printf 'flatpak %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -287,6 +292,7 @@ for presentFromTheStart in apt-get sudo curl flatpak dpkg systemctl \
 done
 
 mapPackageToCommands git "git"
+mapPackageToCommands ripgrep "rg"
 mapPackageToCommands bash-completion "bash_completion"
 mapPackageToCommands gh "gh"
 mapPackageToCommands nodejs "node npm"
@@ -327,6 +333,7 @@ check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
 
 check "git is installed through the package manager" logHas "apt-get -o DPkg::Lock::Timeout=180 install -y git"
+check "ripgrep is installed through the package manager" logHas "install -y ripgrep"
 check "bash completion is installed through the package manager" logHas "install -y bash-completion"
 check "the GitHub CLI is installed" logHas "install -y gh"
 check "python arrives with pip" logHas "install -y python3 python3-pip"
@@ -409,6 +416,9 @@ for packageName in "$@"; do
     git | gh)
       cp "$DOTFILES_TEST_STATE/available/$packageName" "$DOTFILES_TEST_STUB_BIN/$packageName"
       ;;
+    ripgrep)
+      cp "$DOTFILES_TEST_STATE/available/rg" "$DOTFILES_TEST_STUB_BIN/rg"
+      ;;
     bash-completion@2)
       mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/etc/profile.d"
       cp "$DOTFILES_TEST_STATE/available/bash_completion" \
@@ -432,7 +442,7 @@ printf 'NFSHomeDirectory: %s\n' "$realHome"
 STUB
 provideCommand brew
 provideCommand dscl
-for commandName in git gh node npm; do
+for commandName in git rg gh node npm; do
   withdrawCommand "$commandName"
 done
 darwinHomebrewPrefix="$sandbox/homebrew"
@@ -452,7 +462,7 @@ darwinRunOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES
   DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" NO_COLOR=1 \
   bash "$topicDir/install.sh")" || darwinRunStatus=$?
 check "the work profile converges through Homebrew on darwin" test "$darwinRunStatus" -eq 0
-for brewPackage in git bash-completion@2 gh python3 node; do
+for brewPackage in git ripgrep bash-completion@2 gh python3 node; do
   check "darwin installs $brewPackage through Homebrew" logHas "brew install $brewPackage"
 done
 check "darwin chooses Homebrew even while apt-get is visible" logLacks 'apt-get '

@@ -26,6 +26,10 @@ packageNamesAre() {
 }
 
 check "apt-get installs python3 with its pip" packageNamesAre apt-get python "python3 python3-pip"
+for packageManager in apt-get dnf pacman zypper brew; do
+  check "$packageManager installs ripgrep by its common name" \
+    packageNamesAre "$packageManager" ripgrep "ripgrep"
+done
 check "pacman installs python with its pip" packageNamesAre pacman python "python python-pip"
 for linuxPackageManager in apt-get dnf pacman zypper; do
   check "$linuxPackageManager installs bash completion by its common name" \
