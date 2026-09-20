@@ -1,7 +1,6 @@
 system-tools
 node
 claude-code
-zed
 casks
 npm-globals
 python-tools

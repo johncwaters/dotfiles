@@ -58,10 +58,6 @@ emitBody() {
       printf 'mkdir -p "$HOME/.local/bin"\n'
       printf 'cp "$DOTFILES_TEST_STATE/available/claude" "$HOME/.local/bin/claude"\n'
       ;;
-    *zed.dev/install.sh)
-      printf 'mkdir -p "$HOME/.local/bin"\n'
-      printf 'cp "$DOTFILES_TEST_STATE/available/zed" "$HOME/.local/bin/zed"\n'
-      ;;
     *)
       return 1
       ;;
@@ -267,12 +263,6 @@ printf 'claude %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 exit 0
 STUB
 
-writeStub zed <<'STUB'
-#!/usr/bin/env bash
-printf 'zed %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-exit 0
-STUB
-
 writeStub bash_completion <<'STUB'
 #!/usr/bin/env bash
 :
@@ -346,9 +336,6 @@ check "node comes from NodeSource" logHas "https://deb.nodesource.com/setup_22.x
 check "the NodeSource package is installed" logHas "install -y nodejs"
 check "Claude Code runs its native installer" logHas "https://claude.ai/install.sh"
 check "Claude Code landed in ~/.local/bin" test -x "$sandbox/.local/bin/claude"
-check "Zed runs its official installer" logHas "https://zed.dev/install.sh"
-check "Zed landed in ~/.local/bin" test -x "$sandbox/.local/bin/zed"
-
 for flatpakAppId in app.zen_browser.zen com.bitwarden.desktop com.discordapp.Discord \
   com.slack.Slack org.remmina.Remmina; do
   check "$flatpakAppId is installed from flathub" logHas "flatpak install --user -y flathub $flatpakAppId"
@@ -452,7 +439,7 @@ rm -f "$stubState/npm-installed/typescript" "$stubState/npm-installed/@openai%co
   "$stubState/npm-installed/@xai-official%grok" \
   "$stubState/npm-installed/@earendil-works%pi-coding-agent"
 rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml" \
-  "$sandbox/.local/bin/claude" "$sandbox/.local/bin/zed"
+  "$sandbox/.local/bin/claude"
 rm -rf "$sandbox/.local/share/dotfiles/python-tools"
 : > "$commandLog"
 darwinRunStatus=0
@@ -475,8 +462,6 @@ for forbiddenNpmPackage in @openai/codex @xai-official/grok @earendil-works/pi-c
     logLacks "npm install -g $forbiddenNpmPackage"
 done
 check "darwin installs Claude Code from the work profile" logHas 'https://claude.ai/install.sh'
-check "darwin installs Zed from the work profile" logHas 'https://zed.dev/install.sh'
-check "darwin lands Zed in ~/.local/bin" test -x "$sandbox/.local/bin/zed"
 check "darwin reports a cask whose app was installed by hand as present" \
   outputMatches "$darwinRunOutput" '\[ -- \].*slack.*already installed'
 check "darwin does not install a cask over an app someone installed by hand" \

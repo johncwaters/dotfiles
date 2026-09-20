@@ -19,7 +19,6 @@ knownPackageGroups=(
   system-tools
   node
   claude-code
-  zed
   flatpaks
   casks
   npm-globals
@@ -176,36 +175,6 @@ installClaudeCode() {
     return 0
   fi
   noteWarned "Claude Code" "not on PATH yet, open a new shell"
-}
-
-zedIsInstalled() {
-  if command -v zed >/dev/null 2>&1; then
-    return 0
-  fi
-  [[ -x "$HOME/.local/bin/zed" ]]
-}
-
-installZed() {
-  refreshSessionPath
-  persistUserLocalBinOnPath
-  if zedIsInstalled; then
-    notePresent "Zed" "already installed"
-    return 0
-  fi
-  noteStarting "Zed" "running official installer"
-  local installerLog
-  installerLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-zed-install.XXXXXX")"
-  if ! installFromVendorScript "Zed" sh https://zed.dev/install.sh "$installerLog"; then
-    rm -f -- "$installerLog"
-    return 0
-  fi
-  rm -f -- "$installerLog"
-  refreshSessionPath
-  if zedIsInstalled; then
-    noteInstalled "Zed" "installed"
-    return 0
-  fi
-  noteWarned "Zed" "installed, but not on PATH yet"
 }
 
 installProfileFlatpaks() {
@@ -470,10 +439,6 @@ fi
 
 if packageGroupEnabled "claude-code"; then
   installClaudeCode
-fi
-
-if packageGroupEnabled "zed"; then
-  installZed
 fi
 
 if packageGroupEnabled "flatpaks"; then
