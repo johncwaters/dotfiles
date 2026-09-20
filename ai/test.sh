@@ -428,12 +428,14 @@ check "an overlay hook renders alongside the base hook it shares an event with" 
 
 shopt -s nullglob
 hookTestFiles=("$topicDir"/hooks/test/*.test.mjs)
+workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
 shopt -u nullglob
 check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
+check "workflow behavior tests are present" test "${#workflowTestFiles[@]}" -gt 0
 check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
-if ((${#hookTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0)); then
-  check "hook and commit behavior tests pass" node --test "${hookTestFiles[@]}" "${commitTestFiles[@]}"
+if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0)); then
+  check "hook, workflow, and commit behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}"
 fi
 
 reportTopicResults "ai"

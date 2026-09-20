@@ -86,6 +86,10 @@ const routerSchema = {
 const severityRankByName = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
 const mergeTagPrefixes = ['convergent: ', 'contested: ']
 const reviewerTagPattern = /^[a-z][a-z0-9-]*(?:\/[a-z0-9-]+)?$/i
+const noneFormLineSource = '^[ \\t]*(?:[-*][ \\t]+)?(?:\\((?:none|no findings|nothing|empty|none found)\\)|\\[\\]|none)[ \\t]*$'
+const everyNoneFormLine = new RegExp(noneFormLineSource, 'gmi')
+const oneNoneFormLine = new RegExp(noneFormLineSource, 'i')
+const findingRowStart = /^(?:- )?file: /
 const maxFindingsPerLane = 10
 const maxLanesPerRun = 3
 
@@ -183,12 +187,40 @@ function filesClassifiedForLane(routerResult, laneName) {
   return fileClasses.filter((fileClass) => laneDefinition.classNeedles.some((classNeedle) => String(fileClass.class).toLowerCase().includes(classNeedle)))
 }
 
+function isAcceptedFindingsHeaderTail(headerTail) {
+  const trimmedTail = headerTail.trim()
+  if (trimmedTail === '') {
+    return true
+  }
+  return oneNoneFormLine.test(trimmedTail) || findingRowStart.test(trimmedTail)
+}
+
 function findingsHeaderMatchesIn(text) {
-  return [...text.matchAll(/^[ \t#>*-]*STRUCTURED_FINDINGS:[ \t]*$/gm)]
+  return [...text.matchAll(/^[ \t#>*-]*STRUCTURED_FINDINGS:[ \t]*(?![*_]{1,2}[ \t]*$)(?:[*_]{1,2}[ \t]*)?(.*)$/gm)].filter((headerMatch) => isAcceptedFindingsHeaderTail(headerMatch[1]))
 }
 
 function summaryHeaderMatchesIn(text) {
   return [...text.matchAll(/^[ \t#>*-]*OVERALL_SUMMARY:[ \t]*(?![*_]{1,2}[ \t]*$)(?:[*_]{1,2}[ \t]*)?(.*)$/gm)]
+}
+
+function selectedFindingsHeaderIn(text) {
+  const headerMatches = findingsHeaderMatchesIn(text)
+  const bareHeaderMatches = headerMatches.filter((headerMatch) => headerMatch[1].trim() === '')
+  if (bareHeaderMatches.length === 1) {
+    return bareHeaderMatches[0]
+  }
+  if (bareHeaderMatches.length === 0 && headerMatches.length === 1) {
+    return headerMatches[0]
+  }
+  return null
+}
+
+function selectedSummaryHeaderIn(text) {
+  const summaryHeaderMatches = summaryHeaderMatchesIn(text)
+  if (summaryHeaderMatches.length !== 1) {
+    return null
+  }
+  return summaryHeaderMatches[0]
 }
 
 function headerLineCandidatesIn(text, headerName) {
@@ -200,8 +232,8 @@ function isStrayHeaderLine(blockLine) {
   return headerLineCandidatesIn(blockLine, 'STRUCTURED_FINDINGS').length > 0 || headerLineCandidatesIn(blockLine, 'OVERALL_SUMMARY').length > 0
 }
 
-function withLastHeaderLineColonized(text, headerName, colonizedHeaderMatchesIn) {
-  if (colonizedHeaderMatchesIn(text).length === 1) {
+function withLastHeaderLineColonized(text, headerName, selectedHeaderIn) {
+  if (selectedHeaderIn(text)) {
     return text
   }
   const headerLineCandidates = headerLineCandidatesIn(text, headerName)
@@ -209,35 +241,38 @@ function withLastHeaderLineColonized(text, headerName, colonizedHeaderMatchesIn)
     const headerLineCandidate = headerLineCandidates[candidateIndex]
     const colonizedHeaderLine = `${headerName}: ${headerLineCandidate[1]}`.trimEnd()
     const colonizedText = `${text.slice(0, headerLineCandidate.index)}${colonizedHeaderLine}${text.slice(headerLineCandidate.index + headerLineCandidate[0].length)}`
-    if (colonizedHeaderMatchesIn(colonizedText).length === 1) {
+    if (selectedHeaderIn(colonizedText)) {
       return colonizedText
     }
   }
   return text
 }
 
+function withNoneFormsNormalized(text) {
+  return text.replace(everyNoneFormLine, '(none)')
+}
+
 function withHeaderColons(text) {
   const withoutWrappers = text
     .replace(/^[ \t]*```[a-z]*[ \t]*$\n?/gm, '')
     .replace(/^[ \t]*END_STRUCTURED_FINDINGS:?[ \t]*\n?/gm, '')
-  const withFindingsHeader = withLastHeaderLineColonized(withoutWrappers, 'STRUCTURED_FINDINGS', findingsHeaderMatchesIn)
-  const withBothHeaders = withLastHeaderLineColonized(withFindingsHeader, 'OVERALL_SUMMARY', summaryHeaderMatchesIn)
-  return withBothHeaders.replace(/^[ \t]*(?:\((?:no findings|nothing|empty|none found)\)|\[\]|none)[ \t]*$/gmi, '(none)')
+  const withFindingsHeader = withLastHeaderLineColonized(withoutWrappers, 'STRUCTURED_FINDINGS', selectedFindingsHeaderIn)
+  const withBothHeaders = withLastHeaderLineColonized(withFindingsHeader, 'OVERALL_SUMMARY', selectedSummaryHeaderIn)
+  return withNoneFormsNormalized(withBothHeaders)
 }
 
 function blockAndSummaryFrom(normalizedText) {
-  const findingsHeaders = findingsHeaderMatchesIn(normalizedText)
-  const summaryHeaders = summaryHeaderMatchesIn(normalizedText)
-  if (findingsHeaders.length !== 1 || summaryHeaders.length !== 1) {
+  const findingsHeader = selectedFindingsHeaderIn(normalizedText)
+  const summaryHeader = selectedSummaryHeaderIn(normalizedText)
+  if (!findingsHeader || !summaryHeader) {
     return null
   }
-  const findingsHeader = findingsHeaders[0]
-  const summaryHeader = summaryHeaders[0]
   if (summaryHeader.index < findingsHeader.index) {
     return null
   }
+  const assembledBlockText = `${findingsHeader[1]}${normalizedText.slice(findingsHeader.index + findingsHeader[0].length, summaryHeader.index)}`
   return {
-    blockText: normalizedText.slice(findingsHeader.index + findingsHeader[0].length, summaryHeader.index).trim(),
+    blockText: withNoneFormsNormalized(assembledBlockText).trim(),
     summaryText: `${summaryHeader[1]}${normalizedText.slice(summaryHeader.index + summaryHeader[0].length)}`.trim(),
   }
 }
@@ -340,7 +375,7 @@ function parseLaneResponse(rawLaneText) {
   const hasUnparseableRow = parsedRows.some((parsedRow) => !parsedRow)
   const rankedFindings = parsedRows.filter(Boolean).sort((leftFinding, rightFinding) => severityRankOf(leftFinding) - severityRankOf(rightFinding))
   const keptFindings = rankedFindings.slice(0, maxFindingsPerLane)
-  return { hasParseableBlock: keptFindings.length > 0, hasUnparseableRow, findings: keptFindings, summary, hitFindingCap: rankedFindings.length > keptFindings.length }
+  return { hasParseableBlock: rankedFindings.length > 0, hasUnparseableRow, findings: keptFindings, summary, hitFindingCap: rankedFindings.length > keptFindings.length }
 }
 
 function truncatedLaneTagsFrom(summaryText) {
