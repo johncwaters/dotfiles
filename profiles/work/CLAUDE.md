@@ -2,7 +2,7 @@
 
 <routing>
 Main session loop only; subagents skip per `<scope>`. This section overrides the `<routing>` rules injected from `~/.claude/ROUTING.md` per their precedence rule: apply them as written, amended for a work machine as follows.
-- Claude models only. Never dispatch to external model CLIs (Codex, Grok, Gemini, or any non-Claude tool), even if guidance merged from another profile mentions them. Decision order rules 0, 1, 1a, 1b, and 1c do not apply; every delegated task starts at rule 2. The pre-rule question (does this need a model at all?) and rule 5 (eval-backed changes) still apply.
+- Claude and Codex models only. Rules 0, 1, and 1a apply as written. Never dispatch to Grok, Gemini, or another non-Claude, non-Codex model CLI because work code may go only to company-sanctioned providers. Rule 1b does not apply; rule 1c may route only among Claude and Codex.
 - The enforce-spawn-model PreToolUse hook denies any spawn with a missing model, so every spawn names its tier deliberately.
 </routing>
 

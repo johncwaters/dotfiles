@@ -457,7 +457,8 @@ check "darwin never runs Homebrew through sudo" logLacks 'sudo '
 check "darwin takes the non-NodeSource Node path" logLacks 'nodesource.com'
 check "darwin installs typescript after Homebrew provides npm" \
   logHas "npm install -g typescript"
-for forbiddenNpmPackage in @openai/codex @xai-official/grok @earendil-works/pi-coding-agent; do
+check "the work profile installs Codex through npm-globals" logHas "npm install -g @openai/codex"
+for forbiddenNpmPackage in @xai-official/grok @earendil-works/pi-coding-agent; do
   check "the work profile installs no $forbiddenNpmPackage" \
     logLacks "npm install -g $forbiddenNpmPackage"
 done

@@ -7,15 +7,15 @@ description: The finder engine of the review ladder. Takes an already-pinned dif
 
 Find, converge, return. Every lane emits the same structured format so the merge is mechanical.
 
-Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], claudeOnly: boolean, settled: string[], claimedFixed: string[], declined: string[], round?: { number, touchedFiles: string[], reportingBar: string } }`.
+Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAllowed: boolean, grokAllowed: boolean, settled: string[], claimedFixed: string[], declined: string[], round?: { number, touchedFiles: string[], reportingBar: string } }`.
 
 ## Contract with the caller
 
-**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, the changed-file set that `REVIEW_CMD` produces as repo-relative paths from `git diff --name-only`, the `claudeOnly` flag read off the profile routing rule, and 2 to 4 sentences of context the lanes cannot derive from the diff. The changed-file set is what every lane is scoped to and what the script drops findings against, so a run without it reviews nothing and returns an empty block that reads as clean. Optionally a scope restriction (`-- <paths>`), and, from an earlier round: three separate lists — findings already settled as `NIT` or `AMBIGUOUS`, which lanes are told not to re-report; findings a writer claims to have fixed, which lanes are told to **check specifically** and to report again at whatever severity if the defect is still there, exempt from any reporting bar; and findings a writer declined, which lanes are told to report again if still present, likewise exempt from any bar — plus, when the caller sends round state, the round number, the caller-computed touched-file set, and the caller's reporting bar for this round. The three lists must never be merged: telling a lane to skip a finding somebody claims to have fixed is how an unverified fix becomes an approval, and a declined finding is neither settled nor claimed fixed, so folding it into either list buries a live defect the writer refused to touch.
+**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, the changed-file set that `REVIEW_CMD` produces as repo-relative paths from `git diff --name-only`, the `codexAllowed` and `grokAllowed` flags read off the profile routing rule, and 2 to 4 sentences of context the lanes cannot derive from the diff. The changed-file set is what every lane is scoped to and what the script drops findings against, so a run without it reviews nothing and returns an empty block that reads as clean. Optionally a scope restriction (`-- <paths>`), and, from an earlier round, three separate lists: findings already settled as `NIT` or `AMBIGUOUS`, which lanes are told not to re-report; findings a writer claims to have fixed, which lanes are told to **check specifically** and to report again at whatever severity if the defect is still there, exempt from any reporting bar; and findings a writer declined, which lanes are told to report again if still present, likewise exempt from any bar. When the caller sends round state, also pass the round number, the caller-computed touched-file set, and the caller's reporting bar for this round. The three lists must never be merged: telling a lane to skip a finding somebody claims to have fixed is how an unverified fix becomes an approval, and a declined finding is neither settled nor claimed fixed, so folding it into either list buries a live defect the writer refused to touch.
 
 **No `REVIEW_CMD`, no run.** Say so and stop. Pinning scope is `code-review`'s job, and computing a second pin here would let two layers review two different trees while believing they reviewed one.
 
-**No changed-file set, no run. No `claudeOnly` flag, no run.** The script refuses an absent or empty `changedFiles` and a `claudeOnly` that is not a boolean, because an empty set drops every finding into a block that reads as clean, and a missing flag would send a work diff to Codex by default.
+**No changed-file set, no run. No routing flags, no run.** The script refuses an absent or empty `changedFiles` or non-boolean `codexAllowed` and `grokAllowed`, because an empty set drops every finding into a block that reads as clean, and missing flags could send a work diff to a forbidden CLI.
 
 **Guaranteed output.** One `STRUCTURED_FINDINGS` block plus one `OVERALL_SUMMARY`, and nothing after them.
 
@@ -39,13 +39,13 @@ Each run is capped at three lanes. Priority is `code`, forced `security`, router
 
 A follow-up round with touched files skips routing and reviews only those files plus files named by claimed-fixed and declined findings. Round 1 already swept everything else, so the narrower pass preserves regression and declined checks without paying for the whole diff again. A `REVIEW_CMD` that already carries a `-- <paths>` restriction is never narrowed further, because git unions pathspecs across two `--` groups instead of intersecting them, so that round keeps the full sweep and reports the fallback as a degradation note.
 
-**Claude-only machines.** A profile `CLAUDE.md` whose `<routing>` forbids external model CLIs (the work profile does, and its rule wins over `~/.claude/ROUTING.md`) forbids them here too. Sending a work diff to Codex or Grok is a confidentiality breach, not a routing preference. Read that rule yourself and pass `claudeOnly: true`, which makes the script emit no Codex or Grok instruction in any prompt; never leave the detection to a spawned agent, which is told routing does not bind it. Substitute, and say in the summary that the Claude-only route was used:
+**CLI routing flags.** Read the profile `CLAUDE.md` `<routing>` rule yourself: a rule forbidding a CLI sets that CLI's flag false, and no such rule means both true. Never leave detection to a spawned agent, which is told routing does not bind it. Sending a work diff to a forbidden CLI is a confidentiality breach, not a routing preference. A false flag emits no instruction for that CLI and uses the substitute below:
 
-| Lane | External route | Claude-only substitute |
+| Lane | CLI route | False-flag substitute |
 |---|---|---|
-| router | Codex `gpt-5.6-terra` | an `opus` agent, same prompt |
-| `external` | Codex `gpt-5.6-sol` | a second `opus` agent over the same diff, prompted adversarially to refute the other lanes' findings rather than to repeat them |
-| `tiebreak` | Grok | an `opus` agent given both positions and nothing else |
+| router | Codex `gpt-5.6-terra` | `opus`, same prompt, when `codexAllowed` is false |
+| `external` | Codex `gpt-5.6-sol` | `opus`, adversarially refuting the other lanes, when `codexAllowed` is false |
+| `tiebreak` | Grok | `opus` with both positions only, when `grokAllowed` is false |
 
 ## Reviewer output format
 

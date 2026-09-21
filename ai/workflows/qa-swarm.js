@@ -441,7 +441,7 @@ ${JSON.stringify(routerSchema)}`
 
 async function routeReviewOnOpus(filesToClassify, fallbackReason) {
   const fallbackRouteInstruction = `Act as the router because the external route reported ${fallbackReason}. Read the repo and run the exact REVIEW_CMD. Do not spawn or dispatch anything.`
-  const fallbackRoute = args.claudeOnly ? 'opus-claude-only' : 'opus'
+  const fallbackRoute = args.codexAllowed ? 'opus' : 'opus-codex-substitute'
   const fallbackPrompt = buildRouterAssessmentPrompt(filesToClassify, fallbackRouteInstruction, `Set route to ${fallbackRoute}. `)
   const fallbackRouter = await agent(fallbackPrompt, { model: 'opus', label: 'Route review fallback', phase: 'Route', schema: routerSchema })
   if (!fallbackRouter) {
@@ -452,8 +452,8 @@ async function routeReviewOnOpus(filesToClassify, fallbackReason) {
 
 async function routeReview(filesToClassify) {
   phase('Route')
-  if (args.claudeOnly) {
-    return { routerResult: await routeReviewOnOpus(filesToClassify, 'Claude-only session routing'), degradationNote: '' }
+  if (!args.codexAllowed) {
+    return { routerResult: await routeReviewOnOpus(filesToClassify, 'Codex CLI disabled by session routing'), degradationNote: '' }
   }
   const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. Write the dispatched router prompt below to a temp file and run ${codexExecCommandPrefix} gpt-5.6-terra < <promptfile>. On a rate-limit or usage-cap error, run it once with gpt-5.6-luna. On a model or CLI error, or a second quota error, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, the error as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
   const dispatchPrompt = buildRouterAssessmentPrompt(filesToClassify, dispatchRouteInstruction)
@@ -582,8 +582,8 @@ OVERALL_SUMMARY:
 <one paragraph>
 
 For no findings, put (none) on the line after STRUCTURED_FINDINGS:. Omit side when line is general. Use one finding per line with no bare | inside body.`
-  if (args.claudeOnly) {
-    return `${externalLanePrompt}\n\nSession routing is Claude-only. Perform an adversarial independent read that tries to refute the other lanes before reporting findings.`
+  if (!args.codexAllowed) {
+    return `${externalLanePrompt}\n\nCodex CLI is disabled by session routing. Act as its opus substitute and perform an adversarial independent read that tries to refute the other lanes before reporting findings.`
   }
   return `${externalLanePrompt}\n\nWrite the review prompt above to a temp file and run ${codexExecCommandPrefix} gpt-5.6-sol -c model_reasoning_effort=\"high\" < <promptfile>. Return the output verbatim. On a quota, model, or CLI error, return the literal string EXTERNAL_UNAVAILABLE.`
 }
@@ -632,8 +632,8 @@ function formatConvergenceSummary(survivingFindingCount, convergenceFacts) {
 }
 
 function buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, reviewCmd) {
-  const tiebreakInstruction = args.claudeOnly
-    ? 'Session routing is Claude-only, so no external tiebreak exists: isolate the two positions of each contradiction and rule from those positions alone.'
+  const tiebreakInstruction = !args.grokAllowed
+    ? 'Grok CLI is disabled by session routing. Act as its opus substitute: isolate the two positions of each contradiction and rule from those positions alone.'
     : `For each contradiction, write both positions to a temp file and run ${grokTiebreakCommand}, then keep the finding its ruling supports.`
   return `Scope: converge findings for reviewed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: findings outside that reviewed-file set, new review work, verdicts, fixes, and recommendations
@@ -736,8 +736,8 @@ if (!Array.isArray(args.changedFiles) || args.changedFiles.length === 0) {
   return 'No changed-file set, no run.'
 }
 
-if (typeof args.claudeOnly !== 'boolean') {
-  return 'No claudeOnly routing flag, no run.'
+if (typeof args.codexAllowed !== 'boolean' || typeof args.grokAllowed !== 'boolean') {
+  return 'No valid codexAllowed and grokAllowed routing flags, no run.'
 }
 
 const changedFileNames = new Set(args.changedFiles.map(normalizeFilePath))

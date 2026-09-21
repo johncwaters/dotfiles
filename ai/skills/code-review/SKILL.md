@@ -44,7 +44,7 @@ Record the changed-file set, file count, changed-line count, and touched subsyst
 
 ## Step 2: Call qa-swarm
 
-Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and every piece of carried state named separately, never collapsed into one "already dispositioned" list: the findings settled as `NIT` or `AMBIGUOUS`, which lanes must not re-report; the findings the writer's receipt claims `FIXED`, as regression checks; and the findings the writer `DECLINED`, which lanes report if still present. Forwarding a claimed fix as settled ground is how an unverified fix becomes an approval.
+Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, the profile-derived `codexAllowed` and `grokAllowed` flags, and every piece of carried state named separately, never collapsed into one "already dispositioned" list: the findings settled as `NIT` or `AMBIGUOUS`, which lanes must not re-report; the findings the writer's receipt claims `FIXED`, as regression checks; and the findings the writer `DECLINED`, which lanes report if still present. Forwarding a claimed fix as settled ground is how an unverified fix becomes an approval.
 
 On every round 2 or later where the round-1 pin resolves, add the round number and the touched-file set computed from that pin and this round's pin. Forward the late-finding rule as `reportingBar` when armed and `reportingBar: "none"` when disarmed. The file state always goes forward because `qa-swarm` uses it to narrow follow-up review independently of the reporting bar.
 

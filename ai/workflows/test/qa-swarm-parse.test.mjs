@@ -1,25 +1,6 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
-
-const testDirectory = path.dirname(fileURLToPath(import.meta.url))
-const workflowPath = path.join(testDirectory, '..', 'qa-swarm.js')
-const workflowSource = fs.readFileSync(workflowPath, 'utf8')
-const orchestrationBoundaryMarker = '\nif (!args.reviewCmd)'
-const orchestrationStart = workflowSource.indexOf(orchestrationBoundaryMarker)
-
-assert.notEqual(orchestrationStart, -1, `qa-swarm.js no longer holds the orchestration boundary marker ${JSON.stringify(orchestrationBoundaryMarker)}, so this test cannot tell which part of the workflow it would evaluate. Repoint the marker before running it again.`)
-
-const functionDefinitions = workflowSource
-  .slice(0, orchestrationStart)
-  .replace(/^export const meta =/, 'const meta =')
-
-function workflowFunctionNamed(functionName) {
-  assert.match(functionDefinitions, new RegExp(`^function ${functionName}\\(`, 'm'), `qa-swarm.js no longer defines ${functionName} above the orchestration boundary, so this test would evaluate less than it claims to cover.`)
-  return Function('args', `${functionDefinitions}\nreturn ${functionName}`)({ repoPath: '/repo' })
-}
+import { workflowFunctionNamed } from './qa-swarm-source.mjs'
 
 const parseLaneResponse = workflowFunctionNamed('parseLaneResponse')
 
