@@ -1,6 +1,7 @@
 @ast-grep/napi
 @biomejs/biome
 @openai/codex
+pnpm
 postiz
 typescript
 typescript-language-server
