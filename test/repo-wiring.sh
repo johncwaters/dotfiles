@@ -107,8 +107,8 @@ done
 check "README points rendered destinations at the render engine" \
   bash -c 'grep -q "rendered" "$1/README.md" && grep -q "script/lib/render.sh" "$1/README.md"' \
   _ "$repoRoot"
-check "the README fresh mac section names the command line tools, the sudo refresh, and the work profile" \
-  bash -c 'freshMacSection="$(sed -n "/^### Fresh mac/,/^Entry points:/p" "$1/README.md")"; grep -qF "xcode-select --install" <<< "$freshMacSection" && grep -qF "sudo -v" <<< "$freshMacSection" && grep -qF "bash -s -- --profile work" <<< "$freshMacSection"' \
+check "the README fresh mac section names the command line tools, the sudo refresh, and the work converge command" \
+  bash -c 'freshMacSection="$(sed -n "/^### Fresh mac/,/^Entry points:/p" "$1/README.md")"; grep -qF "xcode-select --install" <<< "$freshMacSection" && grep -qF "sudo -v" <<< "$freshMacSection" && grep -qF "bin/dot --profile work" <<< "$freshMacSection"' \
   _ "$repoRoot"
 check "render decisions reuse the shared plain file predicate" \
   grep -q 'pathIsPlainFileOrAbsent "$copyPath"' "$repoRoot/script/lib/render.sh"

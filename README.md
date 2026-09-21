@@ -8,34 +8,51 @@ No Windows.
 
 ## Install
 
-One command on any machine, fresh or converged:
+This repository is private, so unauthenticated GitHub raw URLs return 404. Clone it through
+`gh`, which follows its configured Git protocol, including SSH at work, then run `dot`
+from the clone, which finds it in place and skips its own clone. Both blocks below are for
+a fresh machine, since the clone step aborts on a path that already exists; a machine that
+has already converged reruns plain `dot`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/johncwaters/dotfiles/main/bin/dot | bash -s -- --profile server
+sudo apt-get update
+sudo apt-get install -y gh git
+gh auth login
+gh repo clone johncwaters/dotfiles ~/Projects/dotfiles
+~/Projects/dotfiles/bin/dot --profile server
 ```
 
 ### Fresh mac
 
 Run as the account that will own the machine; the profile is `work`. Apple ships bash 3.2,
-so `bootstrap` installs Homebrew and a current bash and re-execs itself before any topic
-runs. `--profile work` is the only profile that converges there.
+so `bootstrap` re-execs through Homebrew bash before any topic runs. `--profile work`
+is the only profile that converges there.
 
 ```sh
 xcode-select --install
 sudo -v
-curl -fsSL https://raw.githubusercontent.com/johncwaters/dotfiles/main/bin/dot | bash -s -- --profile work
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
+brew install gh
+gh auth login
+gh repo clone johncwaters/dotfiles ~/Projects/dotfiles
+~/Projects/dotfiles/bin/dot --profile work
 ```
 
+Homebrew comes first by hand because `gh` has to exist before the private repository
+can be cloned, and `bootstrap` then finds it already installed. A Mac that already has
+Homebrew and an authenticated `gh` (`gh auth status`) starts at `gh repo clone`. Choose
+SSH when `gh auth login` asks for the Git protocol on the work Mac.
+
 `sudo -v` asks the account password once and the Homebrew installer runs on that
-credential; if it has lapsed by the time the shell topic appends `/etc/shells`, that step
-asks again; `chsh` asks the account password itself. So a carbon unit sits at the keyboard
-for the first run.
+credential; if it has lapsed by the time the shell topic appends `/etc/shells`, that
+step asks again; `chsh` asks the account password itself. So a carbon unit sits at the
+keyboard for the first run.
 
 The first line opens Apple's installer dialog and returns at once; wait for it to finish
-before the next two, since the curl line needs `git` and would otherwise open the same
-dialog and stop. An unattended run warns instead of asking and a later hand `dot` finishes
-it. Then open a new terminal, which is now Homebrew bash, and run `dot status`. Converging
-again is the same `curl` line or plain `dot`.
+before the rest, since Homebrew needs the Command Line Tools. An unattended run warns
+instead of asking and a later hand `dot` finishes it. Then open a new terminal, which
+is now Homebrew bash, and run `dot status`. Converging again is plain `dot`.
 
 Entry points: [converge and status](bin/dot), [bootstrap](script/bootstrap),
 [collect](script/collect), [test suite](test/run-all.sh).
