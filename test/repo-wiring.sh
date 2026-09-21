@@ -155,6 +155,15 @@ HOME="$sandbox" node "$repoRoot/script/lib/merge-json.mjs" \
   "$repoRoot/glimmervoid/config.example.json" "" "$mergedWithoutOverlayPath" /fixture/home
 check "the shared merger accepts a missing overlay" \
   grep -qF '"/fixture/home/Projects"' "$mergedWithoutOverlayPath"
+
+# Every topic reaches the merger through the ~/.dotfiles alias, so the main-module guard must survive a symlink.
+mergerAliasPath="$sandbox/merge-json-alias.mjs"
+ln -sf "$repoRoot/script/lib/merge-json.mjs" "$mergerAliasPath"
+mergedThroughAliasPath="$sandbox/merged-through-alias.json"
+HOME="$sandbox" node "$mergerAliasPath" \
+  "$repoRoot/glimmervoid/config.example.json" "" "$mergedThroughAliasPath" /fixture/home
+check "the shared merger renders when reached through a symlink" \
+  grep -qF '"/fixture/home/Projects"' "$mergedThroughAliasPath"
 check "the shared merger escapes home paths inside JSON strings" \
   node --input-type=module - "$repoRoot" "$sandbox" <<'JS'
 import assert from "node:assert/strict";

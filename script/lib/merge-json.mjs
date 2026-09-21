@@ -93,6 +93,15 @@ function runCommandLine() {
   }
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+// import.meta.url is symlink-resolved, so an invocation through ~/.dotfiles never matches a raw argv[1].
+function invokedScriptHref() {
+  try {
+    return pathToFileURL(fs.realpathSync(process.argv[1])).href;
+  } catch {
+    return "";
+  }
+}
+
+if (process.argv[1] && invokedScriptHref() === import.meta.url) {
   runCommandLine();
 }
