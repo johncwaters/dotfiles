@@ -30,7 +30,7 @@ moveExistingAside() {
   backupPath="$(nextBackupPath "$destination")"
   mv -- "$destination" "$backupPath"
   if [[ -f "$backupPath" && ! -L "$backupPath" ]]; then
-    chmod 600 -- "$backupPath"
+    chmod 600 "$backupPath"
   fi
   lastBackupPath="$backupPath"
   noteApplied "$label backup" "saved $(basename -- "$backupPath")"

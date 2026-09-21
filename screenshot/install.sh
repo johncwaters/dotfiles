@@ -42,11 +42,11 @@ commitShortcutsFile() {
   local stagedPath="$1"
   local customShortcutsPath="$2"
   if [[ -e "$customShortcutsPath" ]]; then
-    chmod --reference="$customShortcutsPath" -- "$stagedPath"
+    chmod --reference="$customShortcutsPath" "$stagedPath"
     mv -f -- "$stagedPath" "$customShortcutsPath"
     return 0
   fi
-  chmod 644 -- "$stagedPath"
+  chmod 644 "$stagedPath"
   mv -f -- "$stagedPath" "$customShortcutsPath"
 }
 

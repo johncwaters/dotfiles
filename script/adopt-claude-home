@@ -323,7 +323,7 @@ backupWasCreated=1
 
 cp -a -- "$claudeHome/." "$backupDirectory/"
 # cp -a stamps the source directory's own mode onto the backup root, undoing the mkdir -m 700.
-chmod 700 -- "$backupDirectory" 2>/dev/null || true
+chmod 700 "$backupDirectory" 2>/dev/null || true
 noteApplied "backup" "$backupDirectory"
 
 backupRootMode="$(stat -c %a -- "$backupDirectory" 2>/dev/null || true)"

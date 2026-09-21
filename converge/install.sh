@@ -37,11 +37,11 @@ renderLaunchAgent() {
     printf '%s\n' "$renderedLine"
   done < "$templatePath" > "$stagedPath"
   if commitRenderedFile "converge launch agent" "$stagedPath" "$destination"; then
-    chmod 600 -- "$destination"
+    chmod 600 "$destination"
     noteApplied "converge launch agent" "rendered"
     return 0
   fi
-  chmod 600 -- "$destination"
+  chmod 600 "$destination"
   notePresent "converge launch agent" "rendered"
   return 1
 }

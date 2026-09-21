@@ -94,8 +94,44 @@ makeGlimmervoidApp "$workHome"
 workOutput="$(runInstall "$workHome" work)" || true
 check "a profile that does not serve glimmervoid says the service was skipped" \
   outputMatches "$workOutput" '\[ -- \].*glimmervoid service.*skipped, profile does not serve glimmervoid'
+check "a non-serving machine still installs the CLI shim" test -x "$workHome/.local/bin/glimmervoid"
 check "a non-serving machine installs no unit" test ! -e "$workHome/.config/systemd/user/glimmervoid.service"
 check "a non-serving machine never touches systemd" logLacks "systemctl "
+
+startSandboxHome "glimmervoid-work-no-app"
+appLessWorkHome="$sandbox"
+mkdir -p "$appLessWorkHome/.local/bin" "$appLessWorkHome/.glimmervoid"
+ln -sf "$stubBin/node" "$appLessWorkHome/.local/bin/node"
+printf '{ "port": 3000 }\n' > "$appLessWorkHome/.glimmervoid/config.json"
+: > "$commandLog"
+appLessWorkStatus=0
+appLessWorkOutput="$(runInstall "$appLessWorkHome" work)" || appLessWorkStatus=$?
+check "a non-serving machine without the app never warns about the app" \
+  outputLacks "$appLessWorkOutput" "is not a Glimmervoid checkout"
+check "a settled non-serving machine without the app exits clean" test "$appLessWorkStatus" -eq 0
+
+startSandboxHome "glimmervoid-homebrew-node"
+homebrewNodeHome="$sandbox"
+homebrewNodePrefix="$homebrewNodeHome/homebrew"
+mkdir -p "$homebrewNodePrefix/bin"
+ln -sf "$stubBin/node" "$homebrewNodePrefix/bin/node"
+makeGlimmervoidApp "$homebrewNodeHome"
+: > "$commandLog"
+# The homebrew prefix seam refuses an account the passwd database cannot answer for, so this case runs under the real one.
+DOTFILES_TEST_HOMEBREW_PREFIX="$homebrewNodePrefix" \
+  runInstall "$homebrewNodeHome" work "" /dev/null darwin "$(id -un)" > /dev/null || true
+check "node reachable only at the homebrew prefix still seeds the config" \
+  test -f "$homebrewNodeHome/.glimmervoid/config.json"
+check "node reachable only at the homebrew prefix still installs the CLI shim" \
+  test -x "$homebrewNodeHome/.local/bin/glimmervoid"
+check "the shim execs the node the homebrew prefix holds" \
+  grep -qF "$homebrewNodePrefix/bin/node" "$homebrewNodeHome/.local/bin/glimmervoid"
+
+workRerunStatus=0
+workRerunOutput="$(runInstall "$workHome" work)" || workRerunStatus=$?
+check "a settled non-serving machine carrying the app exits clean" test "$workRerunStatus" -eq 0
+check "a settled non-serving machine keeps the CLI shim" \
+  outputMatches "$workRerunOutput" '\[ -- \].*glimmervoid cli'
 
 unresolvedProfileStatus=0
 unresolvedProfileOutput="$(runInstall "$unresolvedProfileHome" "")" || unresolvedProfileStatus=$?

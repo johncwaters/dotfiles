@@ -365,7 +365,7 @@ cat > "$widenCredentialShimDirectory/cp" <<'SHIM'
 #!/usr/bin/env bash
 /usr/bin/cp "$@"
 copyStatus=$?
-chmod 644 -- "${!#}/.credentials.json" 2>/dev/null || true
+chmod 644 "${!#}/.credentials.json" 2>/dev/null || true
 exit "$copyStatus"
 SHIM
 chmod +x "$widenCredentialShimDirectory/cp"

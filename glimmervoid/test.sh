@@ -266,9 +266,11 @@ makeGlimmervoidApp() {
   local machineHome="$1"
   mkdir -p "$machineHome/Projects/glimmervoid/.git" \
     "$machineHome/Projects/glimmervoid/server" \
-    "$machineHome/Projects/glimmervoid/dist/server"
+    "$machineHome/Projects/glimmervoid/dist/server" \
+    "$machineHome/Projects/glimmervoid/dist/bin"
   : > "$machineHome/Projects/glimmervoid/server/main.ts"
   : > "$machineHome/Projects/glimmervoid/dist/server/index.js"
+  : > "$machineHome/Projects/glimmervoid/dist/bin/glimmervoid.js"
   printf '{}\n' > "$machineHome/Projects/glimmervoid/package.json"
 }
 
@@ -282,10 +284,11 @@ runInstall() {
   local extraPathPrefix="${3:-}"
   local stdinPath="${4:-/dev/null}"
   local machinePlatform="${5:-linux}"
+  local machineAccountName="${6:-sandboxaccount}"
   runInStubbedSandbox "$machineHome" \
     PATH="${extraPathPrefix:+$extraPathPrefix:}$stubBin:$coreBin" \
     TMPDIR="$sandboxTemp" \
-    USER="sandboxaccount" \
+    USER="$machineAccountName" \
     DOTFILES_PLATFORM="$machinePlatform" \
     DOTFILES_PROFILE="$machineProfile" \
     DOTFILES_MARKER_PATH="$machineHome/.machine-profile" \

@@ -666,7 +666,7 @@ npmPackageSource() {
 listGlobalNpmPackages() {
   # only lines the strip shortened: the first parseable line is the global root itself
   npm ls -g --depth=0 --parseable 2>/dev/null |
-    awk '{ if (sub(/^.*node_modules[\\/]/, "")) { gsub(/\\/, "/"); print } }'
+    awk '{ if (sub(/^.*node_modules[\\\/]/, "")) { gsub(/\\/, "/"); print } }'
 }
 
 npmGlobalRootWritable() {

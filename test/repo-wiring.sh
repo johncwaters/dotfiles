@@ -188,4 +188,9 @@ check "no profile overlay owns caveman" \
 check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \
   bash -c '! grep -qil telegram@claude-plugins-official "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 
+check "no chmod passes the end-of-options separator BSD chmod rejects" \
+  bash -c '! grep -rqE "chmod( +(-[^ |&;#]*|[0-7]{3,4}|[ugoa]*[-+=][rwxXstugo]+))* +--( |$)" --exclude-dir=.git --exclude-dir=.claude "$1"' _ "$repoRoot"
+check "the global npm listing escapes the slash BWK awk ends the regex at" \
+  grep -qF 'node_modules[\\\/]' "$repoRoot/script/lib/packages.sh"
+
 reportTopicResults "repo wiring"

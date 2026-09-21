@@ -46,7 +46,7 @@ recordRenderedCopy() {
   local stagedPath
   stagedPath="$(mktemp "$(dirname -- "$copyPath")/.dotfiles-sidecar.XXXXXX")"
   cp -f -- "$destination" "$stagedPath"
-  chmod 600 -- "$stagedPath"
+  chmod 600 "$stagedPath"
   mv -f -- "$stagedPath" "$copyPath"
 }
 
@@ -93,7 +93,7 @@ commitStagedFile() {
   if commitRenderedFile "$label" "$stagedPath" "$destination"; then
     destinationChanged=1
   fi
-  chmod 600 -- "$destination"
+  chmod 600 "$destination"
   if ((destinationChanged == 1)); then
     noteApplied "$label" "$appliedVerb"
     return 0

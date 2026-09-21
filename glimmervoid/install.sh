@@ -124,7 +124,7 @@ rewriteLegacyGlimmervoidSecretNames() {
     return 0
   fi
   stagedPath="$(mktemp "$glimmervoidConfigDirectory/.secrets.env.XXXXXX")"
-  chmod 600 -- "$stagedPath"
+  chmod 600 "$stagedPath"
   if ! sed -e 's/GLISSA_/GLIMMERVOID_/g' "$glimmervoidSecretsPath" > "$stagedPath"; then
     rm -f -- "$stagedPath"
     noteWarned "$label" "rename the GLISSA_ variables to GLIMMERVOID_ in $glimmervoidSecretsDisplayPath by hand"
@@ -195,7 +195,7 @@ seedGlimmervoidConfig() {
     return 0
   fi
   stagedPath="$(mktemp "$glimmervoidConfigDirectory/.config.json.XXXXXX")"
-  chmod 600 -- "$stagedPath"
+  chmod 600 "$stagedPath"
   if ! renderGlimmervoidSeed "$seedPath" "$overlayPath" "$stagedPath"; then
     rm -f -- "$stagedPath"
     noteWarned "$label" "could not render $seedDescription"
@@ -254,10 +254,14 @@ reportGlimmervoidSecrets() {
   noteWarned "$label" "write $missingVariableNames into $glimmervoidSecretsDisplayPath"
 }
 
-requireGlimmervoidApp() {
-  if [[ ( -f "$glimmervoidAppDirectory/server/main.ts" || -f "$glimmervoidAppDirectory/server.js" ) \
+glimmervoidAppIsPresent() {
+  [[ ( -f "$glimmervoidAppDirectory/server/main.ts" || -f "$glimmervoidAppDirectory/server.js" ) \
     && -f "$glimmervoidAppDirectory/package.json" \
-    && ( -d "$glimmervoidAppDirectory/.git" || -f "$glimmervoidAppDirectory/.git" ) ]]; then
+    && ( -d "$glimmervoidAppDirectory/.git" || -f "$glimmervoidAppDirectory/.git" ) ]]
+}
+
+requireGlimmervoidApp() {
+  if glimmervoidAppIsPresent; then
     notePresent "glimmervoid app" "$glimmervoidAppDisplayPath"
     return 0
   fi
@@ -463,7 +467,7 @@ configureGlimmervoidRemoteSettings() {
     return 0
   fi
   if ! resolveGlimmervoidNodePath >/dev/null; then
-    noteWarned "glimmervoid remote config" "no node in ~/.npm-global/bin, ~/.local/bin, /usr/local/bin, /usr/bin or /bin"
+    noteWarned "glimmervoid remote config" "$(describeGlimmervoidNodeSearch)"
     return 0
   fi
   if ! isGlimmervoidRemoteEnabled; then
@@ -490,16 +494,22 @@ configureGlimmervoidRemoteSettings() {
 }
 
 # command -v answers with whatever the converging shell had on PATH; every shell agrees on this.
+# Homebrew comes before /usr/local/bin because on a silicon mac it holds the only node, and on an intel mac its prefix IS /usr/local.
 resolveGlimmervoidNodePath() {
   local candidatePath
   for candidatePath in "$HOME/.npm-global/bin/node" "$HOME/.local/bin/node" \
-    /usr/local/bin/node /usr/bin/node /bin/node; do
+    "$(homebrewPrefix)/bin/node" /usr/local/bin/node /usr/bin/node /bin/node; do
     if [[ -x "$candidatePath" ]]; then
       printf '%s\n' "$candidatePath"
       return 0
     fi
   done
   return 1
+}
+
+describeGlimmervoidNodeSearch() {
+  printf 'no node in ~/.npm-global/bin, ~/.local/bin, %s/bin, /usr/local/bin, /usr/bin or /bin\n' \
+    "$(homebrewPrefix)"
 }
 
 probeHttpStatus() {
@@ -545,7 +555,7 @@ installGlimmervoidCliShim() {
     return 0
   fi
   if ! nodePath="$(resolveGlimmervoidNodePath)"; then
-    noteWarned "$label" "no node in ~/.npm-global/bin, ~/.local/bin, /usr/local/bin, /usr/bin or /bin"
+    noteWarned "$label" "$(describeGlimmervoidNodeSearch)"
     return 0
   fi
   if ! glimmervoidCliPathIsUsable "$shimPath"; then
@@ -558,7 +568,7 @@ installGlimmervoidCliShim() {
   fi
   stagedPath="$(mktemp "$HOME/.local/bin/.glimmervoid.XXXXXX")"
   printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$nodePath" "$builtCliPath" > "$stagedPath"
-  chmod 755 -- "$stagedPath"
+  chmod 755 "$stagedPath"
   if [[ -x "$shimPath" ]] && filesAreIdentical "$stagedPath" "$shimPath"; then
     rm -f -- "$stagedPath"
     notePresent "$label" "~/.local/bin/glimmervoid"
@@ -593,6 +603,11 @@ migrateLegacyGlimmervoidConfig
 seedGlimmervoidConfig
 protectGlimmervoidConfig
 
+# The CLI is how a machine uses Glimmervoid, which is independent of whether that machine serves one.
+if glimmervoidAppIsPresent; then
+  installGlimmervoidCliShim
+fi
+
 if ! profileServesGlimmervoid "$profileName"; then
   notePresent "glimmervoid service" "skipped, profile does not serve glimmervoid"
   finishTopic
@@ -603,7 +618,7 @@ reportGlimmervoidSecrets
 if ! requireGlimmervoidApp; then
   finishTopic
 fi
-installGlimmervoidCliShim
+
 if glimmervoidConfigIsReadable; then
   configureGlimmervoidRemoteSettings
   installGlimmervoidService

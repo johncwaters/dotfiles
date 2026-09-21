@@ -92,7 +92,7 @@ seedLocalGitconfigFromPrevious() {
     return 0
   fi
   mv -- "$seedInProgress" "$localGitconfigPath"
-  chmod 600 -- "$localGitconfigPath"
+  chmod 600 "$localGitconfigPath"
   noteApplied ".gitconfig.local" "seeded from the previous ${previousPath/#$HOME/\~}"
   retireSeedSourceIfXdg "$previousPath"
 }
