@@ -12,7 +12,6 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 |--------|------|----------|
 | `validate-file.mjs` | PreToolUse syntax, character, and instruction-size guard | `test/validate-file.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
-| `enforce-fable-delegation.mjs` | PreToolUse direct-tool budget | `test/enforce-fable-delegation.test.mjs` |
 | `challenge-plan.mjs` | PreToolUse plan-challenge stamp gate | `test/challenge-plan.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `inject-routing.mjs` | SessionStart routing context | `test/inject-routing.test.mjs` |

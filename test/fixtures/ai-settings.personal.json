@@ -4,7 +4,7 @@
     "CLAUDE_COMMIT_POLICY_ROOT": "/fixture/home/.dotfiles",
     "CAVEMAN_DEFAULT_MODE": "ultra"
   },
-  "model": "claude-fable-5-1[1m]",
+  "model": "claude-opus-5-5[1m]",
   "attribution": {
     "commit": "",
     "pr": ""
@@ -91,15 +91,6 @@
           {
             "type": "command",
             "command": "node /fixture/home/.claude/hooks/enforce-spawn-model.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "^(Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|Bash|WebFetch|WebSearch)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /fixture/home/.claude/hooks/enforce-fable-delegation.mjs"
           }
         ]
       },

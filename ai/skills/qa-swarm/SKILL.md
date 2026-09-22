@@ -30,7 +30,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAll
 | `structure` | `structure-reviewer` agent | opus | Diff is a refactor, establishes a new module or boundary, or moves responsibilities across existing ones |
 | `necessity` | `necessity-reviewer` agent | opus | Diff introduces a net-new file, exported symbol, or doc section, and the context states a goal |
 | `scale` | `scale-reviewer` agent | opus | Diff adds or changes a loop, recursion, query, batch, cache, or list endpoint whose input the context does not bound by fact |
-| `external` | Codex CLI | `gpt-5.6-sol`, effort `high` | Danger is HIGH and a lane slot is free |
+| `external` | Codex CLI | `gpt-6-sol`, effort `high` | Danger is HIGH and a lane slot is free |
 | `tiebreak` | Grok CLI | default | Two lanes disagree on whether a specific finding is real. Runs during convergence inside the workflow, never during lane dispatch |
 
 The trigger column is a copy of the rows `laneTriggerTable` renders from the `laneDefinitions` array in `~/.claude/workflows/qa-swarm.js`, which is the text the router prompt actually carries; edit a lane's `trigger` there first and copy the rendered row here. The script pins these models. `security` stays on fable because security judgment outranks cost.
@@ -43,8 +43,8 @@ A follow-up round with touched files skips routing and reviews only those files 
 
 | Lane | CLI route | False-flag substitute |
 |---|---|---|
-| router | Codex `gpt-5.6-terra` | `opus`, same prompt, when `codexAllowed` is false |
-| `external` | Codex `gpt-5.6-sol` | `opus`, adversarially refuting the other lanes, when `codexAllowed` is false |
+| router | Codex `gpt-6-sol` | `opus`, same prompt, when `codexAllowed` is false |
+| `external` | Codex `gpt-6-sol` | `opus`, adversarially refuting the other lanes, when `codexAllowed` is false |
 | `tiebreak` | Grok | `opus` with both positions only, when `grokAllowed` is false |
 
 ## Reviewer output format
