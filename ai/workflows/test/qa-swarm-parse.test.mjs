@@ -11,6 +11,10 @@ function responseWith(findingsBlock, summary = 'Lane summary.') {
   return `STRUCTURED_FINDINGS:\n${findingsBlock}\n\nOVERALL_SUMMARY:\n${summary}`
 }
 
+function findingRowBlockOf(findingCount) {
+  return Array.from({ length: findingCount }, (unusedValue, findingIndex) => `- file: src/file${findingIndex}.js | line: ${findingIndex + 1} | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: Finding ${findingIndex}.`).join('\n')
+}
+
 function assertLiveWithoutFindings(parsedResponse) {
   assert.equal(parsedResponse.hasParseableBlock, true)
   assert.equal(parsedResponse.hasUnparseableRow, false)
@@ -210,4 +214,18 @@ test('decorated headers remain parseable', () => {
   const parsedResponse = parseLaneResponse('**STRUCTURED_FINDINGS:**\n(none)\n\n## OVERALL_SUMMARY:\nNo findings.')
 
   assertLiveWithoutFindings(parsedResponse)
+})
+
+test('a block holding exactly the ten-finding cap counts as capped because the lane may have dropped more', () => {
+  const parsedResponse = parseLaneResponse(responseWith(findingRowBlockOf(10), 'Ten findings and not a word about overflow.'))
+
+  assert.equal(parsedResponse.findings.length, 10)
+  assert.equal(parsedResponse.hitFindingCap, true)
+})
+
+test('a block one finding below the cap is not capped', () => {
+  const parsedResponse = parseLaneResponse(responseWith(findingRowBlockOf(9), 'Nine findings and not a word about overflow.'))
+
+  assert.equal(parsedResponse.findings.length, 9)
+  assert.equal(parsedResponse.hitFindingCap, false)
 })

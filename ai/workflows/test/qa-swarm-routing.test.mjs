@@ -4,8 +4,19 @@ import { executableWorkflowSource, workflowFunctionNamed } from './qa-swarm-sour
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 
-function runWorkflow(workflowArgs) {
-  return AsyncFunction('args', executableWorkflowSource)(workflowArgs)
+function runWorkflow(workflowArgs, runtimeBindings = {}) {
+  const bindingNames = Object.keys(runtimeBindings)
+  const bindingValues = Object.values(runtimeBindings)
+  return AsyncFunction('args', ...bindingNames, executableWorkflowSource)(workflowArgs, ...bindingValues)
+}
+
+function workflowRuntimeReturning(agentResponseFor) {
+  return {
+    phase: () => {},
+    log: () => {},
+    parallel: async (tasks) => Promise.all(tasks.map((task) => task())),
+    agent: async (prompt, options) => agentResponseFor(prompt, options)
+  }
 }
 
 async function emittedRoutingPrompts(workflowArgs) {
@@ -80,4 +91,118 @@ test('disabling Grok keeps Codex instructions and emits no Grok execution instru
   assert.match(combinedPrompts, /codex exec/)
   assert.doesNotMatch(combinedPrompts, /grok --prompt-file/)
   assert.match(combinedPrompts, /Grok CLI/)
+})
+
+test('a zero-finding lane with verified safe and no overflow converges to a canonical empty block', async () => {
+  const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe claimed defect was verified safe. No overflow.'
+  const workflowArgs = {
+    ...baseWorkflowArgs,
+    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+  }
+  let agentCallCount = 0
+  const runtimeBindings = workflowRuntimeReturning(() => {
+    agentCallCount += 1
+    return laneResponse
+  })
+
+  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+
+  assert.equal(agentCallCount, 1)
+  assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
+})
+
+test('a judgment death returns the death string and its retry prompt differs between runs so resume cannot replay it', async () => {
+  const laneResponse = '- file: src/file.js | line: 1 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: Still broken.'
+  const responsesByLabel = {
+    'Code review': `STRUCTURED_FINDINGS:\n${laneResponse}\n\nOVERALL_SUMMARY:\nThe competing interpretation was verified safe.`,
+    'Converge findings': 'STRUCTURED_FINDINGS:\n\nOVERALL_SUMMARY:\n0 finding(s) survived. truncated lanes: none',
+    'Retry converge findings': 'STRUCTURED_FINDINGS:\n\nOVERALL_SUMMARY:\n0 finding(s) survived. truncated lanes: none'
+  }
+  const workflowArgs = {
+    ...baseWorkflowArgs,
+    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+  }
+  const calledLabelsByRun = []
+  const promptsByLabel = new Map()
+  const runtimeBindings = workflowRuntimeReturning((prompt, options) => {
+    const calledLabels = calledLabelsByRun.at(-1)
+    calledLabels.push(options.label)
+    const prompts = promptsByLabel.get(options.label) ?? []
+    prompts.push(prompt)
+    promptsByLabel.set(options.label, prompts)
+    return responsesByLabel[options.label]
+  })
+
+  calledLabelsByRun.push([])
+  const firstWorkflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  calledLabelsByRun.push([])
+  const secondWorkflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+
+  assert.equal(firstWorkflowResponse, 'LANE_DEATH: judgment')
+  assert.equal(secondWorkflowResponse, 'LANE_DEATH: judgment')
+  assert.deepEqual(calledLabelsByRun, [
+    ['Code review', 'Converge findings', 'Retry converge findings'],
+    ['Code review', 'Converge findings', 'Retry converge findings']
+  ])
+  assert.notEqual(promptsByLabel.get('Retry converge findings')[0], promptsByLabel.get('Retry converge findings')[1])
+  assert.equal(promptsByLabel.get('Converge findings')[0], promptsByLabel.get('Converge findings')[1])
+})
+
+test('a lane summary denying overflow converges mechanically and keeps its finding', async () => {
+  const findingLine = '- file: src/file.js | line: 12 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing.'
+  const laneResponse = `STRUCTURED_FINDINGS:\n${findingLine}\n\nOVERALL_SUMMARY:\nOne defect stands. No overflow.`
+  const workflowArgs = {
+    ...baseWorkflowArgs,
+    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+  }
+  let agentCallCount = 0
+  const runtimeBindings = workflowRuntimeReturning(() => {
+    agentCallCount += 1
+    return laneResponse
+  })
+
+  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+
+  assert.equal(agentCallCount, 1)
+  assert.ok(workflowResponse.includes(findingLine))
+  assert.match(workflowResponse, /truncated lanes: none$/)
+})
+
+test('a lane summary reporting overflow lands in the truncated lane list when every finding is dropped', async () => {
+  const laneResponse = 'STRUCTURED_FINDINGS:\n- file: src/other.js | line: 3 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing.\n\nOVERALL_SUMMARY:\nOverflow dropped 3 further findings.'
+  const workflowArgs = {
+    ...baseWorkflowArgs,
+    changedFiles: ['src/file.js', 'src/other.js'],
+    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+  }
+  let agentCallCount = 0
+  const runtimeBindings = workflowRuntimeReturning(() => {
+    agentCallCount += 1
+    return laneResponse
+  })
+
+  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+
+  assert.equal(agentCallCount, 1)
+  assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
+  assert.match(workflowResponse, /truncated lanes: code$/)
+})
+
+test('a zero-finding lane discussing arithmetic overflow stays out of the truncated lane list', async () => {
+  const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe index cannot overflow; integer overflow is guarded.'
+  const workflowArgs = {
+    ...baseWorkflowArgs,
+    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+  }
+  let agentCallCount = 0
+  const runtimeBindings = workflowRuntimeReturning(() => {
+    agentCallCount += 1
+    return laneResponse
+  })
+
+  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+
+  assert.equal(agentCallCount, 1)
+  assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
+  assert.match(workflowResponse, /truncated lanes: none$/)
 })

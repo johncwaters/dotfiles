@@ -375,7 +375,7 @@ function parseLaneResponse(rawLaneText) {
   const hasUnparseableRow = parsedRows.some((parsedRow) => !parsedRow)
   const rankedFindings = parsedRows.filter(Boolean).sort((leftFinding, rightFinding) => severityRankOf(leftFinding) - severityRankOf(rightFinding))
   const keptFindings = rankedFindings.slice(0, maxFindingsPerLane)
-  return { hasParseableBlock: rankedFindings.length > 0, hasUnparseableRow, findings: keptFindings, summary, hitFindingCap: rankedFindings.length > keptFindings.length }
+  return { hasParseableBlock: rankedFindings.length > 0, hasUnparseableRow, findings: keptFindings, summary, hitFindingCap: rankedFindings.length >= maxFindingsPerLane }
 }
 
 function truncatedLaneTagsFrom(summaryText) {
@@ -572,7 +572,7 @@ Everything above is this run's additions. Your agent definition owns the severit
   }
   const externalLanePrompt = `${lanePrompt}
 
-Find real defects with a concrete failure scenario. MEDIUM is the minimum severity and NIT is forbidden. Anything below MEDIUM is not a finding and may appear in at most one summary sentence. Anchor each finding to a line the diff adds or removes, or to general for a file-level defect. Emit at most 10 findings, highest severity first, and say in one summary sentence what an overflow dropped.
+Find real defects with a concrete failure scenario. MEDIUM is the minimum severity and NIT is forbidden. Anything below MEDIUM is not a finding and may appear in at most one summary sentence. Anchor each finding to a line the diff adds or removes, or to general for a file-level defect. Emit at most 10 findings, highest severity first, and when that cap dropped findings say in one summary sentence the verbatim phrase overflow dropped followed by how many, never writing those two words otherwise.
 
 STRUCTURED_FINDINGS:
 - file: <path> | line: <number or general> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM> | reviewer: external or external/<category> | body: <problem, concrete failure scenario, fix>
@@ -661,13 +661,13 @@ Merge findings on the same file within 5 lines, or plainly the same concern in d
 
 A contradiction is one lane asserting a defect and another explicitly verifying it safe. ${tiebreakInstruction} No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
 
-A lane summary may also report findings its own overflow dropped. Treat every lane whose summary reports such an overflow as truncated too, alongside the truncated lane tags supplied above.
+A lane summary reports findings its own cap dropped with the verbatim phrase overflow dropped. Treat every lane whose summary carries that phrase as truncated too, alongside the truncated lane tags supplied above.
 
 Return the reviewer output format exactly. The summary is one paragraph carrying exactly this text, with the surviving finding count in place of <count>:
 
 ${formatConvergenceSummary('<count>', convergenceFacts)}
 
-Extend the lane list after the verbatim phrase \"truncated lanes: \" with every lane whose summary reports overflow, comma-separated, and write none when that union is empty. Do not return a verdict, risk tier, fix, or recommendation.`
+When zero findings survive, put the literal (none) on the line after STRUCTURED_FINDINGS:. Extend the lane list after the verbatim phrase \"truncated lanes: \" with every lane whose summary carries the phrase overflow dropped, comma-separated, and write none when that union is empty. Do not return a verdict, risk tier, fix, or recommendation.`
 }
 
 function isFollowupRoundWithTouchedFiles() {
@@ -706,12 +706,16 @@ function retaggedToLane(parsedFinding, laneName) {
   return { raw: rawFindingLineFrom(retaggedFields), fields: retaggedFields }
 }
 
+function reportsOverflow(summaryText) {
+  return /\boverflow dropped\b/i.test(summaryText)
+}
+
 function canConvergeMechanically(survivingFindings, laneSummaries) {
-  if (laneSummaries.some((laneSummary) => /overflow/i.test(laneSummary.summary))) {
-    return false
-  }
   if (survivingFindings.length === 0) {
     return true
+  }
+  if (laneSummaries.some((laneSummary) => reportsOverflow(laneSummary.summary))) {
+    return false
   }
   const findingLaneNames = new Set(survivingFindings.map((survivingFinding) => survivingFinding.lane))
   if (findingLaneNames.size !== 1) {
@@ -845,7 +849,7 @@ const keptRouterFindings = rankedRouterFindings.slice(0, maxFindingsPerLane)
 const routerFindings = keptRouterFindings.map((parsedFinding) => parsedFinding.raw)
 
 const groupedFindings = [...findingsByFile].map(([file, findings]) => ({ file, findings }))
-const cappedLaneNames = [...parsedResponses].filter(([, parsedResponse]) => parsedResponse.hitFindingCap).map(([laneName]) => laneName)
+const cappedLaneNames = [...parsedResponses].filter(([, parsedResponse]) => parsedResponse.hitFindingCap || reportsOverflow(parsedResponse.summary)).map(([laneName]) => laneName)
 if (rankedRouterFindings.length > routerFindings.length) {
   cappedLaneNames.push('router')
 }
@@ -872,7 +876,8 @@ const firstValidationFailure = findConvergenceValidationFailure(convergedFinding
 if (!firstValidationFailure) {
   return convergedFindings
 }
-const retryJudgmentPrompt = `Validation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
+const resumeSafeRetryId = Math.random().toString(36).slice(2)
+const retryJudgmentPrompt = `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
 const retriedConvergedFindings = await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' })
 if (!isConvergedBlock(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {
   return 'LANE_DEATH: judgment'
