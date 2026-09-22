@@ -218,6 +218,14 @@ test('repeated blocks reporting different findings stay dead because nothing pic
   assertDead(parsedResponse)
 })
 
+test('repeated blocks that differ only past the per-lane finding cap stay dead', () => {
+  const highFindingRows = Array.from({ length: 10 }, (unusedValue, findingIndex) => `- file: src/high${findingIndex}.js | line: ${findingIndex + 1} | side: RIGHT | severity: HIGH | reviewer: code/logic | body: High ${findingIndex}.`).join('\n')
+  const mediumRowAtLine = (lineNumber) => `- file: src/medium.js | line: ${lineNumber} | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: Medium.`
+  const parsedResponse = parseLaneResponse(`${responseWith(`${highFindingRows}\n${mediumRowAtLine(55)}`)}\n\n${responseWith(`${highFindingRows}\n${mediumRowAtLine(77)}`)}`)
+
+  assertDead(parsedResponse)
+})
+
 test('repeated blocks where one carries a malformed row stay dead', () => {
   const parsedResponse = parseLaneResponse(`${responseWith(firstFindingRow)}\n\n${responseWith(`${firstFindingRow}\nnot a finding row`)}`)
 

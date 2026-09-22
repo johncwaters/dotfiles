@@ -275,6 +275,23 @@ test("--paths naming a directory in a sparse checkout stages its in-cone change"
   }
 });
 
+test("--paths naming a file outside the sparse cone still stages the in-cone file", () => {
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, "dir/in/a.txt", "one\n");
+    commitFile(repo, "dir/out/b.txt", "one\n");
+    runGit(repo, ["sparse-checkout", "set", "dir/in"]);
+    writeFile(repo, "dir/in/a.txt", "two\n");
+
+    const { result } = land(repo, ["--no-push", "--paths", "dir/in/a.txt", "dir/out/b.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]), "dir/in/a.txt");
+  } finally {
+    cleanup(repo);
+  }
+});
+
 const isRoot = process.getuid?.() === 0;
 
 test("a file git cannot stage is HOOK_FAILED instead of a partial commit", { skip: isRoot }, () => {

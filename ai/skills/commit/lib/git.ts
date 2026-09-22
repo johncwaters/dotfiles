@@ -249,11 +249,12 @@ export class Git {
     }
     const pathsInIndex: string[] = [];
     for (const pathspec of paths) {
-      const indexListing = this.run(["ls-files", "--", pathspec]);
+      const indexListing = this.run(["ls-files", "-t", "--", pathspec]);
       if (indexListing.code !== 0) {
         return indexListing;
       }
-      if (indexListing.stdout !== "") {
+      const hasEntryInsideSparseCone = nonEmptyLines(indexListing.stdout).some((line) => !line.startsWith("S "));
+      if (hasEntryInsideSparseCone) {
         pathsInIndex.push(pathspec);
       }
     }

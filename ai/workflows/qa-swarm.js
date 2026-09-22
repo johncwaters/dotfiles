@@ -371,19 +371,19 @@ function isCleanlyParsed(parsedResponse) {
 }
 
 function responseAgreedAcrossRepeatedBlocks(laneText, bareFindingsHeaders) {
-  const repeatedResponses = bareFindingsHeaders.map((findingsHeader, headerIndex) => {
+  const repeatedBlockTexts = bareFindingsHeaders.map((findingsHeader, headerIndex) => {
     const nextHeader = bareFindingsHeaders[headerIndex + 1]
-    return parseSingleBlockResponse(laneText.slice(findingsHeader.index, nextHeader ? nextHeader.index : undefined))
+    return laneText.slice(findingsHeader.index, nextHeader ? nextHeader.index : undefined)
   })
-  if (!repeatedResponses.every(isCleanlyParsed)) {
+  const uncappedResponses = repeatedBlockTexts.map((blockText) => parseSingleBlockResponse(blockText, Infinity))
+  if (!uncappedResponses.every(isCleanlyParsed)) {
     return deadLaneResponse()
   }
-  const lastResponse = repeatedResponses[repeatedResponses.length - 1]
-  const lastIdentities = findingIdentitiesOf(lastResponse)
-  if (!repeatedResponses.every((repeatedResponse) => findingIdentitiesOf(repeatedResponse) === lastIdentities)) {
+  const lastIdentities = findingIdentitiesOf(uncappedResponses[uncappedResponses.length - 1])
+  if (!uncappedResponses.every((uncappedResponse) => findingIdentitiesOf(uncappedResponse) === lastIdentities)) {
     return deadLaneResponse()
   }
-  return lastResponse
+  return parseSingleBlockResponse(repeatedBlockTexts[repeatedBlockTexts.length - 1])
 }
 
 function parseLaneResponse(rawLaneText) {
@@ -398,7 +398,7 @@ function parseLaneResponse(rawLaneText) {
   return parseSingleBlockResponse(laneText)
 }
 
-function parseSingleBlockResponse(laneText) {
+function parseSingleBlockResponse(laneText, findingLimit = maxFindingsPerLane) {
   const deadResponse = deadLaneResponse()
   const splitResponse = blockAndSummaryFrom(laneText)
   if (!splitResponse) {
@@ -415,8 +415,8 @@ function parseSingleBlockResponse(laneText) {
   const parsedRows = blockText.split('\n').map((blockLine) => blockLine.trim()).filter((blockLine) => blockLine !== '' && !isStrayHeaderLine(blockLine)).map(parseFindingLine)
   const hasUnparseableRow = parsedRows.some((parsedRow) => !parsedRow)
   const rankedFindings = parsedRows.filter(Boolean).sort((leftFinding, rightFinding) => severityRankOf(leftFinding) - severityRankOf(rightFinding))
-  const keptFindings = rankedFindings.slice(0, maxFindingsPerLane)
-  return { hasParseableBlock: rankedFindings.length > 0, hasUnparseableRow, findings: keptFindings, summary, hitFindingCap: rankedFindings.length >= maxFindingsPerLane }
+  const keptFindings = rankedFindings.slice(0, findingLimit)
+  return { hasParseableBlock: rankedFindings.length > 0, hasUnparseableRow, findings: keptFindings, summary, hitFindingCap: rankedFindings.length >= findingLimit }
 }
 
 function truncatedLaneTagsFrom(summaryText) {
