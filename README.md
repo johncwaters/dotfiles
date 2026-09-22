@@ -67,7 +67,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `npm-
 
 - `personal`: this workstation
 - `server`: headless, no editor or desktop topics
-- `work`: Claude and Codex only, no other model CLIs, org PR workflow
+- `work`: Claude and Codex only, no other model CLIs, PostHog plugin for its MCP
 
 ## Topics
 
