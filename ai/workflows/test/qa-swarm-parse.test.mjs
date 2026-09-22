@@ -196,6 +196,34 @@ test('two bare findings headers stay dead because nothing picks between them', (
   assertDead(parsedResponse)
 })
 
+test('a lane that repeats its whole block and summary with the same findings reworded parses as the last block', () => {
+  const rewordedFirstRow = firstFindingRow.replace('First finding.', 'First finding, reworded.')
+  const parsedResponse = parseLaneResponse(`Lead-in prose.\n\n${responseWith(firstFindingRow, 'First summary.')}\n\n${responseWith(rewordedFirstRow, 'Last summary.')}`)
+
+  assert.equal(parsedResponse.hasParseableBlock, true)
+  assert.equal(parsedResponse.hasUnparseableRow, false)
+  assert.deepEqual(parsedResponse.findings.map((parsedFinding) => parsedFinding.raw), [rewordedFirstRow])
+  assert.equal(parsedResponse.summary, 'Last summary.')
+})
+
+test('a lane that repeats a none block and summary stays live with zero findings', () => {
+  const parsedResponse = parseLaneResponse(`${responseWith('(none)')}\n\n${responseWith('(none)')}`)
+
+  assertLiveWithoutFindings(parsedResponse)
+})
+
+test('repeated blocks reporting different findings stay dead because nothing picks between them', () => {
+  const parsedResponse = parseLaneResponse(`${responseWith(firstFindingRow)}\n\n${responseWith(secondFindingRow)}`)
+
+  assertDead(parsedResponse)
+})
+
+test('repeated blocks where one carries a malformed row stay dead', () => {
+  const parsedResponse = parseLaneResponse(`${responseWith(firstFindingRow)}\n\n${responseWith(`${firstFindingRow}\nnot a finding row`)}`)
+
+  assertDead(parsedResponse)
+})
+
 test('two tailed findings headers with no bare header stay dead because nothing picks between them', () => {
   const parsedResponse = parseLaneResponse(`STRUCTURED_FINDINGS: (none)\n\nSTRUCTURED_FINDINGS: ${firstFindingRow}\n\nOVERALL_SUMMARY:\nLane summary.`)
 

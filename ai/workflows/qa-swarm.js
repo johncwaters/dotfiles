@@ -353,12 +353,53 @@ function severityRankOf(parsedFinding) {
   return severityRankByName[parsedFinding.fields.severity]
 }
 
+function deadLaneResponse() {
+  return { hasParseableBlock: false, hasUnparseableRow: false, findings: [], summary: '', hitFindingCap: false }
+}
+
+function findingIdentityOf(parsedFinding) {
+  const { file, line, side, severity, reviewer } = parsedFinding.fields
+  return [file, line, side || '', severity, reviewer].join('|')
+}
+
+function findingIdentitiesOf(parsedResponse) {
+  return parsedResponse.findings.map(findingIdentityOf).sort().join('\n')
+}
+
+function isCleanlyParsed(parsedResponse) {
+  return parsedResponse.hasParseableBlock && !parsedResponse.hasUnparseableRow
+}
+
+function responseAgreedAcrossRepeatedBlocks(laneText, bareFindingsHeaders) {
+  const repeatedResponses = bareFindingsHeaders.map((findingsHeader, headerIndex) => {
+    const nextHeader = bareFindingsHeaders[headerIndex + 1]
+    return parseSingleBlockResponse(laneText.slice(findingsHeader.index, nextHeader ? nextHeader.index : undefined))
+  })
+  if (!repeatedResponses.every(isCleanlyParsed)) {
+    return deadLaneResponse()
+  }
+  const lastResponse = repeatedResponses[repeatedResponses.length - 1]
+  const lastIdentities = findingIdentitiesOf(lastResponse)
+  if (!repeatedResponses.every((repeatedResponse) => findingIdentitiesOf(repeatedResponse) === lastIdentities)) {
+    return deadLaneResponse()
+  }
+  return lastResponse
+}
+
 function parseLaneResponse(rawLaneText) {
-  const deadResponse = { hasParseableBlock: false, hasUnparseableRow: false, findings: [], summary: '', hitFindingCap: false }
   if (typeof rawLaneText !== 'string' || rawLaneText.trim() === '') {
-    return deadResponse
+    return deadLaneResponse()
   }
   const laneText = withHeaderColons(rawLaneText)
+  const bareFindingsHeaders = findingsHeaderMatchesIn(laneText).filter((headerMatch) => headerMatch[1].trim() === '')
+  if (bareFindingsHeaders.length > 1) {
+    return responseAgreedAcrossRepeatedBlocks(laneText, bareFindingsHeaders)
+  }
+  return parseSingleBlockResponse(laneText)
+}
+
+function parseSingleBlockResponse(laneText) {
+  const deadResponse = deadLaneResponse()
   const splitResponse = blockAndSummaryFrom(laneText)
   if (!splitResponse) {
     return deadResponse
