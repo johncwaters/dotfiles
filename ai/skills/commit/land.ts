@@ -309,9 +309,15 @@ class Landing {
     if (exclusionOutcome) {
       return exclusionOutcome;
     }
-    this.git.addUpdate(this.config.paths);
-    for (const filePath of untracked) {
-      this.git.addPath(filePath);
+    const stagingFailures = [
+      this.git.addUpdate(this.config.paths),
+      ...untracked.map((filePath) => this.git.addPath(filePath)),
+    ].filter((staging) => staging.code !== 0);
+    if (stagingFailures.length > 0) {
+      for (const staging of stagingFailures) {
+        this.warnings.push(`could not stage changes: ${staging.stderr.trim()}`);
+      }
+      return "HOOK_FAILED";
     }
 
     if (this.git.diffNameOnly({ cached: true }).length === 0) {

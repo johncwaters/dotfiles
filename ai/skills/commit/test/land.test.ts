@@ -237,6 +237,67 @@ test("--paths leaves an out-of-scope change dirty", () => {
   }
 });
 
+test("--paths naming an already staged deletion still stages the other scoped changes", () => {
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    commitFile(repo, "gone.txt", "one\n");
+    runGit(repo, ["rm", "--quiet", "gone.txt"]);
+    writeFile(repo, "a.txt", "two\n");
+
+    const { result } = land(repo, ["--no-push", "--paths", "a.txt", "gone.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(
+      gitOutput(repo, ["show", "--name-status", "--format=", "HEAD"]).split("\n"),
+      ["M\ta.txt", "D\tgone.txt"],
+    );
+    assert.equal(gitOutput(repo, ["status", "--short"]), "");
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("--paths naming a directory in a sparse checkout stages its in-cone change", () => {
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, "dir/in/a.txt", "one\n");
+    commitFile(repo, "dir/out/b.txt", "one\n");
+    runGit(repo, ["sparse-checkout", "set", "dir/in"]);
+    writeFile(repo, "dir/in/a.txt", "two\n");
+
+    const { result } = land(repo, ["--no-push", "--paths", "dir"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]), "dir/in/a.txt");
+  } finally {
+    cleanup(repo);
+  }
+});
+
+const isRoot = process.getuid?.() === 0;
+
+test("a file git cannot stage is HOOK_FAILED instead of a partial commit", { skip: isRoot }, () => {
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    writeFile(repo, "a.txt", "two\n");
+    const unreadablePath = writeFile(repo, "unreadable.txt", "secret\n");
+    fs.chmodSync(unreadablePath, 0o000);
+    const head = gitOutput(repo, ["rev-parse", "HEAD"]);
+
+    const { code, result } = land(repo, ["--no-push"], VALID_MESSAGE);
+
+    fs.chmodSync(unreadablePath, 0o644);
+    assert.equal(result.outcome, "HOOK_FAILED");
+    assert.equal(code, 21);
+    assert.match((result.warnings as string[]).join("\n"), /could not stage changes: .*unreadable\.txt/);
+    assert.equal(gitOutput(repo, ["rev-parse", "HEAD"]), head);
+  } finally {
+    cleanup(repo);
+  }
+});
+
 test("--paths matching nothing dirty is NOTHING_TO_COMMIT", () => {
   const repo = makeRepo("feature");
   try {

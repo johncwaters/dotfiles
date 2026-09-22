@@ -244,7 +244,23 @@ export class Git {
   }
 
   addUpdate(paths: string[] = []): GitResult {
-    return this.run(scoped(["add", "-u"], paths));
+    if (paths.length === 0) {
+      return this.run(["add", "-u"]);
+    }
+    const pathsInIndex: string[] = [];
+    for (const pathspec of paths) {
+      const indexListing = this.run(["ls-files", "--", pathspec]);
+      if (indexListing.code !== 0) {
+        return indexListing;
+      }
+      if (indexListing.stdout !== "") {
+        pathsInIndex.push(pathspec);
+      }
+    }
+    if (pathsInIndex.length === 0) {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return this.run(["add", "-u", "--", ...pathsInIndex]);
   }
 
   addPath(path: string): GitResult {
