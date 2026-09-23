@@ -1,0 +1,89 @@
+---
+name: open-pr
+description: Open or update a GitHub pull request in any repo with a "Feedback wanted" block at the top of the description section that tells reviewers what stage the work is at and what kind of feedback helps now (direction, design, UI/UX, polish, or merge review). Defaults follow PostHog's early-and-often practice; the repo's own PR template, instruction files, and PR skills win over them. Opens as a draft by default and confirms the body before anything is posted. Use for /open-pr, "open a PR", "put up a draft", "get early feedback on this", or moving an existing PR to a new feedback stage.
+---
+
+# Open PR
+
+The defaults here come from PostHog's practice of opening pull requests early and often, so reviewers can steer work before it hardens. An early PR only helps if the reviewer knows what to look at: a direction check reviewed like a merge candidate drowns in nits, and a merge candidate reviewed like a sketch ships unreviewed edge cases. Every PR this skill writes therefore carries a `Feedback wanted` block.
+
+Each repo owns its PR conventions and they differ, even across PostHog repos. The repo's rules always win over this skill's defaults. The one thing this skill adds everywhere is the feedback block.
+
+## Step 1: Preconditions
+
+- Uncommitted changes: stop and point at `/commit`. This skill never commits or pushes; `/commit` owns the review loop and the push.
+- Branch is mainline: stop. A PR needs a feature branch.
+- Remote branch missing or not at local HEAD (`git fetch origin <branch>`, then `git rev-parse HEAD` differs from `git rev-parse origin/<branch>`): stop and point at `/commit`, or ask the carbon unit to push. Reviewers see only what was pushed.
+- `gh pr view --json number,url,body,isDraft,state,author` finds a PR for this branch with state `OPEN`: this run is update mode. A merged or closed PR does not count; open a new one. Record the mode and act on it only after Step 2.
+
+## Step 2: Load the repo's PR rules
+
+Collect all of these before drafting or touching an existing PR; each can override a default below.
+
+- **Template:** the first of `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/pull_request_template.md`, `pull_request_template.md`, or a file in `.github/PULL_REQUEST_TEMPLATE/`. Several files there: ask which one fits. Its HTML comments are the repo's instructions to authors and agents.
+- **Instruction files:** PR, issue, commit, push, and merge sections of `AGENTS.md`, `CLAUDE.md`, and `CONTRIBUTING.md` at the repo root. They set title format, required sections, body order, pre-push checks, and merge rules.
+- **Repo skills:** any skill those files name for PR work (for example `/writing-pr-descriptions`, `/reviewing-with-coderabbit`, `/stacking-prs` in `PostHog/posthog`), found under `.claude/skills` or `.agents/skills`. Invoke each one where the repo says to. A repo description skill owns the body's shape; this skill only supplies the feedback block content.
+
+Obey what they say: exact section structure, title format, body order (a required lead such as an executive summary comes first), agent context sections, duplicate-PR search, checklist boxes, draft default. Never tick a checklist box for something not done. A template section with nothing to say gets one line or "None".
+
+Stop instead of opening or editing a PR when:
+
+- The repo says this kind of work belongs in an issue, not a PR (`PostHog/posthog.com` routes bugs and non-content changes to issues and closes such PRs). Say so and name the rule.
+- The repo says a PR cannot be submitted without screenshots of a visual change and there are none. Name the rule.
+
+Update mode on a PR whose `author.login` differs from `gh api user --jq .login`: when the repo says updates to someone else's PR are appended rather than edited in place, append the feedback block at the end of the body after a `---` line and leave the rest untouched.
+
+No template and no rules: use `Problem`, `Changes`, `How did you test this code?`, and `type(scope): description` for the title.
+
+## Step 3: Pick the feedback stage
+
+Read the diff against the merge-base (`git diff $(git merge-base origin/<mainline> HEAD)`) and the commit log, then recommend one stage:
+
+| Stage | Signals | Reviewers look at | Reviewers skip |
+|---|---|---|---|
+| Direction check | Small or stubbed diff, TODOs, no tests, "wip"/"spike" commits | Is this the right problem and approach? Is a better alternative obvious? | Naming, style, tests, edge cases, error handling |
+| Design review | Structure in place, interfaces or schema new, tests thin | Interfaces, data model, module boundaries, migrations | Naming, copy, test completeness |
+| UI/UX feedback | Frontend files changed (`.tsx`, `.scss`, `.css`, stories) | Flow, layout, copy, interaction, empty and error states | Backend internals, code style |
+| Polish | Feature complete, tests present, CI expected green | Edge cases, naming, test gaps, readability | Re-litigating the approach |
+| Ready to merge | Polish done, the carbon unit asks for approval | Everything; approve or request changes | Nothing |
+
+Ask the carbon unit with AskUserQuestion: the recommended stage first, marked "(Recommended)", with the signal that drove it in the description. One stage only; a PR asking for everything gets nothing specific.
+
+## Step 4: Draft the questions
+
+Write 1 to 3 concrete questions a reviewer can answer in a sentence each. Mine them from the diff: open TODOs, a choice between two plausible designs, a dependency added, a threshold picked without evidence. "Any feedback?" is not a question; "Should retries live in the client or the task queue?" is. Questions the carbon unit supplies win over mined ones.
+
+UI/UX stage: screenshots or a recording are required. Use the repo's upload path where it names one (`hogli pr:upload-image <file>` in `PostHog/posthog`, whose assets are public forever, so never upload customer data or anything internal). No way to capture the UI: say so in the feedback block rather than skipping it, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
+
+## Step 5: Build the body
+
+Put the feedback block at the top of the template's main description section: the first of `Problem`, `Overview`, `Motivation and Context`, or `Changes` the template has, or `Problem` with no template. A lead line the repo's rules require first stays above it. Never add a new `##` heading; `PostHog/posthog` forbids changing a template's section structure.
+
+```markdown
+## Problem
+
+**Feedback wanted: direction check.** Early draft. Tests and error handling come after the approach is agreed.
+
+- Should retries live in the client or the task queue?
+- Is polling every 30s acceptable, or does this need a webhook?
+
+**Skip for now:** naming, test coverage, edge cases.
+```
+
+`Skip for now` lists the stage's skip column plus anything the carbon unit named as known-incomplete. Omit it at Ready to merge.
+
+New PR: fill the rest of the template under the rules from Step 2, then delete every template HTML comment. Testing claims state only what was actually run in this session or by the carbon unit; never claim manual testing that did not happen.
+
+Update mode: replace only the existing feedback block, or add it where a new PR would put it, and keep every other byte of the body, since it may hold screenshots, links, and ticked boxes a carbon unit added. The append-only rule from Step 2 overrides placement.
+
+## Step 6: Confirm and apply
+
+Opening or editing a PR notifies people, so wait for approval before posting. New PR: show the title, draft state, and full body. Update mode: show the diff between the current body and the new one, plus any draft-state change.
+
+- New PR, every stage except Ready to merge: `gh pr create --draft --title "<title>" --body-file -`, body on stdin.
+- New PR, Ready to merge: `gh pr create` without `--draft`.
+- Update mode: `gh pr edit <number> --body-file -`, body on stdin. Ready to merge on a draft: `gh pr ready <number>`. Any lower stage on a PR that is not a draft: `gh pr ready <number> --undo`.
+- Never merge or enqueue.
+- The rules ask for an assignee or labels: resolve the handle from `gh api user --jq .login` and pass `--assignee`/`--label`; never guess a handle.
+
+Report the PR URL and the stage it was opened or moved to.

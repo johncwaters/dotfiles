@@ -322,5 +322,5 @@ Read `policy.afterCommit`:
   quickly"; re-run `land.ts` instead. A clean tree with `--promote` still promotes an
   unlanded feature tip.
 - `pull-request`: never merge the feature branch anywhere. Offer to open a pull request
-  against the repository's mainline with `gh pr create`. If the carbon unit declines, stop
+  against the repository's mainline with `/open-pr`. If the carbon unit declines, stop
   after reporting. `/pr-review` reviews a pull request only when asked for by name.
