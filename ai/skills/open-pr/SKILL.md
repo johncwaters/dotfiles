@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open or update a GitHub pull request in any repo with a "Feedback wanted" block at the top of the description section that tells reviewers what stage the work is at and what kind of feedback helps now (direction, design, UI/UX, polish, or merge review), then prints a short Slack message linking the PR for the team channel. Defaults follow PostHog's early-and-often practice; the repo's own PR template, instruction files, and PR skills win over them. Opens as a draft by default and confirms the body before anything is posted. Use for /open-pr, "open a PR", "put up a draft", "get early feedback on this", or moving an existing PR to a new feedback stage.
+description: Open or update a GitHub pull request in any repo with a "Feedback wanted" block at the top of the description section that tells reviewers what stage the work is at and what kind of feedback helps now (direction, design, UI/UX, polish, or merge review), then prints a short Slack message linking the PR for the team channel. Defaults follow PostHog's early-and-often practice; the repo's own PR template, instruction files, and PR skills win over them. Commits uncommitted work through /commit first so it is reviewed. Opens as a draft by default and confirms the body before anything is posted. Use for /open-pr, "open a PR", "put up a draft", "get early feedback on this", or moving an existing PR to a new feedback stage.
 ---
 
 # Open PR
@@ -11,9 +11,9 @@ Each repo owns its PR conventions and they differ, even across PostHog repos. Th
 
 ## Step 1: Preconditions
 
-- Uncommitted changes: stop and point at `/commit`. This skill never commits or pushes; `/commit` owns the review loop and the push.
+- Uncommitted changes: invoke `/commit` as commit-only, so it runs its review loop, commits, and pushes the feature branch without `--promote` (promotion would land the work on mainline and leave nothing to open a PR for). Its branch guard moves work off mainline onto a feature branch. Skip its closing `/open-pr` offer, since this run is that PR. Continue only on `COMMITTED` with `pushed: true`; any other outcome stops this run with that outcome relayed. This skill never commits or pushes itself.
 - Branch is mainline: stop. A PR needs a feature branch.
-- Remote branch missing or not at local HEAD (`git fetch origin <branch>`, then `git rev-parse HEAD` differs from `git rev-parse origin/<branch>`): stop and point at `/commit`, or ask the carbon unit to push. Reviewers see only what was pushed.
+- Remote branch missing or not at local HEAD (`git fetch origin <branch>`, then `git rev-parse HEAD` differs from `git rev-parse origin/<branch>`): stop and ask the carbon unit to push. Reviewers see only what was pushed, and `/commit` on a clean tree pushes nothing.
 - `gh pr view --json number,url,body,isDraft,state,author` finds a PR for this branch with state `OPEN`: this run is update mode. A merged or closed PR does not count; open a new one. Record the mode and act on it only after Step 2.
 
 ## Step 2: Load the repo's PR rules
