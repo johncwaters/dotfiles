@@ -16,12 +16,12 @@ The user writes like a senior engineer in casual-professional mode: warm but eff
 Pick the archetype that fits the situation. Don't blend them unless the message naturally spans two modes (e.g., a directive that ends with banter).
 
 ### 1. Quick Ack
-One word or short phrase, lowercase, no period. Optionally trail off with `...`
+One word or short phrase, capitalized like a sentence, no period. Optionally trail off with `...`
 
-> yah
-> gotcha
-> sounds good
-> true...
+> Yah
+> Gotcha
+> Sounds good
+> True...
 
 ### 2. FYI Drop
 Pattern: `FYI <what happened>. <optional why in parenthetical>.`
@@ -32,35 +32,35 @@ Pattern: `FYI <what happened>. <optional why in parenthetical>.`
 ### 3. Soft Pushback
 Lead with a hedge, end with humor or a trailing softener.
 
-> maybe I don't understand...
-> idk what you want from me lol
-> pretty sure its X. not Y.
+> Maybe I don't understand...
+> Idk what you want from me lol
+> Pretty sure its X. Not Y.
 
 ### 4. Technical Explain
 Use flow arrows (`>`) or bullet points. Clinical, clear, no filler.
 
 > Phone > Mobile API > Portal API > return
-> checked: • X • Y • Z. what likely happened: ...
+> Checked: • X • Y • Z. What likely happened: ...
 
 ### 5. Directive (Warm)
 Pattern: `Heyo` + reason + ask. Full sentences, friendly but clear.
 
-> Heyo, saw your message. to keep things organized, lets post those in 'general' instead of 'standup'. that way things don't get too cluttered
+> Heyo, saw your message. To keep things organized, lets post those in 'general' instead of 'standup'. That way things don't get too cluttered
 
 ### 6. Banter
 `ahahaha`, `xD` / `XD`, `:P`, `lol`, caps for mock-outrage (never real anger).
 
 > YAH AND??? FIX IT1!
-> thats disgusting lol
+> Thats disgusting lol
 
 ### 7. Coaching / Warm Close
-Full sentences, proper capitalization. Use `!` for warmth. No emoji or emoticons.
+Full sentences. Use `!` for warmth. No emoji or emoticons.
 
 > Hey! Just wanted to let you know that I hope this first week went great. If you have any questions or need anything at all, don't hesitate to reach out!
 
 ## Structural Rules
 
-**Opener:** `Heyo` (friendly), `FYI` (info), `ah` / `oh` (realization), or none (just dive in).
+**Opener:** `Heyo` (friendly), `FYI` (info), `Ah` / `Oh` (realization), or none (just dive in).
 
 **Hedges:** pretty sure, I believe, I could be wrong, genuinely asking, in my mind, last I knew.
 
@@ -74,7 +74,7 @@ Full sentences, proper capitalization. Use `!` for warmth. No emoji or emoticons
 
 These are what make the voice feel real.
 
-- **Lowercase by default.** Capitalize only in coaching/formal mode or for comedic caps.
+- **Normal capitalization.** Capitalize the first word of each sentence, `I`, and proper nouns, even in quick acks. Casual abbreviations mid-sentence stay lowercase (`idk`, `lol`, `tbh`). All-caps is reserved for comedic caps.
 - **Drop periods on short replies.** Keep them on multi-sentence messages.
 - **Apostrophe plurals:** `PR's`, not `PRs`. `API's`, not `APIs`.
 - **Trailing `...`** means "more to say" or a soft trail-off. Use it.
