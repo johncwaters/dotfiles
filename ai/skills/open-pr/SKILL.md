@@ -39,13 +39,13 @@ No template and no rules: use `Problem`, `Changes`, `How did you test this code?
 
 Read the diff against the merge-base (`git diff $(git merge-base origin/<mainline> HEAD)`) and the commit log, then recommend one stage:
 
-| Stage | Signals | Reviewers look at | Reviewers skip |
-|---|---|---|---|
-| Direction check | Small or stubbed diff, TODOs, no tests, "wip"/"spike" commits | Is this the right problem and approach? Is a better alternative obvious? | Naming, style, tests, edge cases, error handling |
-| Design review | Structure in place, interfaces or schema new, tests thin | Interfaces, data model, module boundaries, migrations | Naming, copy, test completeness |
-| UI/UX feedback | Frontend files changed (`.tsx`, `.scss`, `.css`, stories) | Flow, layout, copy, interaction, empty and error states | Backend internals, code style |
-| Polish | Feature complete, tests present, CI expected green | Edge cases, naming, test gaps, readability | Re-litigating the approach |
-| Ready to merge | Polish done, the carbon unit asks for approval | Everything; approve or request changes | Nothing |
+| Stage | Signals | Reviewers look at |
+|---|---|---|
+| Direction check | Small or stubbed diff, TODOs, no tests, "wip"/"spike" commits | Is this the right problem and approach? Is a better alternative obvious? |
+| Design review | Structure in place, interfaces or schema new, tests thin | Interfaces, data model, module boundaries, migrations |
+| UI/UX feedback | Frontend files changed (`.tsx`, `.scss`, `.css`, stories) | Flow, layout, copy, interaction, empty and error states |
+| Polish | Feature complete, tests present, CI expected green | Edge cases, naming, test gaps, readability |
+| Ready to merge | Polish done, the carbon unit asks for approval | Everything; approve or request changes |
 
 Ask the carbon unit with AskUserQuestion: the recommended stage first, marked "(Recommended)", with the signal that drove it in the description. One stage only; a PR asking for everything gets nothing specific.
 
@@ -62,15 +62,13 @@ Put the feedback block at the top of the template's main description section: th
 ```markdown
 ## Problem
 
-**Feedback wanted: direction check.** Early draft. Tests and error handling come after the approach is agreed.
+**Feedback wanted: direction check.** Early draft; the approach is still open.
 
 - Should retries live in the client or the task queue?
 - Is polling every 30s acceptable, or does this need a webhook?
-
-**Skip for now:** naming, test coverage, edge cases.
 ```
 
-`Skip for now` lists the stage's skip column plus anything the carbon unit named as known-incomplete. Omit it at Ready to merge.
+Never add a `Skip for now` list or any other list of what reviewers should ignore: the stage name and the questions already scope the review. Update mode drops such a list from the block it replaces.
 
 New PR: fill the rest of the template under the rules from Step 2, then delete every template HTML comment. Testing claims state only what was actually run in this session or by the carbon unit; never claim manual testing that did not happen.
 
