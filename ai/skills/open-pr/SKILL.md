@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open or update a GitHub pull request in any repo with a "Feedback wanted" block at the top of the description section that tells reviewers what stage the work is at and what kind of feedback helps now (direction, design, UI/UX, polish, or merge review). Defaults follow PostHog's early-and-often practice; the repo's own PR template, instruction files, and PR skills win over them. Opens as a draft by default and confirms the body before anything is posted. Use for /open-pr, "open a PR", "put up a draft", "get early feedback on this", or moving an existing PR to a new feedback stage.
+description: Open or update a GitHub pull request in any repo with a "Feedback wanted" block at the top of the description section that tells reviewers what stage the work is at and what kind of feedback helps now (direction, design, UI/UX, polish, or merge review), then prints a short Slack message linking the PR for the team channel. Defaults follow PostHog's early-and-often practice; the repo's own PR template, instruction files, and PR skills win over them. Opens as a draft by default and confirms the body before anything is posted. Use for /open-pr, "open a PR", "put up a draft", "get early feedback on this", or moving an existing PR to a new feedback stage.
 ---
 
 # Open PR
@@ -87,3 +87,21 @@ Opening or editing a PR notifies people, so wait for approval before posting. Ne
 - The rules ask for an assignee or labels: resolve the handle from `gh api user --jq .login` and pass `--assignee`/`--label`; never guess a handle.
 
 Report the PR URL and the stage it was opened or moved to.
+
+## Step 7: Slack message
+
+After the PR is posted, print a short message the carbon unit can paste into their team channel, in a fenced code block so it copies cleanly. Never post it; the carbon unit sends it.
+
+The team posts PRs as one or two casual lines, not a restated PR body, so match that. Write it with `/voice-style`.
+
+- Lead with the bare PR link, e.g. `https://github.com/org/repo/pull/123`: the composer does not render `<url|label>`, but Slack autolinks and unfurls a bare URL.
+- One line on what it does and why it matters to the team, not how.
+- The ask, sized to the stage: "quick stamp?" for Ready to merge, "main feedback wanted: <the top question>" for earlier stages. Direction and design stages may add up to 3 bullets from the Step 4 questions.
+- Risk in one clause when it helps a reviewer say yes fast, e.g. "no behavior change, safe to release".
+- Extra links only when they save a reviewer a click: the issue it closes, the stack tip or base PR ("review the stack as a whole"), a specific diff line that matters most, the preview or screenshot.
+
+```
+https://github.com/PostHog/wizard/pull/1293 digs a trench around the agent so we can add ESLint import boundaries later. no behavior change, safe to release. quick stamp?
+```
+
+Update mode: the message says what changed since the last ask, e.g. "moved to polish, approach settled in thread".
