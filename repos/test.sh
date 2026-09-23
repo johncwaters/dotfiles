@@ -187,6 +187,13 @@ fi
 if [[ -f "$DOTFILES_TEST_STATE/npm-install-fails" ]]; then
   exit 1
 fi
+if [[ -f "$DOTFILES_TEST_STATE/npm-installs-node-pty" ]]; then
+  for helperDirectory in build/Release prebuilds/darwin-arm64; do
+    mkdir -p "node_modules/node-pty/$helperDirectory"
+    : > "node_modules/node-pty/$helperDirectory/spawn-helper"
+    chmod 644 "node_modules/node-pty/$helperDirectory/spawn-helper"
+  done
+fi
 exit 0
 NPMSHIM
 

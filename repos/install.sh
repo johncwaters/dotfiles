@@ -182,6 +182,29 @@ installArgumentsFor() {
   printf '%s\n' install --no-package-lock --no-audit --no-fund --loglevel=error
 }
 
+# npm 12 blocks dependency install scripts, so node-pty's macOS spawn-helper lands 0644 and every pty spawn dies with posix_spawnp.
+restoreNodePtySpawnHelpers() {
+  local label="$1"
+  local repoPath="$2"
+  local helperPath
+  local hasRepairedHelper=0
+  for helperPath in "$repoPath"/node_modules/node-pty/build/{Release,Debug}/spawn-helper \
+    "$repoPath"/node_modules/node-pty/prebuilds/darwin-*/spawn-helper; do
+    if [[ ! -f "$helperPath" || -x "$helperPath" || -L "$helperPath" ]]; then
+      continue
+    fi
+    if ! chmod 755 "$helperPath"; then
+      noteWarned "$label node-pty" "chmod 755 $helperPath failed"
+      return 0
+    fi
+    hasRepairedHelper=1
+  done
+  if ((hasRepairedHelper == 0)); then
+    return 0
+  fi
+  noteApplied "$label node-pty" "spawn-helper made executable"
+}
+
 installRepoDeps() {
   local label="$1"
   local repoPath="$2"
@@ -206,6 +229,7 @@ installRepoDeps() {
     return 0
   fi
   notePresent "$label deps" "installed"
+  restoreNodePtySpawnHelpers "$label" "$repoPath"
   if [[ ! -d "$repoPath/node_modules/electron" ]]; then
     clearDotfilesState "$depsPendingStateName"
     return 0

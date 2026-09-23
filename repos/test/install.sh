@@ -200,6 +200,39 @@ check "a yarn repo is installed against its frozen lockfile" \
 check "a pnpm repo is installed against its frozen lockfile" \
   logHas "pnpm $sandbox/Projects/pnpmlock install --frozen-lockfile"
 
+nodePtyList="$sandbox/node-pty-list.txt"
+printf 'Projects/ptyuser=https://github.com/johncwaters/ptyuser\n' > "$nodePtyList"
+makeExistingClone "Projects/ptyuser" "https://github.com/johncwaters/ptyuser"
+printf '{"name":"ptyuser"}\n' > "$sandbox/Projects/ptyuser/package.json"
+: > "$stubState/npm-installs-node-pty"
+nodePtyOutput="$(runInstall "$nodePtyList")"
+rm -f "$stubState/npm-installs-node-pty"
+check "a prebuilt node-pty spawn-helper is executable after the install" \
+  test -x "$sandbox/Projects/ptyuser/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+check "a compiled node-pty spawn-helper is executable after the install" \
+  test -x "$sandbox/Projects/ptyuser/node_modules/node-pty/build/Release/spawn-helper"
+check "the spawn-helper repair is reported" outputHas "$nodePtyOutput" "spawn-helper made executable"
+nodePtyRerunOutput="$(runInstall "$nodePtyList")"
+check "an already executable spawn-helper is not reported again" \
+  outputLacks "$nodePtyRerunOutput" "spawn-helper made executable"
+
+symlinkTargetPath="$sandbox/.ssh-like-secret"
+: > "$symlinkTargetPath"
+chmod 600 "$symlinkTargetPath"
+symlinkPtyList="$sandbox/symlink-pty-list.txt"
+printf 'Projects/ptysymlink=https://github.com/johncwaters/ptysymlink\n' > "$symlinkPtyList"
+makeExistingClone "Projects/ptysymlink" "https://github.com/johncwaters/ptysymlink"
+printf '{"name":"ptysymlink"}\n' > "$sandbox/Projects/ptysymlink/package.json"
+mkdir -p "$sandbox/Projects/ptysymlink/node_modules/node-pty/build/Release"
+ln -s "$symlinkTargetPath" "$sandbox/Projects/ptysymlink/node_modules/node-pty/build/Release/spawn-helper"
+symlinkPtyOutput="$(runInstall "$symlinkPtyList")"
+check "a symlinked spawn-helper is never chmod'd" \
+  test "$(fileModeOf "$symlinkTargetPath")" = "600"
+check "a symlinked spawn-helper is left as a symlink" \
+  test -L "$sandbox/Projects/ptysymlink/node_modules/node-pty/build/Release/spawn-helper"
+check "a symlinked spawn-helper is not reported as repaired" \
+  outputLacks "$symlinkPtyOutput" "spawn-helper made executable"
+
 divergedList="$sandbox/diverged-list.txt"
 printf 'Projects/diverged=https://github.com/johncwaters/diverged\n' > "$divergedList"
 makeExistingClone "Projects/diverged" "https://github.com/johncwaters/diverged"
