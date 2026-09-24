@@ -94,10 +94,9 @@ After the PR is posted, print a short message the carbon unit can paste into the
 The team posts PRs as one casual sentence, not a restated PR body, so match that. Write it with `/voice-style`.
 
 - Lead with the bare PR link, e.g. `https://github.com/org/repo/pull/123`: the composer does not render `<url|label>`, but Slack autolinks and unfurls a bare URL.
-- One sentence on what it changes, in the reader's words, not how. That sentence is the whole message for Ready to merge: no evidence, risk, or "quick stamp?", since the PR body carries them and posting the link is the ask.
-- Earlier stages add the ask inline: "Feedback wanted: <the Step 4 questions joined into one sentence>?". Never bullets.
+- One sentence on what it changes, in the reader's words, not how. That sentence is the whole message at every stage: no feedback questions, evidence, risk, or "quick stamp?", since the PR body's feedback block carries them and posting the link is the ask. Repeating the questions in Slack splits the answers across two places.
 - One workspace emoji where it fits the subject. Find it with the Slack MCP's `slack_search_emojis` (name substring search, e.g. `wizard` finds `:pet_wizard:`) rather than guessing a name, since a custom emoji that does not exist renders as literal text.
-- Extra links only when they save a reviewer a click: the issue it closes, the stack tip or base PR ("review the stack as a whole").
+- Link every companion PR this run opened or cited in other repos (the backend or config change it depends on), plus the issue it closes and the stack tip or base PR ("review the stack as a whole"), as bare URLs after the sentence.
 - Leave out thanks, credits, @-mentions, caveats, and side stories. The PR body holds those.
 
 ```
@@ -105,7 +104,7 @@ https://github.com/PostHog/posthog.com/pull/20413 gives the pocket guides setup 
 ```
 
 ```
-https://github.com/PostHog/wizard-workbench/pull/4189 drops the copied feature-flags apps for pointers to the basic-integration ones. Feedback wanted: is a separate source.json the right pointer and are these the right checks?
+https://github.com/PostHog/wizard/pull/1322 adds `wizard feature-flags`, which creates example backend and frontend flags and wires up their evaluation :bufo-gives-you-a-feature-flag: (gateway allowlist: https://github.com/PostHog/charts/pull/16288)
 ```
 
-Update mode: the message says what changed since the last ask, e.g. "moved to polish, approach settled in thread".
+Update mode: the sentence says what changed since the last post, e.g. "moved to polish, approach settled in thread".
