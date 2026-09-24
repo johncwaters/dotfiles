@@ -44,13 +44,15 @@ Read the diff against the merge-base (`git diff $(git merge-base origin/<mainlin
 | Design review | Early or stubbed diff, interfaces or schema new, tests thin | Interfaces, data model, module boundaries, migrations |
 | UI/UX feedback | Frontend files changed (`.tsx`, `.scss`, `.css`, stories) | Flow, layout, copy, interaction, empty and error states |
 | Polish | Feature complete, tests present, CI expected green | Edge cases, naming, test gaps, readability |
-| Ready to merge | Polish done, the carbon unit asks for approval | Everything; approve or request changes |
+| Ready to merge | Polish done, or a diff with no open question: a bug fix with its test, a mechanical refactor, a config or dependency bump, a change copying an existing pattern; tests present, CI expected green | Everything; approve or request changes |
 
 Ask the carbon unit with AskUserQuestion: the recommended stage first, marked "(Recommended)", with the signal that drove it in the description. One stage only; a PR asking for everything gets nothing specific.
 
+Recommend Ready to merge when Step 4 would find no question a reviewer must answer, the diff meets the Ready to merge row's signals (tests present, CI expected green), and it matches no earlier stage's signals (stubbed diff, new interfaces or schema, thin tests, frontend files changed). An earlier stage parks mergeable work in draft and spends a review round on nothing; save it for a diff that carries a real open question.
+
 ## Step 4: Draft the questions
 
-Write 1 to 3 concrete questions a reviewer can answer in a sentence each. Mine them from the diff: open TODOs, a dependency added, a threshold picked without evidence. "Any feedback?" is not a question; "Retries live in the task queue so a crashed client loses nothing; any caller that breaks?" is. The approach is the author's call: state the pick and why, never ask reviewers to choose it, since reviewers stall on an open choice and move on a stated one. Questions the carbon unit supplies win over mined ones.
+Write 1 to 3 concrete questions a reviewer can answer in a sentence each; Ready to merge needs none, only a one-line risk statement such as "no behavior change". Mine them from the diff: open TODOs, a dependency added, a threshold picked without evidence. "Any feedback?" is not a question; "Retries live in the task queue so a crashed client loses nothing; any caller that breaks?" is. The approach is the author's call: state the pick and why, never ask reviewers to choose it, since reviewers stall on an open choice and move on a stated one. Questions the carbon unit supplies win over mined ones.
 
 UI/UX stage: screenshots or a recording are required. Use the repo's upload path where it names one (`hogli pr:upload-image <file>` in `PostHog/posthog`, whose assets are public forever, so never upload customer data or anything internal). No way to capture the UI: say so in the feedback block rather than skipping it, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
 
