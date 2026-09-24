@@ -94,12 +94,18 @@ The team posts PRs as one or two casual lines, not a restated PR body, so match 
 
 - Lead with the bare PR link, e.g. `https://github.com/org/repo/pull/123`: the composer does not render `<url|label>`, but Slack autolinks and unfurls a bare URL.
 - One line on what it does and why it matters to the team, not how.
-- The ask, sized to the stage: "quick stamp?" for Ready to merge, "main feedback wanted: <the top question>" for earlier stages. Direction and design stages may add up to 3 bullets from the Step 4 questions.
+- Evidence in one short sentence when it helps, e.g. "Passing on next.js, django and rails."
+- The ask, sized to the stage: "quick stamp?" for Ready to merge, "Feedback wanted: <the Step 4 questions joined into one sentence>?" for earlier stages. Inline, never bullets.
 - Risk in one clause when it helps a reviewer say yes fast, e.g. "no behavior change, safe to release".
 - Extra links only when they save a reviewer a click: the issue it closes, the stack tip or base PR ("review the stack as a whole"), a specific diff line that matters most, the preview or screenshot.
+- Leave out thanks, credits, @-mentions, and side stories (what the change already caught, what got fixed elsewhere). The PR body holds those.
 
 ```
 https://github.com/PostHog/wizard/pull/1293 digs a trench around the agent so we can add ESLint import boundaries later. no behavior change, safe to release. quick stamp?
+```
+
+```
+https://github.com/PostHog/wizard-workbench/pull/4189 drops the copied feature-flags apps for pointers to the basic-integration ones, and the e2e now checks the flags actually got made and wired right. Passing on next.js, django and rails. Feedback wanted: is a separate source.json the right pointer and are these the right checks?
 ```
 
 Update mode: the message says what changed since the last ask, e.g. "moved to polish, approach settled in thread".
