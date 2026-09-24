@@ -7,7 +7,7 @@ description: The finder engine of the review ladder. Takes an already-pinned dif
 
 Find, converge, return. Every lane emits the same structured format so the merge is mechanical.
 
-Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAllowed: boolean, grokAllowed: boolean, settled: string[], claimedFixed: string[], declined: string[], round?: { number, touchedFiles: string[], reportingBar: string } }`.
+Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAllowed: boolean, grokAllowed: boolean, settled: string[], claimedFixed: string[], declined: string[], round?: { number, touchedFiles: string[], reportingBar: string }, retryAttemptId?: string }`.
 
 ## Contract with the caller
 
@@ -82,7 +82,7 @@ Lanes report MEDIUM and above and never `NIT`. LOW remains accepted only as a pa
 
 Build `args` from the caller's inputs, call `Workflow({name: 'qa-swarm', args})`, and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Pass `scriptPath: '~/.claude/workflows/qa-swarm.js'` instead of `name` only while iterating on the script inside one session; the `Read(~/.claude/workflows/**)` allow rule in settings.base.json is what lets the tool open it.
 
-The workflow converges mechanically when no findings survive, or when one lane owns every survivor, no lane summary reports an overflow, and no lane explicitly says `verified safe`. Every lane definition requires those two words verbatim in the summary whenever the lane checked a suspected defect and cleared it, which is what makes the tiebreak path reachable. A needed convergence agent gets one retry with its exact validation failure before judgment is declared dead. Its retry prompt carries a per-run id, so `resumeFromRunId` re-runs a dead retry rather than replaying its cached output.
+The workflow converges mechanically when no findings survive, or when one lane owns every survivor, no lane summary reports an overflow, and no lane explicitly says `verified safe`. Every lane definition requires those two words verbatim in the summary whenever the lane checked a suspected defect and cleared it, which is what makes the tiebreak path reachable. A needed convergence agent gets one retry with its exact validation failure before judgment is declared dead. Its retry prompt carries an id built from `reviewCmd` and the round number, because the workflow runtime rejects `Math.random()`; to re-run a dead retry under `resumeFromRunId` rather than replay its cached output, pass a new `retryAttemptId`.
 
 Workflow tool absent in this session: read `~/.claude/workflows/qa-swarm.js`, spawn the lane set it names in one message with multiple calls, as before, and converge by the rules in that script.
 

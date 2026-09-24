@@ -917,7 +917,7 @@ const firstValidationFailure = findConvergenceValidationFailure(convergedFinding
 if (!firstValidationFailure) {
   return convergedFindings
 }
-const resumeSafeRetryId = Math.random().toString(36).slice(2)
+const resumeSafeRetryId = args.retryAttemptId ?? `${args.reviewCmd} round ${args.round?.number ?? 1}`
 const retryJudgmentPrompt = `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
 const retriedConvergedFindings = await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' })
 if (!isConvergedBlock(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {

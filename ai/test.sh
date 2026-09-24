@@ -201,6 +201,10 @@ workflowCliCommandsComeFromRouting() {
   )
 }
 
+workflowAvoidsResumeBreakingCalls() {
+  ! grep -qE 'Math\.random\(|Date\.now\(|new Date\(\)' "$1"
+}
+
 qaSwarmDeclaresThreeLaneCap() {
   grep -qE '^const maxLanesPerRun = 3$' "$topicDir/workflows/qa-swarm.js"
 }
@@ -219,6 +223,7 @@ for workflowPath in "${workflowScripts[@]}"; do
   check "$workflowName carries delegation markers" workflowCarriesDelegationMarkers "$workflowPath"
   check "$workflowName names only models ROUTING.md lists" workflowModelIdsComeFromRouting "$workflowPath"
   check "$workflowName names only CLI invocations ROUTING.md lists" workflowCliCommandsComeFromRouting "$workflowPath"
+  check "$workflowName avoids calls the workflow runtime rejects" workflowAvoidsResumeBreakingCalls "$workflowPath"
 done
 check "qa-swarm caps each run at three lanes" qaSwarmDeclaresThreeLaneCap
 check "reviewer agents stay inside their own lanes" reviewerAgentsDoNotReportForAbsentOwners

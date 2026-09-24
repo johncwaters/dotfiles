@@ -111,7 +111,7 @@ test('a zero-finding lane with verified safe and no overflow converges to a cano
   assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
 })
 
-test('a judgment death returns the death string and its retry prompt differs between runs so resume cannot replay it', async () => {
+test('a judgment death returns the death string and a new retryAttemptId changes only the retry prompt', async () => {
   const laneResponse = '- file: src/file.js | line: 1 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: Still broken.'
   const responsesByLabel = {
     'Code review': `STRUCTURED_FINDINGS:\n${laneResponse}\n\nOVERALL_SUMMARY:\nThe competing interpretation was verified safe.`,
@@ -136,7 +136,7 @@ test('a judgment death returns the death string and its retry prompt differs bet
   calledLabelsByRun.push([])
   const firstWorkflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
   calledLabelsByRun.push([])
-  const secondWorkflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  const secondWorkflowResponse = await runWorkflow({ ...workflowArgs, retryAttemptId: 'second attempt' }, runtimeBindings)
 
   assert.equal(firstWorkflowResponse, 'LANE_DEATH: judgment')
   assert.equal(secondWorkflowResponse, 'LANE_DEATH: judgment')
