@@ -63,6 +63,10 @@ tell the user to run `setup/apply`.
 Nothing rewrites the code between the last review and the commit, so the review is the
 gate.
 
+**Skip the loop** for a mechanical follow-up with passing tests: a pure rename, or a
+reviewer's suggestion applied verbatim. A review there costs minutes and finds nothing. Go
+straight to **Step 3: write the message**. Any logic change, however small, runs the loop.
+
 **Step 0, once.** Run the `ai-slop-cleaner` skill with the explicit changed-file list from preflight. In this invocation it may not create files, including tests, and the UI/design checklist is out of scope.
 
 **Then loop.**
