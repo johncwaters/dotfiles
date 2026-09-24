@@ -54,7 +54,7 @@ Recommend Ready to merge when Step 4 would find no question a reviewer must answ
 
 Write 1 to 3 concrete questions a reviewer can answer in a sentence each; Ready to merge needs none, only a one-line risk statement such as "no behavior change". Mine them from the diff: open TODOs, a dependency added, a threshold picked without evidence. "Any feedback?" is not a question; "Retries live in the task queue so a crashed client loses nothing; any caller that breaks?" is. The approach is the author's call: state the pick and why, never ask reviewers to choose it, since reviewers stall on an open choice and move on a stated one. Questions the carbon unit supplies win over mined ones.
 
-UI/UX stage: screenshots or a recording are required. Use the repo's upload path where it names one (`hogli pr:upload-image <file>` in `PostHog/posthog`, whose assets are public forever, so never upload customer data or anything internal). No way to capture the UI: say so in the feedback block rather than skipping it, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
+UI/UX stage, or any visual change a repo rule covers: screenshots or a recording are required. Follow `references/visual-evidence.md` for capture, approval, upload, and embedding; its `scripts/evidence.mjs` does the mechanical parts. Uploads are public forever, so never upload customer data or anything internal. No way to capture the UI: say so in the feedback block rather than skipping it, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
 
 ## Step 5: Build the body
 
@@ -91,22 +91,21 @@ Report the PR URL and the stage it was opened or moved to.
 
 After the PR is posted, print a short message the carbon unit can paste into their team channel, in a fenced code block so it copies cleanly. Never post it; the carbon unit sends it.
 
-The team posts PRs as one or two casual lines, not a restated PR body, so match that. Write it with `/voice-style`.
+The team posts PRs as one casual sentence, not a restated PR body, so match that. Write it with `/voice-style`.
 
 - Lead with the bare PR link, e.g. `https://github.com/org/repo/pull/123`: the composer does not render `<url|label>`, but Slack autolinks and unfurls a bare URL.
-- One line on what it does and why it matters to the team, not how.
-- Evidence in one short sentence when it helps, e.g. "Passing on next.js, django and rails."
-- The ask, sized to the stage: "quick stamp?" for Ready to merge, "Feedback wanted: <the Step 4 questions joined into one sentence>?" for earlier stages. Inline, never bullets.
-- Risk in one clause when it helps a reviewer say yes fast, e.g. "no behavior change, safe to release".
-- Extra links only when they save a reviewer a click: the issue it closes, the stack tip or base PR ("review the stack as a whole"), a specific diff line that matters most, the preview or screenshot.
-- Leave out thanks, credits, @-mentions, and side stories (what the change already caught, what got fixed elsewhere). The PR body holds those.
+- One sentence on what it changes, in the reader's words, not how. That sentence is the whole message for Ready to merge: no evidence, risk, or "quick stamp?", since the PR body carries them and posting the link is the ask.
+- Earlier stages add the ask inline: "Feedback wanted: <the Step 4 questions joined into one sentence>?". Never bullets.
+- One workspace emoji where it fits the subject. Find it with the Slack MCP's `slack_search_emojis` (name substring search, e.g. `wizard` finds `:pet_wizard:`) rather than guessing a name, since a custom emoji that does not exist renders as literal text.
+- Extra links only when they save a reviewer a click: the issue it closes, the stack tip or base PR ("review the stack as a whole").
+- Leave out thanks, credits, @-mentions, caveats, and side stories. The PR body holds those.
 
 ```
-https://github.com/PostHog/wizard/pull/1293 digs a trench around the agent so we can add ESLint import boundaries later. no behavior change, safe to release. quick stamp?
+https://github.com/PostHog/posthog.com/pull/20413 gives the pocket guides setup command the same wizard button :pet_wizard: as the docs install pages instead of the plain grey box.
 ```
 
 ```
-https://github.com/PostHog/wizard-workbench/pull/4189 drops the copied feature-flags apps for pointers to the basic-integration ones, and the e2e now checks the flags actually got made and wired right. Passing on next.js, django and rails. Feedback wanted: is a separate source.json the right pointer and are these the right checks?
+https://github.com/PostHog/wizard-workbench/pull/4189 drops the copied feature-flags apps for pointers to the basic-integration ones. Feedback wanted: is a separate source.json the right pointer and are these the right checks?
 ```
 
 Update mode: the message says what changed since the last ask, e.g. "moved to polish, approach settled in thread".

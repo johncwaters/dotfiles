@@ -435,12 +435,14 @@ shopt -s nullglob
 hookTestFiles=("$topicDir"/hooks/test/*.test.mjs)
 workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
+openPrTestFiles=("$topicDir"/skills/open-pr/test/*.test.mjs)
 shopt -u nullglob
 check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
 check "workflow behavior tests are present" test "${#workflowTestFiles[@]}" -gt 0
 check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
-if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0)); then
-  check "hook, workflow, and commit behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}"
+check "open-pr evidence tests are present" test "${#openPrTestFiles[@]}" -gt 0
+if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0)); then
+  check "hook, workflow, commit, and open-pr behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${openPrTestFiles[@]}"
 fi
 
 reportTopicResults "ai"
