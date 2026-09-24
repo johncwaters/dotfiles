@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Review a GitHub pull request and optionally post the result to it. Resolves the PR to a base and head SHA without touching the working tree, runs one code-review pass over that range, then asks before posting inline comments and one sticky summary. Never fixes anything, never loops, never pushes. Use when asked to review a PR, review somebody's changes, or leave review comments on GitHub.
+description: Review a GitHub pull request and optionally post the result to it. Resolves the PR to a base and head SHA without touching the working tree, runs one code-review pass over that range, then asks before posting one batched review of inline comments. Never fixes anything, never loops, never pushes. Use when asked to review a PR, review somebody's changes, or leave review comments on GitHub.
 ---
 
 # PR Review
@@ -55,7 +55,7 @@ Show the verdict and the finding counts by severity first, so the answer is info
 
 Never post on a draft PR without saying it is a draft and asking anyway.
 
-## Step 4a: Inline comments
+## Step 4: Post the review
 
 Post every finding with a real file and line as one batched review, not one API call per finding. Batching is not cosmetic: one review sends one notification, N individual comments send N.
 
@@ -65,7 +65,7 @@ Post every finding with a real file and line as one batched review, not one API 
 cat > <body.json> <<'JSON'
 {
   "event": "COMMENT",
-  "body": "Automated review. See inline comments.",
+  "body": "<review body>",
   "commit_id": "<HEAD_SHA>",
   "comments": [
     { "path": "<file>", "line": <line>, "side": "<RIGHT or LEFT, from the finding>", "body": "<comment body>" }
@@ -75,13 +75,13 @@ JSON
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --method POST --input <body.json>
 ```
 
-`side` is copied straight from the finding's own `side` field, never inferred here: by the time a finding reaches this step the diff is no longer in hand, and guessing puts a comment about deleted code onto whatever unrelated line now occupies that number. A finding with no `side` is `RIGHT`. A finding whose `line` is `general` has no anchor at all and belongs in the summary comment.
+`side` is copied straight from the finding's own `side` field, never inferred here: by the time a finding reaches this step the diff is no longer in hand, and guessing puts a comment about deleted code onto whatever unrelated line now occupies that number. A finding with no `side` is `RIGHT`. A finding whose `line` is `general` has no anchor at all and goes in the review `body`.
 
 Build that JSON with a script (`jq`, or `json.dumps` over the finding list), never by hand-splicing finding text into the template. Bodies contain quotes, backticks, and newlines, and a hand-built body produces invalid JSON or a mangled comment.
 
 `event` stays `COMMENT`. Never `APPROVE` or `REQUEST_CHANGES`: those are the carbon unit's call to make under their own name, and an automated pass must not spend a human's review approval.
 
-Failure of the batched call falls back to `gh api repos/{owner}/{repo}/pulls/{number}/comments` per finding, and the report says the fallback was used.
+Failure of the batched call falls back to `gh api repos/{owner}/{repo}/pulls/{number}/comments` per anchored finding, plus one `reviews` call with the review body and no `comments` when there are `line: general` findings (the `comments` endpoint needs a path and line, so they would otherwise be lost), and the report says the fallback was used.
 
 Each inline body:
 
@@ -96,59 +96,7 @@ Each inline body:
 
 Convergent findings use `**[convergent: <tag> + <tag>] <SEVERITY>**`.
 
-Findings with `line: general` have no anchor and belong in the summary comment instead.
-
-## Step 4b: Sticky summary, one per PR
-
-Exactly one top-level summary comment per pull request, marked `<!-- pr-review-summary -->`, updated in place on every re-review. Several bot comments on one PR is the noise this exists to prevent.
-
-```
-gh api "repos/{owner}/{repo}/issues/{number}/comments" --paginate \
-  --jq '[.[] | select((.body | contains("<!-- pr-review-summary -->")) or (.body | contains("<!-- qa-swarm-summary -->")))][0].id'
-```
-
-Both sides of the `or` are parenthesized because `|` binds loosest in jq: unparenthesized, the filter parses as `.body | (contains(A) or .body) | contains(B)` and dies with `Cannot index string with "body"` on the first comment that does not match.
-
-The second marker is the one `qa-swarm` used before summary posting moved here. Matching it means an older summary is updated in place rather than joined by a second one; write the new marker when you update it, so each PR converges on one.
-
-Body shape, current verdict on top and prior rounds folded away:
-
-```
-<!-- pr-review-summary -->
-> [!NOTE]
-> Automated review. Not written by a human.
-
-## Verdict: <VERDICT> (round <N> at <short_sha>)
-
-<1 to 2 sentences>
-
-### Findings
-<grouped by severity, current round only, with the unanchored ones spelled out here>
-
-### Convergence
-<findings two or more lanes reached independently, the highest confidence ones>
-
-### Lanes
-| Lane | Assessment |
-| --- | --- |
-| <tag> | <one sentence> |
-
-<details>
-<summary>Previous rounds (<n>)</summary>
-
-round <N> at <short_sha> - <verdict>: <one-line disposition>
-
-</details>
-```
-
-When updating, derive the history lines from the existing comment's own verdict header plus its existing history block. The previous round collapses to one line; it is never carried over verbatim.
-
-```
-gh api "repos/{owner}/{repo}/issues/comments/{id}" -X PATCH -F body=@<file>   # update
-gh pr comment {number} --body-file <file>                                     # create
-```
-
-Inline comments from Step 4a are untouched by the upsert. They are threaded, per-finding, and resolvable by the author; only the top-level summary is deduplicated.
+No separate top-level summary comment: the review is the whole record, and a second bot comment per PR is noise. The review `body` is the same `> [!NOTE]` disclaimer, then `Verdict: <VERDICT>`, then one bullet per `line: general` finding in the same tagged format, then `See inline comments.` only when there are inline comments.
 
 ## Step 5: Report
 
@@ -159,7 +107,7 @@ Terminal report regardless of whether anything was posted:
 Verdict: <VERDICT>   Actionable: <n>   Range: <BASE_SHA>..<HEAD_SHA>   Files: N   Lines: N
 Lanes: <tag>, <tag>   Degraded: <tag> (<reason>)
 Findings: <n> CRITICAL, <n> HIGH, <n> MEDIUM, <n> LOW, <n> NIT
-Posted: <yes, N inline + summary | no, declined>
+Posted: <yes, N inline + M in review body | no, declined> (fallback used, when it was)
 
 ### Findings
 - path:line [SEVERITY] [<tag>] problem. fix.
