@@ -23,6 +23,17 @@
       },
       "logitech" : {
         "highResolutionWheel" : true
+      },
+      "buttons" : {
+        "mappings" : [
+          {
+            "button" : {
+              "kind" : "logitechControl",
+              "controlID" : 195
+            },
+            "action" : "missionControl"
+          }
+        ]
       }
     }
   ]
