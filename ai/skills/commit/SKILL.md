@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Personal commit workflow. Reviews and fixes in a loop via /code-review, then runs two deterministic steps (preflight, land) that stage, commit, push, and promote a feature branch onto the resolved mainline with typed outcomes. Use for /commit, "commit this", "commit and push", or landing finished work.
+description: Personal commit workflow. Reviews and fixes in a loop via /code-review, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promote the feature branch onto the resolved mainline or leave it pushed for /open-pr, per the machine's commit policy. Use for /commit, "commit this", "commit and push", or landing finished work.
 ---
 
 # Commit

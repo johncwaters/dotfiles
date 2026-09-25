@@ -75,7 +75,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `npm-
 | --- | --- |
 | `shell` | `~/.bashrc` and `~/.bash_profile` stubs; `~/.localrc` first, then the profile's topics' `*.bash`; a `c` completion over `$PROJECTS` |
 | `git` | global gitconfig, with identity and credentials in `~/.gitconfig.local` |
-| `ai` | Claude Code and Codex: agents, commands, hooks, hud, skills, compiled-commit |
+| `ai` | Claude Code and Codex: agents, commands, hooks, hud, skills, workflows |
 | `vscodium` | settings, keybindings, mcp.json, extensions |
 | `glimmervoid` | dashboard config, plus the user service on profiles that serve Glimmervoid |
 | `converge` | a nightly user timer running `dot`, the one converge outside Glimmervoid's cgroup that can pay a restart a hosted run left owed |

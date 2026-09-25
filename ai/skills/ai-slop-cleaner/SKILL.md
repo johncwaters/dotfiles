@@ -14,7 +14,7 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 - Follow-up implementation left duplicate logic, dead code, wrapper layers, boundary leaks, or weak regression coverage
 - The user wants a reviewer-only anti-slop pass via `--review`
 - The goal is simplification and cleanup, not new feature delivery
-- The /commit workflow invokes it as its mandatory pre-review cleanup pass
+- The /commit workflow runs it once before its review loop, and skips it along with the loop for mechanical follow-ups
 
 ## When Not to Use
 
@@ -37,7 +37,7 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 The pass can be bounded to an explicit file list or changed-file scope when the caller already knows the safe cleanup surface (for example, the files changed in the current commit).
 
 - Good fit: `/ai-slop-cleaner src/auth/session.ts src/auth/token.ts`
-- Good fit: the /commit workflow handing off only the files staged for that commit
+- Good fit: the /commit workflow handing off the changed-file list from its preflight step
 - Preserve the same regression-safe workflow even when the scope is a short file list
 - Do not expand a changed-file scope. List broader cleanup opportunities in the report instead
 - When invoked from /commit, never create files, including tests

@@ -35,7 +35,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAll
 
 The trigger column is a copy of the rows `laneTriggerTable` renders from the `laneDefinitions` array in `~/.claude/workflows/qa-swarm.js`, which is the text the router prompt actually carries; edit a lane's `trigger` there first and copy the rendered row here. The script pins these models. `security` stays on fable because security judgment outranks cost.
 
-Each run is capped at three lanes. Priority is `code`, forced `security`, router recommendations in their value order, then `external`; follow-up rounds use `code`, carried `security`, other carried owners in first-seen order, then carried `external`.
+Each run is capped at three lanes. Priority is `code`, forced `security`, router recommendations in their value order, then `external`; narrowed follow-up rounds use `code`, carried `security`, other carried owners except `necessity` in first-seen order, then carried `external`; with no router, `code`, `security`, then carried owners except `external`.
 
 A follow-up round with touched files skips routing and reviews only those files plus files named by claimed-fixed and declined findings. Round 1 already swept everything else, so the narrower pass preserves regression and declined checks without paying for the whole diff again. A `REVIEW_CMD` that already carries a `-- <paths>` restriction is never narrowed further, because git unions pathspecs across two `--` groups instead of intersecting them, so that round keeps the full sweep and reports the fallback as a degradation note.
 
