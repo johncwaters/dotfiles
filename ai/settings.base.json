@@ -65,7 +65,6 @@
       "Bash(gh auth status* -t*)",
       "Bash(gh config get* oauth_token*)",
       "Read(~/.claude/.credentials.json)",
-      "Read(~/.codex/auth.json)",
       "Read(~/.config/gh/hosts.yml)",
       "Read(~/.glimmervoid/config.json*)",
       "Read(~/.ssh/**)"
