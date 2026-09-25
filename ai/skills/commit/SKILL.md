@@ -22,10 +22,9 @@ must be 22.18 or newer; it runs the TypeScript directly, with no build step.
 ## Step 1: preflight
 
 Run `preflight.ts` first, with `--paths` when you know exactly which files this session
-changed. It scopes what this run stages and reports, which is what keeps another session's
-unstaged work out of the commit; anything already in the index rides along regardless,
-because git commits the whole index, and `land.ts` names those files in `warnings`. Pass
-the same restriction to `/code-review` later.
+changed.
+Use preflight's `paths` output as the scoped file list for `ai-slop-cleaner`, `/code-review`,
+and `land.ts`.
 
 It answers five things: the outcome (`READY` or a refusal), the current `branch` and
 whether `branchAllowed` permits committing on it, the `changed` and `untracked` files that
@@ -34,29 +33,19 @@ will be staged, the machine's `policy`, and `mainlineFreshness`.
 **Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
 committing on this branch. `policy.commitBranches.onForbidden` permits only
 `create-feature-branch`: create
-a branch named for the work item, switch to it, and proceed. `land.ts` repeats this guard
-and returns `BRANCH_FORBIDDEN` before staging or committing if invoked directly on a
-forbidden branch or resolved mainline. `POLICY_INVALID` means the profile still names an
-unsupported remedy;
-both entry points stop and name the profile file in `errors`. An absent `commitBranches`
-key uses the fallback `main` and `master` guard without invalidating the policy.
+a branch named for the work item, switch to it, and proceed.
 
 **Mainline freshness.** A `mainlineFreshness.behind` above zero means rebase onto
 `origin/<mainline>` now, before Step 2, then re-run preflight. A conflict there uses the
 Conflict resolution section and needs no re-review, since nothing has been reviewed yet.
+`checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
 
-`policy.resolved.mainline` is the destination for promotion. With `mainline: "auto"`,
-preflight checks the `origin/HEAD` target, then `main`, then `master`. A literal policy
-value selects that branch. An unresolved mainline warns but does not refuse preflight;
-landing then commits and pushes the feature branch without promotion. A repository
-`.claude/release-profile.json`, or the retired `.claude/release-profile.yml` when JSON is
-absent, whose `git.integration` differs from the resolved mainline also warns without
-refusing. JSON is authoritative when both exist.
+An unresolved mainline warns; landing pushes the feature branch without promotion.
 
 **No policy.** A missing `policy` field (the warning names the reason) means the machine
 profile has not been applied. `main` and `master` are still guarded, so `branchAllowed`
 still answers the branch question. Do not promote: run `land.ts` without `--promote` and
-tell the user to run `setup/apply`.
+tell the carbon unit to run `~/.dotfiles/script/bootstrap --profile <name>` from the main checkout.
 
 ## Step 2: review loop
 
@@ -67,12 +56,12 @@ gate.
 reviewer's suggestion applied verbatim. A review there costs minutes and finds nothing. Go
 straight to **Step 3: write the message**. Any logic change, however small, runs the loop.
 
-**Step 0, once.** Run the `ai-slop-cleaner` skill with the explicit changed-file list from preflight. In this invocation it may not create files, including tests, and the UI/design checklist is out of scope.
+**Step 0, once.** Run `ai-slop-cleaner` on preflight's `paths` as its file list, identifying `/commit` as the caller.
 
 **Then loop.**
 
-1. Invoke `/code-review` with target `working`, the repo path, the explicit changed-file
-   list from preflight as `--paths`, and one or two sentences of what changed and the goal
+1. Invoke `/code-review` with target `working`, the repo path, preflight's `paths`
+   as `--paths`, and one or two sentences of what changed and the goal
    it serves. Always `working`, never `staged`: `land.ts` stages every tracked
    modification in scope plus the scoped untracked files, so a `staged` review would
    approve a subset of what gets committed.
@@ -140,25 +129,13 @@ fix and still maps to a passing verdict. LOW never triggers another round.
 
 Carry three separate lists into the next `/code-review` call, never merged: the findings
 settled as `NIT` or `AMBIGUOUS`, the receipt's `FIXED` findings, and the receipt's
-`DECLINED` ones. The first suppresses re-reporting; the second becomes a regression check,
-because a `FIXED` receipt is a claim and the next round is what verifies it; the third is a
-live defect nobody fixed and nobody settled, so the next round must see it again if it is
-still there. A round 1 or 2 where `finding-fixer` declines every finding it was handed is
+`DECLINED` ones. A round 1 or 2 where `finding-fixer` declines every finding it was handed is
 a stop, not a retry; on round 3 it lands, since the tree the last review saw is unchanged,
 and lands without promotion when any of those declined findings is HIGH or CRITICAL.
 
 Also carry, verbatim, the round number, the pin round 1's `/code-review` summary reported,
-and the previous round's `TRUNCATED` line. The number counts rounds of this loop: the first
-`/code-review` call is round 1, the call after the first `finding-fixer` dispatch is round
-2. All three — the number, the round-1 pin, and that `TRUNCATED` line — arm `/code-review`'s
-late-finding rule, which is what makes this loop converge instead of finding one more thing
-forever; that rule's mechanics are its own to state, not this skill's. Omit any one of them
-and it stays disarmed. A previous round
-whose `TRUNCATED` line named a lane leaves the next round un-ratcheted on purpose, so carry
-that line even when it says `none`.
-
-`/code-review` is the only review on this path. Do not spawn a reviewer agent yourself and
-do not invoke `/qa-swarm` directly.
+and the previous round's `TRUNCATED` line, even when it says `none`. Count the first
+`/code-review` call as round 1 and increment after each `finding-fixer` dispatch.
 
 **A merge you resolve by hand invalidates the review of the branch it lands on.** A clean
 merge is not a safe merge: integration can change a helper in one file while the reviewed
@@ -195,7 +172,7 @@ included only when they apply. Omit the whole trailer block only for a genuinely
 version bump with no logic change).
 
 Check a draft before landing with `node "$HOME/.claude/skills/commit/preflight.ts"
---check-message` and the message on stdin. `land.ts` runs the same validation and refuses
+--check-message` and the message on stdin; success returns `READY`. `land.ts` runs the same validation and refuses
 with `MESSAGE_INVALID` rather than committing something malformed.
 
 ## Step 4: land
@@ -216,11 +193,11 @@ MSG
 
 Flags:
 
-- `--paths <file-or-dir> ...`: the same restriction passed to preflight and `/code-review`.
-  Omit it only when the user asked to commit everything or you cannot enumerate what
-  changed. A `warnings` entry naming files "already staged outside --paths" means the index
-  carried work this run never scoped; say so when you report. A denylisted file staged that
-  way stops the run outright rather than riding along, as `DENYLISTED_FILE_STAGED`.
+- `--paths <file-or-dir> ...`: pass preflight's `paths`, as used for `/code-review`.
+  Omit it only when the carbon unit asked to commit everything or you cannot enumerate what
+  changed. Report `excluded staged files outside --paths: ...` warnings to the carbon unit;
+  those files were unstaged and remain in the working tree. A denylisted addition still in
+  the index after exclusion stops the run with `DENYLISTED_FILE_STAGED`.
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
   mainline, and pushing mainline. When origin has the mainline but no local branch, it
@@ -239,7 +216,7 @@ failures.
 
 | Outcome | Exit | What to do |
 |---|---|---|
-| `COMMITTED` | 0 | `pushed` says whether the feature branch was pushed, `promoted` lists the branches promotion carried the commit into, and `deletedRemoteBranches` lists any non-mainline remote feature branch proven merged by ancestry or tree containment that was pruned. Report |
+| `COMMITTED` | 0 | Report the commit and any branches listed in `promoted` |
 | `NOTHING_TO_COMMIT` | 13 | With `--promote`, promotion still ran: report what `promoted` says. Without it, stop and relay |
 | `MESSAGE_INVALID` | 20 | `errors` names each violation. Fix the message and re-run `land.ts` |
 | `HOOK_FAILED` | 21 | A commit hook rejected the commit, or git could not stage a scoped file or unstage an out-of-scope one; git's stderr is in `warnings` and nothing was committed. Fix the cause, then re-run |
@@ -255,22 +232,8 @@ failures.
 | `DETACHED_HEAD` | 11 | Stop and relay |
 | `OPERATION_IN_PROGRESS` | 12 | A merge, rebase, or cherry-pick is in flight (`operation`). Stop and relay |
 
-With `--promote` the feature-branch push is deferred until promotion determines whether
-mainline absorbed it. When origin exists and `--no-push` is absent, `PROMOTE_FAILED`,
-`MAINLINE_UNVERIFIED`, `MAINLINE_AHEAD`, and `PROMOTE_CONFLICT` all attempt a feature-branch
-safety push. `pushed` reports whether that safety push succeeded. A safety-push failure is
-added to `warnings` without replacing the original outcome.
-
-Successful promotion to mainline does not push the feature branch: it fast-forwards into
-mainline, so pushing it too would only leave a dead remote branch. `pushed: false` on a
-`COMMITTED` mainline promotion is therefore normal, not a failure. Two consequences: a
-merged remote feature branch other than mainline, `main`, `master`, or `develop` is deleted
-once ancestry proves pushed mainline carries it, or tree containment does for a remote tip
-this landing actually rebased; the deletion is a single push leased on that branch tip, and
-origin mainline is re-read right after it, so a mainline that no longer carries the sha this
-run pushed restores the branch and warns. Deletions are listed in
-`deletedRemoteBranches` (a refused deletion is a warning, never an outcome change). A
-missing mainline also pushes the feature branch and reports the skip in `warnings`.
+`pushed: false` after successful mainline promotion is normal. Report safety-push failures
+from `warnings`; they do not change the outcome.
 
 ## Conflict resolution
 
@@ -296,8 +259,11 @@ wholesale.
 
 ## Push and promote recovery
 
+A SessionStart `Parked branches:` entry is an unfinished landing from `~/.claude/commit-ledger.jsonl` (or the absolute `CLAUDE_COMMIT_LEDGER` override).
+Return to the listed branch, rerun preflight, follow the outcome's recovery instructions, then rerun `land.ts` with the original flags, which retries a failed push.
+
 `PUSH_FAILED` and `PROMOTE_FAILED` are yours to resolve the same way. `warnings` names the
-root cause. Fix it, then re-run `land.ts` (keeping `--promote` when it was passed); a
+root cause. Fix it, then re-run `land.ts` with the original flags, which retries the push; a
 `NOTHING_TO_COMMIT` outcome on the re-run is expected. These git commands are sanctioned
 only to unblock the run.
 

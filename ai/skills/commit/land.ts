@@ -207,7 +207,11 @@ class Landing {
 
   private landNothing(): Result {
     if (!this.config.promote) {
-      return nothingToCommit({ warnings: this.warnings });
+      const pushOutcome = this.pushFeatureBranch();
+      if (pushOutcome) {
+        return this.failure(pushOutcome);
+      }
+      return nothingToCommit({ pushed: this.pushed, warnings: this.warnings });
     }
     const promoteOutcome = this.promote();
     if (promoteOutcome) {
@@ -324,8 +328,7 @@ class Landing {
       return "NOTHING_TO_COMMIT";
     }
 
-    // A denylisted path the scope filter never let in reached the index some other
-    // way, and a new .env leaves for origin in the same run as the commit.
+    // Check the index too: a pre-staged secret could reach origin in this same run.
     this.denylistedStagedFiles = this.git.stagedAdditions().filter(isDenylisted);
     if (this.denylistedStagedFiles.length > 0) {
       return "DENYLISTED_FILE_STAGED";

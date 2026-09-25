@@ -23,21 +23,8 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAll
 
 ## Lane reference
 
-| Lane tag | Target | Model | Triggers when |
-|---|---|---|---|
-| `code` | `code-reviewer` agent | opus | Always. Logic defects, correctness, contracts |
-| `security` | `security-reviewer` agent | fable | Diff touches auth, input handling, crypto, payments, PII, secrets, infrastructure, or destructive operations |
-| `structure` | `structure-reviewer` agent | opus | Diff is a refactor, establishes a new module or boundary, or moves responsibilities across existing ones |
-| `necessity` | `necessity-reviewer` agent | opus | Diff introduces a net-new file, exported symbol, or doc section, and the context states a goal |
-| `scale` | `scale-reviewer` agent | opus | Diff adds or changes a loop, recursion, query, batch, cache, or list endpoint whose input the context does not bound by fact |
-| `external` | Codex CLI | `gpt-6-sol`, effort `high` | Danger is HIGH and a lane slot is free |
-| `tiebreak` | Grok CLI | default | Two lanes disagree on whether a specific finding is real. Runs during convergence inside the workflow, never during lane dispatch |
-
-The trigger column is a copy of the rows `laneTriggerTable` renders from the `laneDefinitions` array in `~/.claude/workflows/qa-swarm.js`, which is the text the router prompt actually carries; edit a lane's `trigger` there first and copy the rendered row here. The script pins these models. `security` stays on fable because security judgment outranks cost.
-
-Each run is capped at three lanes. Priority is `code`, forced `security`, router recommendations in their value order, then `external`; narrowed follow-up rounds use `code`, carried `security`, other carried owners except `necessity` in first-seen order, then carried `external`; with no router, `code`, `security`, then carried owners except `external`.
-
-A follow-up round with touched files skips routing and reviews only those files plus files named by claimed-fixed and declined findings. Round 1 already swept everything else, so the narrower pass preserves regression and declined checks without paying for the whole diff again. A `REVIEW_CMD` that already carries a `-- <paths>` restriction is never narrowed further, because git unions pathspecs across two `--` groups instead of intersecting them, so that round keeps the full sweep and reports the fallback as a degradation note.
+Lane definitions and selection belong to `~/.claude/workflows/qa-swarm.js`.
+`security` stays on fable because security judgment outranks cost.
 
 **CLI routing flags.** Read the profile `CLAUDE.md` `<routing>` rule yourself: a rule forbidding a CLI sets that CLI's flag false, and no such rule means both true. Never leave detection to a spawned agent, which is told routing does not bind it. Sending a work diff to a forbidden CLI is a confidentiality breach, not a routing preference. A false flag emits no instruction for that CLI and uses the substitute below:
 
@@ -49,40 +36,13 @@ A follow-up round with touched files skips routing and reviews only those files 
 
 ## Reviewer output format
 
-Every lane, and this skill itself, ends its response with:
-
-```
-STRUCTURED_FINDINGS:
-- file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM> | reviewer: <tag> | body: <the review comment text>
-- file: ...
-
-OVERALL_SUMMARY:
-<one paragraph>
-```
-
-No findings:
-
-```
-STRUCTURED_FINDINGS:
-(none)
-
-OVERALL_SUMMARY:
-<one paragraph>
-```
-
-**Tags** are `<lane>` or `<lane>/<category>`, the category being the finding's own lowercased, hyphenated kind: `security/idor`, `code/logic`, `structure/duplication`, `scale/quadratic`. Sub-tagging keeps each lane's taxonomy readable once findings converge; fall back to the flat lane tag when no category fits.
-
-**`body`** is compact: what is wrong, the failure scenario, the fix, and `Confidence: low, <what would confirm it>` when the lane could not fully verify it. One finding per line, no newlines and no bare `|` inside a body.
-
-**`side`** says which half of the diff `line` indexes: `RIGHT` for a line the diff adds or leaves in place, `LEFT` for a line the diff removes, in which case `line` is its number in the pre-change file. Default to `RIGHT`; a lane that reports a defect in deleted code must say `LEFT` explicitly. Nothing downstream can recover this from the finding alone, and a `LEFT` finding published as `RIGHT` lands on unrelated code. Omit the field entirely when `line` is `general`.
-
-Lanes report MEDIUM and above and never `NIT`. LOW remains accepted only as a parser safety net and is dropped before convergence.
+Relay the workflow output verbatim; manual lanes use `~/.claude/agents/*-reviewer.md` for their formats and `~/.claude/workflows/qa-swarm.js` for the external lane and converged output.
 
 ## Step 1: Run the workflow
 
 Build `args` from the caller's inputs, call `Workflow({name: 'qa-swarm', args})`, and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Pass `scriptPath: '~/.claude/workflows/qa-swarm.js'` instead of `name` only while iterating on the script inside one session; the `Read(~/.claude/workflows/**)` allow rule in settings.base.json is what lets the tool open it.
 
-The workflow converges mechanically when no findings survive, or when one lane owns every survivor, no lane summary reports an overflow, and no lane explicitly says `verified safe`. Every lane definition requires those two words verbatim in the summary whenever the lane checked a suspected defect and cleared it, which is what makes the tiebreak path reachable. A needed convergence agent gets one retry with its exact validation failure before judgment is declared dead. Its retry prompt carries an id built from `reviewCmd` and the round number, because the workflow runtime rejects `Math.random()`; to re-run a dead retry under `resumeFromRunId` rather than replay its cached output, pass a new `retryAttemptId`.
+To re-run a dead retry under `resumeFromRunId` without replaying its cached output, pass a new `retryAttemptId`.
 
 Workflow tool absent in this session: read `~/.claude/workflows/qa-swarm.js`, spawn the lane set it names in one message with multiple calls, as before, and converge by the rules in that script.
 

@@ -3,8 +3,7 @@ import { detachedHead, notARepo, operationInProgress, type Result } from "./outc
 
 const IN_PROGRESS_MARKERS = ["MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD"] as const;
 
-// Both entry points refuse on the same repository states: a marker added here has
-// to reach preflight and land together, or one would refuse what the other lands.
+// preflight and land share this guard so neither refuses what the other would land.
 export function repositoryGuard(git: Git): Result | null {
   if (!git.isInsideWorkTree()) {
     return notARepo({});

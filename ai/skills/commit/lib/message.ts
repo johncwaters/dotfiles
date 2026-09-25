@@ -37,8 +37,7 @@ function startsWithKnownTrailer(line: string): boolean {
   return TRAILER_LABELS.some((label) => line.startsWith(`${label}:`));
 }
 
-// A block is trailers as soon as one line names a known trailer, not only when
-// every line parses: a malformed line there is an error, not prose.
+// One known trailer makes the block trailers, so a malformed line in it errors instead of passing as prose.
 function trailerBlockLines(lines: string[]): string[] {
   const lastBlankIndex = lines.lastIndexOf("");
   if (lastBlankIndex === -1) {

@@ -11,6 +11,7 @@ import {
   gitOutput,
   land,
   makeBareOrigin,
+  makeLedgerPath,
   makePolicyRoot,
   makeRepo,
   runGit,
@@ -428,6 +429,82 @@ test("a pre-push hook that never passes exhausts the retries", () => {
     assert.equal(result.outcome, "PUSH_FAILED");
     assert.equal(code, 22);
     assert.match((result.warnings as string[]).join("\n"), /push attempt 3\/3 failed/);
+  } finally {
+    cleanup(origin, repo);
+  }
+});
+
+function parkedBranchesIn(ledgerPath: string): string[] {
+  if (!fs.existsSync(ledgerPath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(ledgerPath, "utf8")
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => (JSON.parse(line) as { branch: string }).branch);
+}
+
+test("a clean rerun without --promote retries a failed push and clears the parked branch", () => {
+  const origin = makeBareOrigin();
+  const repo = cloneRepo(origin);
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
+    writeFile(repo, "a.txt", "two\n");
+    writeFailingHook(repo, "pre-push");
+    const ledgerEnv = { CLAUDE_COMMIT_LEDGER: ledgerPath };
+
+    const failedLanding = land(repo, [], VALID_MESSAGE, ledgerEnv);
+    assert.equal(failedLanding.result.outcome, "PUSH_FAILED");
+    assert.deepEqual(parkedBranchesIn(ledgerPath), ["feature"]);
+
+    fs.rmSync(path.join(repo, ".git", "hooks", "pre-push"));
+    const rerun = land(repo, [], VALID_MESSAGE, ledgerEnv);
+
+    assert.equal(rerun.result.outcome, "NOTHING_TO_COMMIT");
+    assert.equal(rerun.result.pushed, true);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
+    assert.deepEqual(parkedBranchesIn(ledgerPath), []);
+  } finally {
+    cleanup(origin, repo, ledgerDirectory);
+  }
+});
+
+test("a clean rerun without --promote on an already pushed branch pushes nothing", () => {
+  const origin = makeBareOrigin();
+  const repo = cloneRepo(origin);
+  try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
+    writeFailingHook(repo, "pre-push");
+
+    const { result } = land(repo, [], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "NOTHING_TO_COMMIT");
+    assert.equal(result.pushed, true);
+  } finally {
+    cleanup(origin, repo);
+  }
+});
+
+test("a clean rerun with --no-push leaves an unpushed branch alone", () => {
+  const origin = makeBareOrigin();
+  const repo = cloneRepo(origin);
+  try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
+    commitFile(repo, "a.txt", "two\n", "local only");
+
+    const { result } = land(repo, ["--no-push"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "NOTHING_TO_COMMIT");
+    assert.equal(result.pushed, false);
+    assert.notEqual(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
   } finally {
     cleanup(origin, repo);
   }

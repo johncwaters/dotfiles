@@ -233,8 +233,7 @@ export class Git {
     return nonEmptyLines(this.run(scoped(["diff", "--name-only", base], options.paths ?? [])).stdout);
   }
 
-  // --untracked-files=all, because the default collapses a new directory into one
-  // `?? dir/` line and the denylist would then never see the .env or log inside it.
+  // Collapsed untracked directories would hide secrets from the scope denylist.
   statusShort(paths: string[] = []): string[] {
     return nonEmptyLines(this.run(scoped(["status", "--short", "-uall"], paths)).stdout);
   }

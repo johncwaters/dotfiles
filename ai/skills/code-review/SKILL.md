@@ -44,7 +44,7 @@ Record the changed-file set, file count, changed-line count, and touched subsyst
 
 ## Step 2: Call qa-swarm
 
-Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, the profile-derived `codexAllowed` and `grokAllowed` flags, and every piece of carried state named separately, never collapsed into one "already dispositioned" list: the findings settled as `NIT` or `AMBIGUOUS`, which lanes must not re-report; the findings the writer's receipt claims `FIXED`, as regression checks; and the findings the writer `DECLINED`, which lanes report if still present. Forwarding a claimed fix as settled ground is how an unverified fix becomes an approval.
+Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, the profile-derived `codexAllowed` and `grokAllowed` flags, and every piece of carried state named separately, never collapsed into one "already dispositioned" list: the findings settled as `NIT` or `AMBIGUOUS`, which lanes must not re-report; the findings the writer's receipt claims `FIXED`, as regression checks; and the findings the writer `DECLINED`, which lanes report if still present.
 
 On every round 2 or later where the round-1 pin resolves, add the round number and the touched-file set computed from that pin and this round's pin. Forward the late-finding rule as `reportingBar` when armed and `reportingBar: "none"` when disarmed. The file state always goes forward because `qa-swarm` uses it to narrow follow-up review independently of the reporting bar.
 
@@ -99,7 +99,7 @@ Highest-severity-wins rather than a count-weighted score, because CRITICAL and H
 
 A fifth value, `FAILED`, means the review could not be completed: `qa-swarm` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code and never means APPROVE. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
 
-**The verdict is not the loop's exit condition.** A MEDIUM finding dispositioned `ACTIONABLE` is a verified defect with a bounded fix, and it maps to a passing verdict; a caller that exits on the verdict alone would commit it unfixed. State both facts on their own line in the summary: the verdict, and the count of surviving `ACTIONABLE` findings at MEDIUM or higher. The loop exits when that count is zero.
+State the verdict and the count of surviving `ACTIONABLE` findings at MEDIUM or higher on separate lines in the summary.
 
 ## Step 5: Return
 

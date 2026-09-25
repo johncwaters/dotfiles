@@ -2,8 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// A machine with no applied profile still must not commit onto a mainline branch,
-// so the guard falls back to the strictest rule every profile shares.
+// An unapplied profile must not permit mainline commits.
 const FALLBACK_FORBIDDEN_BRANCHES = ["main", "master"] as const;
 
 const PROFILE_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -28,7 +27,7 @@ export function policyRoot(): string {
 export function readCommitPolicy(root: string = policyRoot()): PolicyLookup {
   const markerPath = path.join(root, ".machine-profile");
   if (!fs.existsSync(markerPath)) {
-    return { warning: `no machine profile marker at ${markerPath}; run setup/apply to write one` };
+    return { warning: `no machine profile marker at ${markerPath}; run ~/.dotfiles/script/bootstrap --profile <name> from the main checkout to write one` };
   }
 
   const profile = fs.readFileSync(markerPath, "utf8").trim().toLowerCase();

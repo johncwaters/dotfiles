@@ -14,7 +14,6 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 - Follow-up implementation left duplicate logic, dead code, wrapper layers, boundary leaks, or weak regression coverage
 - The user wants a reviewer-only anti-slop pass via `--review`
 - The goal is simplification and cleanup, not new feature delivery
-- The /commit workflow runs it once before its review loop, and skips it along with the loop for mechanical follow-ups
 
 ## When Not to Use
 
@@ -32,15 +31,17 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 - Avoid new dependencies unless the user explicitly requests them.
 - Keep diffs small, reversible, and smell-focused.
 
+## From /commit
+
+Clean only the files /commit passes (preflight's `paths`). Never create files, including tests; run existing tests only. Skip the UI/design category and checklist. Limit naming, error-handling cleanup, and test reinforcement to lines already changed. Return to `/commit` for review.
+
 ## Scoped File-List Usage
 
 The pass can be bounded to an explicit file list or changed-file scope when the caller already knows the safe cleanup surface (for example, the files changed in the current commit).
 
 - Good fit: `/ai-slop-cleaner src/auth/session.ts src/auth/token.ts`
-- Good fit: the /commit workflow handing off the changed-file list from its preflight step
 - Preserve the same regression-safe workflow even when the scope is a short file list
 - Do not expand a changed-file scope. List broader cleanup opportunities in the report instead
-- When invoked from /commit, never create files, including tests
 
 ## Review Mode (`--review`)
 
@@ -66,7 +67,7 @@ In review mode:
 
 1. **Protect current behavior first**
    - Identify what must stay the same.
-   - Add or run the narrowest regression tests needed before editing. From /commit, run existing tests only and do not add files.
+   - Add or run the narrowest regression tests needed before editing.
    - If tests cannot come first, record the verification plan explicitly before touching code.
 
 2. **Bound the pass**
@@ -79,11 +80,9 @@ In review mode:
    - **Needless abstraction**: pass-through wrappers, speculative indirection, single-use helper layers
    - **Boundary violations**: hidden coupling, misplaced responsibilities, wrong-layer imports or side effects
    - **Missing tests**: behavior not locked, weak regression coverage, edge-case gaps
-   - **UI/design defaults**: generic visual patterns that make an AI-built interface feel unreviewed. Skip this category when invoked from /commit.
+   - **UI/design defaults**: generic visual patterns that make an AI-built interface feel unreviewed.
 
 ### UI/Design Reviewer Checklist
-
-Do not use this checklist when invoked from /commit.
 
 Use these as review prompts, not absolute bans. Keep intentional brand, accessibility, product-density, or design-system choices when they have a clear rationale.
 
@@ -97,8 +96,8 @@ Use these as review prompts, not absolute bans. Keep intentional brand, accessib
 4. **Run one smell-focused pass at a time**
    - **Pass 1: Dead code deletion**
    - **Pass 2: Duplicate removal**
-   - **Pass 3: Naming and error-handling cleanup**, limited to lines already changed when invoked from /commit
-   - **Pass 4: Test reinforcement**, limited to lines already changed when invoked from /commit
+   - **Pass 3: Naming and error-handling cleanup**
+   - **Pass 4: Test reinforcement**
    - Re-run targeted verification after each pass.
    - Do not bundle unrelated refactors into the same edit set.
 
@@ -120,7 +119,6 @@ Use these as review prompts, not absolute bans. Keep intentional brand, accessib
 - `/ai-slop-cleaner <target>`
 - `/ai-slop-cleaner <target> --review`
 - `/ai-slop-cleaner <file-a> <file-b> <file-c>`
-- From /commit: run on the commit's changed files only, then return to the commit workflow for review
 
 ## Good Fits
 
