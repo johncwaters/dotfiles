@@ -86,7 +86,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `npm-
 | `packages` | system packages, npm globals, python tools, and their removals |
 | `repos` | clones the working set |
 | `tailscale` | the tailnet client |
-| `peripherals` | Logitech tooling and the headset udev rule |
+| `peripherals` | Logitech tooling and the headset udev rule; LinearMouse on macOS |
 
 Vendored third-party skills are listed in [NOTICE.md](NOTICE.md).
 

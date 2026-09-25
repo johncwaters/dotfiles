@@ -292,4 +292,99 @@ check "a moved tag is never built" logLacks "cmake --build"
 check "a moved tag is never installed as root" logLacks "cmake --install"
 check "a moved tag makes the topic exit non-zero" test "$unpinnedStatus" -eq 1
 
+writeStub brew <<'STUB'
+#!/usr/bin/env bash
+printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-} ${2:-}" == "list --cask" ]]; then
+  [[ -f "$DOTFILES_TEST_STATE/linearmouse-cask-installed" ]]
+  exit $?
+fi
+if [[ "${1:-} ${2:-} ${3:-}" == "install --cask linearmouse" ]]; then
+  touch "$DOTFILES_TEST_STATE/linearmouse-cask-installed"
+fi
+STUB
+writeStub id <<'STUB'
+#!/usr/bin/env bash
+printf 'id %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == "-u" ]]; then
+  printf '501\n'
+fi
+STUB
+writeStub launchctl <<'STUB'
+#!/usr/bin/env bash
+printf 'launchctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+loadedMarker="$DOTFILES_TEST_STATE/linearmouse-agent-loaded"
+case "${1:-}" in
+  print) [[ -f "$loadedMarker" ]] ;;
+  bootout) rm -f "$loadedMarker" ;;
+  bootstrap) touch "$loadedMarker" ;;
+esac
+STUB
+provideCommand brew
+provideCommand id
+provideCommand launchctl
+writeDarwinDirectoryServiceStub "$stubBin"
+
+darwinApplicationsDirectory="$sandbox/Applications"
+darwinHomebrewPrefix="$sandbox/homebrew"
+linearmouseConfigPath="$sandbox/.config/linearmouse/linearmouse.json"
+linearmouseAgentPath="$sandbox/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
+mkdir -p "$darwinApplicationsDirectory" "$(dirname -- "$linearmouseConfigPath")"
+printf 'earlier local settings\n' > "$linearmouseConfigPath"
+
+runDarwinInstall() {
+  runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_PROFILE=work \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+    DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+    NO_COLOR=1 bash "$topicDir/install.sh"
+}
+
+printf '\nperipherals topic on darwin\n'
+
+: > "$commandLog"
+darwinFirstStatus=0
+darwinFirstOutput="$(runDarwinInstall)" || darwinFirstStatus=$?
+check "darwin install exits clean" test "$darwinFirstStatus" -eq 0
+check "darwin installs the LinearMouse cask when absent" logHas 'brew install --cask linearmouse'
+check "darwin links LinearMouse config through the alias" \
+  test "$(readlink -- "$linearmouseConfigPath")" = "$sandbox/.dotfiles/peripherals/linearmouse.json"
+check "darwin backs up prior regular config" \
+  grep -qx 'earlier local settings' "$linearmouseConfigPath.pre-dotfiles.bak"
+check "the linked config matches the tracked config" \
+  cmp -s "$linearmouseConfigPath" "$topicDir/linearmouse.json"
+check "the tracked device matcher has no machine-specific fields" \
+  bash -c '! grep -qE '\''serialNumber|productName'\'' "$1"' _ "$topicDir/linearmouse.json"
+check "darwin writes a regular launch agent" test -f "$linearmouseAgentPath"
+check "darwin does not symlink the launch agent" test ! -L "$linearmouseAgentPath"
+check "the launch agent matches its tracked source" \
+  cmp -s "$linearmouseAgentPath" "$topicDir/dev.dotfiles.linearmouse.plist"
+check "darwin bootstraps the launch agent" \
+  logHas "launchctl bootstrap gui/501 $linearmouseAgentPath"
+check "darwin skips Solaar" outputLacks "$darwinFirstOutput" 'Solaar'
+check "darwin skips ratbagd" outputLacks "$darwinFirstOutput" 'ratbagd'
+check "darwin skips Piper" outputLacks "$darwinFirstOutput" 'Piper'
+check "darwin skips headsetcontrol" outputLacks "$darwinFirstOutput" 'headsetcontrol'
+check "darwin never installs Linux packages" logLacks 'apt-get '
+check "darwin never touches udev" logLacks 'udevadm '
+
+: > "$commandLog"
+darwinSecondStatus=0
+darwinSecondOutput="$(runDarwinInstall)" || darwinSecondStatus=$?
+check "darwin second run exits clean" test "$darwinSecondStatus" -eq 0
+check "darwin second run reports no changes" reportsNoChanges "$darwinSecondOutput"
+check "darwin second run does not reinstall the cask" logLacks 'brew install --cask linearmouse'
+check "darwin second run does not bootstrap again" logLacks 'launchctl bootstrap'
+check "darwin second run does not boot out the agent" logLacks 'launchctl bootout'
+
+rm -f "$stubState/linearmouse-cask-installed"
+mkdir -p "$darwinApplicationsDirectory/LinearMouse.app"
+: > "$commandLog"
+darwinBundleStatus=0
+darwinBundleOutput="$(runDarwinInstall)" || darwinBundleStatus=$?
+check "darwin accepts an existing app bundle" test "$darwinBundleStatus" -eq 0
+check "darwin does not install over an existing app bundle" \
+  logLacks 'brew install --cask linearmouse'
+check "darwin reports an existing app bundle" \
+  outputHas "$darwinBundleOutput" 'LinearMouse'
+
 reportTopicResults "peripherals"

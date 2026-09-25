@@ -8,6 +8,71 @@ fi
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
 
+installLinearMouseCask() {
+  local brewCommand
+  if [[ -d "$(applicationsDirectory)/LinearMouse.app" ]]; then
+    notePresent "LinearMouse" "already installed"
+    return 0
+  fi
+  brewCommand="$(brewCommandPath || true)"
+  if [[ -z "$brewCommand" ]]; then
+    noteWarned "LinearMouse" "Homebrew not on PATH, install manually"
+    return 0
+  fi
+  if "$brewCommand" list --cask linearmouse >/dev/null 2>&1; then
+    notePresent "LinearMouse" "already installed"
+    return 0
+  fi
+  noteStarting "LinearMouse" "installing via Homebrew"
+  if installSystemPackages brew --cask linearmouse; then
+    noteInstalled "LinearMouse" "installed"
+    return 0
+  fi
+  noteWarned "LinearMouse" "Homebrew install failed"
+}
+
+renderLinearMouseLaunchAgent() {
+  local destination="$HOME/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
+  local stagedPath
+  mkdir -p -- "$(dirname -- "$destination")"
+  clearDestinationIfNotPlainFile "LinearMouse launch agent" "$destination" || return 2
+  stagedPath="$(mktemp "$(dirname -- "$destination")/.dotfiles-launch-agent.XXXXXX")"
+  cat -- "$dotfilesRepo/peripherals/dev.dotfiles.linearmouse.plist" > "$stagedPath"
+  if commitRenderedFile "LinearMouse launch agent" "$stagedPath" "$destination"; then
+    chmod 600 "$destination"
+    noteApplied "LinearMouse launch agent" "rendered"
+    return 0
+  fi
+  chmod 600 "$destination"
+  notePresent "LinearMouse launch agent" "rendered"
+  return 1
+}
+
+installDarwinLinearMouse() {
+  local plistPath="$HOME/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
+  local renderStatus=0
+  local plistChanged=0
+  installLinearMouseCask
+  linkEntry "LinearMouse config" "peripherals/linearmouse.json" \
+    "$HOME/.config/linearmouse/linearmouse.json"
+  renderLinearMouseLaunchAgent || renderStatus=$?
+  if ((renderStatus == 2)); then
+    return 1
+  fi
+  if ((renderStatus == 0)); then
+    plistChanged=1
+  fi
+  installLaunchAgent "LinearMouse launch agent" "dev.dotfiles.linearmouse" \
+    "$plistPath" "$plistChanged"
+}
+
+if isDarwin; then
+  # shellcheck source=../script/lib/launchd.sh
+  source "$dotfilesRepo/script/lib/launchd.sh"
+  installDarwinLinearMouse
+  finishTopic
+fi
+
 headsetControlTag="4.1.0"
 headsetControlCommit="a6e15cc8bc701a9c4dab8ae4e33363f3040628e9"
 # A root owned path this overwrites, so a test run inside a marked sandbox home points it elsewhere; outside one the redirect is ignored.
