@@ -447,14 +447,6 @@ packageNamesForTool() {
       printf 'pinentry-mac\n'
       return 0
       ;;
-    bubblewrap:apt-get | bubblewrap:dnf | bubblewrap:pacman | bubblewrap:zypper)
-      printf 'bubblewrap\n'
-      return 0
-      ;;
-    socat:apt-get | socat:dnf | socat:pacman | socat:zypper)
-      printf 'socat\n'
-      return 0
-      ;;
   esac
   return 1
 }
