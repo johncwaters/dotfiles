@@ -17,7 +17,7 @@ const laneDefinitions = [
     recommendable: true,
     blocking: true,
     classNeedles: ['security'],
-    trigger: 'the diff touches auth, input handling, crypto, payments, PII, secrets, infrastructure, or destructive operations',
+    trigger: 'the diff touches auth, input handling, crypto, payments, PII, secrets, infrastructure, or destructive operations, or commits anything unsafe to publish, such as token or session tooling, internal hostnames, or account IDs, since every repo is judged as public',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'fable', label: 'Security review', phase: 'Review', agentType: 'security-reviewer' })
   },
   {
