@@ -24,7 +24,7 @@ check "no CHANGEME survives on a server" \
 
 check "the user unit is installed" test -f "$serverUnitPath"
 check "the unit runs the node from the fixed candidate list, not the shell's" \
-  grep -q "^ExecStart=$serverHome/.local/bin/node --disable-sigusr1 dist/server/index.js\$" "$serverUnitPath"
+  grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
 check "the unit rebuilds dist before starting, with the npm beside the resolved node" \
   grep -q "^ExecStartPre=$serverHome/.local/bin/npm run build\$" "$serverUnitPath"
 check "the unit no longer conditions on a built dist, the build step heals it instead" \
@@ -310,7 +310,7 @@ check "a hand edited unit is backed up" \
 check "the backup keeps what was there" \
   bash -c 'grep -q "hand written" "$1".pre-dotfiles.bak' _ "$serverUnitPath"
 check "the rendered unit replaces the hand edit" \
-  grep -q "^ExecStart=$serverHome/.local/bin/node --disable-sigusr1 dist/server/index.js\$" "$serverUnitPath"
+  grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
 check "the re-rendered unit keeps its build step" \
   grep -q "^ExecStartPre=$serverHome/.local/bin/npm run build\$" "$serverUnitPath"
 check "replacing the unit restarts the service" outputMatches "$handEditOutput" '\[ ok \].*glimmervoid service.*restarted'

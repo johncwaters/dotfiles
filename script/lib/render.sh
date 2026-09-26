@@ -84,18 +84,17 @@ commitRenderedFile() {
   recordRenderedCopy "$label" "$destination"
 }
 
-# Sets stagedFileChangedDestination rather than returning it, so a set -e caller survives an unchanged file.
 commitStagedFile() {
   local label="$1"
   local stagedPath="$2"
   local destination="$3"
   local appliedVerb="$4"
-  stagedFileChangedDestination=0
+  local destinationChanged=0
   if commitRenderedFile "$label" "$stagedPath" "$destination"; then
-    stagedFileChangedDestination=1
+    destinationChanged=1
   fi
   chmod 600 "$destination"
-  if ((stagedFileChangedDestination == 1)); then
+  if ((destinationChanged == 1)); then
     noteApplied "$label" "$appliedVerb"
     return 0
   fi
