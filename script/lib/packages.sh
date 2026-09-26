@@ -35,15 +35,19 @@ passwordlessSudoWorks() {
   [[ "$passwordlessSudoProbe" == "granted" ]]
 }
 
-canInstallSystemPackages() {
+canRunRootCommandsWithoutPrompt() {
   if isRoot; then
+    return 0
+  fi
+  command -v sudo >/dev/null 2>&1 && passwordlessSudoWorks
+}
+
+canInstallSystemPackages() {
+  if canRunRootCommandsWithoutPrompt; then
     return 0
   fi
   if ! command -v sudo >/dev/null 2>&1; then
     return 1
-  fi
-  if passwordlessSudoWorks; then
-    return 0
   fi
   if [[ "$passwordlessSudoProbe" != "reported" ]]; then
     passwordlessSudoProbe=reported
@@ -409,6 +413,38 @@ packageNamesForTool() {
       ;;
     ydotool:dnf | ydotool:pacman | ydotool:zypper | ydotoold:dnf | ydotoold:pacman | ydotoold:zypper)
       printf 'ydotool\n'
+      return 0
+      ;;
+    pass:apt-get | pass:dnf | pass:pacman | pass:brew)
+      printf 'pass\n'
+      return 0
+      ;;
+    pass:zypper)
+      printf 'password-store\n'
+      return 0
+      ;;
+    gnupg:apt-get | gnupg:pacman | gnupg:brew)
+      printf 'gnupg\n'
+      return 0
+      ;;
+    gnupg:dnf)
+      printf 'gnupg2\n'
+      return 0
+      ;;
+    gnupg:zypper)
+      printf 'gpg2\n'
+      return 0
+      ;;
+    pinentry-curses:apt-get)
+      printf 'pinentry-curses\n'
+      return 0
+      ;;
+    pinentry-curses:dnf | pinentry-curses:pacman | pinentry-curses:zypper)
+      printf 'pinentry\n'
+      return 0
+      ;;
+    pinentry-mac:brew)
+      printf 'pinentry-mac\n'
       return 0
       ;;
   esac

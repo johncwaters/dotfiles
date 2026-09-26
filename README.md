@@ -84,6 +84,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `npm-
 | `screenshot` | flameshot desktop entry and save path |
 | `terminal` | Ghostty, its config, and COSMIC's default terminal |
 | `packages` | system packages, npm globals, python tools, and their removals |
+| `secrets` | `pass` and GnuPG, a short-cache `~/.gnupg/gpg-agent.conf` naming the platform pinentry, and `GPG_TTY` so curses pinentry works over SSH |
 | `repos` | clones the working set |
 | `tailscale` | the tailnet client |
 | `peripherals` | Logitech tooling and the headset udev rule; LinearMouse on macOS |

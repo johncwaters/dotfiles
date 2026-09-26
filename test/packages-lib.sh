@@ -242,6 +242,32 @@ check "a sudo that wants a password says so" \
 check "the password warning is emitted once, not once per package" \
   test "$(grep -c 'sudo needs a password' <<< "$sudoRefusalOutput")" -eq 1
 
+askForRootCommandsQuietly() {
+  passwordlessSudoProbe=unknown
+  PATH="$probeBin:$PATH" NO_COLOR=1 bash -c '
+    source "$1/script/lib/log.sh"
+    source "$1/script/lib/packages.sh"
+    canRunRootCommandsWithoutPrompt || true
+  ' _ "$repoRoot" 2>&1
+}
+
+askForRootCommands() {
+  passwordlessSudoProbe=unknown
+  PATH="$probeBin:$PATH" canRunRootCommandsWithoutPrompt
+}
+
+rootCommandsNeedingAPasswordAreRefused() {
+  ! askForRootCommands
+}
+
+check "a sudo that wants a password cannot run root commands without a prompt" \
+  rootCommandsNeedingAPasswordAreRefused
+check "the quiet root check never warns about the password" \
+  test -z "$(askForRootCommandsQuietly)"
+writeProbeSudo 0
+check "a sudo that needs no password can run root commands without a prompt" askForRootCommands
+writeProbeSudo 1
+
 hostileSystemBin="$sandbox/hostile-system-bin"
 mkdir -p "$hostileSystemBin"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$hostileSystemBin/true"
