@@ -205,6 +205,19 @@ seedGlimmervoidConfig() {
   noteApplied "$label" "seeded from $seedDescription"
 }
 
+copyGlimmervoidSoundsAsRegularFiles() {
+  local soundSourcePath
+  local soundFileName
+  for soundSourcePath in "$dotfilesRepo"/glimmervoid/sounds/*; do
+    if [[ ! -f "$soundSourcePath" ]]; then
+      continue
+    fi
+    soundFileName="$(basename -- "$soundSourcePath")"
+    copyEntry "glimmervoid sound $soundFileName" "glimmervoid/sounds/$soundFileName" \
+      "$glimmervoidConfigDirectory/sounds/$soundFileName"
+  done
+}
+
 chmodOwnerOnlyFile() {
   local label="$1" path="$2" displayPath="$3"
   if [[ -f "$path" && ! -L "$path" ]] && ! chmod 600 "$path" 2>/dev/null; then
@@ -601,6 +614,7 @@ fi
 
 migrateLegacyGlimmervoidConfig
 seedGlimmervoidConfig
+copyGlimmervoidSoundsAsRegularFiles
 protectGlimmervoidConfig
 
 # The CLI is how a machine uses Glimmervoid, which is independent of whether that machine serves one.

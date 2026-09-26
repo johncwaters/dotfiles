@@ -9,8 +9,10 @@ projects and remain under their upstream licenses, not this repo's.
 | `ai/skills/posthog-querying/` | [PostHog/posthog](https://github.com/PostHog/posthog), `products/posthog_ai/skills/querying-posthog-data/` | MIT |
 | `ai/skills/ai-slop-cleaner/` | [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode), `skills/ai-slop-cleaner/` | MIT |
 | `fonts/` | [CommitMono](https://commitmono.com) | SIL Open Font License 1.1 |
+| `glimmervoid/sounds/` | two RuneScape Wiki audio clips (Jagex game audio) | private use only |
 
-All four permit redistribution with attribution. Required notices follow.
+The first four permit redistribution with attribution; the sounds do not, so this repo stays
+private while it carries them. Required notices follow.
 
 ## ai/skills/impeccable/ (Apache-2.0)
 

@@ -98,6 +98,22 @@ check "a non-serving machine still installs the CLI shim" test -x "$workHome/.lo
 check "a non-serving machine installs no unit" test ! -e "$workHome/.config/systemd/user/glimmervoid.service"
 check "a non-serving machine never touches systemd" logLacks "systemctl "
 
+workSoundsDirectory="$workHome/.glimmervoid/sounds"
+for bundledSoundName in coins.ogg tears-of-guthix.ogg; do
+  check "$bundledSoundName lands in the glimmervoid home sounds directory as a regular file" \
+    bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$workSoundsDirectory/$bundledSoundName"
+  check "$bundledSoundName matches the repo copy" \
+    cmp -s "$repoRoot/glimmervoid/sounds/$bundledSoundName" "$workSoundsDirectory/$bundledSoundName"
+done
+printf 'operator sound\n' > "$workSoundsDirectory/operator-added.mp3"
+coinsInodeBeforeRerun="$(stat -c '%i' "$workSoundsDirectory/coins.ogg")"
+soundsRerunOutput="$(runInstall "$workHome" work)" || true
+check "a second run leaves the copied sounds untouched" \
+  test "$(stat -c '%i' "$workSoundsDirectory/coins.ogg")" = "$coinsInodeBeforeRerun"
+check "a second run reports every sound up to date" \
+  outputLacks "$soundsRerunOutput" "copied"
+check "a second run keeps a sound the operator added" test -f "$workSoundsDirectory/operator-added.mp3"
+
 startSandboxHome "glimmervoid-work-no-app"
 appLessWorkHome="$sandbox"
 mkdir -p "$appLessWorkHome/.local/bin" "$appLessWorkHome/.glimmervoid"
