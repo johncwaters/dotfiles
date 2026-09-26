@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
+
+const DISPATCHER_AGENT_TYPE = "codex-dispatcher";
+
+function escapeRegExp(literal) {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const CREDENTIAL_PATHS = [
+  "~/.ssh",
+  "~/.gnupg",
+  "~/.aws",
+  "~/.kube",
+  "~/.docker",
+  "~/.netrc",
+  "~/.git-credentials",
+  "~/.config/gh",
+  "~/.codex/auth.json",
+  "~/.claude/.credentials.json",
+  "~/.grok",
+  "~/.glimmervoid",
+  "~/.npmrc",
+  "~/.azure",
+  "~/.local/share/keyrings",
+  "~/.mozilla",
+  "~/.config/google-chrome",
+  "~/.config/chromium",
+  "~/.pki",
+];
+const REVIEW_SANDBOX_OPTIONS =
+  `-c 'permissions.qa_review={extends=":read-only", filesystem={${CREDENTIAL_PATHS.map((credentialPath) => `"${credentialPath}"="deny"`).join(", ")}}}' ` +
+  `-c 'default_permissions="qa_review"'`;
+const SAFE_ABSOLUTE_PATH = "/[A-Za-z0-9._/@+-]*";
+const PROMPT_FILE_PATH = "/tmp/codex-dispatch-[A-Za-z0-9._-]+\\.txt";
+const SANCTIONED_DISPATCH_COMMAND = new RegExp(
+  `^codex exec ${escapeRegExp(REVIEW_SANDBOX_OPTIONS)} -C ${SAFE_ABSOLUTE_PATH} -m gpt-6-(?:sol|luna|astra)` +
+    `(?: -c model_reasoning_effort="(?:low|medium|high|xhigh)")? < ${PROMPT_FILE_PATH}$`,
+);
+const PROMPT_FILE = new RegExp(`^${PROMPT_FILE_PATH}$`);
+const COMMAND_START = String.raw`(?:^|[;&|({!\x60]|\$\(|\b(?:then|do|else)\b|\b(?:ba|z|da)?sh\s+(?:-\S+\s+)*-c\s+)`;
+const COMMAND_WRAPPERS = String.raw`(?:(?:\S*/)?(?:xargs|time|sudo|nice|nohup|exec|command|env|timeout|stdbuf|eval|watch|npx|bunx|npm\s+(?:exec|x)|bun\s+x|pnpm\s+dlx|yarn\s+dlx)(?:\s+(?:-[A-Za-z]\s+[^-\s]\S*|-\S+|\S+=\S*|\d+\S*))*\s+)*`;
+const EXTERNAL_CLI_INVOCATION = new RegExp(
+  String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?(?:@openai/)?(?:codex|grok)['"]?(?=\s|$|[;&|)@])`,
+  "m",
+);
+const COMMAND_LOOKUP = /(?:^|[;&|]\s*)(?:command\s+-[vV]|type|which|hash)\s+(?:codex|grok)\s*(?=$|[;&|])/;
+
+function gateDispatcher(toolName, toolInput) {
+  if (toolName === "Write") {
+    if (PROMPT_FILE.test(String(toolInput.file_path || ""))) allow();
+    denyPreToolUse(`codex-dispatcher may only write its prompt file, matching ${PROMPT_FILE_PATH}.`);
+  }
+  if (toolName !== "Bash") allow();
+  if (SANCTIONED_DISPATCH_COMMAND.test(String(toolInput.command || "").trim())) allow();
+  denyPreToolUse(
+    "codex-dispatcher may only run the qa_review read-only dispatch command qa-swarm.js builds, " +
+      "reading its prompt from /tmp/codex-dispatch-<name>.txt. " +
+      "Report this denial through the task's failure path; do not retry.",
+  );
+}
+
+let isDispatcherCall = false;
+
+function main() {
+  const payload = readPayload();
+  if (!payload || typeof payload !== "object") allow();
+  if (!payload.agent_id) allow();
+  isDispatcherCall = payload.agent_type === DISPATCHER_AGENT_TYPE;
+
+  const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
+  if (isDispatcherCall) gateDispatcher(payload.tool_name, toolInput);
+
+  if (payload.tool_name !== "Bash") allow();
+  const command = String(toolInput.command || "");
+  if (!EXTERNAL_CLI_INVOCATION.test(command)) allow();
+  if (COMMAND_LOOKUP.test(command) && !EXTERNAL_CLI_INVOCATION.test(command.replace(COMMAND_LOOKUP, ""))) allow();
+  denyPreToolUse(
+    "Subagents never offload to Codex or Grok (global AGENTS.md <scope>). " +
+      "Do the assigned work with your own tools, or report back that it needs the main loop.",
+  );
+}
+
+try {
+  main();
+} catch {
+  if (isDispatcherCall) denyPreToolUse("codex-dispatch gate failed, so the relay is denied rather than left unconfined.");
+  allow();
+}

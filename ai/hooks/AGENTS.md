@@ -5,6 +5,8 @@ payloads, unreadable files, and unavailable decision engines must allow silently
 A guard failure must never wedge a session; catches that allow are intentional.
 Fork spawns stay exempt from model pinning because the harness ignores their
 model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
+`gate-codex-dispatch.mjs` fails closed for `codex-dispatcher` calls only: that agent skips
+CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 
 ## Map
 
@@ -12,6 +14,7 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 |--------|------|----------|
 | `validate-file.mjs` | PreToolUse syntax, character, and instruction-size guard | `test/validate-file.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
+| `gate-codex-dispatch.mjs` | PreToolUse subagent Codex/Grok ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
 | `challenge-plan.mjs` | PreToolUse plan-challenge stamp gate | `test/challenge-plan.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `inject-routing.mjs` | SessionStart routing context | `test/inject-routing.test.mjs` |

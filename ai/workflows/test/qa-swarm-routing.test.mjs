@@ -93,6 +93,80 @@ test('disabling Grok keeps Codex instructions and emits no Grok execution instru
   assert.match(combinedPrompts, /Grok CLI/)
 })
 
+async function routedAfterDispatcherReturns(dispatcherRoute) {
+  const routerResultFor = (route) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route })
+  const spawnedModels = []
+  const runtimeBindings = {
+    phase: () => {},
+    agent: async (prompt, options) => {
+      spawnedModels.push(options.model)
+      return routerResultFor(options.model === 'sonnet' ? dispatcherRoute : 'ignored')
+    }
+  }
+  const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
+  const routed = await routeReview(baseWorkflowArgs.changedFiles)
+  return { ...routed, spawnedModels }
+}
+
+test('a dispatcher that answers the router itself instead of running Codex falls back to opus with a degradation note', async () => {
+  const routed = await routedAfterDispatcherReturns('sonnet-direct')
+
+  assert.deepEqual(routed.spawnedModels, ['sonnet', 'opus'])
+  assert.equal(routed.routerResult.route, 'opus')
+  assert.match(routed.degradationNote, /unexpected route "sonnet-direct"/)
+})
+
+test('Codex dispatch goes through the codex-dispatcher agent under the read-only credential-denying profile', async () => {
+  const dispatchSpawns = []
+  const runtimeBindings = {
+    phase: () => {},
+    agent: async (prompt, options) => {
+      dispatchSpawns.push({ prompt, options })
+      return { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route: 'gpt-6-sol' }
+    }
+  }
+  const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
+  await routeReview(baseWorkflowArgs.changedFiles)
+  const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
+  const externalPrompt = buildLanePrompt('external', null, ['code', 'external'], baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd, false, false)
+
+  assert.equal(dispatchSpawns[0].options.agentType, 'codex-dispatcher')
+  for (const prompt of [dispatchSpawns[0].prompt, externalPrompt]) {
+    assert.match(prompt, /codex exec -c 'permissions\.qa_review=\{extends=":read-only"/)
+    assert.match(prompt, /"~\/\.ssh"="deny".* -c 'default_permissions="qa_review"' -C \/repo -m gpt-6-sol/)
+    assert.doesNotMatch(prompt, /dangerously/)
+  }
+})
+
+test('a session without the codex-dispatcher agent type routes on opus instead of crashing', async () => {
+  const spawnedModels = []
+  const runtimeBindings = {
+    phase: () => {},
+    log: () => {},
+    agent: async (prompt, options) => {
+      spawnedModels.push(options.model)
+      if (options.agentType === 'codex-dispatcher') {
+        throw new Error("agent type 'codex-dispatcher' not found")
+      }
+      return { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route: 'ignored' }
+    }
+  }
+  const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
+  const routed = await routeReview(baseWorkflowArgs.changedFiles)
+
+  assert.deepEqual(spawnedModels, ['sonnet', 'opus'])
+  assert.equal(routed.routerResult.route, 'opus')
+  assert.match(routed.degradationNote, /router agent death/)
+})
+
+test('a router answer from a Codex model is accepted without an opus fallback', async () => {
+  const routed = await routedAfterDispatcherReturns('gpt-6-luna')
+
+  assert.deepEqual(routed.spawnedModels, ['sonnet'])
+  assert.equal(routed.routerResult.route, 'gpt-6-luna')
+  assert.equal(routed.degradationNote, '')
+})
+
 test('a zero-finding lane with verified safe and no overflow converges to a canonical empty block', async () => {
   const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe claimed defect was verified safe. No overflow.'
   const workflowArgs = {

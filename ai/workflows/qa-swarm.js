@@ -1,7 +1,21 @@
 export const meta = { name: 'qa-swarm', description: 'Routes a pinned review through the required lanes and converges their findings.', phases: [{ title: 'Route', detail: 'Rate the touched surface and select lanes.' }, { title: 'Review', detail: 'Run the selected review lanes concurrently.' }, { title: 'Converge', detail: 'Normalize and converge the lane findings.' }] }
 
-const codexExecCommandPrefix = 'codex exec --dangerously-bypass-approvals-and-sandbox -m'
-const grokTiebreakCommand = 'grok --prompt-file <file> --always-approve'
+const codexReviewSandboxProfile = `'permissions.qa_review={extends=":read-only", filesystem={"~/.ssh"="deny", "~/.gnupg"="deny", "~/.aws"="deny", "~/.kube"="deny", "~/.docker"="deny", "~/.netrc"="deny", "~/.git-credentials"="deny", "~/.config/gh"="deny", "~/.codex/auth.json"="deny", "~/.claude/.credentials.json"="deny", "~/.grok"="deny", "~/.glimmervoid"="deny", "~/.npmrc"="deny", "~/.azure"="deny", "~/.local/share/keyrings"="deny", "~/.mozilla"="deny", "~/.config/google-chrome"="deny", "~/.config/chromium"="deny", "~/.pki"="deny"}}'`
+
+function codexDispatchCommand(model, reasoningEffort) {
+  const effortOption = reasoningEffort ? ` -c model_reasoning_effort="${reasoningEffort}"` : ''
+  return 'codex exec -c ' + codexReviewSandboxProfile + ` -c 'default_permissions="qa_review"' -C ${args.repoPath} -m ${model}${effortOption} < <promptfile>`
+}
+
+async function spawnCodexDispatcher(dispatchPrompt, options) {
+  try {
+    return await agent(dispatchPrompt, { model: 'sonnet', agentType: 'codex-dispatcher', ...options })
+  } catch (spawnError) {
+    log(`codex-dispatcher unavailable (${spawnError.message}); rerun the ai installer and start a new session`)
+    return null
+  }
+}
+const codexRouterModels = new Set(['gpt-6-sol', 'gpt-6-luna'])
 
 const laneDefinitions = [
   {
@@ -50,7 +64,9 @@ const laneDefinitions = [
     blocking: false,
     classNeedles: [],
     trigger: '',
-    spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'External review', phase: 'Review' })
+    spawn: (lanePrompt) => args.codexAllowed
+      ? spawnCodexDispatcher(lanePrompt, { label: 'External review', phase: 'Review' })
+      : agent(lanePrompt, { model: 'opus', label: 'External review', phase: 'Review' })
   }
 ]
 
@@ -491,18 +507,28 @@ async function routeReviewOnOpus(filesToClassify, fallbackReason) {
   return { ...fallbackRouter, route: fallbackRoute }
 }
 
+function describeRouterDispatchFailure(dispatchedRouter) {
+  if (!dispatchedRouter) {
+    return 'router agent death'
+  }
+  if (dispatchedRouter.route !== 'OPUS_REQUIRED') {
+    return `unexpected route ${JSON.stringify(dispatchedRouter.route)} from the dispatcher instead of a Codex model`
+  }
+  return String(dispatchedRouter.dangerFact || '').trim()
+}
+
 async function routeReview(filesToClassify) {
   phase('Route')
   if (!args.codexAllowed) {
     return { routerResult: await routeReviewOnOpus(filesToClassify, 'Codex CLI disabled by session routing'), degradationNote: '' }
   }
-  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. Write the dispatched router prompt below to a temp file and run ${codexExecCommandPrefix} gpt-6-sol < <promptfile>. On a rate-limit or usage-cap error, run it once with gpt-6-luna. On a model or CLI error, or a second quota error, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, the error as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
+  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. Write the dispatched router prompt below to a temp file and run ${codexDispatchCommand('gpt-6-sol')}. On a rate-limit or usage-cap error, run it once with ${codexDispatchCommand('gpt-6-luna')}. On a model or CLI error, or a second quota error, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, the error as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
   const dispatchPrompt = buildRouterAssessmentPrompt(filesToClassify, dispatchRouteInstruction)
-  const dispatchedRouter = await agent(dispatchPrompt, { model: 'sonnet', label: 'Route review', phase: 'Route', schema: routerSchema })
-  if (dispatchedRouter && dispatchedRouter.route !== 'OPUS_REQUIRED') {
+  const dispatchedRouter = await spawnCodexDispatcher(dispatchPrompt, { label: 'Route review', phase: 'Route', schema: routerSchema })
+  if (dispatchedRouter && codexRouterModels.has(dispatchedRouter.route)) {
     return { routerResult: dispatchedRouter, degradationNote: '' }
   }
-  const dispatchFailureDetail = dispatchedRouter ? String(dispatchedRouter.dangerFact || '').trim() : 'router agent death'
+  const dispatchFailureDetail = describeRouterDispatchFailure(dispatchedRouter)
   const routeFailureReason = dispatchFailureDetail === '' ? 'OPUS_REQUIRED with no reported detail' : dispatchFailureDetail
   const fallbackRouterResult = await routeReviewOnOpus(filesToClassify, routeFailureReason)
   return { routerResult: fallbackRouterResult, degradationNote: `external router failed with ${routeFailureReason}, so opus routed instead and the routing row for this run is stale` }
@@ -626,7 +652,7 @@ For no findings, put (none) on the line after STRUCTURED_FINDINGS:. Omit side wh
   if (!args.codexAllowed) {
     return `${externalLanePrompt}\n\nCodex CLI is disabled by session routing. Act as its opus substitute and perform an adversarial independent read that tries to refute the other lanes before reporting findings.`
   }
-  return `${externalLanePrompt}\n\nWrite the review prompt above to a temp file and run ${codexExecCommandPrefix} gpt-6-sol -c model_reasoning_effort=\"high\" < <promptfile>. Return the output verbatim. On a quota, model, or CLI error, return the literal string EXTERNAL_UNAVAILABLE.`
+  return `${externalLanePrompt}\n\nWrite the review prompt above to a temp file and run ${codexDispatchCommand('gpt-6-sol', 'high')}. Return the output verbatim. On a quota, model, or CLI error, return the literal string EXTERNAL_UNAVAILABLE.`
 }
 
 function spawnLane(laneName, lanePrompt) {
@@ -673,9 +699,7 @@ function formatConvergenceSummary(survivingFindingCount, convergenceFacts) {
 }
 
 function buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, reviewCmd) {
-  const tiebreakInstruction = !args.grokAllowed
-    ? 'Grok CLI is disabled by session routing. Act as its opus substitute: isolate the two positions of each contradiction and rule from those positions alone.'
-    : `For each contradiction, write both positions to a temp file and run ${grokTiebreakCommand}, then keep the finding its ruling supports.`
+  const tiebreakInstruction = 'Grok CLI is unreachable from subagents, so act as its opus substitute: isolate the two positions of each contradiction and rule from those positions alone.'
   return `Scope: converge findings for reviewed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: findings outside that reviewed-file set, new review work, verdicts, fixes, and recommendations
 Definition of done: one final block opened by the exact line STRUCTURED_FINDINGS: (with the trailing colon) followed by one paragraph opened by the exact line OVERALL_SUMMARY: (with the trailing colon), and no trailing text
