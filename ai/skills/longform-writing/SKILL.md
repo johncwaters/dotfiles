@@ -36,13 +36,13 @@ Short social posts compress this to hook (mid-motion), turn ("but"), payoff (opi
 
 ## Sentence rules
 
-- **Rhythm.** Dialogue is music: vary length, and let a short sentence land after a long one. Read it aloud in your head; rewrite anything you'd stumble over.
+- **Rhythm.** Dialogue is music, and music needs connected phrases, not a drum hit per beat. Most sentences run medium length and link related thoughts with "and", "but", "because", "so", or a colon; a short sentence lands only because the ones around it are longer. Read it aloud in your head; rewrite anything you'd stumble over or that sounds like ad copy.
 - **No confusion.** One idea per paragraph. Define a term before riffing on it. Tell the reader what they need to know before being clever.
 - **Progress.** Every section ends at least one step further than it started. A section that only restates is cut.
 - **Precision.** Name the tool, database, metric, date. Ban "a lot", "soon", "quickly", "better": replace each with a number.
 - **Pick a side.** No "it depends", no "ultimately it's up to you". Have an opinion, give an example, or do the research until you can.
 - **Human.** Name the people involved; use real screenshots, chat logs, quotes. Self-deprecating humor where it fits. Never perform emotion ("I was so excited to…"); show the action and let the reader feel it.
-- **Concise.** Omit needless words. Cut or halve the intro. No transitions like "Here are five things…", no summary of what the reader just read.
+- **Concise.** Omit needless words, not the connectives that carry the logic between claims. Cut or halve the intro. No transitions like "Here are five things…", no summary of what the reader just read.
 - **Mechanics.** Sentence-case headings, Oxford comma, American spelling, no em-dash decoration. Headings, lists, and tables only where they help a skimming reader.
 
 ## Tells that mark prose as machine-written
