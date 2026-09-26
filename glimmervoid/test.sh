@@ -44,6 +44,8 @@ startSandboxHome "glimmervoid-local-seed"
 localSeedHome="$sandbox"
 startSandboxHome "glimmervoid-work-darwin"
 darwinWorkHome="$sandbox"
+startSandboxHome "glimmervoid-sandbox-tools"
+sandboxToolsHome="$sandbox"
 
 realHome="$HOME"
 realNodePath="$(command -v node 2>/dev/null || true)"
@@ -244,6 +246,20 @@ exit 0
 STUB
 provideCommand git
 
+writeAptStubThatInstallsMappedCommands
+writeContainedSudoStub
+mapPackageToCommands bubblewrap "bwrap"
+mapPackageToCommands socat "socat"
+
+for recordingOnlyCommand in bwrap socat; do
+  writeStub "$recordingOnlyCommand" <<STUB
+#!/usr/bin/env bash
+printf '$recordingOnlyCommand %s\n' "\$*" >> "\$DOTFILES_TEST_LOG"
+exit 0
+STUB
+  provideCommand "$recordingOnlyCommand"
+done
+
 for recordingOnlyCommand in claude glimmervoid npm; do
   writeStub "$recordingOnlyCommand" <<STUB
 #!/usr/bin/env bash
@@ -358,6 +374,9 @@ printf '\nglimmervoid topic\n'
 # shellcheck source=./test/install.sh
 source "$topicDir/test/install.sh" || exit 1
 
+withdrawCommand bwrap
+withdrawCommand socat
+provideCommand apt-get
 : > "$commandLog"
 darwinWorkStatus=0
 darwinWorkOutput="$(runInstall "$darwinWorkHome" work "" /dev/null darwin)" || darwinWorkStatus=$?
@@ -366,6 +385,11 @@ check "darwin seeds the work profile config" test -f "$darwinWorkHome/.glimmervo
 check "darwin exits through the non-serving path" \
   outputHas "$darwinWorkOutput" "skipped, profile does not serve glimmervoid"
 check "darwin never touches systemd" logLacks "systemctl "
+check "darwin installs no sandbox tools" logLacks "apt-get "
+check "darwin reports no sandbox tools" outputLacks "$darwinWorkOutput" "bubblewrap"
+provideCommand bwrap
+provideCommand socat
+withdrawCommand apt-get
 
 [[ -s "$topicDir/test/service.sh" ]] || exit 1
 # shellcheck source=./test/service.sh

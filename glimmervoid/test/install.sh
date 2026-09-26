@@ -245,3 +245,34 @@ check "seed input selection publishes named selection globals" \
   grep -q '^selectedGlimmervoidSeedPath=' "$topicDir/install.sh"
 check "seed input selection uses one description value" \
   bash -c '! grep -q "selectedGlimmervoidAppliedDescription" "$1"' _ "$topicDir/install.sh"
+
+withdrawCommand bwrap
+withdrawCommand socat
+provideCommand apt-get
+: > "$commandLog"
+missingSandboxToolsOutput="$(runInstall "$sandboxToolsHome" missingprofile)" || true
+check "a missing bwrap is installed through apt-get" \
+  test "$(countLogLines '^apt-get -o DPkg::Lock::Timeout=180 install -y bubblewrap$')" -eq 1
+check "a missing socat is installed through apt-get" \
+  test "$(countLogLines '^apt-get -o DPkg::Lock::Timeout=180 install -y socat$')" -eq 1
+check "the sandbox tools install through the contained sudo" logLacks "sudo refused"
+check "bwrap lands on PATH" test -x "$stubBin/bwrap"
+check "socat lands on PATH" test -x "$stubBin/socat"
+check "the bubblewrap install is reported" \
+  outputMatches "$missingSandboxToolsOutput" 'bubblewrap.*installed'
+
+withdrawCommand bwrap
+: > "$commandLog"
+runInstall "$sandboxToolsHome" missingprofile > /dev/null || true
+check "only the missing sandbox tool is installed" \
+  test "$(countLogLines '^apt-get .*install -y bubblewrap$')" -eq 1
+check "a present socat is left untouched" logLacks "install -y socat"
+
+: > "$commandLog"
+presentSandboxToolsOutput="$(runInstall "$sandboxToolsHome" missingprofile)" || true
+check "present sandbox tools reach for no package manager" logLacks "apt-get "
+check "present bwrap is reported as installed" \
+  outputMatches "$presentSandboxToolsOutput" 'bubblewrap.*already installed'
+check "present socat is reported as installed" \
+  outputMatches "$presentSandboxToolsOutput" 'socat.*already installed'
+withdrawCommand apt-get

@@ -46,6 +46,12 @@ check "brew installs Node with npm" packageNamesAre brew node "node"
 check "brew installs VSCodium as a cask" packageNamesAre brew vscodium "--cask vscodium"
 check "brew installs the Tailscale app as a cask" packageNamesAre brew tailscale "--cask tailscale-app"
 check "brew installs Ghostty as a cask" packageNamesAre brew ghostty "--cask ghostty"
+for linuxPackageManager in apt-get dnf pacman zypper; do
+  check "$linuxPackageManager installs bubblewrap by its common name" \
+    packageNamesAre "$linuxPackageManager" bubblewrap "bubblewrap"
+  check "$linuxPackageManager installs socat by its common name" \
+    packageNamesAre "$linuxPackageManager" socat "socat"
+done
 
 unmappedToolResolvesToNothing() {
   ! packageNamesForTool apt-get nosuchtool >/dev/null 2>&1

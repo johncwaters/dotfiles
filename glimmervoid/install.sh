@@ -599,6 +599,17 @@ installGlimmervoidCliShim() {
   noteApplied "$label" "~/.local/bin/glimmervoid execs node against $glimmervoidAppDisplayPath/dist/bin/glimmervoid.js"
 }
 
+# Glimmervoid runs every agent session inside the Claude Code OS sandbox, which on Linux shells out to bwrap and socat.
+installGlimmervoidSandboxTools() {
+  if isDarwin; then
+    return 0
+  fi
+  installPackageTool "bubblewrap" "bwrap" "bubblewrap"
+  installPackageTool "socat" "socat" "socat"
+}
+
+installGlimmervoidSandboxTools
+
 if ! glimmervoidProfileSettingsAreUsable; then
   finishTopic
 fi
