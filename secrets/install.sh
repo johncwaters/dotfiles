@@ -124,118 +124,36 @@ printFirstLineOfPassEntryWithoutPrompting() {
   showPassEntryWithoutPrompting "$1" "$2" | printFirstLineOfStandardInput
 }
 
-githubHostsFilePath="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/hosts.yml"
-githubConfigDirectoryPath="${githubHostsFilePath%/*}"
-
-physicalGithubConfigDirectoryPath() {
-  local existingAncestorPath="$githubConfigDirectoryPath"
-  local physicalAncestorPath
-  while [[ ! -e "$existingAncestorPath" && ! -L "$existingAncestorPath" && "$existingAncestorPath" == */* ]]; do
-    existingAncestorPath="${existingAncestorPath%/*}"
-  done
-  physicalAncestorPath="$(cd -P -- "${existingAncestorPath:-/}" 2>/dev/null && pwd)" || return 1
-  printf '%s%s\n' "$physicalAncestorPath" "${githubConfigDirectoryPath#"$existingAncestorPath"}"
-}
-
-unlinkedGithubConfigDirectoryPath() {
-  local physicalHomePath
-  if [[ "$githubConfigDirectoryPath" != "$HOME"/* ]] || ! physicalHomePath="$(cd -P -- "$HOME" 2>/dev/null && pwd)"; then
-    printf '%s\n' "$githubConfigDirectoryPath"
-    return 0
-  fi
-  printf '%s%s\n' "$physicalHomePath" "${githubConfigDirectoryPath#"$HOME"}"
-}
-
-ghSupportsPlainTextLogin() {
-  local ghPath="$1"
-  local authStatusHelp
-  local authLoginHelp
-  authStatusHelp="$("$ghPath" auth status --help 2>&1 || true)"
-  authLoginHelp="$("$ghPath" auth login --help 2>&1 || true)"
-  [[ "$authStatusHelp" == *"--active"* && "$authLoginHelp" == *"--insecure-storage"* ]]
-}
-
-# Sandboxed sessions can mask a token only in hosts.yml; a keyring token is unreachable there, so gh fails inside them.
-githubTokenIsInHostsFile() {
-  local authStatusReport
-  authStatusReport="$("$1" auth status --active --hostname github.com 2>&1)" && [[ "$authStatusReport" != *"(keyring)"* ]]
-}
-
-restrictGithubHostsFile() {
-  local label="$1"
-  if [[ -L "$githubHostsFilePath" || ! -f "$githubHostsFilePath" ]]; then
-    noteWarned "$label" "no plain hosts.yml at $githubHostsFilePath after the login"
-    return 1
-  fi
-  if ! chmod 600 "$githubHostsFilePath"; then
-    noteWarned "$label" "cannot make $githubHostsFilePath owner only"
-    return 1
-  fi
-}
-
-logInToGithubFromPassEntry() {
-  local label="$1"
-  local ghPath="$2"
-  local currentAuthState="$3"
-  local passPath
-  local githubConfigDirectoryResolvedPath
-  passPath="$(resolveSystemCommand pass || true)"
-  if [[ -z "$passPath" ]]; then
-    reportRefusedPathOnlyCommand "$label" "pass" "not logging in from $githubTokenPassEntry" \
-      || noteDetail "$label" "$currentAuthState, no pass in the system or Homebrew prefixes to log in from $githubTokenPassEntry"
-    return 0
-  fi
-  if ! passwordStoreEntryExists "$githubTokenPassEntry"; then
-    noteDetail "$label" "$currentAuthState, pass insert $githubTokenPassEntry and rerun to log in from the store"
-    return 0
-  fi
-  if ! githubConfigDirectoryResolvedPath="$(physicalGithubConfigDirectoryPath)" \
-    || [[ "$githubConfigDirectoryResolvedPath" != "$(unlinkedGithubConfigDirectoryPath)" ]]; then
-    noteWarned "$label" "resolves through a symlink to ${githubConfigDirectoryResolvedPath:-an unresolvable path}, not writing a token through it: $githubConfigDirectoryPath"
-    return 0
-  fi
-  if ! pathIsPlainFileOrAbsent "$githubHostsFilePath"; then
-    noteWarned "$label" "not a regular file, not writing a token through it: $githubHostsFilePath"
-    return 0
-  fi
-  if [[ -f "$githubHostsFilePath" ]] && ! chmod 600 "$githubHostsFilePath"; then
-    noteWarned "$label" "cannot make $githubHostsFilePath owner only before the login"
-    return 0
-  fi
-  noteStarting "$label" "logging in with the $githubTokenPassEntry pass entry"
-  if ! printFirstLineOfPassEntryWithoutPrompting "$passPath" "$githubTokenPassEntry" \
-    | "$ghPath" auth login --with-token --insecure-storage >/dev/null 2>&1 || ! githubTokenIsInHostsFile "$ghPath"; then
-    noteWarned "$label" "login from $githubTokenPassEntry failed; if pass is locked, run pass show $githubTokenPassEntry >/dev/null and rerun"
-    return 0
-  fi
-  if ! restrictGithubHostsFile "$label"; then
-    return 0
-  fi
-  noteApplied "$label" "logged in from the $githubTokenPassEntry pass entry, token in $githubHostsFilePath"
-}
-
 loginToGithubFromPasswordStore() {
   local label="GitHub auth"
   local ghPath
-  local authStatusReport
+  local passPath
   ghPath="$(resolveSystemCommand gh || true)"
   if [[ -z "$ghPath" ]]; then
     reportRefusedPathOnlyCommand "$label" "gh" "not logging in" || true
     return 0
   fi
-  if ! ghSupportsPlainTextLogin "$ghPath"; then
-    noteDetail "$label" "gh at $ghPath lacks auth status --active or auth login --insecure-storage, gh 2.40 or newer needed to log in from $githubTokenPassEntry"
-    return 0
-  fi
-  if ! authStatusReport="$("$ghPath" auth status --active --hostname github.com 2>&1)"; then
-    logInToGithubFromPassEntry "$label" "$ghPath" "not logged in"
-    return 0
-  fi
-  if [[ "$authStatusReport" != *"(keyring)"* ]]; then
+  if "$ghPath" auth status >/dev/null 2>&1; then
     notePresent "$label" "logged in"
     return 0
   fi
-  logInToGithubFromPassEntry "$label" "$ghPath" "token in the system keyring, which sandboxed sessions cannot read"
+  passPath="$(resolveSystemCommand pass || true)"
+  if [[ -z "$passPath" ]]; then
+    reportRefusedPathOnlyCommand "$label" "pass" "not logging in from $githubTokenPassEntry" \
+      || noteDetail "$label" "not logged in, no pass in the system or Homebrew prefixes to log in from $githubTokenPassEntry"
+    return 0
+  fi
+  if ! passwordStoreEntryExists "$githubTokenPassEntry"; then
+    noteDetail "$label" "not logged in, pass insert $githubTokenPassEntry and rerun to log in from the store"
+    return 0
+  fi
+  noteStarting "$label" "logging in with the $githubTokenPassEntry pass entry"
+  if ! printFirstLineOfPassEntryWithoutPrompting "$passPath" "$githubTokenPassEntry" \
+    | "$ghPath" auth login --with-token >/dev/null 2>&1 || ! "$ghPath" auth status >/dev/null 2>&1; then
+    noteWarned "$label" "login from $githubTokenPassEntry failed; if pass is locked, run pass show $githubTokenPassEntry >/dev/null and rerun"
+    return 0
+  fi
+  noteApplied "$label" "logged in from the $githubTokenPassEntry pass entry"
 }
 
 # Root owned paths, so a test run inside a marked sandbox home points them elsewhere; outside one the redirect is ignored.

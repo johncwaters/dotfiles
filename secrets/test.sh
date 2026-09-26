@@ -5,7 +5,6 @@ set -euo pipefail
 topicDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repoRoot="$(cd -- "$topicDir/.." && pwd)"
 export DOTFILES_PLATFORM=linux
-unset GH_CONFIG_DIR
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "secrets"
@@ -67,49 +66,17 @@ STUB
 
 writeStub gh <<'STUB'
 #!/usr/bin/env bash
-if [[ " $* " == *" --help "* ]]; then
-  if [[ -f "$DOTFILES_TEST_STATE/gh-before-2.40" ]]; then
-    printf 'Usage:  gh auth %s [flags]\n  -h, --hostname string\n' "${2:-}"
-    exit 0
-  fi
-  printf 'Usage:  gh auth %s [flags]\n  -a, --active\n      --insecure-storage\n' "${2:-}"
-  exit 0
-fi
 printf 'gh %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-hostsFilePath="$XDG_CONFIG_HOME/gh/hosts.yml"
 if [[ "${1:-}" == "auth" && "${2:-}" == "status" ]]; then
-  if [[ -f "$DOTFILES_TEST_STATE/gh-unauthed" ]]; then
-    exit 1
-  fi
-  if [[ -f "$DOTFILES_TEST_STATE/gh-inactive-keyring-expired" && " $* " != *" --active "* ]]; then
-    printf 'github.com\n  Logged in to github.com account sandbox (%s)\n  Failed to log in to github.com account stale (keyring)\n' "$hostsFilePath"
-    exit 1
-  fi
-  tokenStorage="$hostsFilePath"
-  if [[ -f "$DOTFILES_TEST_STATE/gh-keyring" ]]; then
-    tokenStorage="keyring"
-  fi
-  printf 'github.com\n  Logged in to github.com account sandbox (%s)\n' "$tokenStorage"
-  exit 0
+  [[ ! -f "$DOTFILES_TEST_STATE/gh-unauthed" ]]
+  exit $?
 fi
 if [[ "${1:-}" == "auth" && "${2:-}" == "login" ]]; then
-  if [[ -f "$hostsFilePath" ]]; then
-    stat -c %a "$hostsFilePath" > "$DOTFILES_TEST_STATE/gh-hosts-mode-at-login" 2>/dev/null \
-      || stat -f %Lp "$hostsFilePath" > "$DOTFILES_TEST_STATE/gh-hosts-mode-at-login"
-  fi
   cat > "$DOTFILES_TEST_STATE/gh-received-token"
   if [[ ! -s "$DOTFILES_TEST_STATE/gh-received-token" ]]; then
     exit 1
   fi
   rm -f "$DOTFILES_TEST_STATE/gh-unauthed"
-  if [[ " $* " != *" --insecure-storage "* ]]; then
-    touch "$DOTFILES_TEST_STATE/gh-keyring"
-    exit 0
-  fi
-  rm -f "$DOTFILES_TEST_STATE/gh-keyring"
-  mkdir -p "${hostsFilePath%/*}"
-  printf 'github.com:\n    oauth_token: %s\n' "$(cat "$DOTFILES_TEST_STATE/gh-received-token")" > "$hostsFilePath"
-  chmod 644 "$hostsFilePath"
   exit 0
 fi
 exit 0
@@ -189,7 +156,6 @@ runInstall() {
     DOTFILES_PROFILE=personal \
     DOTFILES_PTRACE_SYSCTL_PATH="$ptraceDropInPath" \
     DOTFILES_PTRACE_SCOPE_PATH="$ptraceLivePath" \
-    XDG_CONFIG_HOME="$sandbox/.config" \
     NO_COLOR=1 \
     "$@" \
     bash "$topicDir/install.sh"
@@ -203,7 +169,6 @@ runDarwinInstall() {
     DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
     DOTFILES_PTRACE_SYSCTL_PATH="$ptraceDropInPath" \
     DOTFILES_PTRACE_SCOPE_PATH="$ptraceLivePath" \
-    XDG_CONFIG_HOME="$sandbox/.config" \
     NO_COLOR=1 \
     bash "$topicDir/install.sh"
 }
@@ -399,7 +364,6 @@ withdrawCommand dnf
 provideCommand apt-get
 
 githubTokenValue="ghp_sandboxTokenThatMustNeverBeLogged"
-ghHostsFilePath="$sandbox/.config/gh/hosts.yml"
 mkdir -p "$sandbox/.password-store/github"
 printf '%s\nlogin: sandbox\n' "$githubTokenValue" > "$sandbox/.password-store/github/token.gpg"
 provideCommand gh
@@ -409,35 +373,12 @@ authedWithEntryOutput="$(runInstall)" || true
 check "an authenticated gh is left alone even with a token entry" logLacks "gh auth login"
 check "an authenticated gh never decrypts the token entry" logLacks "pass show"
 check "an authenticated gh reports logged in" outputMatches "$authedWithEntryOutput" 'GitHub auth.*logged in'
-check "a gh token already in hosts.yml never runs pass" logLacks "pass "
-
-touch "$stubState/gh-keyring"
-rm -f "$stubState/gh-received-token"
-: > "$commandLog"
-keyringMigrationStatus=0
-keyringMigrationOutput="$(runInstall)" || keyringMigrationStatus=$?
-check "a keyring token is logged in again from github/token" logHas "pass show github/token"
-check "the keyring migration stores the token in plain text" \
-  grep -qE -- '^gh auth login --with-token --insecure-storage$' "$commandLog"
-check "the keyring migration hands gh the first line of the entry" \
-  test "$(cat "$stubState/gh-received-token")" = "$githubTokenValue"
-check "the keyring migration checks gh auth status again afterwards" \
-  test "$(countLogLines '^gh auth status --active --hostname github.com$')" -eq 2
-check "the keyring migration leaves hosts.yml owner only" test "$(fileModeOf "$ghHostsFilePath")" = "600"
-check "the keyring migration is reported as a change" \
-  outputMatches "$keyringMigrationOutput" '\[ ok \].*GitHub auth.*hosts\.yml'
-check "the keyring migration never shows the token" outputLacks "$keyringMigrationOutput" "$githubTokenValue"
-check "the keyring migration never logs the token" logLacks "$githubTokenValue"
-check "the keyring migration exits clean" test "$keyringMigrationStatus" -eq 0
-rm -f "$ghHostsFilePath"
 
 touch "$stubState/gh-unauthed"
 : > "$commandLog"
 passLoginStatus=0
 passLoginOutput="$(runInstall)" || passLoginStatus=$?
-check "an unauthenticated gh logs in from the github/token entry" \
-  grep -qE -- '^gh auth login --with-token --insecure-storage$' "$commandLog"
-check "a pass login leaves hosts.yml owner only" test "$(fileModeOf "$ghHostsFilePath")" = "600"
+check "an unauthenticated gh logs in from the github/token entry" logHas "gh auth login --with-token"
 check "the login is reported as a change" outputMatches "$passLoginOutput" '\[ ok \].*GitHub auth.*github/token'
 check "gh receives only the first line of the entry" \
   test "$(cat "$stubState/gh-received-token")" = "$githubTokenValue"
@@ -447,65 +388,6 @@ check "the token never appears in the converge output" outputLacks "$passLoginOu
 check "the token never appears in any logged command line" logLacks "$githubTokenValue"
 check "a pass login leaves no warning" outputLacks "$passLoginOutput" "[warn]"
 check "a pass login exits clean" test "$passLoginStatus" -eq 0
-
-chmod 644 "$ghHostsFilePath"
-touch "$stubState/gh-unauthed"
-rm -f "$stubState/gh-hosts-mode-at-login"
-: > "$commandLog"
-runInstall > /dev/null || true
-check "a world-readable hosts.yml is owner only before gh writes the token" \
-  test "$(cat "$stubState/gh-hosts-mode-at-login" 2>/dev/null)" = "600"
-
-rm -f "$ghHostsFilePath" "$stubState/gh-received-token"
-symlinkedHostsTarget="$sandbox/symlinked-hosts-target"
-: > "$symlinkedHostsTarget"
-ln -s "$symlinkedHostsTarget" "$ghHostsFilePath"
-touch "$stubState/gh-unauthed"
-: > "$commandLog"
-symlinkedHostsOutput="$(runInstall)" || true
-check "a symlinked hosts.yml refuses the login" logLacks "gh auth login"
-check "a symlinked hosts.yml never runs pass" logLacks "pass show"
-check "a symlinked hosts.yml draws a warning" outputMatches "$symlinkedHostsOutput" '\[warn\].*GitHub auth.*not a regular file'
-check "a symlinked hosts.yml target receives no token" test ! -s "$symlinkedHostsTarget"
-rm -f "$ghHostsFilePath" "$symlinkedHostsTarget" "$stubState/gh-unauthed"
-
-symlinkedGhConfigTarget="$sandbox/symlinked-gh-config-target"
-mkdir -p "$symlinkedGhConfigTarget"
-rm -rf "$sandbox/.config/gh"
-ln -s "$symlinkedGhConfigTarget" "$sandbox/.config/gh"
-touch "$stubState/gh-unauthed"
-: > "$commandLog"
-symlinkedGhConfigOutput="$(runInstall)" || true
-check "a symlinked gh config dir refuses the login" logLacks "gh auth login"
-check "a symlinked gh config dir never runs pass" logLacks "pass show"
-check "a symlinked gh config dir warning names the resolved path" \
-  outputMatches "$symlinkedGhConfigOutput" "\[warn\].*GitHub auth.*symlink to $symlinkedGhConfigTarget"
-check "a symlinked gh config dir target receives no token" test ! -e "$symlinkedGhConfigTarget/hosts.yml"
-rm -f "$sandbox/.config/gh" "$stubState/gh-unauthed"
-rm -rf "$symlinkedGhConfigTarget"
-mkdir -p "$sandbox/.config/gh"
-
-touch "$stubState/gh-unauthed" "$stubState/gh-before-2.40"
-rm -f "$stubState/gh-received-token"
-: > "$commandLog"
-legacyGhStatus=0
-legacyGhOutput="$(runInstall)" || legacyGhStatus=$?
-check "a gh before 2.40 never runs pass" logLacks "pass "
-check "a gh before 2.40 is never logged in" logLacks "gh auth login"
-check "a gh before 2.40 is never probed with --active" logLacks "gh auth status --active"
-check "a gh before 2.40 names the minimum version" outputMatches "$legacyGhOutput" 'GitHub auth.*gh 2\.40 or newer'
-check "a gh before 2.40 draws no warning" outputLacks "$legacyGhOutput" "[warn]"
-check "a gh before 2.40 exits clean" test "$legacyGhStatus" -eq 0
-rm -f "$stubState/gh-unauthed" "$stubState/gh-before-2.40"
-
-touch "$stubState/gh-inactive-keyring-expired"
-: > "$commandLog"
-inactiveKeyringOutput="$(runInstall)" || true
-check "an inactive keyring account beside an active hosts.yml account never runs pass" logLacks "pass "
-check "an inactive keyring account beside an active hosts.yml account is not logged in again" logLacks "gh auth login"
-check "an inactive keyring account beside an active hosts.yml account reports logged in" \
-  outputMatches "$inactiveKeyringOutput" 'GitHub auth.*logged in'
-rm -f "$stubState/gh-inactive-keyring-expired"
 
 touch "$stubState/gh-unauthed" "$stubState/pass-locked"
 rm -f "$stubState/gh-received-token"
@@ -526,20 +408,6 @@ check "a missing token entry never attempts a login" logLacks "gh auth login"
 check "a missing token entry never runs pass" logLacks "pass show"
 check "a missing token entry names the pass insert command" outputHas "$missingEntryOutput" "pass insert github/token"
 check "a missing token entry leaves the auth warning to the packages topic" test "$missingEntryStatus" -eq 0
-
-rm -f "$stubState/gh-unauthed"
-touch "$stubState/gh-keyring"
-: > "$commandLog"
-keyringWithoutEntryStatus=0
-keyringWithoutEntryOutput="$(runInstall)" || keyringWithoutEntryStatus=$?
-check "a keyring token without an entry is not logged in again" logLacks "gh auth login"
-check "a keyring token without an entry never runs pass" logLacks "pass show"
-check "a keyring token without an entry names the pass insert command" \
-  outputMatches "$keyringWithoutEntryOutput" 'GitHub auth.*keyring.*pass insert github/token'
-check "a keyring token without an entry draws no warning" outputLacks "$keyringWithoutEntryOutput" "[warn]"
-check "a keyring token without an entry exits clean" test "$keyringWithoutEntryStatus" -eq 0
-rm -f "$stubState/gh-keyring"
-touch "$stubState/gh-unauthed"
 
 relocatedTokenStore="$sandbox/relocated-token-store"
 cp -R "$sandbox/.password-store" "$relocatedTokenStore"
