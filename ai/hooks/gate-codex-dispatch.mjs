@@ -12,10 +12,11 @@ const REVIEW_SANDBOX_OPTIONS =
   `-c ${buildCodexReviewSandboxProfile()} ` +
   `-c 'default_permissions="qa_review"'`;
 const SAFE_ABSOLUTE_PATH = "/[A-Za-z0-9._/@+-]*";
-const PROMPT_FILE_PATH = "/tmp/codex-dispatch-[A-Za-z0-9._-]+\\.txt";
+const PROMPT_STEM = "/tmp/codex-dispatch-[A-Za-z0-9._-]+";
+const PROMPT_FILE_PATH = `${PROMPT_STEM}\\.txt`;
 const SANCTIONED_DISPATCH_COMMAND = new RegExp(
   `^codex exec ${escapeRegExp(REVIEW_SANDBOX_OPTIONS)} -C ${SAFE_ABSOLUTE_PATH} -m gpt-6-(?:sol|luna|astra)` +
-    `(?: -c model_reasoning_effort="(?:low|medium|high|xhigh)")? < ${PROMPT_FILE_PATH}$`,
+    `(?: -c model_reasoning_effort="(?:low|medium|high|xhigh)")? < (${PROMPT_STEM})\\.txt 2> \\1\\.err$`,
 );
 const PROMPT_FILE = new RegExp(`^${PROMPT_FILE_PATH}$`);
 const COMMAND_START = String.raw`(?:^|[;&|({!\x60]|\$\(|\b(?:then|do|else)\b|\b(?:ba|z|da)?sh\s+(?:-\S+\s+)*-c\s+)`;
@@ -35,7 +36,7 @@ function gateDispatcher(toolName, toolInput) {
   if (SANCTIONED_DISPATCH_COMMAND.test(String(toolInput.command || "").trim())) allow();
   denyPreToolUse(
     "codex-dispatcher may only run the qa_review read-only dispatch command qa-swarm.js builds, " +
-      "reading its prompt from /tmp/codex-dispatch-<name>.txt. " +
+      "reading its prompt from /tmp/codex-dispatch-<name>.txt and writing stderr to /tmp/codex-dispatch-<name>.err. " +
       "Report this denial through the task's failure path; do not retry.",
   );
 }

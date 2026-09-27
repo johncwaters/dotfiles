@@ -4,7 +4,7 @@ const codexReviewSandboxProfile = `'permissions.qa_review={extends=":read-only",
 
 function codexDispatchCommand(model, reasoningEffort) {
   const effortOption = reasoningEffort ? ` -c model_reasoning_effort="${reasoningEffort}"` : ''
-  return 'codex exec -c ' + codexReviewSandboxProfile + ` -c 'default_permissions="qa_review"' -C ${args.repoPath} -m ${model}${effortOption} < <promptfile>`
+  return 'codex exec -c ' + codexReviewSandboxProfile + ` -c 'default_permissions="qa_review"' -C ${args.repoPath} -m ${model}${effortOption} < <promptstem>.txt 2> <promptstem>.err`
 }
 
 async function spawnCodexDispatcher(dispatchPrompt, options) {
@@ -522,7 +522,7 @@ async function routeReview(filesToClassify) {
   if (!args.codexAllowed) {
     return { routerResult: await routeReviewOnOpus(filesToClassify, 'Codex CLI disabled by session routing'), degradationNote: '' }
   }
-  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. Write the dispatched router prompt below to a temp file and run ${codexDispatchCommand('gpt-6-sol')}. On a rate-limit or usage-cap error, run it once with ${codexDispatchCommand('gpt-6-luna')}. On a model or CLI error, or a second quota error, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, the error as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
+  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. Write the dispatched router prompt below to a temp file and run ${codexDispatchCommand('gpt-6-sol')}. On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
   const dispatchPrompt = buildRouterAssessmentPrompt(filesToClassify, dispatchRouteInstruction)
   const dispatchedRouter = await spawnCodexDispatcher(dispatchPrompt, { label: 'Route review', phase: 'Route', schema: routerSchema })
   if (dispatchedRouter && codexRouterModels.has(dispatchedRouter.route)) {
@@ -652,7 +652,7 @@ For no findings, put (none) on the line after STRUCTURED_FINDINGS:. Omit side wh
   if (!args.codexAllowed) {
     return `${externalLanePrompt}\n\nCodex CLI is disabled by session routing. Act as its opus substitute and perform an adversarial independent read that tries to refute the other lanes before reporting findings.`
   }
-  return `${externalLanePrompt}\n\nWrite the review prompt above to a temp file and run ${codexDispatchCommand('gpt-6-sol', 'high')}. Return the output verbatim. On a quota, model, or CLI error, return the literal string EXTERNAL_UNAVAILABLE.`
+  return `${externalLanePrompt}\n\nWrite the review prompt above to a temp file and run ${codexDispatchCommand('gpt-6-sol', 'high')}. Return the output verbatim. On any failure, return the literal string EXTERNAL_UNAVAILABLE.`
 }
 
 function spawnLane(laneName, lanePrompt) {

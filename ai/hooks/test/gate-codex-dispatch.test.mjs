@@ -5,11 +5,11 @@ import { runHook } from "./harness.mjs";
 
 const codexDispatchCommand = workflowFunctionNamed("codexDispatchCommand", { repoPath: "/home/someone/repo" });
 
-function dispatchCommandReading(promptFile, model, reasoningEffort) {
-  return codexDispatchCommand(model, reasoningEffort).replace("<promptfile>", promptFile);
+function dispatchCommandReading(promptStem, model, reasoningEffort) {
+  return codexDispatchCommand(model, reasoningEffort).replaceAll("<promptstem>", promptStem);
 }
 
-const SANCTIONED_COMMAND = dispatchCommandReading("/tmp/codex-dispatch-router-abcdefgh.txt", "gpt-6-sol", "high");
+const SANCTIONED_COMMAND = dispatchCommandReading("/tmp/codex-dispatch-router-abcdefgh", "gpt-6-sol", "high");
 
 function decisionFor(payload) {
   const processResult = runHook("gate-codex-dispatch.mjs", payload);
@@ -81,7 +81,7 @@ test("an ordinary subagent may mention codex as an argument", () => {
 test("codex-dispatcher may run the dispatch command qa-swarm.js builds", () => {
   assert.equal(decisionFor(subagentBash("codex-dispatcher", SANCTIONED_COMMAND)), "allow");
   assert.equal(
-    decisionFor(subagentBash("codex-dispatcher", dispatchCommandReading("/tmp/codex-dispatch-x.txt", "gpt-6-luna"))),
+    decisionFor(subagentBash("codex-dispatcher", dispatchCommandReading("/tmp/codex-dispatch-x", "gpt-6-luna"))),
     "allow",
   );
 });
@@ -96,6 +96,9 @@ test("codex-dispatcher is denied every deviation from the dispatch shape", () =>
     SANCTIONED_COMMAND.replace(' -C /home/someone/repo', ' -C /repo;id'),
     SANCTIONED_COMMAND.replace('"~/.ssh"="deny", ', ""),
     SANCTIONED_COMMAND.replace("/tmp/codex-dispatch-router-abcdefgh.txt", "/etc/passwd"),
+    SANCTIONED_COMMAND.replace("/tmp/codex-dispatch-router-abcdefgh.err", "/tmp/codex-dispatch-other.err"),
+    SANCTIONED_COMMAND.replace("/tmp/codex-dispatch-router-abcdefgh.err", "/Users/someone/.zshrc"),
+    SANCTIONED_COMMAND.replace(" 2> /tmp/codex-dispatch-router-abcdefgh.err", ""),
     "grok --prompt-file /tmp/codex-dispatch-x.txt --always-approve",
     "ls /tmp",
   ]) {

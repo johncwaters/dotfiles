@@ -58,8 +58,8 @@ test("rendered Claude denies match the shared paths and scope Glimmervoid to its
 
 test("qa-swarm profile and gate sanctioned command match the shared paths", () => {
   const codexDispatchCommand = workflowFunctionNamed("codexDispatchCommand", { repoPath: "/repo" });
-  const actualCommand = codexDispatchCommand("gpt-6-sol", "high").replace("<promptfile>", "/tmp/codex-dispatch-paths.txt");
-  const expectedCommand = `codex exec -c ${expectedCodexProfile} -c 'default_permissions="qa_review"' -C /repo -m gpt-6-sol -c model_reasoning_effort="high" < /tmp/codex-dispatch-paths.txt`;
+  const actualCommand = codexDispatchCommand("gpt-6-sol", "high").replaceAll("<promptstem>", "/tmp/codex-dispatch-paths");
+  const expectedCommand = `codex exec -c ${expectedCodexProfile} -c 'default_permissions="qa_review"' -C /repo -m gpt-6-sol -c model_reasoning_effort="high" < /tmp/codex-dispatch-paths.txt 2> /tmp/codex-dispatch-paths.err`;
   assert.equal(actualCommand, expectedCommand);
   for (const glimmervoidFileEntry of glimmervoidFileEntries) {
     assert.ok(actualCommand.includes(`"${glimmervoidFileEntry}"="deny"`), glimmervoidFileEntry);
