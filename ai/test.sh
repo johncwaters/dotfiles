@@ -278,6 +278,11 @@ check "settings.json keeps the personal permissions allow list" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.allow.includes("Bash(node:*)")?0:1)' "$settingsPath"
 check "settings.json keeps the base allow list through the overlay merge" \
   renderKeepsEveryBasePermission allow "$settingsPath"
+for workflowScriptPath in "$topicDir"/workflows/*.js; do
+  workflowName="$(basename -- "$workflowScriptPath" .js)"
+  check "the base allow list runs the $workflowName workflow without a prompt" \
+    node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).permissions.allow.includes(`Workflow(${process.argv[2]})`)?0:1)' "$topicDir/settings.base.json" "$workflowName"
+done
 check "settings.json keeps the personal permissions default mode" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.defaultMode==="auto"?0:1)' "$settingsPath"
 check "settings.json has no unrendered token" bash -c '! grep -q "{{HOME}}" "$1"' _ "$settingsPath"

@@ -22,7 +22,8 @@
   },
   "permissions": {
     "allow": [
-      "Read(~/.claude/workflows/**)"
+      "Workflow(plan-challenge)",
+      "Workflow(qa-swarm)"
     ],
     "deny": [
       "mcp__claude_ai_Gmail__send_message",
