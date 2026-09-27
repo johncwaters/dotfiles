@@ -335,6 +335,9 @@ const expected = {
     matcher: "Write|Edit|MultiEdit",
     command: `node ${home}/.claude/hooks/block-comments.mjs`
   }],
+  skipPermissionsByDefault: true,
+  branchGc: { deleteUnmerged: true },
+  postTurnChecks: { mode: "fix" },
   remote: {
     enabled: true,
     port: 3001,

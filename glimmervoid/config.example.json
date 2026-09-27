@@ -29,5 +29,12 @@
       "matcher": "Write|Edit|MultiEdit",
       "command": "node {{HOME}}/.claude/hooks/block-comments.mjs"
     }
-  ]
+  ],
+  "skipPermissionsByDefault": true,
+  "branchGc": {
+    "deleteUnmerged": true
+  },
+  "postTurnChecks": {
+    "mode": "fix"
+  }
 }
