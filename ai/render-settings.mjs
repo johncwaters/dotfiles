@@ -1,5 +1,7 @@
+import fs from "node:fs";
 import os from "node:os";
 import { mergeJsonFiles } from "../script/lib/merge-json.mjs";
+import { buildClaudeProtectedReadRules } from "./protected-paths.mjs";
 
 function mergeHookEvents(baseHooks, overlayHooks) {
   const mergedHooks = { ...baseHooks };
@@ -56,6 +58,11 @@ try {
       return mergeHookEvents(baseValue, overlayValue);
     },
   });
+  const renderedSettings = JSON.parse(fs.readFileSync(destinationPath, "utf8"));
+  if (Array.isArray(renderedSettings.permissions?.deny)) {
+    renderedSettings.permissions.deny.push(...buildClaudeProtectedReadRules());
+    fs.writeFileSync(destinationPath, JSON.stringify(renderedSettings, null, 2) + "\n", { mode: 0o600 });
+  }
 } catch (renderError) {
   process.stderr.write("render-settings: " + renderError.message + "\n");
   process.exit(1);

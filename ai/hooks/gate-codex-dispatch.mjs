@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
+import { buildCodexReviewSandboxProfile } from "../protected-paths.mjs";
 
 const DISPATCHER_AGENT_TYPE = "codex-dispatcher";
 
@@ -7,29 +8,8 @@ function escapeRegExp(literal) {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const CREDENTIAL_PATHS = [
-  "~/.ssh",
-  "~/.gnupg",
-  "~/.aws",
-  "~/.kube",
-  "~/.docker",
-  "~/.netrc",
-  "~/.git-credentials",
-  "~/.config/gh",
-  "~/.codex/auth.json",
-  "~/.claude/.credentials.json",
-  "~/.grok",
-  "~/.glimmervoid",
-  "~/.npmrc",
-  "~/.azure",
-  "~/.local/share/keyrings",
-  "~/.mozilla",
-  "~/.config/google-chrome",
-  "~/.config/chromium",
-  "~/.pki",
-];
 const REVIEW_SANDBOX_OPTIONS =
-  `-c 'permissions.qa_review={extends=":read-only", filesystem={${CREDENTIAL_PATHS.map((credentialPath) => `"${credentialPath}"="deny"`).join(", ")}}}' ` +
+  `-c ${buildCodexReviewSandboxProfile()} ` +
   `-c 'default_permissions="qa_review"'`;
 const SAFE_ABSOLUTE_PATH = "/[A-Za-z0-9._/@+-]*";
 const PROMPT_FILE_PATH = "/tmp/codex-dispatch-[A-Za-z0-9._-]+\\.txt";

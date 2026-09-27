@@ -32,7 +32,8 @@
   },
   "permissions": {
     "allow": [
-      "Read(~/.claude/workflows/**)",
+      "Workflow(plan-challenge)",
+      "Workflow(qa-swarm)",
       "Bash(node:*)",
       "Bash(ls:*)",
       "WebFetch(domain:unpkg.com)"
@@ -77,10 +78,25 @@
       "Bash(gh auth status* --show-token*)",
       "Bash(gh auth status* -t*)",
       "Bash(gh config get* oauth_token*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.docker/**)",
+      "Read(~/.netrc)",
+      "Read(~/.git-credentials)",
+      "Read(~/.config/gh/**)",
       "Read(~/.claude/.credentials.json)",
-      "Read(~/.config/gh/hosts.yml)",
+      "Read(~/.grok/**)",
       "Read(~/.glimmervoid/config.json*)",
-      "Read(~/.ssh/**)"
+      "Read(~/.glimmervoid/secrets.env)",
+      "Read(~/.npmrc)",
+      "Read(~/.azure/**)",
+      "Read(~/.local/share/keyrings/**)",
+      "Read(~/.mozilla/**)",
+      "Read(~/.config/google-chrome/**)",
+      "Read(~/.config/chromium/**)",
+      "Read(~/.pki/**)"
     ],
     "defaultMode": "auto"
   },
@@ -101,6 +117,15 @@
           {
             "type": "command",
             "command": "node /fixture/home/.claude/hooks/enforce-spawn-model.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Bash|Write)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/gate-codex-dispatch.mjs"
           }
         ]
       },

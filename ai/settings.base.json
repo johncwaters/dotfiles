@@ -64,11 +64,7 @@
       "Bash(gh auth token*)",
       "Bash(gh auth status* --show-token*)",
       "Bash(gh auth status* -t*)",
-      "Bash(gh config get* oauth_token*)",
-      "Read(~/.claude/.credentials.json)",
-      "Read(~/.config/gh/hosts.yml)",
-      "Read(~/.glimmervoid/config.json*)",
-      "Read(~/.ssh/**)"
+      "Bash(gh config get* oauth_token*)"
     ]
   },
   "hooks": {

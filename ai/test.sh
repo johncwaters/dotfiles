@@ -245,7 +245,7 @@ settingsPath="$sandbox/.claude/settings.json"
 check "settings.json rendered" test -f "$settingsPath"
 check "settings.json is valid JSON" node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$settingsPath"
 check "settings.json keeps the base deny list through the overlay merge" \
-  node -e 'const readJson=(path)=>JSON.parse(require("fs").readFileSync(path,"utf8"));const baseDenyList=readJson(process.argv[1]).permissions.deny;const renderedDenyList=readJson(process.argv[2]).permissions.deny;process.exit(baseDenyList.length>0&&JSON.stringify(renderedDenyList)===JSON.stringify(baseDenyList)?0:1)' "$topicDir/settings.base.json" "$settingsPath"
+  node --input-type=module -e 'import {readFileSync} from "node:fs";import {pathToFileURL} from "node:url";const {buildClaudeProtectedReadRules}=await import(pathToFileURL(process.argv[3]));const readJson=(path)=>JSON.parse(readFileSync(path,"utf8"));const baseDenyList=readJson(process.argv[1]).permissions.deny;const renderedDenyList=readJson(process.argv[2]).permissions.deny;process.exit(baseDenyList.length>0&&JSON.stringify(renderedDenyList)===JSON.stringify([...baseDenyList,...buildClaudeProtectedReadRules()])?0:1)' "$topicDir/settings.base.json" "$settingsPath" "$topicDir/protected-paths.mjs"
 
 renderProfileSettings() {
   HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
