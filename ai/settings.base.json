@@ -2,7 +2,8 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_COMMIT_POLICY_ROOT": "{{HOME}}/.dotfiles",
-    "CAVEMAN_DEFAULT_MODE": "ultra"
+    "CAVEMAN_DEFAULT_MODE": "ultra",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5"
   },
   "model": "claude-opus-5-5[1m]",
   "attribution": {
