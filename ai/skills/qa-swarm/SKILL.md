@@ -7,7 +7,7 @@ description: The finder engine of the review ladder. Takes an already-pinned dif
 
 Find, converge, return. Every lane emits the same structured format so the merge is mechanical.
 
-Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAllowed: boolean, grokAllowed: boolean, settled: string[], claimedFixed: string[], declined: string[], round?: { number, touchedFiles: string[], reportingBar: string }, retryAttemptId?: string }`.
+Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAllowed: boolean, grokAllowed: boolean, dispatchNonce?: string, settled: string[], claimedFixed: string[], declined: string[], round?: { number, touchedFiles: string[], reportingBar: string }, retryAttemptId?: string }`.
 
 ## Contract with the caller
 
@@ -40,7 +40,7 @@ Relay the workflow output verbatim; manual lanes use `~/.claude/agents/*-reviewe
 
 ## Step 1: Run the workflow
 
-Build `args` from the caller's inputs, call `Workflow({name: 'qa-swarm', args})`, and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Always call by `name`: the `Workflow(qa-swarm)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
+Build `args` from the caller's inputs. When `codexAllowed` is true, set `dispatchNonce` to the output of `openssl rand -hex 8`, run fresh for every call: it makes the `/tmp` prompt path unguessable to other local accounts, and the script refuses a Codex-allowed run without one. Call `Workflow({name: 'qa-swarm', args})`, and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Always call by `name`: the `Workflow(qa-swarm)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
 
 To re-run a dead retry under `resumeFromRunId` without replaying its cached output, pass a new `retryAttemptId`.
 

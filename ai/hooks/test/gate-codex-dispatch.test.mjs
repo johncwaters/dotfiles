@@ -6,7 +6,7 @@ import { runHook } from "./harness.mjs";
 const codexDispatchCommand = workflowFunctionNamed("codexDispatchCommand", { repoPath: "/home/someone/repo" });
 
 function dispatchCommandReading(promptStem, model, reasoningEffort) {
-  return codexDispatchCommand(model, reasoningEffort).replaceAll("<promptstem>", promptStem);
+  return codexDispatchCommand(model, reasoningEffort, promptStem);
 }
 
 const SANCTIONED_COMMAND = dispatchCommandReading("/tmp/codex-dispatch-router-abcdefgh", "gpt-6-sol", "high");
@@ -116,6 +116,25 @@ test("codex-dispatcher may write only its prompt file", () => {
   assert.equal(decisionFor(writeTo("/tmp/codex-dispatch-router-abcdefgh.txt")), "allow");
   assert.equal(decisionFor(writeTo("/home/someone/.bashrc")), "deny");
   assert.equal(decisionFor(writeTo("/tmp/codex-dispatch-../../home/someone/.bashrc.txt")), "deny");
+});
+
+test("the dispatch instruction names a prompt path and command the gate sanctions verbatim", () => {
+  const reviewArgs = { repoPath: "/home/someone/repo", dispatchNonce: "0123456789abcdef" };
+  const codexDispatchInstruction = workflowFunctionNamed("codexDispatchInstruction", reviewArgs);
+  const instruction = codexDispatchInstruction("router prompt below", "router", "gpt-6-sol");
+  const [, promptFilePath, command] = instruction.match(/to (\S+)\. Then run exactly[^\n]*\n(.+)\n$/);
+  assert.equal(
+    decisionFor({ agent_id: "agent-1", agent_type: "codex-dispatcher", tool_name: "Write", tool_input: { file_path: promptFilePath, content: "prompt" } }),
+    "allow",
+  );
+  assert.equal(decisionFor(subagentBash("codex-dispatcher", command)), "allow");
+  assert.ok(command.includes(`< ${promptFilePath} `), command);
+});
+
+test("the prompt stem carries the caller nonce and the task label", () => {
+  const dispatchPromptStem = workflowFunctionNamed("dispatchPromptStem", { repoPath: "/repo", dispatchNonce: "0123456789abcdef" });
+  assert.equal(dispatchPromptStem("router"), "/tmp/codex-dispatch-router-0123456789abcdef");
+  assert.notEqual(dispatchPromptStem("router"), dispatchPromptStem("external"));
 });
 
 test("an unreadable payload is allowed", () => {

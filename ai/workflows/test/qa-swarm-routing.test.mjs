@@ -65,6 +65,7 @@ const baseWorkflowArgs = {
   changedFiles: ['src/file.js'],
   codexAllowed: true,
   grokAllowed: true,
+  dispatchNonce: '0123456789abcdef',
   settled: [],
   claimedFixed: [],
   declined: []
@@ -77,8 +78,15 @@ test('the workflow refuses to run when either routing flag is missing', async ()
   assert.equal(await runWorkflow({ ...baseWorkflowArgs, grokAllowed: undefined }), refusalMessage)
 })
 
+test('a Codex-allowed run refuses a missing or malformed dispatch nonce', async () => {
+  const refusalMessage = 'No valid dispatchNonce for a Codex-allowed run, no run.'
+
+  assert.equal(await runWorkflow({ ...baseWorkflowArgs, dispatchNonce: undefined }), refusalMessage)
+  assert.equal(await runWorkflow({ ...baseWorkflowArgs, dispatchNonce: '../../etc/passwd' }), refusalMessage)
+})
+
 test('disabling Codex emits no Codex execution instruction in any prompt', async () => {
-  const emittedPrompts = await emittedRoutingPrompts({ ...baseWorkflowArgs, codexAllowed: false })
+  const emittedPrompts = await emittedRoutingPrompts({ ...baseWorkflowArgs, codexAllowed: false, dispatchNonce: undefined })
 
   assert.doesNotMatch(emittedPrompts.join('\n'), /codex exec/)
   assert.match(emittedPrompts.join('\n'), /Codex CLI/)

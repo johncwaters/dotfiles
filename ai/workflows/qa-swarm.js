@@ -2,9 +2,20 @@ export const meta = { name: 'qa-swarm', description: 'Routes a pinned review thr
 
 const codexReviewSandboxProfile = `'permissions.qa_review={extends=":read-only", filesystem={"~/.ssh"="deny", "~/.gnupg"="deny", "~/.aws"="deny", "~/.kube"="deny", "~/.docker"="deny", "~/.netrc"="deny", "~/.git-credentials"="deny", "~/.config/gh"="deny", "~/.codex/auth.json"="deny", "~/.claude/.credentials.json"="deny", "~/.grok"="deny", "~/.glimmervoid/config.json*"="deny", "~/.glimmervoid/secrets.env"="deny", "~/.npmrc"="deny", "~/.azure"="deny", "~/.local/share/keyrings"="deny", "~/.mozilla"="deny", "~/.config/google-chrome"="deny", "~/.config/chromium"="deny", "~/.pki"="deny"}}'`
 
-function codexDispatchCommand(model, reasoningEffort) {
+const dispatchNoncePattern = /^[0-9a-f]{16}$/
+
+function dispatchPromptStem(taskLabel) {
+  return `/tmp/codex-dispatch-${taskLabel}-${args.dispatchNonce}`
+}
+
+function codexDispatchCommand(model, reasoningEffort, promptStem) {
   const effortOption = reasoningEffort ? ` -c model_reasoning_effort="${reasoningEffort}"` : ''
-  return 'codex exec -c ' + codexReviewSandboxProfile + ` -c 'default_permissions="qa_review"' -C ${args.repoPath} -m ${model}${effortOption} < <promptstem>.txt 2> <promptstem>.err`
+  return 'codex exec -c ' + codexReviewSandboxProfile + ` -c 'default_permissions="qa_review"' -C ${args.repoPath} -m ${model}${effortOption} < ${promptStem}.txt 2> ${promptStem}.err`
+}
+
+function codexDispatchInstruction(promptName, taskLabel, model, reasoningEffort) {
+  const promptStem = dispatchPromptStem(taskLabel)
+  return `Write the ${promptName}, byte for byte, to ${promptStem}.txt. Then run exactly the one-line command below, nothing added or removed:\n${codexDispatchCommand(model, reasoningEffort, promptStem)}\n`
 }
 
 async function spawnCodexDispatcher(dispatchPrompt, options) {
@@ -522,7 +533,7 @@ async function routeReview(filesToClassify) {
   if (!args.codexAllowed) {
     return { routerResult: await routeReviewOnOpus(filesToClassify, 'Codex CLI disabled by session routing'), degradationNote: '' }
   }
-  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. Write the dispatched router prompt below to a temp file and run ${codexDispatchCommand('gpt-6-sol')}. On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
+  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. ${codexDispatchInstruction('dispatched router prompt below', 'router', 'gpt-6-sol')}On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
   const dispatchPrompt = buildRouterAssessmentPrompt(filesToClassify, dispatchRouteInstruction)
   const dispatchedRouter = await spawnCodexDispatcher(dispatchPrompt, { label: 'Route review', phase: 'Route', schema: routerSchema })
   if (dispatchedRouter && codexRouterModels.has(dispatchedRouter.route)) {
@@ -652,7 +663,7 @@ For no findings, put (none) on the line after STRUCTURED_FINDINGS:. Omit side wh
   if (!args.codexAllowed) {
     return `${externalLanePrompt}\n\nCodex CLI is disabled by session routing. Act as its opus substitute and perform an adversarial independent read that tries to refute the other lanes before reporting findings.`
   }
-  return `${externalLanePrompt}\n\nWrite the review prompt above to a temp file and run ${codexDispatchCommand('gpt-6-sol', 'high')}. Return the output verbatim. On any failure, return the literal string EXTERNAL_UNAVAILABLE.`
+  return `${externalLanePrompt}\n\n${codexDispatchInstruction('review prompt above', 'external', 'gpt-6-sol', 'high')}Return the output verbatim. On any failure, return the literal string EXTERNAL_UNAVAILABLE.`
 }
 
 function spawnLane(laneName, lanePrompt) {
@@ -807,6 +818,10 @@ if (!Array.isArray(args.changedFiles) || args.changedFiles.length === 0) {
 
 if (typeof args.codexAllowed !== 'boolean' || typeof args.grokAllowed !== 'boolean') {
   return 'No valid codexAllowed and grokAllowed routing flags, no run.'
+}
+
+if (args.codexAllowed && !dispatchNoncePattern.test(String(args.dispatchNonce ?? ''))) {
+  return 'No valid dispatchNonce for a Codex-allowed run, no run.'
 }
 
 const changedFileNames = new Set(args.changedFiles.map(normalizeFilePath))
