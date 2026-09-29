@@ -1,6 +1,6 @@
 {
   "worktree": { "baseRef": "fresh" },
-  "enabledPlugins": { "posthog@claude-plugins-official": true, "slack@claude-plugins-official": true },
+  "enabledPlugins": { "posthog@claude-plugins-official": true, "slack@claude-plugins-official": false },
   "theme": "dark",
   "switchModelsOnFlag": false
 }

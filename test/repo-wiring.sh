@@ -198,6 +198,8 @@ check "no profile overlay enables the retired example-org plugin" \
   bash -c '! grep -qil example-org "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the work overlay enables the PostHog plugin because that is where PostHog work happens" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins&&overlay.enabledPlugins["posthog@claude-plugins-official"]===true?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "the work overlay disables the Slack plugin because the claude.ai Slack connector replaces it" \
+  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins&&overlay.enabledPlugins["slack@claude-plugins-official"]===false?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
 check "no profile overlay owns caveman" \
   bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \
