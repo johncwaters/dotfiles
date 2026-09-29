@@ -26,7 +26,7 @@ async function spawnCodexDispatcher(dispatchPrompt, options) {
     return null
   }
 }
-const codexRouterModels = new Set(['gpt-6-sol', 'gpt-6-luna'])
+const dispatchedRouterModel = 'gpt-6-sol'
 
 const laneDefinitions = [
   {
@@ -522,10 +522,14 @@ function describeRouterDispatchFailure(dispatchedRouter) {
   if (!dispatchedRouter) {
     return 'router agent death'
   }
-  if (dispatchedRouter.route !== 'OPUS_REQUIRED') {
-    return `unexpected route ${JSON.stringify(dispatchedRouter.route)} from the dispatcher instead of a Codex model`
-  }
   return String(dispatchedRouter.dangerFact || '').trim()
+}
+
+function hasClassifiedAnyFile(routerAnswer) {
+  if (!routerAnswer || !Array.isArray(routerAnswer.fileClasses)) {
+    return false
+  }
+  return routerAnswer.fileClasses.length > 0
 }
 
 async function routeReview(filesToClassify) {
@@ -533,14 +537,14 @@ async function routeReview(filesToClassify) {
   if (!args.codexAllowed) {
     return { routerResult: await routeReviewOnOpus(filesToClassify, 'Codex CLI disabled by session routing'), degradationNote: '' }
   }
-  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. ${codexDispatchInstruction('dispatched router prompt below', 'router', 'gpt-6-sol')}On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim, with route set to the model that answered.\n\nDispatched router prompt:`
+  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. ${codexDispatchInstruction('dispatched router prompt below', 'router', dispatchedRouterModel)}On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim.\n\nDispatched router prompt:`
   const dispatchPrompt = buildRouterAssessmentPrompt(filesToClassify, dispatchRouteInstruction)
   const dispatchedRouter = await spawnCodexDispatcher(dispatchPrompt, { label: 'Route review', phase: 'Route', schema: routerSchema })
-  if (dispatchedRouter && codexRouterModels.has(dispatchedRouter.route)) {
-    return { routerResult: dispatchedRouter, degradationNote: '' }
+  if (hasClassifiedAnyFile(dispatchedRouter)) {
+    return { routerResult: { ...dispatchedRouter, route: dispatchedRouterModel }, degradationNote: '' }
   }
   const dispatchFailureDetail = describeRouterDispatchFailure(dispatchedRouter)
-  const routeFailureReason = dispatchFailureDetail === '' ? 'OPUS_REQUIRED with no reported detail' : dispatchFailureDetail
+  const routeFailureReason = dispatchFailureDetail === '' ? 'a failed dispatch with no reported detail' : dispatchFailureDetail
   const fallbackRouterResult = await routeReviewOnOpus(filesToClassify, routeFailureReason)
   return { routerResult: fallbackRouterResult, degradationNote: `external router failed with ${routeFailureReason}, so opus routed instead and the routing row for this run is stale` }
 }

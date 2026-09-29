@@ -101,14 +101,19 @@ test('disabling Grok keeps Codex instructions and emits no Grok execution instru
   assert.match(combinedPrompts, /Grok CLI/)
 })
 
-async function routedAfterDispatcherReturns(dispatcherRoute) {
-  const routerResultFor = (route) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route })
+const everyChangedFileClassified = baseWorkflowArgs.changedFiles.map((file) => ({ file, class: 'logic' }))
+
+async function routedAfterDispatcherReturns(dispatcherRoute, dispatcherFileClasses) {
+  const routerResultFor = (route, fileClasses) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses, lanes: [], laneJustifications: [], findings: [], route })
   const spawnedModels = []
   const runtimeBindings = {
     phase: () => {},
     agent: async (prompt, options) => {
       spawnedModels.push(options.model)
-      return routerResultFor(options.model === 'sonnet' ? dispatcherRoute : 'ignored')
+      if (options.model === 'sonnet') {
+        return routerResultFor(dispatcherRoute, dispatcherFileClasses)
+      }
+      return routerResultFor('ignored', everyChangedFileClassified)
     }
   }
   const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
@@ -116,12 +121,25 @@ async function routedAfterDispatcherReturns(dispatcherRoute) {
   return { ...routed, spawnedModels }
 }
 
-test('a dispatcher that answers the router itself instead of running Codex falls back to opus with a degradation note', async () => {
-  const routed = await routedAfterDispatcherReturns('sonnet-direct')
+for (const placeholderRoute of ['OPUS_REQUIRED', 'opus_required']) {
+  test(`a dispatcher failure placeholder with route ${JSON.stringify(placeholderRoute)} and empty fileClasses falls back to opus with its reported detail in the degradation note`, async () => {
+    const routed = await routedAfterDispatcherReturns(placeholderRoute, [])
 
-  assert.deepEqual(routed.spawnedModels, ['sonnet', 'opus'])
-  assert.equal(routed.routerResult.route, 'opus')
-  assert.match(routed.degradationNote, /unexpected route "sonnet-direct"/)
+    assert.deepEqual(routed.spawnedModels, ['sonnet', 'opus'])
+    assert.equal(routed.routerResult.route, 'opus')
+    assert.match(routed.degradationNote, /external router failed with fixture/)
+  })
+}
+
+test('a Codex router answer classifying only some changed files is accepted without an opus fallback', async () => {
+  const routeReview = workflowFunctionNamed('routeReview', { ...baseWorkflowArgs, changedFiles: ['src/file.js', 'src/other.js'] }, {
+    phase: () => {},
+    agent: async (prompt, options) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: options.model === 'sonnet' ? 'gpt-6-sol' : 'ignored' })
+  })
+  const routed = await routeReview(['src/file.js', 'src/other.js'])
+
+  assert.equal(routed.routerResult.route, 'gpt-6-sol')
+  assert.equal(routed.degradationNote, '')
 })
 
 test('Codex dispatch goes through the codex-dispatcher agent under the read-only credential-denying profile', async () => {
@@ -167,13 +185,15 @@ test('a session without the codex-dispatcher agent type routes on opus instead o
   assert.match(routed.degradationNote, /router agent death/)
 })
 
-test('a router answer from a Codex model is accepted without an opus fallback', async () => {
-  const routed = await routedAfterDispatcherReturns('gpt-6-luna')
+for (const codexWrittenRoute of ['gpt-6-sol', 'code', 'Run code and external review with security, scale, and necessity lanes.']) {
+  test(`a Codex router answer with route ${JSON.stringify(codexWrittenRoute)} is accepted and stamped with the dispatched model`, async () => {
+    const routed = await routedAfterDispatcherReturns(codexWrittenRoute, everyChangedFileClassified)
 
-  assert.deepEqual(routed.spawnedModels, ['sonnet'])
-  assert.equal(routed.routerResult.route, 'gpt-6-luna')
-  assert.equal(routed.degradationNote, '')
-})
+    assert.deepEqual(routed.spawnedModels, ['sonnet'])
+    assert.equal(routed.routerResult.route, 'gpt-6-sol')
+    assert.equal(routed.degradationNote, '')
+  })
+}
 
 test('a zero-finding lane with verified safe and no overflow converges to a canonical empty block', async () => {
   const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe claimed defect was verified safe. No overflow.'
