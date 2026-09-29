@@ -476,37 +476,39 @@ nodeMajorVersion() {
   printf '%s\n' "$versionText"
 }
 
-nodeMinorVersion() {
-  local versionText
-  if ! versionText="$(node -v 2>/dev/null)"; then
+isVersionAtLeast() {
+  local installedVersion="$1"
+  local minimumVersion="$2"
+  if [[ ! "$installedVersion" =~ ^[0-9]+(\.[0-9]+)*$ || ! "$minimumVersion" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
     return 1
   fi
-  versionText="${versionText#v}"
-  versionText="${versionText#*.}"
-  versionText="${versionText%%.*}"
-  if [[ ! "$versionText" =~ ^[0-9]+$ ]]; then
-    return 1
-  fi
-  printf '%s\n' "$versionText"
+  local installedComponents=()
+  local minimumComponents=()
+  IFS=. read -r -a installedComponents <<< "$installedVersion"
+  IFS=. read -r -a minimumComponents <<< "$minimumVersion"
+  local componentIndex
+  local installedComponent
+  local minimumComponent
+  for ((componentIndex = 0; componentIndex < ${#installedComponents[@]} || componentIndex < ${#minimumComponents[@]}; componentIndex++)); do
+    installedComponent="${installedComponents[$componentIndex]:-0}"
+    minimumComponent="${minimumComponents[$componentIndex]:-0}"
+    if ((10#$installedComponent > 10#$minimumComponent)); then
+      return 0
+    fi
+    if ((10#$installedComponent < 10#$minimumComponent)); then
+      return 1
+    fi
+  done
+  return 0
 }
 
 # The commit skill is TypeScript node runs by stripping types, stable only since 22.18.
 nodeIsCurrentEnough() {
-  local majorVersion
-  local minorVersion
-  if ! majorVersion="$(nodeMajorVersion)"; then
+  local installedNodeVersion
+  if ! installedNodeVersion="$(node -v 2>/dev/null)"; then
     return 1
   fi
-  if ((majorVersion > minimumNodeMajor)); then
-    return 0
-  fi
-  if ((majorVersion < minimumNodeMajor)); then
-    return 1
-  fi
-  if ! minorVersion="$(nodeMinorVersion)"; then
-    return 1
-  fi
-  ((minorVersion >= minimumNodeMinor))
+  isVersionAtLeast "${installedNodeVersion#v}" "$minimumNodeMajor.$minimumNodeMinor"
 }
 
 # A python without pip cannot install ruff, which the validate-file hook needs, so pip counts.
@@ -646,7 +648,7 @@ readPackageList() {
 }
 
 npmPackageName() {
-  local packageEntry="$1"
+  local packageEntry="${1%%>=*}"
   if [[ "$packageEntry" == *=* ]]; then
     printf '%s\n' "${packageEntry%%=*}"
     return 0
@@ -655,18 +657,40 @@ npmPackageName() {
 }
 
 npmPackageSource() {
-  local packageEntry="$1"
+  local packageEntry="${1%%>=*}"
   if [[ "$packageEntry" == *=* ]]; then
     printf '%s\n' "${packageEntry#*=}"
+    return 0
+  fi
+  if [[ "$1" == *'>='* ]]; then
+    printf '%s@latest\n' "$packageEntry"
     return 0
   fi
   printf '%s\n' "$packageEntry"
 }
 
+npmPackageMinimumVersion() {
+  local packageEntry="$1"
+  if [[ "$packageEntry" != *'>='* ]]; then
+    return 0
+  fi
+  printf '%s\n' "${packageEntry##*>=}"
+}
+
 listGlobalNpmPackages() {
   # only lines the strip shortened: the first parseable line is the global root itself
   npm ls -g --depth=0 --parseable 2>/dev/null |
-    awk '{ if (sub(/^.*node_modules[\\\/]/, "")) { gsub(/\\/, "/"); print } }'
+    awk '{ packagePath = $0; if (sub(/^.*node_modules[\\\/]/, "")) { gsub(/\\/, "/"); print $0 "\t" packagePath } }' |
+    node -e '
+      const filesystem = require("node:fs");
+      const installedPackages = filesystem.readFileSync(0, "utf8").split("\n").filter(Boolean);
+      for (const installedPackage of installedPackages) {
+        const [packageName, packagePath] = installedPackage.split("\t");
+        const manifestPath = `${packagePath}/package.json`;
+        const manifest = filesystem.existsSync(manifestPath) ? JSON.parse(filesystem.readFileSync(manifestPath, "utf8")) : {};
+        console.log(`${packageName}\t${manifest.version ?? ""}`);
+      }
+    '
 }
 
 npmGlobalRootWritable() {

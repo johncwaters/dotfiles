@@ -15,7 +15,7 @@ const SAFE_ABSOLUTE_PATH = "/[A-Za-z0-9._/@+-]*";
 const PROMPT_STEM = "/tmp/codex-dispatch-[A-Za-z0-9._-]+";
 const PROMPT_FILE_PATH = `${PROMPT_STEM}\\.txt`;
 const SANCTIONED_DISPATCH_COMMAND = new RegExp(
-  `^codex exec ${escapeRegExp(REVIEW_SANDBOX_OPTIONS)} -C ${SAFE_ABSOLUTE_PATH} -m gpt-6-(?:sol|luna|astra)` +
+  `^codex exec ${escapeRegExp(REVIEW_SANDBOX_OPTIONS)} -C ${SAFE_ABSOLUTE_PATH} -m (?:gpt-6\\.1-sol|gpt-6-luna|gpt-6-astra)` +
     `(?: -c model_reasoning_effort="(?:low|medium|high|xhigh)")? < (${PROMPT_STEM})\\.txt 2> \\1\\.err$`,
 );
 const PROMPT_FILE = new RegExp(`^${PROMPT_FILE_PATH}$`);

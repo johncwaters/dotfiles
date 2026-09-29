@@ -12,8 +12,9 @@ source "$dotfilesRepo/packages/flatpak.sh"
 
 packagesDirectory="$dotfilesRepo/packages"
 nodeSourceMajor=22
+minimumClaudeCodeVersion=2.1.284
 enabledPackageGroups=()
-installedNpmPackages=()
+declare -A installedNpmPackages=()
 # A group this file never asks about installs nothing, so a typo has to be named out loud.
 knownPackageGroups=(
   system-tools
@@ -158,7 +159,29 @@ installClaudeCode() {
   refreshSessionPath
   persistUserLocalBinOnPath
   if command -v claude >/dev/null 2>&1; then
-    notePresent "Claude Code" "already installed"
+    local installedClaudeVersion
+    local updateLog
+    installedClaudeVersion="$(claude --version 2>/dev/null || true)"
+    installedClaudeVersion="${installedClaudeVersion%% *}"
+    if isVersionAtLeast "$installedClaudeVersion" "$minimumClaudeCodeVersion"; then
+      notePresent "Claude Code" "already installed"
+      return 0
+    fi
+    noteStarting "Claude Code" "upgrading from ${installedClaudeVersion:-unknown}"
+    updateLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-claude-update.XXXXXX")"
+    if ! claude update > "$updateLog" 2>&1; then
+      noteWarned "Claude Code" "update failed: $(lastLogLine "$updateLog")"
+      rm -f -- "$updateLog"
+      return 0
+    fi
+    rm -f -- "$updateLog"
+    installedClaudeVersion="$(claude --version 2>/dev/null || true)"
+    installedClaudeVersion="${installedClaudeVersion%% *}"
+    if isVersionAtLeast "$installedClaudeVersion" "$minimumClaudeCodeVersion"; then
+      noteInstalled "Claude Code" "$installedClaudeVersion installed"
+      return 0
+    fi
+    noteWarned "Claude Code" "still older than $minimumClaudeCodeVersion, upgrade manually"
     return 0
   fi
   noteStarting "Claude Code" "running native installer"
@@ -240,29 +263,33 @@ npmToolingIsReady() {
 
 refreshInstalledNpmPackages() {
   installedNpmPackages=()
-  mapfile -t installedNpmPackages < <(listGlobalNpmPackages)
+  local packageName
+  local installedVersion
+  while IFS=$'\t' read -r packageName installedVersion; do
+    installedNpmPackages["$packageName"]="$installedVersion"
+  done < <(listGlobalNpmPackages)
 }
 
 npmPackageIsInstalled() {
   local wantedName="$1"
-  local installedName
-  for installedName in ${installedNpmPackages[@]+"${installedNpmPackages[@]}"}; do
-    if [[ "$installedName" == "$wantedName" ]]; then
-      return 0
-    fi
-  done
-  return 1
+  [[ -n "${installedNpmPackages[$wantedName]+installed}" ]]
 }
 
 installNpmGlobalEntry() {
   local packageEntry="$1"
+  local installedVersion="${2:-}"
   local packageName
   local packageSource
   local installLog
   local failureReason
   packageName="$(npmPackageName "$packageEntry")"
   packageSource="$(npmPackageSource "$packageEntry")"
-  noteStarting "$packageName" "npm install -g $packageSource"
+  local installDescription="npm install -g $packageSource"
+  if [[ -n "$installedVersion" ]]; then
+    packageSource="$packageName@latest"
+    installDescription="upgrading from $installedVersion; npm install -g $packageSource"
+  fi
+  noteStarting "$packageName" "$installDescription"
   installLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-npm-install.XXXXXX")"
   if installGlobalNpmPackage "$packageSource" > "$installLog" 2>&1; then
     rm -f -- "$installLog"
@@ -284,25 +311,42 @@ ensureNpmGlobals() {
   local summaryLabel="$1"
   shift
   local wantedEntries=("$@")
-  local missingEntries=()
+  local pendingEntries=()
   local packageEntry
+  local packageName
+  local minimumVersion
+  local installedVersion
   if ((${#wantedEntries[@]} == 0)); then
     noteWarned "$summaryLabel" "no packages listed"
     return 0
   fi
   refreshInstalledNpmPackages
   for packageEntry in "${wantedEntries[@]}"; do
-    if npmPackageIsInstalled "$(npmPackageName "$packageEntry")"; then
+    packageName="$(npmPackageName "$packageEntry")"
+    if ! npmPackageIsInstalled "$packageName"; then
+      pendingEntries+=("$packageEntry")
       continue
     fi
-    missingEntries+=("$packageEntry")
+    minimumVersion="$(npmPackageMinimumVersion "$packageEntry")"
+    if [[ -z "$minimumVersion" ]]; then
+      continue
+    fi
+    if isVersionAtLeast "${installedNpmPackages[$packageName]}" "$minimumVersion"; then
+      continue
+    fi
+    pendingEntries+=("$packageEntry")
   done
-  if ((${#missingEntries[@]} == 0)); then
+  if ((${#pendingEntries[@]} == 0)); then
     notePresent "$summaryLabel" "all ${#wantedEntries[@]} present"
     return 0
   fi
-  for packageEntry in "${missingEntries[@]}"; do
-    installNpmGlobalEntry "$packageEntry"
+  for packageEntry in "${pendingEntries[@]}"; do
+    packageName="$(npmPackageName "$packageEntry")"
+    installedVersion=""
+    if npmPackageIsInstalled "$packageName"; then
+      installedVersion="${installedNpmPackages[$packageName]:-unknown}"
+    fi
+    installNpmGlobalEntry "$packageEntry" "$installedVersion"
   done
 }
 

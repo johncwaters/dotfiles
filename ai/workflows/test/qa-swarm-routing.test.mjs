@@ -146,11 +146,11 @@ for (const placeholderRoute of ['OPUS_REQUIRED', 'opus_required']) {
 test('a Codex router answer classifying only some changed files is accepted without an opus fallback', async () => {
   const routeReview = workflowFunctionNamed('routeReview', { ...baseWorkflowArgs, changedFiles: ['src/file.js', 'src/other.js'] }, {
     phase: () => {},
-    agent: async (prompt, options) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: options.model === 'sonnet' ? 'gpt-6-sol' : 'ignored' })
+    agent: async (prompt, options) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: options.model === 'sonnet' ? 'gpt-6.1-sol' : 'ignored' })
   })
   const routed = await routeReview(['src/file.js', 'src/other.js'])
 
-  assert.equal(routed.routerResult.route, 'gpt-6-sol')
+  assert.equal(routed.routerResult.route, 'gpt-6.1-sol')
   assert.equal(routed.degradationNote, '')
 })
 
@@ -160,7 +160,7 @@ test('Codex dispatch goes through the codex-dispatcher agent under the read-only
     phase: () => {},
     agent: async (prompt, options) => {
       dispatchSpawns.push({ prompt, options })
-      return { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route: 'gpt-6-sol' }
+      return { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route: 'gpt-6.1-sol' }
     }
   }
   const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
@@ -171,7 +171,7 @@ test('Codex dispatch goes through the codex-dispatcher agent under the read-only
   assert.equal(dispatchSpawns[0].options.agentType, 'codex-dispatcher')
   for (const prompt of [dispatchSpawns[0].prompt, externalPrompt]) {
     assert.match(prompt, /codex exec -c 'permissions\.qa_review=\{extends=":read-only"/)
-    assert.match(prompt, /"~\/\.ssh"="deny".* -c 'default_permissions="qa_review"' -C \/repo -m gpt-6-sol/)
+    assert.match(prompt, /"~\/\.ssh"="deny".* -c 'default_permissions="qa_review"' -C \/repo -m gpt-6\.1-sol/)
     assert.doesNotMatch(prompt, /dangerously/)
   }
 })
@@ -197,12 +197,12 @@ test('a session without the codex-dispatcher agent type routes on opus instead o
   assert.match(routed.degradationNote, /router agent death/)
 })
 
-for (const codexWrittenRoute of ['gpt-6-sol', 'code', 'Run code and external review with security, scale, and necessity lanes.']) {
+for (const codexWrittenRoute of ['gpt-6.1-sol', 'code', 'Run code and external review with security, scale, and necessity lanes.']) {
   test(`a Codex router answer with route ${JSON.stringify(codexWrittenRoute)} is accepted and stamped with the dispatched model`, async () => {
     const routed = await routedAfterDispatcherReturns(codexWrittenRoute, everyChangedFileClassified)
 
     assert.deepEqual(routed.spawnedModels, ['sonnet'])
-    assert.equal(routed.routerResult.route, 'gpt-6-sol')
+    assert.equal(routed.routerResult.route, 'gpt-6.1-sol')
     assert.equal(routed.degradationNote, '')
   })
 }
@@ -319,4 +319,11 @@ test('a zero-finding lane discussing arithmetic overflow stays out of the trunca
   assert.equal(agentCallCount, 1)
   assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
   assert.match(workflowResponse, /truncated lanes: none$/)
+})
+
+test('the Codex router runs at medium effort rather than the CLI default', async () => {
+  const emittedPrompts = await emittedRoutingPrompts(baseWorkflowArgs)
+  const routerPrompt = emittedPrompts.find(prompt => prompt.includes('Dispatched router prompt:'))
+
+  assert.match(routerPrompt, /-m gpt-6\.1-sol -c model_reasoning_effort="medium" </)
 })

@@ -1,6 +1,6 @@
 @ast-grep/napi
 @biomejs/biome
-@openai/codex
+@openai/codex>=0.159.0
 pnpm
 postiz
 typescript

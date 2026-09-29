@@ -28,6 +28,7 @@ coreUtilities=(
   od tee expr sleep printf test
 )
 linkCoreUtilities "${coreUtilities[@]}"
+ln -s "$(type -P node)" "$coreBin/node-runtime"
 
 writeAptStubThatInstallsMappedCommands
 
@@ -115,7 +116,12 @@ if [[ "$1" == "ls" ]]; then
     if [[ ! -f "$recordFile" ]]; then
       continue
     fi
-    printf '%s/lib/node_modules/%s\n' "$(currentPrefix)" "$(cat "$recordFile")"
+    read -r packageName < "$recordFile"
+    packageVersion="$(sed -n '2p' "$recordFile")"
+    packageDirectory="$(currentPrefix)/lib/node_modules/$packageName"
+    mkdir -p "$packageDirectory"
+    printf '{"version":"%s"}\n' "${packageVersion:-1.0.0}" > "$packageDirectory/package.json"
+    printf '%s\n' "$packageDirectory"
   done
   exit 0
 fi
@@ -129,11 +135,15 @@ if [[ "$1" == "pack" ]]; then
 fi
 if [[ "$1" == "install" ]]; then
   packageSpec="$3"
-  packageName="$packageSpec"
+  packageName="${packageSpec%@latest}"
   if [[ "$packageSpec" == *.tgz ]]; then
     packageName="$(cat "$packageSpec.name")"
   fi
-  printf '%s\n' "$packageName" > "$installedDir/$(encodeName "$packageName")"
+  packageVersion=1.0.0
+  if [[ "$packageName" == "@openai/codex" ]]; then
+    packageVersion=0.159.0
+  fi
+  printf '%s\n%s\n' "$packageName" "$packageVersion" > "$installedDir/$(encodeName "$packageName")"
   exit 0
 fi
 if [[ "$1" == "uninstall" ]]; then
@@ -149,6 +159,9 @@ printf 'node %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 if [[ "${1:-}" == "-v" ]]; then
   printf 'v22.18.0\n'
   exit 0
+fi
+if [[ "${1:-}" == "-e" ]]; then
+  exec "$DOTFILES_TEST_CORE_BIN/node-runtime" "$@"
 fi
 exit 0
 STUB
@@ -260,6 +273,25 @@ STUB
 writeStub claude <<'STUB'
 #!/usr/bin/env bash
 printf 'claude %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+versionFile="$DOTFILES_TEST_STATE/claude-version"
+if [[ "${1:-}" == "--version" ]]; then
+  installedClaudeVersion=2.1.285
+  if [[ -f "$versionFile" ]]; then
+    read -r installedClaudeVersion < "$versionFile"
+  fi
+  printf '%s (Claude Code)\n' "$installedClaudeVersion"
+  exit 0
+fi
+if [[ "${1:-}" == "update" ]]; then
+  if [[ -f "$DOTFILES_TEST_STATE/claude-update-fails" ]]; then
+    printf 'update unavailable\n' >&2
+    exit 1
+  fi
+  if [[ -f "$DOTFILES_TEST_STATE/claude-update-stays-old" ]]; then
+    exit 0
+  fi
+  printf '2.1.285\n' > "$versionFile"
+fi
 exit 0
 STUB
 
@@ -375,6 +407,63 @@ check "second run uninstalls nothing" logLacks "npm uninstall"
 check "second run installs no flatpak" logLacks "flatpak install"
 check "second run installs no pip package" logLacks "pip install"
 check "second run downloads no installer" logLacks "curl"
+check "a current Claude Code runs no update" logLacks "claude update"
+
+printf '@openai/codex\n0.158.0\n' > "$stubState/npm-installed/@openai%codex"
+printf '2.1.283\n' > "$stubState/claude-version"
+: > "$commandLog"
+upgradeRunStatus=0
+upgradeRunOutput="$(runInstall)" || upgradeRunStatus=$?
+check "a converge with outdated tools exits clean" test "$upgradeRunStatus" -eq 0
+check "an outdated Codex upgrades to latest" logHas "npm install -g @openai/codex@latest --loglevel=error"
+check "the Codex upgrade reports its old version" outputHas "$upgradeRunOutput" "upgrading from 0.158.0"
+check "the Codex upgrade records the required version" \
+  test "$(sed -n '2p' "$stubState/npm-installed/@openai%codex")" = "0.159.0"
+check "an outdated Claude Code runs its updater" logHas "claude update"
+check "the Claude Code upgrade reports its old version" outputHas "$upgradeRunOutput" "upgrading from 2.1.283"
+check "the Claude Code upgrade rechecks its version" test "$(countLogLines '^claude --version$')" -eq 2
+
+: > "$commandLog"
+afterUpgradeOutput="$(runInstall)"
+check "the converge after upgrading reports no changes" reportsNoChanges "$afterUpgradeOutput"
+check "Codex at its floor runs no npm install" logLacks "npm install -g"
+check "the converge after upgrading runs no Claude Code update" logLacks "claude update"
+
+printf '@openai/codex\n0.160.0\n' > "$stubState/npm-installed/@openai%codex"
+printf '2.1.284\n' > "$stubState/claude-version"
+: > "$commandLog"
+currentToolsOutput="$(runInstall)"
+check "tools at or above their floors report no changes" reportsNoChanges "$currentToolsOutput"
+check "Codex above its floor runs no npm install" logLacks "npm install -g"
+check "Claude Code at its floor runs no update" logLacks "claude update"
+check "Claude Code at its floor reports already installed" \
+  outputMatches "$currentToolsOutput" 'Claude Code.*already installed'
+
+printf '@openai/codex\n0.158.9\n' > "$stubState/npm-installed/@openai%codex"
+: > "$commandLog"
+workUpgradeStatus=0
+workUpgradeOutput="$(runInstall work)" || workUpgradeStatus=$?
+check "the work profile upgrades outdated Codex cleanly" test "$workUpgradeStatus" -eq 0
+check "the work profile upgrades Codex to latest" logHas "npm install -g @openai/codex@latest --loglevel=error"
+
+printf '2.1.283\n' > "$stubState/claude-version"
+touch "$stubState/claude-update-stays-old"
+: > "$commandLog"
+staleClaudeStatus=0
+staleClaudeOutput="$(runInstall)" || staleClaudeStatus=$?
+check "a Claude Code update that stays outdated exits with a warning" test "$staleClaudeStatus" -eq 1
+check "a Claude Code update that stays outdated names the floor" \
+  outputMatches "$staleClaudeOutput" '\[warn\].*Claude Code.*still older than 2.1.284'
+rm -f "$stubState/claude-update-stays-old"
+
+touch "$stubState/claude-update-fails"
+failedClaudeStatus=0
+failedClaudeOutput="$(runInstall)" || failedClaudeStatus=$?
+check "a failed Claude Code update exits with a warning" test "$failedClaudeStatus" -eq 1
+check "a failed Claude Code update reports the failure" \
+  outputMatches "$failedClaudeOutput" '\[warn\].*Claude Code.*update failed: update unavailable'
+rm -f "$stubState/claude-update-fails"
+printf '2.1.285\n' > "$stubState/claude-version"
 
 rm -f "$stubState/npm-installed/@biomejs%biome"
 : > "$commandLog"
@@ -572,7 +661,38 @@ check "a profile with no package list installs nothing" \
 check "a profile with no package list exits non-zero" test "$profilelessRunStatus" -eq 1
 
 source "$repoRoot/script/lib/context.sh"
+source "$repoRoot/script/lib/packages.sh"
 source "$topicDir/flatpak.sh"
+
+check "a scoped floor entry resolves its package name" \
+  test "$(npmPackageName '@openai/codex>=0.159.0')" = '@openai/codex'
+check "a scoped floor entry resolves to latest" \
+  test "$(npmPackageSource '@openai/codex>=0.159.0')" = '@openai/codex@latest'
+check "a scoped floor entry resolves its minimum version" \
+  test "$(npmPackageMinimumVersion '@openai/codex>=0.159.0')" = '0.159.0'
+check "a source entry preserves its package name" \
+  test "$(npmPackageName 'example=github:example/repository#main')" = 'example'
+check "a source entry preserves its source" \
+  test "$(npmPackageSource 'example=github:example/repository#main')" = 'github:example/repository#main'
+check "a source entry has no implicit minimum version" \
+  test -z "$(npmPackageMinimumVersion 'example=github:example/repository#main')"
+check "an unversioned entry preserves its install source" test "$(npmPackageSource typescript)" = 'typescript'
+check "an unversioned entry has no minimum version" test -z "$(npmPackageMinimumVersion typescript)"
+check "version comparison accepts an exact floor" isVersionAtLeast 0.159.0 0.159.0
+check "version comparison accepts a newer major version" isVersionAtLeast 3.0.0 2.1.284
+check "version comparison accepts a newer minor version with a lower patch" isVersionAtLeast 2.2.0 2.1.284
+check "version comparison compares numeric components" isVersionAtLeast 0.159.0 0.99.0
+check "version comparison treats leading zeros as decimal" isVersionAtLeast 02.01.0284 2.1.284
+check "version comparison treats omitted components as zero" isVersionAtLeast 2.1 2.1.0
+
+versionIsBelowFloor() {
+  ! isVersionAtLeast "$1" "$2"
+}
+
+check "version comparison rejects an older patch" versionIsBelowFloor 2.1.283 2.1.284
+check "version comparison rejects an older minor with a higher patch" versionIsBelowFloor 0.158.999 0.159.0
+check "version comparison rejects an unreadable version" versionIsBelowFloor unknown 2.1.284
+check "version comparison rejects an empty version" versionIsBelowFloor '' 2.1.284
 
 exportRoot="$sandbox/exports"
 mkdir -p "$exportRoot"

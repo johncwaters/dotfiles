@@ -26,7 +26,7 @@ async function spawnCodexDispatcher(dispatchPrompt, options) {
     return null
   }
 }
-const dispatchedRouterModel = 'gpt-6-sol'
+const dispatchedRouterModel = 'gpt-6.1-sol'
 
 const laneDefinitions = [
   {
@@ -537,7 +537,7 @@ async function routeReview(filesToClassify) {
   if (!args.codexAllowed) {
     return { routerResult: await routeReviewOnOpus(filesToClassify, 'Codex CLI disabled by session routing'), degradationNote: '' }
   }
-  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. ${codexDispatchInstruction('dispatched router prompt below', 'router', dispatchedRouterModel)}On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim.\n\nDispatched router prompt:`
+  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. ${codexDispatchInstruction('dispatched router prompt below', 'router', dispatchedRouterModel, 'medium')}On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim.\n\nDispatched router prompt:`
   const dispatchPrompt = buildRouterAssessmentPrompt(filesToClassify, dispatchRouteInstruction)
   const dispatchedRouter = await spawnCodexDispatcher(dispatchPrompt, { label: 'Route review', phase: 'Route', schema: routerSchema })
   if (hasClassifiedAnyFile(dispatchedRouter)) {
@@ -670,7 +670,7 @@ For no findings, put (none) on the line after STRUCTURED_FINDINGS:. Omit side wh
   if (!args.codexAllowed) {
     return `${externalLanePrompt}\n\nCodex CLI is disabled by session routing. Act as its opus substitute and perform an adversarial independent read that tries to refute the other lanes before reporting findings.`
   }
-  return `${externalLanePrompt}\n\n${codexDispatchInstruction('review prompt above', 'external', 'gpt-6-sol', 'high')}Return the output verbatim. On any failure, return the literal string EXTERNAL_UNAVAILABLE.`
+  return `${externalLanePrompt}\n\n${codexDispatchInstruction('review prompt above', 'external', 'gpt-6.1-sol', 'high')}Return the output verbatim. On any failure, return the literal string EXTERNAL_UNAVAILABLE.`
 }
 
 function spawnLane(laneName, lanePrompt) {
