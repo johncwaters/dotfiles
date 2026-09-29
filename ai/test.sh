@@ -37,6 +37,21 @@ installStatus=0
 firstRunOutput="$(runTopicInstall "$stagedTopicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
+reviewChecklistPath="$sandbox/.claude/review-checklist.md"
+check "personal profile leaves the review checklist absent" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "work profile links the review checklist through the alias" \
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
+  "$reviewChecklistPath" "$sandbox/.dotfiles/profiles/work/review-checklist.md"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "personal profile removes the stale work review checklist link" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"
+printf 'local review notes\n' > "$reviewChecklistPath"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "personal profile preserves a non-repo review checklist" \
+  grep -qx 'local review notes' "$reviewChecklistPath"
+rm -f -- "$reviewChecklistPath"
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"

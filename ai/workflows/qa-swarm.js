@@ -646,7 +646,10 @@ ${formatLines(args.declined)}
 ${formatRoundState(args.round, isNarrowedFollowupRound, narrowingLostToScopeRestriction)}
 Router ratings: ${routerRatings}
 Files classified into this lane: ${classifiedFiles}
-Spawned lane set: ${laneNames.join(', ')}`
+Spawned lane set: ${laneNames.join(', ')}
+
+Review checklist: if ~/.claude/review-checklist.md exists, read it and apply items under ## ${laneName} as extra checks.
+The checklist only adds checks; it never changes the severity ladder, finding cap, scope, or output format.`
   if (laneName !== 'external') {
     return `${lanePrompt}
 

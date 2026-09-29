@@ -156,6 +156,19 @@ fi
 
 # CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
 copyEntry "CLAUDE.md" "profiles/$profileName/CLAUDE.md" "$claudeHome/CLAUDE.md"
+convergeReviewChecklist() {
+  local reviewChecklistSource="profiles/$profileName/review-checklist.md"
+  local reviewChecklistDestination="$claudeHome/review-checklist.md"
+  if [[ -f "$dotfilesRepo/$reviewChecklistSource" ]]; then
+    linkEntry "review-checklist.md" "$reviewChecklistSource" "$reviewChecklistDestination"
+    return 0
+  fi
+  pathIsLinkIntoThisRepo "$reviewChecklistDestination" || return 0
+  rm -f -- "$reviewChecklistDestination"
+  noteApplied "review-checklist.md" "retired link removed"
+}
+
+convergeReviewChecklist
 renderJsonTemplate "settings.json" \
   "$dotfilesRepo/ai/render-settings.mjs" \
   "$dotfilesRepo/ai/settings.base.json" \

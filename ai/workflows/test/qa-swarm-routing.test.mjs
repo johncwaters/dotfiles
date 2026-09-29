@@ -71,6 +71,18 @@ const baseWorkflowArgs = {
   declined: []
 }
 
+test('each lane receives its own review checklist heading', () => {
+  const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
+  const laneNames = ['code', 'structure', 'external']
+
+  for (const laneName of ['code', 'structure', 'scale', 'necessity', 'external']) {
+    const lanePrompt = buildLanePrompt(laneName, null, laneNames, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd, false, false)
+
+    assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
+    assert.ok(lanePrompt.includes(`## ${laneName} as extra checks`))
+  }
+})
+
 test('the workflow refuses to run when either routing flag is missing', async () => {
   const refusalMessage = 'No valid codexAllowed and grokAllowed routing flags, no run.'
 
