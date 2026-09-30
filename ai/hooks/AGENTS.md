@@ -7,6 +7,10 @@ Fork spawns stay exempt from model pinning because the harness ignores their
 model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 `gate-codex-dispatch.mjs` fails closed for `codex-dispatcher` calls only: that agent skips
 CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
+`confine-cloudflare.mjs` fails closed for Cloudflare calls: the carbon unit limits Cloudflare
+work to the backchannel repo, and the plugin's OAuth grant spans the whole account. The permit
+is the git common dir of `~/Projects/backchannel`, since a session can forge an origin URL.
+Matching the generic `cf` name is best-effort (shell expansion is undecidable); the permit is the boundary.
 
 ## Map
 
@@ -15,6 +19,7 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 | `validate-file.mjs` | PreToolUse syntax, character, and instruction-size guard | `test/validate-file.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
 | `gate-codex-dispatch.mjs` | PreToolUse subagent Codex/Grok ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
+| `confine-cloudflare.mjs` | PreToolUse Cloudflare tool, skill, and CLI confinement to the backchannel repo (work overlay) | `test/confine-cloudflare.test.mjs` |
 | `challenge-plan.mjs` | PreToolUse plan-challenge stamp gate | `test/challenge-plan.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `inject-routing.mjs` | SessionStart routing context | `test/inject-routing.test.mjs` |
@@ -25,7 +30,8 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. Other event wiring lives in `ai/settings.base.json`.
+to Glimmervoid sessions. `confine-cloudflare.mjs` is wired in `profiles/work/settings.overlay.json`,
+beside the plugin it confines. Other event wiring lives in `ai/settings.base.json`.
 
 ## Validator constraints
 

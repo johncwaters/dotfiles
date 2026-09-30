@@ -1,6 +1,21 @@
 {
   "worktree": { "baseRef": "fresh" },
-  "enabledPlugins": { "posthog@claude-plugins-official": true, "slack@claude-plugins-official": false },
+  "enabledPlugins": {
+    "posthog@claude-plugins-official": true,
+    "slack@claude-plugins-official": false,
+    "cloudflare@cloudflare": true
+  },
+  "extraKnownMarketplaces": {
+    "cloudflare": { "source": { "source": "github", "repo": "cloudflare/skills" } }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|Skill|mcp__.*cloudflare.*)$",
+        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/hooks/confine-cloudflare.mjs" }]
+      }
+    ]
+  },
   "theme": "dark",
   "switchModelsOnFlag": false
 }

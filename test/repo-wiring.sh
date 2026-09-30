@@ -200,6 +200,10 @@ check "the work overlay enables the PostHog plugin because that is where PostHog
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins&&overlay.enabledPlugins["posthog@claude-plugins-official"]===true?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
 check "the work overlay disables the Slack plugin because the claude.ai Slack connector replaces it" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins&&overlay.enabledPlugins["slack@claude-plugins-official"]===false?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "the work overlay enables the Cloudflare plugin from its own marketplace" \
+  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins?.["cloudflare@cloudflare"]===true&&overlay.extraKnownMarketplaces?.cloudflare?.source?.repo==="cloudflare/skills"?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "the work overlay confines Cloudflare to the backchannel repo because the plugin grant spans the whole account" \
+  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit((overlay.hooks?.PreToolUse||[]).some((entry)=>["mcp__plugin_cloudflare_cloudflare__execute","Bash","Skill"].every((toolName)=>new RegExp(entry.matcher).test(toolName))&&entry.hooks.some((hook)=>hook.command.includes("confine-cloudflare.mjs")))?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
 check "no profile overlay owns caveman" \
   bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \
