@@ -19,8 +19,8 @@ backupDirectory="$HOME/claude-backup"
 
 printf '\ncutover rehearsal\n'
 
-mkdir -p "$HOME/Projects"
-cp -R "$repoUnderTest" "$stagedRepo"
+mkdir -p "$stagedRepo"
+cp -R "$repoUnderTest/." "$stagedRepo"
 rm -rf "$stagedRepo/.git" "$stagedRepo/.machine-profile"
 printf 'personal\n' > "$stagedRepo/.machine-profile"
 # Every topic that converges a fresh home without reaching the network, so packages and repos stay out.
