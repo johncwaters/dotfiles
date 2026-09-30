@@ -1,11 +1,11 @@
 ---
 name: longform-writing
-description: Draft, edit, or critique long-form writing: blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, and work docs like proposals, design docs, and updates, in a Sorkin-meets-PostHog style (intention and obstacle, rhythm, strong opinions, specifics, no fluff). Use when asked to write, outline, rewrite, tighten, or review a blog, post, article, or doc, or "make this punchier". Short messages (Slack, email, texts, replies) belong to voice-style instead.
+description: Draft, edit, or critique long-form writing: blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, teaching guides (pocket guides, tutorials, docs pages), and work docs like proposals, design docs, and updates, in a Sorkin-meets-PostHog style (intention and obstacle, rhythm, strong opinions, specifics, no fluff). Use when asked to write, outline, rewrite, tighten, or review a blog, post, article, or doc, or "make this punchier". Short messages (Slack, email, texts, replies) belong to voice-style instead.
 ---
 
 # Long-form writing
 
-Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies stakes, rhythm, and momentum; PostHog supplies opinions, candor, precision, and skimmable structure. Blogs lean on both. Work docs lead with the answer and spend at most one Sorkin flourish. When voice-style also fires on a long-form piece, this skill's structure and mechanics win over its casual message quirks (typos, apostrophe plurals, emoticons, idk or lol), while the author's word choice and warmth can still carry over.
+Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies stakes, rhythm, and momentum; PostHog supplies opinions, candor, precision, and skimmable structure. Blogs lean on both. Teaching guides lead with the concept. Work docs lead with the answer and spend at most one Sorkin flourish. When voice-style also fires on a long-form piece, this skill's structure and mechanics win over its casual message quirks (typos, apostrophe plurals, emoticons, idk or lol), while the author's word choice and warmth can still carry over.
 
 ## Workflow
 
@@ -25,6 +25,21 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 6. **Button.** End on a callback to the opening line or the sharpest sentence in the piece. Never a recap.
 
 Short social posts compress this to hook (mid-motion), turn ("but"), payoff (opinion or number), button.
+
+## Teaching guide template
+
+For pocket guides, tutorials, and docs pages that teach a product concept.
+
+1. **Teach the mental model, not the setup tool.** Explain the concept so a reader who never ran the wizard, CLI, or template follows every page. Artifacts a setup tool created appear only as an optional, conditional example ("If you ran the wizard, …"), never as the frame or the running story.
+2. **Follow the concept's lifecycle** (for example, create, roll out, kill, measure, retire) rather than the steps one tool performed.
+3. **Open each page on the concept and the decision it serves.** Headings name the job or decision ("Choose where a flag is evaluated"), not the mechanism.
+4. **Structure around the reusable decision.** At each step, answer the questions the reader will face again: who is eligible, what signal to watch, what makes them continue or roll back. A table of shapes or options also needs the rule for choosing among them: a decision tree or clear defaults.
+5. **Give the full model before the shortcut.** Name every part a correct result needs (an experiment is hypothesis, eligible population, primary metric, and exposure moment, not only a flag with variants) so a partial setup does not read as the whole thing.
+6. **Earn each heading.** A heading over one sentence either merges into its neighbor or grows a concrete example, a table, or an annotated visual.
+7. **Open without overclaiming.** The opening never promises what a later section qualifies ("off is instant" followed by propagation delays).
+8. **Stay consistent across pages.** A categorical claim ("every flag is debt") must agree with exceptions made elsewhere (permanent operational flags); separate the categories where they first appear.
+9. **Captions stand alone.** A caption or code intro plainly says what the reader is looking at, with no assumed prior context.
+10. **Native formatting first.** Code samples and tables use the platform's native Markdown. Custom figure components are only for visuals Markdown cannot render: annotated mock UI or diagrams. Size screenshots to the page, and prefer an annotated mock UI when it explains more than a raw screenshot.
 
 ## Work doc template
 
@@ -53,14 +68,15 @@ Readers can tell, and PostHog asks for rewrites when it's obvious. Strip on sigh
 
 - [ ] Pitch sentence contains "but", "except", or "and then".
 - [ ] Title passes the generic test.
-- [ ] Intro cut or halved; the piece opens mid-motion.
-- [ ] Intention and obstacle are clear within the first three paragraphs.
+- [ ] Blog or post: intro cut or halved; the piece opens mid-motion.
+- [ ] Blog, post, or work doc: intention and obstacle are clear within the first three paragraphs.
 - [ ] Every vague quantity is a number.
 - [ ] No hedges and no machine-writing tells.
 - [ ] Every section moves the argument.
 - [ ] At most one clever line per section, and each earns its place (kill your darlings).
-- [ ] Ends on a button, not a recap.
+- [ ] Blog or post: ends on a button, not a recap.
 - [ ] Work doc: the answer is the first sentence.
+- [ ] Teaching guide: a reader who skipped the setup tool follows every page, each step states its reusable decision, no heading sits over one sentence, and code and tables use native Markdown.
 
 ## Critique mode
 
