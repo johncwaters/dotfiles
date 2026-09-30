@@ -26,9 +26,10 @@ changed.
 Use preflight's `paths` output as the scoped file list for `ai-slop-cleaner`, `/code-review`,
 and `land.ts`.
 
-It answers five things: the outcome (`READY` or a refusal), the current `branch` and
+It answers six things: the outcome (`READY` or a refusal), the current `branch` and
 whether `branchAllowed` permits committing on it, the `changed` and `untracked` files that
-will be staged, the machine's `policy`, and `mainlineFreshness`.
+will be staged, the machine's `policy`, `mainlineFreshness`, and `remoteVisibility`, which
+**Step 3.5: disclosure check** reads.
 
 **Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
 committing on this branch. `policy.commitBranches.onForbidden` permits only
@@ -175,6 +176,32 @@ Check a draft before landing with `node "$HOME/.claude/skills/commit/preflight.t
 --check-message` and the message on stdin; success returns `READY`. `land.ts` runs the same validation and refuses
 with `MESSAGE_INVALID` rather than committing something malformed.
 
+## Step 3.5: disclosure check
+
+Many work repos are public, and a push publishes the diff and message to everyone. Before
+landing, decide whether everything the landing would publish should reach the remote at
+all: the working changes plus every local commit not yet on the remote, read with
+`git log -p @{upstream}..HEAD`, or `git log -p origin/<mainline>..HEAD` when the branch has
+no upstream. An earlier held-back commit among them holds back this landing too. Treat
+`remoteVisibility.visibility` of `public` or `unknown` as public; `private` and `internal`
+are not.
+
+On a public remote, these must not be pushed:
+
+- A fix for an exploitable vulnerability that has not been disclosed, its regression test,
+  or a message describing the attack. The diff alone shows attackers what was open.
+- Credentials, customer names or data, PII, internal hostnames, or incident details.
+
+When the change carries any of them, run `land.ts` with `--no-push` and without
+`--promote`, so the commit stays local, then stop and tell the carbon unit what you found.
+A vulnerability fix goes through the repo's private channel instead: a GitHub security
+advisory's temporary private fork, or whatever the repo's `SECURITY.md` names. Strip a
+secret or customer detail out of the tree instead, then re-review; one that already
+reached a remote needs rotating, not just deleting.
+
+Everything else lands normally. On a public remote, still write the message as public
+text: name the defect class, never the exploit steps or the customer.
+
 ## Step 4: land
 
 Pipe the message into `land.ts` with a quoted heredoc, so nothing in the message is
@@ -202,10 +229,12 @@ Flags:
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
   mainline, and pushing mainline. When origin has the mainline but no local branch, it
   materializes a local tracking branch from `origin/<mainline>` first. Omit it when the
-  user asked for commit-only ("commit only", "don't merge"), when `policy.afterCommit`
-  is `pull-request`, or when there is no policy.
-- `--no-push`: only when the user asks for local-only work. It suppresses every push,
-  including feature, mainline, safety, and remote branch deletion pushes. Promotion may
+  disclosure check held the change back, when the user asked for commit-only ("commit
+  only", "don't merge"), when `policy.afterCommit` is `pull-request`, or when there is no
+  policy.
+- `--no-push`: only when the user asks for local-only work or the disclosure check held
+  the change back. It suppresses every push, including feature, mainline, safety, and
+  remote branch deletion pushes. Promotion may
   still update local mainline; `warnings` names a locally promoted mainline left unpushed.
 
 ## Outcomes
@@ -291,6 +320,7 @@ Read `policy.afterCommit`:
   yourself (sole exception: the recovery above), even when asked to "just merge it
   quickly"; re-run `land.ts` instead. A clean tree with `--promote` still promotes an
   unlanded feature tip.
-- `pull-request`: never merge the feature branch anywhere. Offer to open a pull request
-  against the repository's mainline with `/open-pr`. If the carbon unit declines, stop
-  after reporting. `/pr-review` reviews a pull request only when asked for by name.
+- `pull-request`: never merge the feature branch anywhere. When the disclosure check held
+  the change back, stop after reporting; a public pull request discloses it too. Otherwise
+  offer to open a pull request against the repository's mainline with `/open-pr`. If the
+  carbon unit declines, stop after reporting. `/pr-review` reviews a pull request only when asked for by name.

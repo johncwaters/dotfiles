@@ -109,6 +109,7 @@ export const ready = defineOutcome("READY", {
   profile: optional("string"),
   policy: optional("object"),
   mainlineFreshness: optional("object"),
+  remoteVisibility: optional("object"),
 });
 
 export const committed = defineOutcome("COMMITTED", {

@@ -18,6 +18,7 @@ import {
   readCommitPolicy,
 } from "./lib/policy.ts";
 import { readStdin } from "./lib/stdio.ts";
+import { readRemoteVisibility } from "./lib/visibility.ts";
 import { checkMainlineFreshness, computeScope, resolveMainline } from "./lib/workspace.ts";
 
 type Arguments = { paths: string[]; checkMessage: boolean; noFetch: boolean };
@@ -174,6 +175,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
       ...(profile ? { profile } : {}),
       ...(resolvedPolicy ? { policy: resolvedPolicy } : {}),
       ...(mainlineFreshness ? { mainlineFreshness } : {}),
+      remoteVisibility: readRemoteVisibility(git),
       warnings,
     }),
     paths: resolvedScopePaths,
