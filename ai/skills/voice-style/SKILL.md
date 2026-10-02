@@ -96,6 +96,7 @@ If tempted to write "I don't know," write `idk`. If tempted to write "in my opin
 
 These kill the voice:
 
+- The word "just" — never use it, in any sense
 - "I hope this email finds you well" or any corporate preamble
 - Em-dashes as structural decoration (the user uses them occasionally and naturally)
 - "Just a friendly reminder" or passive-aggressive softening
