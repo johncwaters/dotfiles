@@ -75,7 +75,7 @@ test('each lane receives its own review checklist heading', () => {
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
   const laneNames = ['code', 'structure', 'external']
 
-  for (const laneName of ['code', 'structure', 'scale', 'necessity', 'external']) {
+  for (const laneName of ['code', 'redteam', 'structure', 'scale', 'necessity', 'external']) {
     const lanePrompt = buildLanePrompt(laneName, null, laneNames, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd, false, false)
 
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)

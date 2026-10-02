@@ -46,6 +46,14 @@ const laneDefinitions = [
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'fable', label: 'Security review', phase: 'Review', agentType: 'security-reviewer' })
   },
   {
+    name: 'redteam',
+    recommendable: true,
+    blocking: true,
+    classNeedles: [],
+    trigger: 'the diff adds or changes a guarantee something must not bypass: a gate, policy, limit, quota, charge, revocation, or a side effect that must always run',
+    spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Red-team review', phase: 'Review', agentType: 'redteam-reviewer' })
+  },
+  {
     name: 'structure',
     recommendable: true,
     blocking: true,
@@ -66,7 +74,7 @@ const laneDefinitions = [
     recommendable: true,
     blocking: true,
     classNeedles: ['scale'],
-    trigger: 'the diff adds or changes a loop, recursion, query, batch, cache, or list endpoint whose input the context does not bound by fact',
+    trigger: 'the diff adds or changes a loop, recursion, query, batch, cache, or list endpoint whose input the context does not bound by fact, or adds a payload copy or scan to code that runs per request, per stream event, or per chunk',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Scale review', phase: 'Review', agentType: 'scale-reviewer' })
   },
   {

@@ -23,6 +23,7 @@ Matching the generic `cf` name is best-effort (shell expansion is undecidable); 
 | `challenge-plan.mjs` | PreToolUse plan-challenge stamp gate | `test/challenge-plan.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `inject-routing.mjs` | SessionStart routing context | `test/inject-routing.test.mjs` |
+| `load-agents-md.mjs` | SessionStart and PostToolUse(Read) injection of AGENTS.md files a CLAUDE.md shadows (Claude Code 2.1.287 loads AGENTS.md only when no CLAUDE.md sits between it and the repo root) | `test/load-agents-md.test.mjs` |
 | `caveman-ultra.mjs` | SessionStart plugin mode | `test/caveman-ultra.test.mjs` |
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `block-comments.mjs`, `comment-scanner.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
