@@ -1,0 +1,14 @@
+{
+  "colors": {
+    "background": "#f7f5ef",
+    "surface": "#ffffff",
+    "ink": "#242321",
+    "accent": "#57534e",
+    "accentInk": "#ffffff"
+  },
+  "fonts": {
+    "display": { "family": "Project Display", "files": ["fonts/display.ttf"], "weight": 400 },
+    "body": { "family": "Project Body", "files": ["fonts/body.woff2"], "weight": "100 900" }
+  },
+  "logo": "assets/logo.svg"
+}

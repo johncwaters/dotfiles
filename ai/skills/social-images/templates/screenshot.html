@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; width: var(--canvas-width, 540px); height: var(--canvas-height, 675px); overflow: hidden; }
+body { background: var(--brand-background, #f7f5ef); color: var(--brand-ink, #242321); font-family: var(--brand-body-family, sans-serif); font-weight: var(--brand-body-weight, 400); }
+main { position: absolute; inset: var(--safe-top, 0px) var(--safe-right, 0px) var(--safe-bottom, 0px) var(--safe-left, 0px); padding: calc(var(--canvas-width, 540px) * .03); display: flex; flex-direction: column; gap: calc(var(--canvas-width, 540px) * .03); }
+header { flex: 0 0 auto; display: grid; gap: calc(var(--canvas-width, 540px) * .018); }
+p, h1 { margin: 0; text-wrap: balance; }
+.eyebrow { font-size: var(--min-text-size, 16px); letter-spacing: .09em; text-transform: uppercase; color: var(--brand-accent, #57534e); }
+h1 { font-family: var(--brand-display-family, serif); font-weight: var(--brand-display-weight, 400); font-size: calc(var(--canvas-width, 540px) * .062); line-height: 1.08; }
+.subline { font-size: var(--min-text-size, 16px); line-height: 1.35; }
+.logo { max-width: 25%; max-height: calc(var(--canvas-height, 675px) * .035); object-fit: contain; object-position: left; }
+figure { margin: 0; min-height: 0; flex: 1; display: flex; justify-content: center; align-items: center; }
+.screenshot { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 12px; box-shadow: 0 12px 28px #00000024; }
+html[data-device-frame="true"] .screenshot { padding: 8px; background: var(--brand-ink, #242321); border-radius: 24px; }
+[data-slot]:not(img):empty { display: none; }
+</style>
+</head>
+<body>
+<main>
+<header>
+<img class="logo" data-slot="logo" alt="">
+<p class="eyebrow" data-slot="eyebrow"></p>
+<h1 data-slot="headline"></h1>
+<p class="subline" data-slot="subline"></p>
+</header>
+<figure><img class="screenshot" data-slot="image" alt=""></figure>
+</main>
+</body>
+</html>

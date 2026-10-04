@@ -17,7 +17,7 @@ printf 'pre-existing user notes\n' > "$sandbox/.claude/AGENTS.md"
 stagedRepo="$sandbox/staged-dotfiles"
 mkdir -p "$stagedRepo"
 cp -R "$repoRoot/." "$stagedRepo"
-rm -rf "$stagedRepo/.git"
+rm -rf "$stagedRepo/.git" "$stagedRepo"/ai/skills/*/node_modules
 git init -q -b main "$stagedRepo"
 stagedTopicDir="$stagedRepo/ai"
 singleFileSkillPath="$stagedTopicDir/skills/single-file-skill-test.md"
@@ -32,12 +32,42 @@ rm -f "$sandbox/.dotfiles"
 ln -s "$stagedRepo" "$sandbox/.dotfiles"
 ln -s "$sandbox/.dotfiles/ai/skills" "$sandbox/.claude/skills"
 
+skillDependencyLog="$sandbox/skill-dependency-commands.log"
+: > "$skillDependencyLog"
+skillDependencyStubBin="$sandbox/skill-dependency-stub-bin"
+mkdir -p "$skillDependencyStubBin"
+cat > "$skillDependencyStubBin/npm" <<'STUB'
+#!/usr/bin/env bash
+printf 'npm %s\n' "$*" >> "$SKILL_DEPENDENCY_LOG"
+skillDirectory=""
+while (($# > 0)); do
+  if [[ "$1" == "--prefix" ]]; then
+    skillDirectory="$2"
+  fi
+  shift
+done
+mkdir -p "$skillDirectory/node_modules/.bin"
+printf '{}\n' > "$skillDirectory/node_modules/.package-lock.json"
+cat > "$skillDirectory/node_modules/.bin/playwright-core" <<'PLAYWRIGHT'
+#!/usr/bin/env bash
+printf 'playwright-core %s\n' "$*" >> "$SKILL_DEPENDENCY_LOG"
+PLAYWRIGHT
+chmod +x "$skillDirectory/node_modules/.bin/playwright-core"
+STUB
+chmod +x "$skillDependencyStubBin/npm"
+export PATH="$skillDependencyStubBin:$PATH"
+export SKILL_DEPENDENCY_LOG="$skillDependencyLog"
+
 printf '\nai topic\n'
 
 installStatus=0
 firstRunOutput="$(runTopicInstall "$stagedTopicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
+check "converge installs a skill's locked dependencies" \
+  grep -qx "npm ci --omit=dev --prefix .*/ai/skills/social-images" "$skillDependencyLog"
+check "converge installs the headless browser for a skill shipping playwright-core" \
+  grep -qx 'playwright-core install --only-shell chromium' "$skillDependencyLog"
 reviewChecklistPath="$sandbox/.claude/review-checklist.md"
 check "personal profile leaves the review checklist absent" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"
@@ -53,6 +83,8 @@ runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile preserves a non-repo review checklist" \
   grep -qx 'local review notes' "$reviewChecklistPath"
 rm -f -- "$reviewChecklistPath"
+check "converge skips npm ci while a skill's installed lock is current" \
+  test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq 1
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
@@ -458,13 +490,15 @@ hookTestFiles=("$topicDir"/hooks/test/*.test.mjs)
 workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
 openPrTestFiles=("$topicDir"/skills/open-pr/test/*.test.mjs)
+socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
 shopt -u nullglob
 check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
 check "workflow behavior tests are present" test "${#workflowTestFiles[@]}" -gt 0
 check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
 check "open-pr evidence tests are present" test "${#openPrTestFiles[@]}" -gt 0
-if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0)); then
-  check "hook, workflow, commit, and open-pr behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${openPrTestFiles[@]}"
+check "social-images render tests are present" test "${#socialImagesTestFiles[@]}" -gt 0
+if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0)); then
+  check "hook, workflow, commit, open-pr, and social-images behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}"
 fi
 
 reportTopicResults "ai"

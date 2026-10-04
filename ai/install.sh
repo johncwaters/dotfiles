@@ -136,7 +136,43 @@ installRepoSkills() {
   linkRepoSkills
 }
 
+skillDependenciesAreStale() {
+  local installedLockPath="$1/node_modules/.package-lock.json"
+  [[ ! -f "$installedLockPath" || "$1/package-lock.json" -nt "$installedLockPath" ]]
+}
+
+installSkillBrowser() {
+  local skillDirectory="$1"
+  local skillName="$2"
+  local playwrightCliPath="$skillDirectory/node_modules/.bin/playwright-core"
+  [[ -x "$playwrightCliPath" ]] || return 0
+  "$playwrightCliPath" install --only-shell chromium && return 0
+  noteWarned "skill $skillName browser" "Chromium headless shell install failed"
+}
+
+installSkillDependencies() {
+  local skillLockPaths=()
+  local skillLockPath
+  local skillDirectory
+  local skillName
+  command -v node > /dev/null 2>&1 || return 0
+  command -v npm > /dev/null 2>&1 || return 0
+  shopt -s nullglob
+  skillLockPaths=("$repoSkillsDirectory"/*/package-lock.json)
+  shopt -u nullglob
+  for skillLockPath in "${skillLockPaths[@]}"; do
+    skillDirectory="$(dirname -- "$skillLockPath")"
+    skillName="$(basename -- "$skillDirectory")"
+    if skillDependenciesAreStale "$skillDirectory" && ! npm ci --omit=dev --prefix "$skillDirectory"; then
+      noteWarned "skill $skillName dependencies" "npm ci failed"
+      continue
+    fi
+    installSkillBrowser "$skillDirectory" "$skillName"
+  done
+}
+
 installRepoSkills
+installSkillDependencies
 
 linkEntry "AGENTS.md" "ai/AGENTS.md" "$claudeHome/AGENTS.md"
 linkEntry "ROUTING.md" "ai/ROUTING.md" "$claudeHome/ROUTING.md"
