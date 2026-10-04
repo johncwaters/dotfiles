@@ -212,7 +212,6 @@ workflowCliCommandsComeFromRouting() {
   done < <(
     {
       grep -oE -- "codex exec [^']*" "$workflowPath" || true
-      grep -oE -- "grok --prompt-file [^']*" "$workflowPath" || true
     } | sort -u
   )
 }

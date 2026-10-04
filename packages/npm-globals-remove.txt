@@ -1,3 +1,4 @@
 oh-my-claude-sisyphus
 @vibe-kit/grok-cli
+@xai-official/grok
 glissa

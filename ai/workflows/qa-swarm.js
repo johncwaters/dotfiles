@@ -1,6 +1,6 @@
 export const meta = { name: 'qa-swarm', description: 'Routes a pinned review through the required lanes and converges their findings.', phases: [{ title: 'Route', detail: 'Rate the touched surface and select lanes.' }, { title: 'Review', detail: 'Run the selected review lanes concurrently.' }, { title: 'Converge', detail: 'Normalize and converge the lane findings.' }] }
 
-const codexReviewSandboxProfile = `'permissions.qa_review={extends=":read-only", filesystem={"~/.ssh"="deny", "~/.gnupg"="deny", "~/.aws"="deny", "~/.kube"="deny", "~/.docker"="deny", "~/.netrc"="deny", "~/.git-credentials"="deny", "~/.config/gh"="deny", "~/.codex/auth.json"="deny", "~/.claude/.credentials.json"="deny", "~/.grok"="deny", "~/.glimmervoid/config.json*"="deny", "~/.glimmervoid/secrets.env"="deny", "~/.npmrc"="deny", "~/.azure"="deny", "~/.local/share/keyrings"="deny", "~/.mozilla"="deny", "~/.config/google-chrome"="deny", "~/.config/chromium"="deny", "~/.pki"="deny"}}'`
+const codexReviewSandboxProfile = `'permissions.qa_review={extends=":read-only", filesystem={"~/.ssh"="deny", "~/.gnupg"="deny", "~/.aws"="deny", "~/.kube"="deny", "~/.docker"="deny", "~/.netrc"="deny", "~/.git-credentials"="deny", "~/.config/gh"="deny", "~/.codex/auth.json"="deny", "~/.claude/.credentials.json"="deny", "~/.glimmervoid/config.json*"="deny", "~/.glimmervoid/secrets.env"="deny", "~/.npmrc"="deny", "~/.azure"="deny", "~/.local/share/keyrings"="deny", "~/.mozilla"="deny", "~/.config/google-chrome"="deny", "~/.config/chromium"="deny", "~/.pki"="deny"}}'`
 
 const dispatchNoncePattern = /^[0-9a-f]{16}$/
 
@@ -725,7 +725,6 @@ function formatConvergenceSummary(survivingFindingCount, convergenceFacts) {
 }
 
 function buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, reviewCmd) {
-  const tiebreakInstruction = 'Grok CLI is unreachable from subagents, so act as its opus substitute: isolate the two positions of each contradiction and rule from those positions alone.'
   return `Scope: converge findings for reviewed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: findings outside that reviewed-file set, new review work, verdicts, fixes, and recommendations
 Definition of done: one final block opened by the exact line STRUCTURED_FINDINGS: (with the trailing colon) followed by one paragraph opened by the exact line OVERALL_SUMMARY: (with the trailing colon), and no trailing text
@@ -750,7 +749,7 @@ Truncated lane tags: ${convergenceFacts.truncatedLanes}
 
 Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. Convergence confirms confidence but does not itself raise severity. A necessity finding never merges with another lane's finding.
 
-A contradiction is one lane asserting a defect and another explicitly verifying it safe. ${tiebreakInstruction} No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
+A contradiction is one lane asserting a defect and another explicitly verifying it safe. Isolate the two positions of each contradiction and rule from those positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
 
 A lane summary reports findings its own cap dropped with the verbatim phrase overflow dropped. Treat every lane whose summary carries that phrase as truncated too, alongside the truncated lane tags supplied above.
 
@@ -831,8 +830,8 @@ if (!Array.isArray(args.changedFiles) || args.changedFiles.length === 0) {
   return 'No changed-file set, no run.'
 }
 
-if (typeof args.codexAllowed !== 'boolean' || typeof args.grokAllowed !== 'boolean') {
-  return 'No valid codexAllowed and grokAllowed routing flags, no run.'
+if (typeof args.codexAllowed !== 'boolean') {
+  return 'No valid codexAllowed routing flag, no run.'
 }
 
 if (args.codexAllowed && !dispatchNoncePattern.test(String(args.dispatchNonce ?? ''))) {

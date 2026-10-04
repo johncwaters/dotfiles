@@ -2,7 +2,6 @@
 @biomejs/biome
 @earendil-works/pi-coding-agent
 @openai/codex>=0.159.0
-@xai-official/grok
 postiz
 typescript
 typescript-language-server

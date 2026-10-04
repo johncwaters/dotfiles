@@ -3,7 +3,7 @@ Say "carbon unit" / "carbon units" wherever prose would say human, person, peopl
 </output_style>
 
 <scope>
-`<routing>` and `<auto_commit>` are main-loop only. Subagents (Agent/Task) and externally dispatched CLIs (Codex, Grok): execute the assigned task with your own tools, never spawn further agents, never offload to Codex or Grok, never run /commit, report results back instead. Every other section applies to everyone.
+`<routing>` and `<auto_commit>` are main-loop only. Subagents (Agent/Task) and externally dispatched CLIs (Codex): execute the assigned task with your own tools, never spawn further agents, never offload to Codex, never run /commit, report results back instead. Every other section applies to everyone.
 </scope>
 
 <scope_boundary>

@@ -64,7 +64,6 @@ const baseWorkflowArgs = {
   context: 'Test routing behavior.',
   changedFiles: ['src/file.js'],
   codexAllowed: true,
-  grokAllowed: true,
   dispatchNonce: '0123456789abcdef',
   settled: [],
   claimedFixed: [],
@@ -83,11 +82,10 @@ test('each lane receives its own review checklist heading', () => {
   }
 })
 
-test('the workflow refuses to run when either routing flag is missing', async () => {
-  const refusalMessage = 'No valid codexAllowed and grokAllowed routing flags, no run.'
+test('the workflow refuses to run when the Codex routing flag is missing', async () => {
+  const refusalMessage = 'No valid codexAllowed routing flag, no run.'
 
   assert.equal(await runWorkflow({ ...baseWorkflowArgs, codexAllowed: undefined }), refusalMessage)
-  assert.equal(await runWorkflow({ ...baseWorkflowArgs, grokAllowed: undefined }), refusalMessage)
 })
 
 test('a Codex-allowed run refuses a missing or malformed dispatch nonce', async () => {
@@ -102,15 +100,6 @@ test('disabling Codex emits no Codex execution instruction in any prompt', async
 
   assert.doesNotMatch(emittedPrompts.join('\n'), /codex exec/)
   assert.match(emittedPrompts.join('\n'), /Codex CLI/)
-})
-
-test('disabling Grok keeps Codex instructions and emits no Grok execution instruction', async () => {
-  const emittedPrompts = await emittedRoutingPrompts({ ...baseWorkflowArgs, grokAllowed: false })
-  const combinedPrompts = emittedPrompts.join('\n')
-
-  assert.match(combinedPrompts, /codex exec/)
-  assert.doesNotMatch(combinedPrompts, /grok --prompt-file/)
-  assert.match(combinedPrompts, /Grok CLI/)
 })
 
 const everyChangedFileClassified = baseWorkflowArgs.changedFiles.map((file) => ({ file, class: 'logic' }))

@@ -326,6 +326,9 @@ printf 'ruff\n' > "$stubState/pip-modules/ruff"
 printf 'yaml\n' > "$stubState/pip-modules/pyyaml"
 
 printf 'oh-my-claude-sisyphus\n' > "$stubState/npm-installed/oh-my-claude-sisyphus"
+printf '@xai-official/grok\n' > "$stubState/npm-installed/@xai-official%grok"
+mkdir -p "$sandbox/.grok"
+printf 'token\n' > "$sandbox/.grok/auth.json"
 
 runInstall() {
   runInStubbedSandbox "$sandbox" \
@@ -381,10 +384,12 @@ check "~/.bashrc keeps ~/.local/bin on PATH" grep -q '\.local/bin' "$sandbox/.ba
 check "~/.bashrc keeps the npm prefix on PATH" grep -q '\.npm-global/bin' "$sandbox/.bashrc"
 
 for wantedNpmPackage in @ast-grep/napi @biomejs/biome @earendil-works/pi-coding-agent \
-  @openai/codex @xai-official/grok postiz typescript typescript-language-server; do
+  @openai/codex postiz typescript typescript-language-server; do
   check "$wantedNpmPackage is installed globally" logHas "npm install -g $wantedNpmPackage"
 done
 check "a retired package that is present is uninstalled" logHas "npm uninstall -g oh-my-claude-sisyphus"
+check "the retired Grok CLI is uninstalled" logHas "npm uninstall -g @xai-official/grok"
+check "the retired Grok CLI login state is removed" test ! -e "$sandbox/.grok"
 check "a retired package that is absent is left alone" logLacks "uninstall -g @vibe-kit/grok-cli"
 
 check "ruff is installed with noninteractive pip" logHas "pip install --quiet --no-input ruff"
@@ -525,7 +530,6 @@ darwinHomebrewPrefix="$sandbox/homebrew"
 darwinApplicationsDirectory="$sandbox/Applications"
 mkdir -p "$darwinHomebrewPrefix/bin" "$darwinApplicationsDirectory/Slack.app/Contents/MacOS"
 rm -f "$stubState/npm-installed/typescript" "$stubState/npm-installed/@openai%codex" \
-  "$stubState/npm-installed/@xai-official%grok" \
   "$stubState/npm-installed/@earendil-works%pi-coding-agent"
 rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml" \
   "$sandbox/.local/bin/claude"
@@ -547,7 +551,7 @@ check "darwin takes the non-NodeSource Node path" logLacks 'nodesource.com'
 check "darwin installs typescript after Homebrew provides npm" \
   logHas "npm install -g typescript"
 check "the work profile installs Codex through npm-globals" logHas "npm install -g @openai/codex"
-for forbiddenNpmPackage in @xai-official/grok @earendil-works/pi-coding-agent; do
+for forbiddenNpmPackage in @earendil-works/pi-coding-agent; do
   check "the work profile installs no $forbiddenNpmPackage" \
     logLacks "npm install -g $forbiddenNpmPackage"
 done

@@ -390,6 +390,26 @@ removeRetiredNpmGlobals() {
   done
 }
 
+removeRetiredNpmState() {
+  local retiredRelativePaths=()
+  local relativePath
+  mapfile -t retiredRelativePaths < <(readPackageList "$packagesDirectory/npm-state-remove.txt")
+  for relativePath in ${retiredRelativePaths[@]+"${retiredRelativePaths[@]}"}; do
+    if [[ "$relativePath" == /* || "/$relativePath/" == */../* ]]; then
+      noteWarned "~/$relativePath" "refused a path outside the home directory"
+      continue
+    fi
+    if [[ ! -e "$HOME/$relativePath" && ! -L "$HOME/$relativePath" ]]; then
+      continue
+    fi
+    if rm -rf -- "${HOME:?}/$relativePath"; then
+      noteApplied "~/$relativePath" "retired state removed"
+      continue
+    fi
+    noteWarned "~/$relativePath" "could not remove retired state"
+  done
+}
+
 # PEP 668 marks many distro Python installs as externally managed, so retry in the user site.
 ensurePythonPackage() {
   local pythonCommand="$1"
@@ -501,6 +521,7 @@ if packageGroupEnabled "npm-globals"; then
     installWantedNpmGlobals
     removeRetiredNpmGlobals
   fi
+  removeRetiredNpmState
 fi
 
 if packageGroupEnabled "python-tools"; then

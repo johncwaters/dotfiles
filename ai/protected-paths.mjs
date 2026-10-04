@@ -14,7 +14,6 @@ export const protectedPaths = [
     reason: "Claude's Bash sandbox must let Codex read its login file (fa25be3).",
   },
   { path: "~/.claude/.credentials.json", kind: "file", scope: "both" },
-  { path: "~/.grok", kind: "directory", scope: "both" },
   { path: "~/.glimmervoid/config.json*", kind: "file", scope: "both" },
   { path: "~/.glimmervoid/secrets.env", kind: "file", scope: "both" },
   { path: "~/.npmrc", kind: "file", scope: "both" },

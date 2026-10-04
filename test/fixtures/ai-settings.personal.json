@@ -77,7 +77,6 @@
       "Read(~/.git-credentials)",
       "Read(~/.config/gh/**)",
       "Read(~/.claude/.credentials.json)",
-      "Read(~/.grok/**)",
       "Read(~/.glimmervoid/config.json*)",
       "Read(~/.glimmervoid/secrets.env)",
       "Read(~/.npmrc)",
@@ -131,6 +130,15 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "^Read$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/load-agents-md.mjs"
+          }
+        ]
+      },
+      {
         "matcher": "^(Agent|Task)$",
         "hooks": [
           {
@@ -146,6 +154,10 @@
           {
             "type": "command",
             "command": "node /fixture/home/.claude/hooks/inject-routing.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/load-agents-md.mjs"
           },
           {
             "type": "command",

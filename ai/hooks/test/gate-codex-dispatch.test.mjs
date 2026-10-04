@@ -29,15 +29,13 @@ test("the main loop may run any codex command", () => {
   );
 });
 
-test("an ordinary subagent is denied codex and grok invocations in command position", () => {
+test("an ordinary subagent is denied codex invocations in command position", () => {
   for (const command of [
     "codex exec -m gpt-6.1-sol < p",
     "cd /repo && codex exec -m gpt-6.1-sol < p",
     "cat p | timeout 600 /usr/local/bin/codex exec -",
-    "env FOO=1 grok --prompt-file p --always-approve",
     "echo $(codex exec -)",
     "bash -c 'codex exec -m gpt-6.1-sol < p'",
-    "sh -c 'grok --prompt-file p --always-approve'",
     "time codex exec -",
     "sudo codex exec -",
     "nice -n 5 codex exec -",
@@ -51,7 +49,6 @@ test("an ordinary subagent is denied codex and grok invocations in command posit
     "sudo -u root codex exec x",
     "npx codex exec x",
     "echo hi && npx @openai/codex exec x",
-    "bunx grok --prompt-file p",
     "pnpm dlx @openai/codex exec x",
     "npm exec @openai/codex exec x",
     "npm x -- codex exec x",
@@ -72,7 +69,6 @@ test("an ordinary subagent may mention codex as an argument", () => {
     "cat ai/agents/codex-dispatcher.md",
     "echo codex",
     "command -v codex",
-    "which grok",
   ]) {
     assert.equal(decisionFor(subagentBash("code-reviewer", command)), "allow", command);
   }
@@ -99,7 +95,6 @@ test("codex-dispatcher is denied every deviation from the dispatch shape", () =>
     SANCTIONED_COMMAND.replace("/tmp/codex-dispatch-router-abcdefgh.err", "/tmp/codex-dispatch-other.err"),
     SANCTIONED_COMMAND.replace("/tmp/codex-dispatch-router-abcdefgh.err", "/Users/someone/.zshrc"),
     SANCTIONED_COMMAND.replace(" 2> /tmp/codex-dispatch-router-abcdefgh.err", ""),
-    "grok --prompt-file /tmp/codex-dispatch-x.txt --always-approve",
     "ls /tmp",
   ]) {
     assert.equal(decisionFor(subagentBash("codex-dispatcher", command)), "deny", command);

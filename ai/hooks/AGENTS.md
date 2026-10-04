@@ -20,7 +20,7 @@ permits only PostHog-origin repos, the backchannel clone, and non-repo workspace
 |--------|------|----------|
 | `validate-file.mjs` | PreToolUse syntax, character, and instruction-size guard | `test/validate-file.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
-| `gate-codex-dispatch.mjs` | PreToolUse subagent Codex/Grok ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
+| `gate-codex-dispatch.mjs` | PreToolUse subagent Codex ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
 | `confine-cloudflare.mjs` | PreToolUse Cloudflare tool, skill, and CLI confinement to the backchannel repo (work overlay) | `test/confine-cloudflare.test.mjs` |
 | `confine-backchannels.mjs` | PreToolUse backchannels tool and skill denial plus SessionStart opt-out outside work repos (work overlay) | `test/confine-backchannels.test.mjs` |
 | `challenge-plan.mjs` | PreToolUse plan-challenge stamp gate | `test/challenge-plan.test.mjs` |
