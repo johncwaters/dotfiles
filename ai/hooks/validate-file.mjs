@@ -25,6 +25,14 @@ const DOC_SIZE_CAPS = {
   "routing.md": 9216,
 };
 
+const REVIEW_LADDER_PATH_SUFFIXES = [
+  "skills/commit/SKILL.md",
+  "skills/code-review/SKILL.md",
+  "skills/qa-swarm/SKILL.md",
+  "agents/finding-fixer.md",
+  "workflows/qa-swarm.js",
+];
+
 function deny(filePath, diagnostic) {
   const reason = [
     `File-format guard blocked this write to ${path.basename(filePath)}.`,
@@ -132,7 +140,54 @@ function holdsAlwaysLoadedDocs(dir) {
   return exists(path.join(dir, ".git"));
 }
 
+const GIT_PROBE_OPTS = { encoding: "utf8", timeout: 2000 };
+
+function gitOutput(directory, gitArguments) {
+  const gitProcess = spawnSync("git", ["-C", directory, ...gitArguments], GIT_PROBE_OPTS);
+  if (gitProcess.error || gitProcess.status !== 0) return null;
+  return String(gitProcess.stdout || "").trim();
+}
+
+function committedByteSize(filePath) {
+  const resolvedPath = fs.realpathSync(filePath);
+  const repositoryRoot = gitOutput(path.dirname(resolvedPath), ["rev-parse", "--show-toplevel"]);
+  if (!repositoryRoot) return null;
+  const pathInRepository = path.relative(repositoryRoot, resolvedPath).split(path.sep).join("/");
+  const committedSizeText = gitOutput(repositoryRoot, ["cat-file", "-s", `HEAD:${pathInRepository}`]);
+  if (!committedSizeText || !/^\d+$/.test(committedSizeText)) return null;
+  return Number(committedSizeText);
+}
+
+function reviewLadderCeiling(filePath) {
+  const committedSize = committedByteSize(filePath);
+  if (committedSize !== null) return { bytes: committedSize, label: "committed" };
+  return { bytes: fs.statSync(filePath).size, label: "prior" };
+}
+
+function reviewLadderGrowthError(filePath, content) {
+  const normalizedPath = path.posix.normalize(filePath.replace(/\\/g, "/"));
+  const isReviewLadderFile = REVIEW_LADDER_PATH_SUFFIXES.some(
+    (suffix) => normalizedPath === suffix || normalizedPath.endsWith(`/${suffix}`),
+  );
+  if (!isReviewLadderFile || !exists(filePath)) return null;
+  let ceiling;
+  try {
+    ceiling = reviewLadderCeiling(filePath);
+  } catch {
+    return null;
+  }
+  const size = Buffer.byteLength(content, "utf8");
+  if (size <= ceiling.bytes) return null;
+  return {
+    where: `${size} bytes, ${ceiling.label} ${ceiling.bytes}`,
+    why: `${path.posix.basename(normalizedPath)} is a review-ladder file and may not grow; ceremony accumulates one reasonable rule at a time`,
+    fix: "Retire an existing rule or step to make room for the new one, or drop the addition.",
+  };
+}
+
 function docSizeError(filePath, content) {
+  const ladderGrowthError = reviewLadderGrowthError(filePath, content);
+  if (ladderGrowthError) return ladderGrowthError;
   const name = path.basename(filePath);
   const cap = DOC_SIZE_CAPS[name.toLowerCase()];
   if (!cap) return null;
