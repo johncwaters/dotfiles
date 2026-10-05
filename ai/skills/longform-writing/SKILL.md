@@ -26,6 +26,11 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 
 Short social posts compress this to hook (mid-motion), turn ("but"), payoff (opinion or number), button.
 
+Social post formatting, from the author's own edits to a drafted LinkedIn post:
+
+- One or two sentences per paragraph with a blank line between, because the feed is skimmed on a phone and a four-sentence block reads as a wall.
+- Spend the one allowed aside as a casual parenthetical in the author's voice ("only two eyes, duh"), placed right after the claim it deflates; the author adds this when the draft has none.
+
 ## Teaching guide template
 
 For pocket guides, tutorials, and docs pages that teach a product concept.
