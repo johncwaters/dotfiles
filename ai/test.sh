@@ -334,6 +334,8 @@ for workflowScriptPath in "$topicDir"/workflows/*.js; do
 done
 check "settings.json keeps the personal permissions default mode" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.defaultMode==="auto"?0:1)' "$settingsPath"
+check "settings.json rewrites the subagent rows with the repo script" \
+  grep -q "\"command\": \"node $sandbox/.claude/hud/subagent-hud.mjs\"" "$settingsPath"
 check "settings.json has no unrendered token" bash -c '! grep -q "{{HOME}}" "$1"' _ "$settingsPath"
 check "settings.json points the commit policy at the alias" \
   grep -q "\"CLAUDE_COMMIT_POLICY_ROOT\": \"$sandbox/.dotfiles\"" "$settingsPath"
@@ -491,14 +493,16 @@ workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
 openPrTestFiles=("$topicDir"/skills/open-pr/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
+hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
 shopt -u nullglob
 check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
 check "workflow behavior tests are present" test "${#workflowTestFiles[@]}" -gt 0
 check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
 check "open-pr evidence tests are present" test "${#openPrTestFiles[@]}" -gt 0
 check "social-images render tests are present" test "${#socialImagesTestFiles[@]}" -gt 0
-if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0)); then
-  check "hook, workflow, commit, open-pr, and social-images behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}"
+check "hud tests are present" test "${#hudTestFiles[@]}" -gt 0
+if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
+  check "hook, workflow, commit, open-pr, social-images, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}" "${hudTestFiles[@]}"
 fi
 
 reportTopicResults "ai"

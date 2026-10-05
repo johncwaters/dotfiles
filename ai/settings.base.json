@@ -143,6 +143,10 @@
     "type": "command",
     "command": "node {{HOME}}/.claude/hud/hud.mjs"
   },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "node {{HOME}}/.claude/hud/subagent-hud.mjs"
+  },
   "effortLevel": "high",
   "awaySummaryEnabled": false,
   "autoUpdatesChannel": "latest",

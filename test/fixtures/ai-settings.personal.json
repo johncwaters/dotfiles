@@ -175,6 +175,10 @@
     "type": "command",
     "command": "node /fixture/home/.claude/hud/hud.mjs"
   },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "node /fixture/home/.claude/hud/subagent-hud.mjs"
+  },
   "effortLevel": "high",
   "awaySummaryEnabled": false,
   "autoUpdatesChannel": "latest",
