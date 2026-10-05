@@ -20,51 +20,48 @@ function renderedRows(payload) {
     .map((row) => ({ ...row, content: row.content.replace(ANSI_ESCAPES, "") }));
 }
 
-test("each subagent row shows its type, short model, effort, elapsed time and context use", () => {
-  const twoMinutesEightSecondsAgo = Date.now() - 128_000;
-  const rows = renderedRows({
-    columns: 120,
-    tasks: [
-      {
-        id: "task-1",
-        name: "dotfiles-dispatch",
-        type: "general-purpose",
-        status: "running",
-        description: "Routing note: kept on Claude",
-        startTime: twoMinutesEightSecondsAgo,
-        model: "claude-opus-5-5[1m]",
-        effort: "high",
-        contextWindowSize: 1_000_000,
-        tokenCount: 94_000,
-      },
-    ],
-  });
+function localAgentTask(overrides) {
+  return {
+    id: "a3a1072656b09d7d3",
+    type: "local_agent",
+    status: "running",
+    description: "Fix review round 1",
+    label: "Checking property-filter history in vercel.json",
+    startTime: Date.now() - 128_000,
+    model: "claude-opus-5-5[1m]",
+    contextWindowSize: 1_000_000,
+    tokenCount: 101_486,
+    ...overrides,
+  };
+}
+
+test("an unnamed background agent is headed by its task title with model, elapsed time and context use", () => {
+  const rows = renderedRows({ columns: 149, tasks: [localAgentTask({})] });
 
   assert.deepEqual(rows, [
-    { id: "task-1", content: "dotfiles-dispatch  general-purpose · opus-5-5 · high · 2m 08s · ctx 94.0k 9%" },
+    { id: "a3a1072656b09d7d3", content: "Fix review round 1  opus-5-5 · 2m 08s · ctx 101.5k 10%" },
   ]);
 });
 
-test("a subagent whose model is not resolved yet still renders without it", () => {
-  const rows = renderedRows({ tasks: [{ id: "task-2", name: "scout", type: "Explore", tokenCount: 512 }] });
+test("a named agent is headed by its name and shows its effort", () => {
+  const rows = renderedRows({ tasks: [localAgentTask({ name: "dotfiles-dispatch", effort: "high" })] });
 
-  assert.deepEqual(rows, [{ id: "task-2", content: "scout  Explore · ctx 512" }]);
+  assert.match(rows[0].content, /^dotfiles-dispatch  opus-5-5 · high · /);
 });
 
-test("the row never repeats the subagent's task description", () => {
-  const rows = renderedRows({
-    tasks: [{ id: "task-3", name: "bench", type: "general-purpose", description: "Routing note: kept on Claude" }],
-  });
+test("the row never shows the agent's live activity or its internal task type", () => {
+  const rows = renderedRows({ tasks: [localAgentTask({})] });
 
-  assert.equal(rows[0].content.includes("Routing note"), false);
+  assert.equal(rows[0].content.includes("Checking property-filter"), false);
+  assert.equal(rows[0].content.includes("local_agent"), false);
 });
 
-test("a subagent with no name or label is headed by its type, never its description", () => {
+test("an agent whose model is not resolved yet still renders without it", () => {
   const rows = renderedRows({
-    tasks: [{ id: "task-4", type: "Explore", description: "Routing note: kept on Claude" }],
+    tasks: [{ id: "task-2", type: "local_agent", description: "Unnamed row probe", tokenCount: 0 }],
   });
 
-  assert.deepEqual(rows, [{ id: "task-4", content: "Explore  Explore" }]);
+  assert.deepEqual(rows, [{ id: "task-2", content: "Unnamed row probe  ctx 0" }]);
 });
 
 test("a null entry in tasks is skipped and the remaining rows still render", () => {

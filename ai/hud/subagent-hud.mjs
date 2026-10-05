@@ -58,14 +58,13 @@ function effortSegment(effort) {
 function renderRow(task, nowMs) {
   const startedAtMs = startTimeInMs(task.startTime);
   const details = [
-    task.type,
     shortModelName(task.model),
     effortSegment(task.effort),
     startedAtMs === null ? null : formatElapsed(nowMs - startedAtMs),
     contextSegment(task),
   ].filter((segment) => typeof segment === "string" && segment !== "");
-  const label = task.name || task.label || task.type || task.id;
-  return `${BOLD}${label}${RESET}  ${DIM}${details.join(SEPARATOR)}${RESET}`;
+  const heading = task.name || task.description || task.id;
+  return `${BOLD}${heading}${RESET}  ${DIM}${details.join(SEPARATOR)}${RESET}`;
 }
 
 function isRenderableTask(task) {
