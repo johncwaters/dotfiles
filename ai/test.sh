@@ -334,6 +334,8 @@ for workflowScriptPath in "$topicDir"/workflows/*.js; do
 done
 check "settings.json keeps the personal permissions default mode" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.defaultMode==="auto"?0:1)' "$settingsPath"
+check "settings.json keeps agent teams off so named agents reach the subagent row script" \
+  grep -q "\"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS\": \"0\"" "$settingsPath"
 check "settings.json rewrites the subagent rows with the repo script" \
   grep -q "\"command\": \"node $sandbox/.claude/hud/subagent-hud.mjs\"" "$settingsPath"
 check "settings.json has no unrendered token" bash -c '! grep -q "{{HOME}}" "$1"' _ "$settingsPath"
