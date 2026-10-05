@@ -11,6 +11,9 @@ export const placements = Object.freeze({
     story: { width: 1080, height: 1920, safeInsets: { top: 269, right: 65, bottom: 672, left: 65 }, maxBytes: 1_000_000, minTextPx: 32 },
     'link-card': { width: 1200, height: 630, safeInsets: { top: 0, right: 285, bottom: 0, left: 285 }, maxBytes: 1_000_000, minTextPx: 35 },
     'x-card': { width: 1200, height: 600, safeInsets: { top: 36, right: 72, bottom: 36, left: 72 }, maxBytes: 1_000_000, minTextPx: 35 },
+    landscape: { width: 1600, height: 900, safeInsets: { top: 54, right: 96, bottom: 54, left: 96 }, maxBytes: 1_000_000, minTextPx: 40 },
+    'github-social-preview': { width: 1280, height: 640, safeInsets: { top: 64, right: 96, bottom: 64, left: 96 }, maxBytes: 1_000_000, minTextPx: 35 },
+    'youtube-thumbnail': { width: 1280, height: 720, safeInsets: { top: 43, right: 77, bottom: 120, left: 77 }, maxBytes: 1_000_000, minTextPx: 35 },
     pinterest: { width: 1000, height: 1500, safeInsets: { top: 90, right: 60, bottom: 90, left: 60 }, maxBytes: 1_000_000, minTextPx: 29 },
 })
 
@@ -42,6 +45,7 @@ function resolveThroughExistingAncestor(absolutePath) {
 }
 
 const projectRootByManifestDirectory = new Map()
+const gitWorktreeRoots = new Set()
 
 export function findProjectRoot(manifestDirectory) {
     const resolvedManifestDirectory = resolveThroughExistingAncestor(resolve(manifestDirectory))
@@ -49,7 +53,10 @@ export function findProjectRoot(manifestDirectory) {
     let projectRoot = resolvedManifestDirectory
     try {
         const worktreeTopLevel = execFileSync('git', ['-C', resolvedManifestDirectory, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-        if (worktreeTopLevel) projectRoot = realpathSync(worktreeTopLevel)
+        if (worktreeTopLevel) {
+            projectRoot = realpathSync(worktreeTopLevel)
+            gitWorktreeRoots.add(projectRoot)
+        }
     } catch {
         projectRoot = resolvedManifestDirectory
     }
@@ -76,7 +83,116 @@ function isInsideProjectRoot(manifestDirectory, localPath) {
     }
 }
 
-export function validateManifest(manifest, { manifestDirectory = process.cwd(), templateExists = () => true } = {}) {
+export const maxCodeLines = 12
+
+export const templateKinds = Object.freeze(['hook', 'carousel', 'screenshot', 'stat', 'features', 'code', 'release'])
+
+export function readTemplateKind(templateSource, templatePath) {
+    const declaredKind = /<html\b[^>]*\bdata-template\s*=\s*["']?([\w-]+)/i.exec(templateSource)?.[1]
+    if (declaredKind) return declaredKind
+    const fileNameKind = basename(templatePath, '.html')
+    return templateKinds.includes(fileNameKind) ? fileNameKind : undefined
+}
+
+export function isVectorImageSource(source) {
+    return /^data:image\/svg\+xml[;,]/i.test(source) || /\.svgz?(?:[?#]|$)/i.test(source)
+}
+
+export function calculateImageUpscale({ width, height, naturalWidth, naturalHeight, deviceScaleFactor, objectFit = 'fill', transformScaleX = 1, transformScaleY = 1, isVector = false }) {
+    if (isVector) return 1
+    if (![naturalWidth, naturalHeight, deviceScaleFactor].every((value) => Number.isFinite(value) && value > 0)) return Infinity
+    const widthRatio = width / naturalWidth
+    const heightRatio = height / naturalHeight
+    const containedRatio = Math.min(widthRatio, heightRatio)
+    const uniformRatio = { contain: containedRatio, cover: Math.max(widthRatio, heightRatio), none: 1, 'scale-down': Math.min(1, containedRatio) }[objectFit]
+    return deviceScaleFactor * Math.max((uniformRatio ?? widthRatio) * transformScaleX, (uniformRatio ?? heightRatio) * transformScaleY)
+}
+
+export function fitCodeFont({ lineWidths, availableWidth, fontSize, minFontSize }) {
+    const longestLineWidth = Math.max(0, ...lineWidths)
+    const requiredFontSize = longestLineWidth > 0 ? fontSize * availableWidth / longestLineWidth : fontSize
+    const fittedFontSize = Math.max(minFontSize, Math.min(fontSize, requiredFontSize))
+    return { fontSize: fittedFontSize, fits: availableWidth > 0 && longestLineWidth * fittedFontSize / fontSize <= availableWidth + .01 }
+}
+
+function isHighlightList(value) {
+    return Array.isArray(value) && value.length >= 1 && value.length <= 6 && value.every((highlight) => {
+        if (isNonemptyString(highlight)) return true
+        return isRecord(highlight) && Object.keys(highlight).every((name) => ['title', 'detail'].includes(name)) && [highlight.title, highlight.detail].every((text) => isNonemptyString(text) && !/[\r\n]/.test(text))
+    })
+}
+
+function isStringList(value) {
+    return Array.isArray(value) && value.length >= 1 && value.length <= 6 && value.every(isNonemptyString)
+}
+
+function assertPublishableCodeFile(manifestDirectory, localPath) {
+    const projectRoot = findProjectRoot(manifestDirectory)
+    const pathFromProjectRoot = relative(projectRoot, resolveInsideProjectRoot(manifestDirectory, localPath))
+    const pathSegments = pathFromProjectRoot.split(sep)
+    if (pathSegments.includes('.git')) throw new Error(`code file must not be under .git: ${localPath}`)
+    if (!gitWorktreeRoots.has(projectRoot)) {
+        if (pathSegments.some((segment) => segment.startsWith('.'))) throw new Error(`code file must not be a dotfile outside a git repository: ${localPath}`)
+        return
+    }
+    try {
+        execFileSync('git', ['--literal-pathspecs', '-C', projectRoot, 'ls-files', '--error-unmatch', '--', pathFromProjectRoot], { stdio: 'ignore' })
+    } catch {
+        throw new Error(`code file must be tracked by git: ${localPath}`)
+    }
+}
+
+function validateCodeRange(code, manifestDirectory) {
+    if (!isRecord(code) || Object.keys(code).some((name) => !['file', 'startLine', 'endLine'].includes(name)) || !isInsideProjectRoot(manifestDirectory, code.file) || !Number.isSafeInteger(code.startLine) || !Number.isSafeInteger(code.endLine) || code.startLine < 1 || code.endLine < code.startLine) {
+        throw new Error('code requires a local file and positive ordered startLine/endLine integers')
+    }
+    if (code.endLine - code.startLine + 1 > maxCodeLines) throw new Error(`code exceeds the ${maxCodeLines}-line cap`)
+    assertPublishableCodeFile(manifestDirectory, code.file)
+}
+
+export function readCodeSlot(code, manifestDirectory) {
+    validateCodeRange(code, manifestDirectory)
+    const fileLines = readFileSync(resolveInsideProjectRoot(manifestDirectory, code.file), 'utf8').split(/\r?\n/)
+    if (fileLines.at(-1) === '') fileLines.pop()
+    if (code.endLine > fileLines.length) throw new Error(`code endLine exceeds file length: ${code.file}`)
+    const excerpt = fileLines.slice(code.startLine - 1, code.endLine).join('\n')
+    if (!isNonemptyString(excerpt)) throw new Error('code range must contain text')
+    return excerpt
+}
+
+function buildShotViolations(shot, manifestDirectory, templateKind) {
+    const violations = []
+    const slots = shot.vars ?? {}
+    if (templateKind !== undefined && !templateKinds.includes(templateKind)) violations.push(`unknown template kind: ${templateKind}`)
+    if (shot.source !== undefined && !isNonemptyString(shot.source)) violations.push('source must be a nonempty string')
+    if (templateKind === 'stat' && !isNonemptyString(shot.source)) violations.push('stat requires a cited repo source')
+    if (slots.code !== undefined) {
+        try {
+            validateCodeRange(slots.code, manifestDirectory)
+        } catch (error) {
+            violations.push(error.message)
+        }
+    }
+    if (slots.command !== undefined) {
+        if (!isNonemptyString(slots.command) || /\r(?!\n)/.test(slots.command)) violations.push('command must be a nonempty string with explicit newlines')
+        if (typeof slots.command === 'string' && slots.command.split(/\r?\n/).length > maxCodeLines) violations.push(`command exceeds the ${maxCodeLines}-line cap`)
+    }
+    if (slots.code !== undefined && slots.command !== undefined) violations.push('choose code or command, not both')
+    if (templateKind === 'code' && slots.code === undefined && slots.command === undefined) violations.push('code template requires code or command')
+    if (templateKind === 'carousel' || slots.slideNumber !== undefined || slots.slideCount !== undefined) {
+        if (!Number.isSafeInteger(slots.slideNumber) || !Number.isSafeInteger(slots.slideCount) || slots.slideNumber < 1 || slots.slideCount < slots.slideNumber || slots.slideCount > 20) violations.push('slideNumber/slideCount must be ordered integers from 1 to 20')
+    }
+    if (templateKind === 'features' && (!isStringList(slots.items) || slots.items.length < 2 || slots.items.length > 4)) violations.push('features requires 2-4 items')
+    const requiredStringsByTemplateKind = { stat: ['figure', 'label', 'context'], release: ['version', 'date'], features: ['headline'] }
+    for (const name of requiredStringsByTemplateKind[templateKind] ?? []) {
+        if (!isNonemptyString(slots[name])) violations.push(`${name} must be a nonempty string`)
+    }
+    if (slots.highlights !== undefined && !isHighlightList(slots.highlights)) violations.push('highlights require 1-6 strings or title/detail objects with nonempty single-line strings')
+    if (templateKind === 'release' && !isHighlightList(slots.highlights)) violations.push('release requires 1-6 highlights')
+    return violations
+}
+
+export function validateManifest(manifest, { manifestDirectory = process.cwd(), templateExists = () => true, readTemplateSource = () => '' } = {}) {
     if (!isRecord(manifest) || !isInsideProjectRoot(manifestDirectory, manifest.brand) || !Array.isArray(manifest.shots) || !manifest.shots.length) {
         throw new Error('manifest requires a local brand path and a nonempty shots array')
     }
@@ -90,7 +206,8 @@ export function validateManifest(manifest, { manifestDirectory = process.cwd(), 
         }
         if (!isNonemptyString(shot.alt)) violations.push(`${label}: alt is required`)
         if (!Object.hasOwn(placements, shot.placement)) violations.push(`${label}: unknown placement: ${shot.placement}`)
-        if (!isInsideProjectRoot(manifestDirectory, shot.template) || !templateExists(shot.template)) violations.push(`${label}: missing template: ${shot.template}`)
+        const hasTemplate = isInsideProjectRoot(manifestDirectory, shot.template) && templateExists(shot.template)
+        if (!hasTemplate) violations.push(`${label}: missing template: ${shot.template}`)
         const hasContainedOutput = isInsideProjectRoot(manifestDirectory, shot.out) && /\.png$/i.test(shot.out)
         if (!hasContainedOutput) violations.push(`${label}: out must be a local PNG path`)
         const resolvedOutputPath = hasContainedOutput ? resolveInsideProjectRoot(manifestDirectory, shot.out) : shot.out
@@ -100,10 +217,14 @@ export function validateManifest(manifest, { manifestDirectory = process.cwd(), 
             violations.push(`${label}: vars must be an object`)
             continue
         }
+        const templateKind = hasTemplate ? readTemplateKind(readTemplateSource(shot.template), shot.template) : undefined
+        violations.push(...buildShotViolations(shot, manifestDirectory, templateKind).map((violation) => `${label}: ${violation}`))
         for (const [name, value] of Object.entries(shot.vars ?? {})) {
-            if (!/^[a-z][a-z\d-]*$/i.test(name) || !['string', 'number', 'boolean'].includes(typeof value)) {
+            const isValidList = name === 'highlights' ? isHighlightList(value) : isStringList(value)
+            if (!/^[a-z][a-z\d-]*$/i.test(name) || !(name === 'code' || isValidList || ['string', 'number', 'boolean'].includes(typeof value))) {
                 violations.push(`${label}: invalid slot: ${name}`)
             }
+            if (Array.isArray(value) && !isValidList) violations.push(`${label}: ${name} requires 1-6 nonempty strings or valid highlights`)
             if (['image', 'logo'].includes(name) && !isInsideProjectRoot(manifestDirectory, value)) violations.push(`${label}: ${name} must be a local asset path`)
             if (name === 'deviceFrame' && typeof value !== 'boolean') violations.push(`${label}: deviceFrame must be boolean`)
         }
@@ -126,7 +247,7 @@ export function validateBrand(brand) {
     if (brand.fonts !== undefined) {
         if (!isRecord(brand.fonts)) throw new Error('brand.fonts must be an object')
         for (const [role, font] of Object.entries(brand.fonts)) {
-            if (!['display', 'body'].includes(role) || !isRecord(font) || !isNonemptyString(font.family) || !Array.isArray(font.files) || !font.files.length || !font.files.every(isLocalPath)) {
+            if (!['display', 'body', 'mono'].includes(role) || !isRecord(font) || !isNonemptyString(font.family) || !Array.isArray(font.files) || !font.files.length || !font.files.every(isLocalPath)) {
                 throw new Error(`invalid brand font: ${role}`)
             }
             const weights = String(font.weight).split(' ').map(Number)
@@ -210,15 +331,23 @@ function writeFileRefusingSymlink(filePath, contents) {
     }
 }
 
-export function writeAltTextAndSheet(outputDirectory, renderedAltTextByFileName, { sheetTitle } = {}) {
+export function writeAltTextAndSheet(outputDirectory, renderedAltTextByFileName, { sheetTitle, renderedSourcesByFileName = {} } = {}) {
+    const sourcesPath = resolve(outputDirectory, 'sources.json')
     const altTextPath = resolve(outputDirectory, 'alt.json')
     const previewPath = resolve(outputDirectory, 'preview.html')
-    for (const outputFilePath of [altTextPath, previewPath]) {
+    for (const outputFilePath of [altTextPath, previewPath, sourcesPath]) {
         if (lstatSync(outputFilePath, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`refusing to write through symlink: ${outputFilePath}`)
     }
     const previousAltTextByFileName = existsSync(altTextPath) ? JSON.parse(readFileSync(altTextPath, 'utf8')) : {}
     if (!isRecord(previousAltTextByFileName)) throw new Error(`${altTextPath} must hold an object`)
     const altTextByFileName = { ...previousAltTextByFileName, ...renderedAltTextByFileName }
+    const previousSourcesByFileName = existsSync(sourcesPath) ? JSON.parse(readFileSync(sourcesPath, 'utf8')) : {}
+    if (!isRecord(previousSourcesByFileName)) throw new Error(`${sourcesPath} must hold an object`)
+    const sourcesByFileName = { ...previousSourcesByFileName, ...renderedSourcesByFileName }
+    for (const fileName of Object.keys(renderedAltTextByFileName)) {
+        if (!Object.hasOwn(renderedSourcesByFileName, fileName)) delete sourcesByFileName[fileName]
+    }
+    writeFileRefusingSymlink(sourcesPath, `${JSON.stringify(sourcesByFileName, null, 2)}\n`)
     writeFileRefusingSymlink(altTextPath, `${JSON.stringify(altTextByFileName, null, 2)}\n`)
     if (sheetTitle) writeFileRefusingSymlink(previewPath, renderContactSheet(altTextByFileName, sheetTitle))
 }
@@ -246,6 +375,8 @@ async function preparePage(page, { brand, placement, scale, manifestDirectory, s
         urls: font.files.map((file) => resolveAssetUrl(manifestDirectory, file)),
     }))
     const slots = { ...shot.vars }
+    if (slots.code) slots.code = readCodeSlot(slots.code, manifestDirectory)
+    if (slots.command) slots.code = slots.command
     if (!Object.hasOwn(slots, 'logo') && brand.logo) slots.logo = brand.logo
     for (const name of ['image', 'logo']) {
         if (slots[name]) slots[name] = resolveAssetUrl(manifestDirectory, slots[name])
@@ -273,6 +404,31 @@ async function preparePage(page, { brand, placement, scale, manifestDirectory, s
             }
             element.textContent = value === undefined ? '' : String(value)
         }
+        for (const element of document.querySelectorAll('[data-slot-list]')) {
+            const items = slots[element.dataset.slotList] ?? []
+            element.replaceChildren(...items.map((item) => {
+                const listItem = document.createElement('li')
+                if (typeof item === 'object') {
+                    const title = document.createElement('strong')
+                    const detail = document.createElement('span')
+                    title.textContent = item.title
+                    detail.textContent = item.detail
+                    listItem.append(title, detail)
+                    return listItem
+                }
+                listItem.textContent = item
+                return listItem
+            }))
+        }
+        for (const element of document.querySelectorAll('[data-slot-code]')) element.textContent = slots.code ?? ''
+        for (const element of document.querySelectorAll('[data-carousel-progress]')) {
+            element.replaceChildren(...Array.from({ length: slots.slideCount ?? 0 }, (_, index) => {
+                const dot = document.createElement('span')
+                dot.dataset.active = String(index + 1 === slots.slideNumber)
+                return dot
+            }))
+        }
+        for (const element of document.querySelectorAll('[data-swipe-cue]')) element.hidden = slots.slideNumber !== 1
         if (!safeZones) return
         for (const side of ['top', 'right', 'bottom', 'left']) {
             const overlay = document.createElement('div')
@@ -288,9 +444,36 @@ async function preparePage(page, { brand, placement, scale, manifestDirectory, s
     }, { variables: buildCssVariables(brand, placement, scale), fonts, slots, safeZones })
 }
 
-async function collectPageViolations(page, placement, scale) {
-    return page.evaluate(async ({ minTextPx, scale }) => {
+async function fitCodeSlots(page, placement, scale) {
+    const measurements = await page.evaluate(() => [...document.querySelectorAll('[data-slot-code]')].filter((element) => element.textContent.trim()).map((element) => {
+        Object.assign(element.style, { whiteSpace: 'pre', overflowWrap: 'normal', wordBreak: 'normal', hyphens: 'none', textWrap: 'nowrap' })
+        const style = getComputedStyle(element)
+        const lineWidths = []
+        let offset = 0
+        for (const line of element.textContent.split('\n')) {
+            const range = document.createRange()
+            if (element.firstChild) {
+                range.setStart(element.firstChild, offset)
+                range.setEnd(element.firstChild, offset + line.length)
+            }
+            lineWidths.push(range.getBoundingClientRect().width)
+            offset += line.length + 1
+        }
+        return { lineWidths, availableWidth: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), fontSize: parseFloat(style.fontSize) }
+    }))
+    const fittedFonts = measurements.map((measurement) => fitCodeFont({ ...measurement, minFontSize: placement.minTextPx / scale }))
+    await page.evaluate((fittedFonts) => {
+        [...document.querySelectorAll('[data-slot-code]')].filter((element) => element.textContent.trim()).forEach((element, index) => {
+            element.style.fontSize = `${fittedFonts[index].fontSize}px`
+        })
+    }, fittedFonts)
+    return fittedFonts.flatMap((font) => font.fits ? [] : [`code cannot fit without text below the ${placement.minTextPx}px placement minimum; add explicit newlines`])
+}
+
+export async function collectPageViolations(page, placement, scale) {
+    const inspection = await page.evaluate(async ({ minTextPx, scale, safeInsets, maxCodeLines }) => {
         const violations = []
+        const images = []
         await document.fonts.ready
         for (const font of document.fonts) {
             if (font.status === 'error') violations.push(`font failed to load: ${font.family}`)
@@ -302,6 +485,22 @@ async function collectPageViolations(page, placement, scale) {
             } catch {
                 violations.push(`image failed to load: ${image.src}`)
             }
+            const rectangle = image.getBoundingClientRect()
+            if (!rectangle.width || !rectangle.height) continue
+            const style = getComputedStyle(image)
+            const horizontalInsets = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth)
+            const verticalInsets = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)
+            const width = parseFloat(style.width) - (style.boxSizing === 'border-box' ? horizontalInsets : 0)
+            const height = parseFloat(style.height) - (style.boxSizing === 'border-box' ? verticalInsets : 0)
+            images.push({ source: image.currentSrc || image.src, width, height, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight, objectFit: style.objectFit, deviceScaleFactor: scale, transformScaleX: rectangle.width / (width + horizontalInsets), transformScaleY: rectangle.height / (height + verticalInsets) })
+        }
+        for (const element of document.querySelectorAll('[data-slot-code]')) {
+            if (!element.textContent.trim()) continue
+            const style = getComputedStyle(element)
+            const lineHeight = parseFloat(style.lineHeight)
+            const lineCount = Math.max(0, Math.ceil((element.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - 1) / lineHeight))
+            if (!Number.isFinite(lineCount) || lineCount > maxCodeLines) violations.push(`code exceeds the ${maxCodeLines}-line cap after wrapping`)
+            if (element.scrollWidth > element.clientWidth + 1) violations.push('code overflows its container; add explicit newlines')
         }
         const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
         while (textWalker.nextNode()) {
@@ -321,13 +520,24 @@ async function collectPageViolations(page, placement, scale) {
             if (hasHiddenAncestor) continue
             const range = document.createRange()
             range.selectNodeContents(node)
-            const isVisible = [...range.getClientRects()].some((rectangle) => rectangle.width > 0 && rectangle.height > 0 && rectangle.right > 0 && rectangle.bottom > 0 && rectangle.left < innerWidth && rectangle.top < innerHeight)
-            if (!isVisible) continue
+            const hasRenderedBox = [...range.getClientRects()].some((rectangle) => rectangle.width > 0 && rectangle.height > 0)
+            if (!hasRenderedBox) continue
+            for (const rectangle of range.getClientRects()) {
+                if (rectangle.left * scale < safeInsets.left - 1 || rectangle.right * scale > innerWidth * scale - safeInsets.right + 1 || rectangle.top * scale < safeInsets.top - 1 || rectangle.bottom * scale > innerHeight * scale - safeInsets.bottom + 1) {
+                    violations.push(`text outside safe insets: ${text}`)
+                    break
+                }
+            }
             const outputFontSize = parseFloat(style.fontSize) * scale
             if (outputFontSize < minTextPx) violations.push(`text too small (${outputFontSize}px < ${minTextPx}px): ${text}`)
         }
-        return violations
-    }, { minTextPx: placement.minTextPx, scale })
+        return { violations, images }
+    }, { minTextPx: placement.minTextPx, scale, safeInsets: placement.safeInsets, maxCodeLines })
+    for (const image of inspection.images) {
+        const factor = calculateImageUpscale({ ...image, isVector: isVectorImageSource(image.source) })
+        if (factor > 1.25) inspection.violations.push(`image upscale ${factor.toFixed(2)}x exceeds 1.25x: ${image.source}`)
+    }
+    return inspection.violations
 }
 
 export async function renderManifest(manifestPath, { safeZones = false, sheet = false } = {}) {
@@ -335,9 +545,11 @@ export async function renderManifest(manifestPath, { safeZones = false, sheet = 
     const manifest = validateManifest(JSON.parse(readFileSync(manifestPath, 'utf8')), {
         manifestDirectory,
         templateExists: (template) => existsSync(resolveInsideProjectRoot(manifestDirectory, template)),
+        readTemplateSource: (template) => readFileSync(resolveInsideProjectRoot(manifestDirectory, template), 'utf8'),
     })
     const brand = validateBrand(JSON.parse(readFileSync(resolveInsideProjectRoot(manifestDirectory, manifest.brand), 'utf8')))
     const outputGroups = new Map()
+    const pendingImages = []
     const violations = []
     const browser = await launchBrowser()
     try {
@@ -350,7 +562,9 @@ export async function renderManifest(manifestPath, { safeZones = false, sheet = 
                 const page = await context.newPage()
                 await page.goto(pathToFileURL(resolveInsideProjectRoot(manifestDirectory, shot.template)).href, { waitUntil: 'load' })
                 await preparePage(page, { brand, placement, scale, manifestDirectory, shot, safeZones })
-                const pageViolations = await collectPageViolations(page, placement, scale)
+                await page.evaluate(() => document.fonts.ready)
+                const codeViolations = await fitCodeSlots(page, placement, scale)
+                const pageViolations = [...codeViolations, ...await collectPageViolations(page, placement, scale)]
                 if (pageViolations.length) {
                     violations.push(...pageViolations.map((violation) => `${shot.out}: ${violation}`))
                     continue
@@ -361,10 +575,11 @@ export async function renderManifest(manifestPath, { safeZones = false, sheet = 
                 if (pngViolations.length) continue
                 const outputPath = resolveInsideProjectRoot(manifestDirectory, shot.out)
                 const outputDirectory = dirname(outputPath)
-                mkdirSync(outputDirectory, { recursive: true })
-                writeFileRefusingSymlink(outputPath, bytes)
-                if (!outputGroups.has(outputDirectory)) outputGroups.set(outputDirectory, {})
-                outputGroups.get(outputDirectory)[basename(outputPath)] = shot.alt
+                pendingImages.push({ outputPath, bytes })
+                if (!outputGroups.has(outputDirectory)) outputGroups.set(outputDirectory, { altText: {}, sources: {} })
+                const outputGroup = outputGroups.get(outputDirectory)
+                outputGroup.altText[basename(outputPath)] = shot.alt
+                if (shot.source) outputGroup.sources[basename(outputPath)] = shot.source
                 console.log(`${shot.out}: ${placement.width}x${placement.height}, ${bytes.length} bytes`)
             } catch (error) {
                 violations.push(`${shot.out}: ${error.message}`)
@@ -375,10 +590,15 @@ export async function renderManifest(manifestPath, { safeZones = false, sheet = 
     } finally {
         await browser.close()
     }
+    if (violations.length) throw new Error(violations.join('\n'))
+    for (const { outputPath, bytes } of pendingImages) {
+        mkdirSync(dirname(outputPath), { recursive: true })
+        writeFileRefusingSymlink(outputPath, bytes)
+    }
     const sheetTitle = sheet ? (safeZones ? 'Social images: safe-zone review' : 'Social images') : undefined
-    for (const [outputDirectory, renderedAltTextByFileName] of outputGroups) {
+    for (const [outputDirectory, outputGroup] of outputGroups) {
         try {
-            writeAltTextAndSheet(outputDirectory, renderedAltTextByFileName, { sheetTitle })
+            writeAltTextAndSheet(outputDirectory, outputGroup.altText, { sheetTitle, renderedSourcesByFileName: outputGroup.sources })
         } catch (error) {
             violations.push(`${outputDirectory}: ${error.message}`)
         }

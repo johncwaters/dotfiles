@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { deflateSync } from 'node:zlib'
-import { buildCssVariables, buildPngViolations, getPlacement, getRenderScale, parsePngSize, parseRenderArguments, placements, findProjectRoot, renderContactSheet, resolveInsideProjectRoot, validateBrand, validateManifest, writeAltTextAndSheet } from '../scripts/render.mjs'
+import { runInNewContext } from 'node:vm'
+import { buildCssVariables, buildPngViolations, calculateImageUpscale, fitCodeFont, collectPageViolations, getPlacement, getRenderScale, isVectorImageSource, parsePngSize, parseRenderArguments, placements, maxCodeLines, readCodeSlot, readTemplateKind, findProjectRoot, renderContactSheet, resolveInsideProjectRoot, templateKinds, validateBrand, validateManifest, writeAltTextAndSheet } from '../scripts/render.mjs'
 
 function createManifest(overrides = {}) {
     return { brand: 'brand.json', shots: [{ template: 'templates/hook.html', placement: 'instagram-square', out: 'out/hook.png', alt: 'A real project image.', vars: { headline: 'Keep a habit' }, ...overrides }] }
@@ -45,7 +46,7 @@ function createTinyPng() {
 
 test('the placement table contains exactly the requested social canvases', () => {
     assert.deepEqual(Object.fromEntries(Object.entries(placements).map(([name, placement]) => [name, [placement.width, placement.height]])), {
-        'instagram-portrait': [1080, 1350], 'instagram-square': [1080, 1080], story: [1080, 1920], 'link-card': [1200, 630], 'x-card': [1200, 600], pinterest: [1000, 1500],
+        'instagram-portrait': [1080, 1350], 'instagram-square': [1080, 1080], story: [1080, 1920], 'link-card': [1200, 630], 'x-card': [1200, 600], pinterest: [1000, 1500], landscape: [1600, 900], 'github-social-preview': [1280, 640], 'youtube-thumbnail': [1280, 720],
     })
     for (const placement of Object.values(placements)) {
         assert.ok(Object.values(placement.safeInsets).every((inset) => Number.isInteger(inset) && inset >= 0))
@@ -121,6 +122,11 @@ function createProjectWithManifestDirectory(context, { isGitRepository }) {
     mkdirSync(join(workDirectory, 'outside'))
     if (isGitRepository) execFileSync('git', ['init', '-q', projectRoot])
     return { workDirectory, projectRoot, manifestDirectory }
+}
+
+function writeTrackedFile(projectRoot, fileName, contents) {
+    writeFileSync(join(projectRoot, fileName), contents)
+    execFileSync('git', ['-C', projectRoot, 'add', '--', fileName])
 }
 
 test('a manifest inside a git worktree may reach sibling assets anywhere in that worktree', (context) => {
@@ -252,4 +258,257 @@ test('brand validation rejects malformed font descriptors and nonlocal assets', 
         assert.throws(() => validateBrand(brand), /brand/)
     }
     assert.deepEqual(validateBrand({}), {})
+})
+
+
+test('new placements reserve crop margins and the YouTube duration band', () => {
+    assert.deepEqual(placements.landscape.safeInsets, { top: 54, right: 96, bottom: 54, left: 96 })
+    assert.deepEqual(placements['github-social-preview'].safeInsets, { top: 64, right: 96, bottom: 64, left: 96 })
+    assert.deepEqual(placements['youtube-thumbnail'].safeInsets, { top: 43, right: 77, bottom: 120, left: 77 })
+    for (const placement of ['landscape', 'github-social-preview', 'youtube-thumbnail']) assert.doesNotThrow(() => validateManifest(createManifest({ placement })))
+})
+
+test('list slots accept one through six nonempty strings and reject other arrays', () => {
+    for (const items of [['<escaped>'], Array(6).fill('Feature')]) assert.doesNotThrow(() => validateManifest(createManifest({ vars: { items } })))
+    for (const items of [[], Array(7).fill('Feature'), [''], ['  '], [1], ['Feature', null], [{}]]) {
+        assert.throws(() => validateManifest(createManifest({ vars: { items } })), /1-6 nonempty strings/)
+    }
+})
+
+test('carousel progress needs a valid slide pair even on a code CTA', () => {
+    for (const slideNumber of [1, 5]) assert.doesNotThrow(() => validateManifest(createManifest({ template: 'templates/carousel.html', vars: { slideNumber, slideCount: 5 } })))
+    for (const vars of [{}, { slideNumber: 0, slideCount: 5 }, { slideNumber: 6, slideCount: 5 }, { slideNumber: 1.5, slideCount: 5 }, { slideNumber: 1, slideCount: '5' }, { slideNumber: 1, slideCount: 21 }]) {
+        assert.throws(() => validateManifest(createManifest({ template: 'templates/carousel.html', vars })), /slideNumber\/slideCount/)
+    }
+    assert.throws(() => validateManifest(createManifest({ vars: { slideNumber: 1 } })), /slideNumber\/slideCount/)
+})
+
+test('stat cards require a source and figure, label and context strings', () => {
+    const statShot = { template: 'templates/stat.html', source: 'README.md, Supported agents', vars: { figure: '3', label: 'Named agent CLIs', context: 'Claude Code, Codex and Grok' } }
+    assert.doesNotThrow(() => validateManifest(createManifest(statShot)))
+    for (const source of [undefined, '', '  ', 3, {}]) assert.throws(() => validateManifest(createManifest({ ...statShot, source })), /source/)
+    for (const name of ['figure', 'label', 'context']) assert.throws(() => validateManifest(createManifest({ ...statShot, vars: { ...statShot.vars, [name]: 3 } })), /nonempty string/)
+    assert.throws(() => validateManifest(createManifest({ source: [] })), /source/)
+})
+
+test('features and releases enforce their template slot shapes', () => {
+    for (const items of [['Status', 'Terminals'], Array(4).fill('Feature')]) assert.doesNotThrow(() => validateManifest(createManifest({ template: 'templates/features.html', vars: { headline: 'Features', items } })))
+    for (const items of [undefined, ['Only one'], Array(5).fill('Feature')]) assert.throws(() => validateManifest(createManifest({ template: 'templates/features.html', vars: { headline: 'Features', items } })), /2-4 items/)
+    const releaseShot = { template: 'templates/release.html', vars: { version: '0.29.0', date: '2026-10-04', highlights: ['Session tasks'] } }
+    assert.doesNotThrow(() => validateManifest(createManifest(releaseShot)))
+    for (const name of ['version', 'date', 'highlights']) assert.throws(() => validateManifest(createManifest({ ...releaseShot, vars: { ...releaseShot.vars, [name]: undefined } })), /nonempty string|highlights/)
+})
+
+test('code ranges and explicit multiline commands validate before launching a browser', (context) => {
+    const { projectRoot, manifestDirectory } = createProjectWithManifestDirectory(context, { isGitRepository: true })
+    writeTrackedFile(projectRoot, 'README.md', `${Array(maxCodeLines).fill('line').join('\n')}\n`)
+    const code = { file: '../../README.md', startLine: 1, endLine: maxCodeLines }
+    assert.doesNotThrow(() => validateManifest(createManifest({ template: 'templates/code.html', vars: { code } }), { manifestDirectory }))
+    assert.doesNotThrow(() => validateManifest(createManifest({ template: 'templates/code.html', vars: { command: 'npx glimmervoid' } })))
+    for (const invalidCode of [null, 'README.md', { ...code, startLine: 0 }, { ...code, startLine: 1.5 }, { ...code, endLine: '2' }, { ...code, endLine: 0 }, { ...code, endLine: maxCodeLines + 1 }, { ...code, file: '/etc/passwd' }, { ...code, extra: true }]) {
+        assert.throws(() => validateManifest(createManifest({ vars: { code: invalidCode } })), /code requires|line cap/)
+    }
+    for (const command of ['', ' ', 'first\rsecond', 12, []]) assert.throws(() => validateManifest(createManifest({ vars: { command } })), /nonempty string/)
+    for (const command of ['npx \\\n  --allow-scripts=node-pty', 'first\r\nsecond', Array(12).fill('line').join('\n')]) assert.doesNotThrow(() => validateManifest(createManifest({ vars: { command } })))
+    assert.throws(() => validateManifest(createManifest({ vars: { command: Array(13).fill('line').join('\n') } })), /12-line cap/)
+    assert.throws(() => validateManifest(createManifest({ vars: { code, command: 'npx glimmervoid' } })), /not both/)
+    assert.throws(() => validateManifest(createManifest({ template: 'templates/code.html' })), /requires code or command/)
+})
+
+test('release highlights accept escaped title/detail content and legacy strings but reject malformed objects', () => {
+    for (const highlights of [[{ title: '<Workflows>', detail: 'Act on pull request events & notify.' }], ['Session tasks', { title: 'Stacks', detail: 'Follow dependent pull requests.' }]]) {
+        assert.doesNotThrow(() => validateManifest(createManifest({ template: 'templates/release.html', vars: { version: '0.29.0', date: '2026-10-04', highlights } })))
+    }
+    for (const highlights of [[{}], [{ title: 'Title' }], [{ title: '', detail: 'Detail' }], [{ title: 'Title', detail: ' ' }], [{ title: 'Title', detail: 3 }], [{ title: 'Title', detail: 'Two\nlines' }], [{ title: 'Title', detail: 'Detail', extra: true }], Array(7).fill({ title: 'Title', detail: 'Detail' })]) {
+        assert.throws(() => validateManifest(createManifest({ vars: { highlights } })), /highlights/)
+    }
+    assert.throws(() => validateManifest(createManifest({ vars: { items: [{ title: 'Title', detail: 'Detail' }] } })), /nonempty strings/)
+})
+
+test('image factors use output pixels and the actual object-fit dimensions', () => {
+    const dimensions = { width: 400, height: 300, naturalWidth: 800, naturalHeight: 400, deviceScaleFactor: 2 }
+    for (const [objectFit, expected] of Object.entries({ fill: 1.5, contain: 1, cover: 1.5, none: 2, 'scale-down': 1 })) {
+        assert.equal(calculateImageUpscale({ ...dimensions, objectFit }), expected)
+    }
+    assert.equal(calculateImageUpscale({ ...dimensions, width: 800, height: 600, objectFit: 'scale-down' }), 2)
+    assert.equal(calculateImageUpscale({ ...dimensions, objectFit: 'contain', transformScaleX: 2 }), 2)
+    assert.equal(calculateImageUpscale({ ...dimensions, naturalWidth: 0 }), Infinity)
+})
+
+test('vector images never count as upscaled while raster images at the same size do', () => {
+    const smallIntrinsicLogo = { width: 29, height: 29, naturalWidth: 24, naturalHeight: 24, deviceScaleFactor: 2, objectFit: 'contain' }
+    assert.ok(calculateImageUpscale(smallIntrinsicLogo) > 2)
+    assert.equal(calculateImageUpscale({ ...smallIntrinsicLogo, isVector: true }), 1)
+    for (const source of ['file:///project/public/favicon.svg', 'file:///logo.SVG?v=2', 'file:///logo.svgz', 'data:image/svg+xml;base64,PHN2Zy8+', 'data:image/svg+xml,%3Csvg%2F%3E']) assert.ok(isVectorImageSource(source), source)
+    for (const source of ['file:///logo.png', 'file:///svg/logo.png', 'file:///logo.svg.png', 'data:image/png;base64,AAAA']) assert.equal(isVectorImageSource(source), false, source)
+})
+
+test('the old GIF rail crop fails while native and exact-limit captures pass', () => {
+    const crop = { width: 448, height: 256, naturalWidth: 160, naturalHeight: 104, deviceScaleFactor: 2, objectFit: 'contain' }
+    assert.ok(calculateImageUpscale(crop) > 4)
+    assert.equal(calculateImageUpscale({ ...crop, width: 80, height: 52 }), 1)
+    assert.equal(calculateImageUpscale({ ...crop, width: 100, height: 65 }), 1.25)
+    assert.ok(calculateImageUpscale({ ...crop, width: 100.1, height: 65.1 }) > 1.25)
+})
+
+test('code fitting preserves short lines, shrinks the longest line and refuses a below-minimum fit', () => {
+    const measurements = { lineWidths: [100, 400, 200], availableWidth: 320, fontSize: 20, minFontSize: 16 }
+    assert.deepEqual(fitCodeFont(measurements), { fontSize: 16, fits: true })
+    assert.deepEqual(fitCodeFont({ ...measurements, availableWidth: 480 }), { fontSize: 20, fits: true })
+    assert.deepEqual(fitCodeFont({ ...measurements, availableWidth: 360 }), { fontSize: 18, fits: true })
+    assert.deepEqual(fitCodeFont({ ...measurements, availableWidth: 319 }), { fontSize: 16, fits: false })
+    assert.deepEqual(fitCodeFont({ ...measurements, lineWidths: [0] }), { fontSize: 20, fits: true })
+    assert.equal(fitCodeFont({ ...measurements, availableWidth: 0 }).fits, false)
+})
+
+test('code excerpts preserve literal text, contain paths and reject missing or excessive ranges', (context) => {
+    const { projectRoot, workDirectory, manifestDirectory } = createProjectWithManifestDirectory(context, { isGitRepository: true })
+    writeTrackedFile(projectRoot, 'example.ts', 'const text = "<script>&"\r\nreturn text\r\n')
+    const code = { file: '../../example.ts', startLine: 1, endLine: 2 }
+    assert.equal(readCodeSlot(code, manifestDirectory), 'const text = "<script>&"\nreturn text')
+    assert.equal(readCodeSlot({ ...code, startLine: 2 }, manifestDirectory), 'return text')
+    assert.throws(() => readCodeSlot({ ...code, endLine: 3 }, manifestDirectory), /file length/)
+    assert.throws(() => readCodeSlot({ ...code, endLine: maxCodeLines + 1 }, manifestDirectory), /line cap/)
+    assert.throws(() => readCodeSlot({ ...code, file: '../../missing.ts' }, manifestDirectory), /tracked by git/)
+    writeTrackedFile(projectRoot, 'blank.ts', '\n')
+    assert.throws(() => readCodeSlot({ ...code, file: '../../blank.ts', endLine: 1 }, manifestDirectory), /must contain text/)
+    symlinkSync(join(workDirectory, 'outside'), join(projectRoot, 'escape'))
+    assert.throws(() => readCodeSlot({ ...code, file: '../../escape/example.ts' }, manifestDirectory), /local file/)
+    assert.throws(() => validateManifest(createManifest({ vars: { code: { ...code, file: '../../../outside/example.ts' } } }), { manifestDirectory }), /local file/)
+})
+
+test('the visual code cap accepts twelve padded lines and rejects a thirteenth wrapped line', async () => {
+    const codeElement = { textContent: 'A real code excerpt', scrollHeight: 0 }
+    const page = {
+        evaluate: (callback, parameters) => runInNewContext(`(${callback.toString()})(parameters)`, {
+            parameters,
+            document: {
+                fonts: [], images: [], body: {},
+                querySelectorAll: () => [codeElement],
+                createTreeWalker: () => ({ nextNode: () => false }),
+            },
+            NodeFilter: { SHOW_TEXT: 4 },
+            getComputedStyle: () => ({ lineHeight: '24px', paddingTop: '12px', paddingBottom: '12px' }),
+        }),
+    }
+    codeElement.scrollHeight = 12 * 24 + 24
+    assert.equal((await collectPageViolations(page, placements['instagram-portrait'], 2)).length, 0)
+    codeElement.scrollHeight += 24
+    assert.match((await collectPageViolations(page, placements['instagram-portrait'], 2))[0], /12-line cap after wrapping/)
+})
+
+test('code files must be git-tracked and never come from .git or untracked secrets', (context) => {
+    const { projectRoot, manifestDirectory } = createProjectWithManifestDirectory(context, { isGitRepository: true })
+    writeTrackedFile(projectRoot, 'tracked.ts', 'export const answer = 42\n')
+    writeFileSync(join(projectRoot, '.env'), 'API_TOKEN=secret\n')
+    const code = { file: '../../tracked.ts', startLine: 1, endLine: 1 }
+    assert.equal(readCodeSlot(code, manifestDirectory), 'export const answer = 42')
+    assert.throws(() => readCodeSlot({ ...code, file: '../../.env' }, manifestDirectory), /tracked by git/)
+    assert.throws(() => readCodeSlot({ ...code, file: '../../.git/config' }, manifestDirectory), /under \.git/)
+    assert.throws(() => validateManifest(createManifest({ vars: { code: { ...code, file: '../../.env' } } }), { manifestDirectory }), /tracked by git/)
+})
+
+test('outside a git repository code files may not be dotfiles', (context) => {
+    const { manifestDirectory } = createProjectWithManifestDirectory(context, { isGitRepository: false })
+    writeFileSync(join(manifestDirectory, 'example.ts'), 'const shown = true\n')
+    writeFileSync(join(manifestDirectory, '.env'), 'API_TOKEN=secret\n')
+    mkdirSync(join(manifestDirectory, '.config'))
+    writeFileSync(join(manifestDirectory, '.config', 'settings.ts'), 'const hidden = true\n')
+    const code = { file: 'example.ts', startLine: 1, endLine: 1 }
+    assert.equal(readCodeSlot(code, manifestDirectory), 'const shown = true')
+    for (const file of ['.env', '.config/settings.ts']) assert.throws(() => readCodeSlot({ ...code, file }, manifestDirectory), /dotfile/)
+})
+
+test('a renamed template copy keeps the rules of the kind it declares', () => {
+    const declaredStat = '<!doctype html>\n<html lang="en" data-template="stat">'
+    const statShot = { template: 'templates/launch-stat.html', vars: { figure: '3', label: 'Agents', context: 'Named CLIs' } }
+    assert.throws(() => validateManifest(createManifest(statShot), { readTemplateSource: () => declaredStat }), /stat requires a cited repo source/)
+    assert.doesNotThrow(() => validateManifest(createManifest(statShot)))
+    assert.throws(() => validateManifest(createManifest({ template: 'templates/stat.html', vars: {} })), /stat requires a cited repo source/)
+    assert.throws(() => validateManifest(createManifest(), { readTemplateSource: () => '<html data-template="poster">' }), /unknown template kind: poster/)
+})
+
+test('every shipped template declares the kind its file name names', () => {
+    for (const kind of templateKinds) {
+        const templateSource = readFileSync(new URL(`../templates/${kind}.html`, import.meta.url), 'utf8')
+        assert.equal(readTemplateKind(templateSource, 'templates/renamed.html'), kind)
+    }
+    assert.equal(readTemplateKind('<html lang="en">', 'templates/custom.html'), undefined)
+})
+
+test('a brand mono font feeds code blocks while other roles stay rejected', () => {
+    const brand = { fonts: { mono: { family: 'Brand Mono', files: ['fonts/mono.woff2'], weight: 400 } } }
+    assert.equal(buildCssVariables(brand, placements.story)['--brand-mono-family'], '"Brand Mono"')
+    assert.throws(() => validateBrand({ fonts: { code: brand.fonts.mono } }), /invalid brand font: code/)
+    assert.throws(() => validateBrand({ fonts: { mono: { ...brand.fonts.mono, files: [] } } }), /invalid brand font: mono/)
+    for (const templateName of ['code.html', 'carousel.html']) {
+        const templateSource = readFileSync(new URL(`../templates/${templateName}`, import.meta.url), 'utf8')
+        assert.match(templateSource, /pre \{[^}]*font-family: var\(--brand-mono-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace\)/)
+    }
+})
+
+function createTextPageStub(textRectangle) {
+    const paragraph = { tagName: 'P', parentElement: null }
+    const textNode = { textContent: 'Copy pushed below the canvas', parentElement: paragraph }
+    return {
+        evaluate: (callback, parameters) => runInNewContext(`(${callback.toString()})(parameters)`, {
+            parameters,
+            innerWidth: 600,
+            innerHeight: 315,
+            document: {
+                fonts: [], images: [], body: {},
+                querySelectorAll: () => [],
+                createTreeWalker: () => {
+                    let hasVisitedText = false
+                    const walker = { currentNode: null, nextNode: () => {
+                        if (hasVisitedText) return false
+                        hasVisitedText = true
+                        walker.currentNode = textNode
+                        return true
+                    } }
+                    return walker
+                },
+                createRange: () => ({ selectNodeContents: () => {}, getClientRects: () => [textRectangle] }),
+            },
+            NodeFilter: { SHOW_TEXT: 4 },
+            getComputedStyle: () => ({ visibility: 'visible', display: 'block', opacity: '1', contentVisibility: 'visible', fontSize: '20px' }),
+        }),
+    }
+}
+
+test('rendered text pushed entirely off the canvas is reported rather than skipped', async () => {
+    const insideCanvas = { left: 200, right: 400, top: 100, bottom: 120, width: 200, height: 20 }
+    assert.equal((await collectPageViolations(createTextPageStub(insideCanvas), placements['link-card'], 2)).length, 0)
+    const belowCanvas = { ...insideCanvas, top: 400, bottom: 420 }
+    assert.match((await collectPageViolations(createTextPageStub(belowCanvas), placements['link-card'], 2))[0], /text outside safe insets: Copy pushed below the canvas/)
+    const collapsedBox = { ...belowCanvas, width: 0, height: 0 }
+    assert.equal((await collectPageViolations(createTextPageStub(collapsedBox), placements['link-card'], 2)).length, 0)
+})
+
+test('sources merge alongside alt text and stale sources disappear on replacement', (context) => {
+    const outputDirectory = mkdtempSync(join(tmpdir(), 'social-images-sources-'))
+    context.after(() => rmSync(outputDirectory, { recursive: true, force: true }))
+    writeAltTextAndSheet(outputDirectory, { 'stat.png': 'Figure.', 'old.png': 'Old.' }, { renderedSourcesByFileName: { 'stat.png': 'README.md', 'old.png': 'PRODUCT.md' } })
+    writeAltTextAndSheet(outputDirectory, { 'stat.png': 'Updated.' }, { renderedSourcesByFileName: { 'stat.png': 'CHANGELOG.md' } })
+    assert.deepEqual(JSON.parse(readFileSync(join(outputDirectory, 'sources.json'), 'utf8')), { 'stat.png': 'CHANGELOG.md', 'old.png': 'PRODUCT.md' })
+    writeAltTextAndSheet(outputDirectory, { 'stat.png': 'Now a hook.' })
+    assert.deepEqual(JSON.parse(readFileSync(join(outputDirectory, 'sources.json'), 'utf8')), { 'old.png': 'PRODUCT.md' })
+    assert.deepEqual(JSON.parse(readFileSync(join(outputDirectory, 'alt.json'), 'utf8')), { 'stat.png': 'Now a hook.', 'old.png': 'Old.' })
+})
+
+test('malformed and symlinked sources are refused before metadata is overwritten', (context) => {
+    const outputDirectory = mkdtempSync(join(tmpdir(), 'social-images-sources-'))
+    context.after(() => rmSync(outputDirectory, { recursive: true, force: true }))
+    writeFileSync(join(outputDirectory, 'alt.json'), '{"old.png":"Earlier"}')
+    writeFileSync(join(outputDirectory, 'sources.json'), '[]')
+    assert.throws(() => writeAltTextAndSheet(outputDirectory, { 'new.png': 'New' }), /must hold an object/)
+    assert.equal(readFileSync(join(outputDirectory, 'alt.json'), 'utf8'), '{"old.png":"Earlier"}')
+    rmSync(join(outputDirectory, 'sources.json'))
+    const targetPath = join(outputDirectory, 'untouched.json')
+    symlinkSync(targetPath, join(outputDirectory, 'sources.json'))
+    assert.throws(() => writeAltTextAndSheet(outputDirectory, { 'new.png': 'New' }), /refusing to write through symlink/)
+    assert.equal(readFileSync(join(outputDirectory, 'alt.json'), 'utf8'), '{"old.png":"Earlier"}')
+    writeFileSync(targetPath, '{}')
+    assert.throws(() => writeAltTextAndSheet(outputDirectory, { 'new.png': 'New' }), /refusing to write through symlink/)
+    assert.equal(readFileSync(targetPath, 'utf8'), '{}')
 })

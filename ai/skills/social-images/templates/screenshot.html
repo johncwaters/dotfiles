@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-template="screenshot">
 <head>
 <meta charset="utf-8">
 <style>
@@ -12,11 +12,17 @@ p, h1 { margin: 0; text-wrap: balance; }
 .eyebrow { font-size: var(--min-text-size, 16px); letter-spacing: .09em; text-transform: uppercase; color: var(--brand-accent, #57534e); }
 h1 { font-family: var(--brand-display-family, serif); font-weight: var(--brand-display-weight, 400); font-size: calc(var(--canvas-width, 540px) * .062); line-height: 1.08; }
 .subline { font-size: var(--min-text-size, 16px); line-height: 1.35; }
-.logo { max-width: 25%; max-height: calc(var(--canvas-height, 675px) * .035); object-fit: contain; object-position: left; }
+.logo { max-width: 25%; max-height: calc(var(--min-text-size, 16px) * 1.8); object-fit: contain; object-position: left; }
 figure { margin: 0; min-height: 0; flex: 1; display: flex; justify-content: center; align-items: center; }
-.screenshot { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 12px; box-shadow: 0 12px 28px #00000024; }
+.screenshot { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; }
 html[data-device-frame="true"] .screenshot { padding: 8px; background: var(--brand-ink, #242321); border-radius: 24px; }
 [data-slot]:not(img):empty { display: none; }
+@media (min-aspect-ratio: 3/2) {
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); align-items: center; }
+  header { min-width: 0; }
+  h1 { font-size: max(var(--min-text-size, 16px), calc(var(--canvas-width, 540px) * .045)); }
+  figure { min-width: 0; height: 100%; }
+}
 </style>
 </head>
 <body>
