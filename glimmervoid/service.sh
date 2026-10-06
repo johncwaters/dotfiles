@@ -160,9 +160,15 @@ startGlimmervoidService() {
 }
 
 # The retired unit still holds the configured port on a machine that served under the old name, so the new unit crash-loops on bind and the health probe answers from the old process.
+# The Glissa assistant now owns the glissa.service name as a linked unit, so only a rendered file carrying the dashboard's old description is ours to retire.
+legacyUnitIsRetiredDashboard() {
+  [[ -f "$glimmervoidLegacyUnitPath" && ! -L "$glimmervoidLegacyUnitPath" ]] &&
+    grep -qx 'Description=Glissa dashboard' "$glimmervoidLegacyUnitPath"
+}
+
 removeStaleGlimmervoidUnit() {
   local label="glimmervoid service"
-  if [[ ! -e "$glimmervoidLegacyUnitPath" && ! -L "$glimmervoidLegacyUnitPath" ]]; then
+  if ! legacyUnitIsRetiredDashboard; then
     return 0
   fi
   # Stopping glissa from inside its own cgroup kills this converge (KillMode=control-group), and moving ~/.glissa out from under a still-live old process is worse, so the whole cutover waits for a run from outside it.
