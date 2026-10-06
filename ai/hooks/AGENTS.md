@@ -23,6 +23,7 @@ permits only PostHog-origin repos, the backchannel clone, and non-repo workspace
 | `gate-codex-dispatch.mjs` | PreToolUse subagent Codex ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
 | `confine-cloudflare.mjs` | PreToolUse Cloudflare tool, skill, and CLI confinement to the backchannel repo (work overlay) | `test/confine-cloudflare.test.mjs` |
 | `confine-backchannels.mjs` | PreToolUse backchannels tool and skill denial plus SessionStart opt-out outside work repos (work overlay) | `test/confine-backchannels.test.mjs` |
+| `gate-posthog-exec-write.mjs` | PreToolUse ask on sensitive PostHog MCP writes (work overlay); port of the PostHog plugin's `gate-exec-write.sh`, sync its write verbs on plugin updates | `test/gate-posthog-exec-write.test.mjs` |
 | `challenge-plan.mjs` | PreToolUse plan-challenge stamp gate | `test/challenge-plan.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `inject-routing.mjs` | SessionStart routing context | `test/inject-routing.test.mjs` |
@@ -34,7 +35,7 @@ permits only PostHog-origin repos, the backchannel clone, and non-repo workspace
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. `confine-cloudflare.mjs` and `confine-backchannels.mjs` are wired in `profiles/work/settings.overlay.json`,
+to Glimmervoid sessions. `confine-cloudflare.mjs`, `confine-backchannels.mjs`, and `gate-posthog-exec-write.mjs` are wired in `profiles/work/settings.overlay.json`,
 beside what they confine. Other event wiring lives in `ai/settings.base.json`.
 
 ## Validator constraints

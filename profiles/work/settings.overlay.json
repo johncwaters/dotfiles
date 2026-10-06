@@ -1,9 +1,9 @@
 {
   "worktree": { "baseRef": "fresh" },
   "enabledPlugins": {
-    "posthog@claude-plugins-official": true,
+    "posthog@claude-plugins-official": false,
     "slack@claude-plugins-official": false,
-    "cloudflare@cloudflare": true
+    "cloudflare@cloudflare": false
   },
   "extraKnownMarketplaces": {
     "cloudflare": { "source": { "source": "github", "repo": "cloudflare/skills" } }
@@ -17,6 +17,10 @@
       {
         "matcher": "^(Skill|ListMcpResourcesTool|ReadMcpResourceTool|mcp__backchannels__.*)$",
         "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/hooks/confine-backchannels.mjs" }]
+      },
+      {
+        "matcher": "^mcp__.*__exec$",
+        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/hooks/gate-posthog-exec-write.mjs" }]
       }
     ],
     "SessionStart": [

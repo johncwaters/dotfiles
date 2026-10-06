@@ -196,12 +196,14 @@ check "no profile or ai file mandates an /org-* plugin command" \
   bash -c '! grep -rq "/org-" "$1"/profiles/*/CLAUDE.md "$1"/ai' _ "$repoRoot"
 check "no profile overlay enables the retired example-org plugin" \
   bash -c '! grep -qil example-org "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
-check "the work overlay enables the PostHog plugin because that is where PostHog work happens" \
-  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins&&overlay.enabledPlugins["posthog@claude-plugins-official"]===true?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "the work overlay disables the PostHog plugin because its unused skills cost every turn and the MCP server is declared directly" \
+  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins&&overlay.enabledPlugins["posthog@claude-plugins-official"]===false?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "the work overlay gates exec writes on every declared MCP server because the plugin that carried the gate is off" \
+  node -e 'const fs=require("fs");const overlay=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const serverNames=Object.keys(JSON.parse(fs.readFileSync(process.argv[2],"utf8")));const gateEntries=(overlay.hooks?.PreToolUse||[]).filter((entry)=>entry.hooks.some((hook)=>hook.command.includes("gate-posthog-exec-write.mjs")));process.exit(serverNames.length>0&&serverNames.every((serverName)=>gateEntries.some((entry)=>new RegExp(entry.matcher).test(`mcp__${serverName}__exec`)))?0:1)' "$repoRoot/profiles/work/settings.overlay.json" "$repoRoot/profiles/work/mcp-servers.json"
 check "the work overlay disables the Slack plugin because the claude.ai Slack connector replaces it" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins&&overlay.enabledPlugins["slack@claude-plugins-official"]===false?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
-check "the work overlay enables the Cloudflare plugin from its own marketplace" \
-  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins?.["cloudflare@cloudflare"]===true&&overlay.extraKnownMarketplaces?.cloudflare?.source?.repo==="cloudflare/skills"?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "the work overlay disables the Cloudflare plugin because its skills went unused, keeping its marketplace known" \
+  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins?.["cloudflare@cloudflare"]===false&&overlay.extraKnownMarketplaces?.cloudflare?.source?.repo==="cloudflare/skills"?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
 check "the work overlay confines Cloudflare to the backchannel repo because the plugin grant spans the whole account" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit((overlay.hooks?.PreToolUse||[]).some((entry)=>["mcp__plugin_cloudflare_cloudflare__execute","Bash","Skill"].every((toolName)=>new RegExp(entry.matcher).test(toolName))&&entry.hooks.some((hook)=>hook.command.includes("confine-cloudflare.mjs")))?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
 check "the work overlay confines backchannels to work repos because it is an internal PostHog tool" \

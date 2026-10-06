@@ -132,7 +132,7 @@ test("ordinary commands and skills pass untouched anywhere", (testContext) => {
     { tool_name: "Bash", tool_input: { command: 'echo "cfg" && bun run build' } },
     { tool_name: "Bash", tool_input: { command: "pnpm --filter web build" } },
     { tool_name: "Skill", tool_input: { skill: "commit" } },
-    { tool_name: "mcp__plugin_posthog_posthog__exec", tool_input: {} },
+    { tool_name: "mcp__posthog__exec", tool_input: {} },
   ]) {
     assert.equal(decisionFor({ ...call, cwd: os.tmpdir() }, homeDirectory), "allow", JSON.stringify(call));
   }

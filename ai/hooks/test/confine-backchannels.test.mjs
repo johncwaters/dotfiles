@@ -143,7 +143,7 @@ test("other tools and skills pass untouched in a personal repository", (testCont
   const personalRepository = repositoryWithOrigin(testContext, "https://github.com/johncwaters/dotfiles");
   for (const call of [
     { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: "commit" } },
-    { hook_event_name: "PreToolUse", tool_name: "mcp__plugin_posthog_posthog__exec", tool_input: {} },
+    { hook_event_name: "PreToolUse", tool_name: "mcp__posthog__exec", tool_input: {} },
     { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git status" } },
     { hook_event_name: "PreToolUse", tool_name: "ListMcpResourcesTool", tool_input: { server: "posthog" } },
     { hook_event_name: "PreToolUse", tool_name: "ReadMcpResourceTool", tool_input: { server: "posthog", uri: "posthog://docs" } },

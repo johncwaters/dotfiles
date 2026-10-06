@@ -57,6 +57,57 @@ STUB
 chmod +x "$skillDependencyStubBin/npm"
 export PATH="$skillDependencyStubBin:$PATH"
 export SKILL_DEPENDENCY_LOG="$skillDependencyLog"
+export XDG_STATE_HOME="$sandbox/.local/state"
+mcpCommandLog="$sandbox/mcp-commands.log"
+: > "$mcpCommandLog"
+export MCP_COMMAND_LOG="$mcpCommandLog"
+cat > "$skillDependencyStubBin/claude" <<'STUB'
+#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const argumentsPassed = process.argv.slice(2);
+fs.appendFileSync(process.env.MCP_COMMAND_LOG, `${JSON.stringify(argumentsPassed)}\n`);
+const runtimePath = path.join(process.env.HOME, '.claude.json');
+let runtimeSettings = {};
+try {
+  runtimeSettings = JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
+} catch {}
+runtimeSettings.mcpServers ??= {};
+const [group, action, scopeFlag, scope, serverName, serverConfig] = argumentsPassed;
+if (group !== 'mcp') process.exit(1);
+if (action === 'get') process.exit(Object.hasOwn(runtimeSettings.mcpServers, scopeFlag) ? 0 : 1);
+if (scopeFlag !== '--scope' || scope !== 'user') process.exit(1);
+if (fs.existsSync(path.join(process.env.HOME, `.fail-mcp-${action}`))) process.exit(1);
+if (action === 'add-json') {
+  if (Object.hasOwn(runtimeSettings.mcpServers, serverName)) process.exit(1);
+  runtimeSettings.mcpServers[serverName] = JSON.parse(serverConfig);
+}
+if (action === 'remove') {
+  if (!Object.hasOwn(runtimeSettings.mcpServers, serverName)) process.exit(1);
+  delete runtimeSettings.mcpServers[serverName];
+}
+if (!['add-json', 'remove'].includes(action)) process.exit(1);
+fs.writeFileSync(runtimePath, JSON.stringify(runtimeSettings));
+STUB
+chmod +x "$skillDependencyStubBin/claude"
+printf '{"mcpServers":{"backchannels":{"type":"http","url":"https://unmanaged.invalid/mcp"}},"runtimeToken":"keep-me"}\n' \
+  > "$sandbox/.claude.json"
+
+mcpRuntimeMatches() {
+  node - "$sandbox/.claude.json" "$1" <<'NODE'
+const fs = require('node:fs');
+const { isDeepStrictEqual } = require('node:util');
+const [runtimePath, expectedPosthogUrl] = process.argv.slice(2);
+const runtimeSettings = JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
+const expectedServers = { backchannels: { type: 'http', url: 'https://unmanaged.invalid/mcp' } };
+if (expectedPosthogUrl) expectedServers.posthog = { type: 'http', url: expectedPosthogUrl };
+process.exit(isDeepStrictEqual(runtimeSettings.mcpServers, expectedServers) && runtimeSettings.runtimeToken === 'keep-me' ? 0 : 1);
+NODE
+}
+
+countMcpCommands() {
+  grep -cF "[\"mcp\",\"$1\"" "$mcpCommandLog" || true
+}
 
 printf '\nai topic\n'
 
@@ -71,7 +122,56 @@ check "converge installs the headless browser for a skill shipping playwright-co
 reviewChecklistPath="$sandbox/.claude/review-checklist.md"
 check "personal profile leaves the review checklist absent" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"
+workMcpOutput="$(runTopicInstall "$stagedTopicDir" work)"
+check "work adds posthog with no consumer header and preserves unmanaged runtime state" \
+  mcpRuntimeMatches https://mcp.posthog.com/mcp
+check "work adds posthog once" test "$(countMcpCommands add-json)" -eq 1
+check "MCP output contains no server config" outputLacks "$workMcpOutput" https://mcp.posthog.com/mcp
 runTopicInstall "$stagedTopicDir" work > /dev/null
+check "an unchanged rerun issues no MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 1
+printf '{"posthog":{"url":"https://mcp.posthog.com/mcp","type":"http"}}\n' \
+  > "$stagedRepo/profiles/work/mcp-servers.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "object key order does not trigger MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 1
+printf '{"posthog":{"type":"http","url":"https://changed.invalid/mcp"}}\n' \
+  > "$stagedRepo/profiles/work/mcp-servers.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "a changed config removes then adds the managed server" \
+  node -e 'const commands = require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse); process.exit(commands.length === 3 && commands[1][1] === "remove" && commands[2][1] === "add-json" ? 0 : 1)' "$mcpCommandLog"
+check "a changed URL converges while preserving unmanaged state" mcpRuntimeMatches https://changed.invalid/mcp
+: > "$sandbox/.fail-mcp-remove"
+failedRemovalStatus=0
+runTopicInstall "$stagedTopicDir" personal > /dev/null || failedRemovalStatus=$?
+check "a failed removal warns" test "$failedRemovalStatus" -eq 1
+check "a failed removal retains ownership for retry" \
+  grep -qx posthog "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
+rm -f "$sandbox/.fail-mcp-remove"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "switching to personal removes only the managed server" mcpRuntimeMatches ""
+check "successful retirement clears the ownership record" \
+  grep -qx '' "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
+cp "$repoRoot/profiles/work/mcp-servers.json" "$stagedRepo/profiles/work/mcp-servers.json"
+node -e 'const fs = require("node:fs"); const runtimeSettings = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); runtimeSettings.mcpServers.posthog = { type: "http", url: "https://eu.unmanaged.invalid/mcp" }; fs.writeFileSync(process.argv[1], JSON.stringify(runtimeSettings))' "$sandbox/.claude.json"
+mcpCommandCountBeforeUnmanaged="$(wc -l < "$mcpCommandLog")"
+unmanagedConflictStatus=0
+unmanagedConflictOutput="$(runTopicInstall "$stagedTopicDir" work)" || unmanagedConflictStatus=$?
+check "an unmanaged differing server with a declared name warns" test "$unmanagedConflictStatus" -eq 1
+check "an unmanaged differing server names the blocked convergence" \
+  outputHas "$unmanagedConflictOutput" "unmanaged server with this name blocks convergence"
+check "an unmanaged differing server survives a work converge unchanged" \
+  mcpRuntimeMatches https://eu.unmanaged.invalid/mcp
+check "an unmanaged differing server triggers no MCP mutation" \
+  test "$(wc -l < "$mcpCommandLog")" -eq "$mcpCommandCountBeforeUnmanaged"
+check "an unmanaged differing server is not recorded as managed" \
+  bash -c '! grep -qx posthog "$1"' _ "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
+node -e 'const fs = require("node:fs"); const runtimeSettings = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); delete runtimeSettings.mcpServers.posthog; fs.writeFileSync(process.argv[1], JSON.stringify(runtimeSettings))' "$sandbox/.claude.json"
+: > "$sandbox/.fail-mcp-add-json"
+failedAdditionStatus=0
+runTopicInstall "$stagedTopicDir" work > /dev/null || failedAdditionStatus=$?
+check "a failed addition warns" test "$failedAdditionStatus" -eq 1
+rm -f "$sandbox/.fail-mcp-add-json"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "a failed addition is retried on the next converge" mcpRuntimeMatches https://mcp.posthog.com/mcp
 check "work profile links the review checklist through the alias" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
   "$reviewChecklistPath" "$sandbox/.dotfiles/profiles/work/review-checklist.md"
@@ -165,6 +265,27 @@ gitlessBin="$sandbox/gitless-bin"
 mkdir -p "$gitlessBin"
 linkCoreUtilities --into "$gitlessBin" bash basename dirname cat cmp cp chmod find grep head \
   ln ls mkdir mktemp mv node readlink rm rmdir sed stat tr uname wc
+runTopicInstall "$stagedTopicDir" work > /dev/null
+cp "$sandbox/.claude.json" "$sandbox/runtime-settings-backup.json"
+rm -f "$sandbox/.claude.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "a missing runtime file is treated as an absent server" \
+  node -e 'const runtimeSettings = require(process.argv[1]); process.exit(runtimeSettings.mcpServers.posthog.url === "https://mcp.posthog.com/mcp" ? 0 : 1)' "$sandbox/.claude.json"
+printf 'not json\n' > "$sandbox/.claude.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "an unparseable runtime file is treated as an absent server" \
+  node -e 'const runtimeSettings = require(process.argv[1]); process.exit(runtimeSettings.mcpServers.posthog.url === "https://mcp.posthog.com/mcp" ? 0 : 1)' "$sandbox/.claude.json"
+cp "$sandbox/runtime-settings-backup.json" "$sandbox/.claude.json"
+missingClaudeStatus=0
+missingClaudeOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$gitlessBin" \
+  bash "$stagedTopicDir/install.sh")" || missingClaudeStatus=$?
+check "an absent claude CLI warns" outputHas "$missingClaudeOutput" "claude not found"
+check "an absent claude CLI marks the topic warned" test "$missingClaudeStatus" -eq 1
+check "an absent claude CLI still renders work settings" \
+  cmp -s "$sandbox/.claude/CLAUDE.md" "$stagedRepo/profiles/work/CLAUDE.md"
+check "an absent claude CLI preserves managed and unmanaged servers" mcpRuntimeMatches https://mcp.posthog.com/mcp
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "retirement after an absent CLI preserves the unmanaged server" mcpRuntimeMatches ""
 rm -rf "$skillsPath"
 ln -s "$sandbox/.dotfiles/ai/skills" "$skillsPath"
 gitlessStatus=0

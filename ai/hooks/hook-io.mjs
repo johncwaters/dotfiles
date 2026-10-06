@@ -14,15 +14,23 @@ export function readPayload() {
   }
 }
 
-export function denyPreToolUse(reason) {
+function decidePreToolUse(permissionDecision, reason) {
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        permissionDecision: "deny",
+        permissionDecision,
         permissionDecisionReason: reason,
       },
     }),
   );
   process.exit(0);
+}
+
+export function denyPreToolUse(reason) {
+  decidePreToolUse("deny", reason);
+}
+
+export function askPreToolUse(reason) {
+  decidePreToolUse("ask", reason);
 }

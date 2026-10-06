@@ -211,4 +211,99 @@ renderJsonTemplate "settings.json" \
   "$dotfilesRepo/profiles/$profileName/settings.overlay.json" \
   "$claudeHome/settings.json"
 
+convergeMcpServers() {
+  local convergencePlan
+  local managedNames
+  local recordedNames=""
+  local remainingNames=""
+  local serverName
+  local serverAction
+  local serverConfig
+  if ! command -v claude > /dev/null 2>&1; then
+    noteWarned "MCP servers" "claude not found, convergence skipped"
+    return 0
+  fi
+  if ! command -v node > /dev/null 2>&1; then
+    noteWarned "MCP servers" "node not found, convergence skipped"
+    return 0
+  fi
+  managedNames="$(readDotfilesState ai-managed-mcp-servers || true)"
+  if ! convergencePlan="$(node - "$dotfilesRepo/profiles/$profileName/mcp-servers.json" "$HOME/.claude.json" "$managedNames" 2>/dev/null <<'NODE'
+const fs = require('node:fs');
+const { isDeepStrictEqual } = require('node:util');
+const [declarationPath, runtimePath, managedNames] = process.argv.slice(2);
+const declaredServers = fs.existsSync(declarationPath)
+  ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')) : {};
+if (!declaredServers || typeof declaredServers !== 'object' || Array.isArray(declaredServers)) process.exit(1);
+let currentServers = {};
+try {
+  currentServers = JSON.parse(fs.readFileSync(runtimePath, 'utf8'))?.mcpServers ?? {};
+} catch {}
+if (!currentServers || typeof currentServers !== 'object' || Array.isArray(currentServers)) currentServers = {};
+const managedNameSet = new Set(managedNames.split('\n').filter(Boolean));
+const serverNames = new Set([...managedNameSet, ...Object.keys(declaredServers)]);
+const plan = [];
+for (const serverName of serverNames) {
+  if (!serverName || /[\t\r\n]/.test(serverName)) process.exit(1);
+  const isDeclared = Object.hasOwn(declaredServers, serverName);
+  const isPresent = Object.hasOwn(currentServers, serverName);
+  if (!isDeclared) {
+    plan.push([serverName, isPresent ? 'remove' : 'forget', '']);
+    continue;
+  }
+  const serverConfig = declaredServers[serverName];
+  if (!serverConfig || typeof serverConfig !== 'object' || Array.isArray(serverConfig)) process.exit(1);
+  const matchesDeclaration = isPresent && isDeepStrictEqual(currentServers[serverName], serverConfig);
+  if (isPresent && !matchesDeclaration && !managedNameSet.has(serverName)) {
+    plan.push([serverName, 'blocked', '']);
+    continue;
+  }
+  const serverAction = isPresent ? (matchesDeclaration ? 'keep' : 'replace') : 'add';
+  plan.push([serverName, serverAction, JSON.stringify(serverConfig)]);
+}
+process.stdout.write(plan.map(entry => entry.join('\t')).join('\n'));
+NODE
+)"; then
+    noteWarned "MCP servers" "could not read profile declarations, convergence skipped"
+    return 0
+  fi
+  while IFS=$'\t' read -r serverName serverAction serverConfig; do
+    [[ -n "$serverName" ]] || continue
+    [[ "$serverAction" != blocked ]] || continue
+    recordedNames+="${recordedNames:+$'\n'}$serverName"
+  done <<< "$convergencePlan"
+  writeDotfilesState ai-managed-mcp-servers "$recordedNames"
+  if [[ "$(readDotfilesState ai-managed-mcp-servers || true)" != "$recordedNames" ]]; then
+    noteWarned "MCP servers" "could not record managed names, convergence skipped"
+    return 0
+  fi
+  while IFS=$'\t' read -r serverName serverAction serverConfig; do
+    [[ -n "$serverName" ]] || continue
+    [[ "$serverAction" != forget ]] || continue
+    if [[ "$serverAction" == blocked ]]; then
+      noteWarned "MCP $serverName" "an unmanaged server with this name blocks convergence"
+      continue
+    fi
+    if [[ "$serverAction" == remove || "$serverAction" == replace ]]; then
+      if ! claude mcp remove --scope user "$serverName" > /dev/null 2>&1; then
+        noteWarned "MCP $serverName" "remove failed"
+        remainingNames+="${remainingNames:+$'\n'}$serverName"
+        continue
+      fi
+      noteApplied "MCP $serverName" "removed"
+      [[ "$serverAction" != remove ]] || continue
+    fi
+    remainingNames+="${remainingNames:+$'\n'}$serverName"
+    [[ "$serverAction" != keep ]] || continue
+    if claude mcp add-json --scope user "$serverName" "$serverConfig" > /dev/null 2>&1; then
+      noteApplied "MCP $serverName" "added"
+      continue
+    fi
+    noteWarned "MCP $serverName" "add failed"
+  done <<< "$convergencePlan"
+  writeDotfilesState ai-managed-mcp-servers "$remainingNames"
+}
+
+convergeMcpServers
+
 finishTopic
