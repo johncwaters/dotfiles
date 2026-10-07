@@ -163,7 +163,7 @@ installSkillDependencies() {
   for skillLockPath in "${skillLockPaths[@]}"; do
     skillDirectory="$(dirname -- "$skillLockPath")"
     skillName="$(basename -- "$skillDirectory")"
-    if skillDependenciesAreStale "$skillDirectory" && ! npm ci --omit=dev --prefix "$skillDirectory"; then
+    if skillDependenciesAreStale "$skillDirectory" && ! (cd -- "$skillDirectory" && npm ci --omit=dev); then
       noteWarned "skill $skillName dependencies" "npm ci failed"
       continue
     fi

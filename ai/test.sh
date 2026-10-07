@@ -38,14 +38,8 @@ skillDependencyStubBin="$sandbox/skill-dependency-stub-bin"
 mkdir -p "$skillDependencyStubBin"
 cat > "$skillDependencyStubBin/npm" <<'STUB'
 #!/usr/bin/env bash
-printf 'npm %s\n' "$*" >> "$SKILL_DEPENDENCY_LOG"
-skillDirectory=""
-while (($# > 0)); do
-  if [[ "$1" == "--prefix" ]]; then
-    skillDirectory="$2"
-  fi
-  shift
-done
+printf 'npm %s in %s\n' "$*" "$PWD" >> "$SKILL_DEPENDENCY_LOG"
+skillDirectory="$PWD"
 mkdir -p "$skillDirectory/node_modules/.bin"
 printf '{}\n' > "$skillDirectory/node_modules/.package-lock.json"
 cat > "$skillDirectory/node_modules/.bin/playwright-core" <<'PLAYWRIGHT'
@@ -115,8 +109,8 @@ installStatus=0
 firstRunOutput="$(runTopicInstall "$stagedTopicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
-check "converge installs a skill's locked dependencies" \
-  grep -qx "npm ci --omit=dev --prefix .*/ai/skills/social-images" "$skillDependencyLog"
+check "converge installs a skill's locked dependencies from inside its directory because npm 11 ci --prefix from elsewhere reports the skill missing from its own lock" \
+  grep -qx "npm ci --omit=dev in .*/ai/skills/social-images" "$skillDependencyLog"
 check "converge installs the headless browser for a skill shipping playwright-core" \
   grep -qx 'playwright-core install --only-shell chromium' "$skillDependencyLog"
 reviewChecklistPath="$sandbox/.claude/review-checklist.md"
