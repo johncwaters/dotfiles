@@ -75,16 +75,18 @@ function fmtTokens(n) {
   return String(n);
 }
 
-const KNOWN_CAVEMAN_MODES = new Set([
-  "lite", "full", "ultra", "wenyan", "wenyan-lite", "wenyan-full", "wenyan-ultra",
-  "commit", "review", "compress",
-]);
+const CAVEMAN_BADGE_BY_MODE = {
+  caveman: "CAVEMAN", lite: "CAVEMAN", full: "CAVEMAN",
+  ultracave: "ULTRACAVE", ultra: "ULTRACAVE",
+  megacave: "MEGACAVE", wenyan: "MEGACAVE", "wenyan-lite": "MEGACAVE", "wenyan-full": "MEGACAVE", "wenyan-ultra": "MEGACAVE",
+  commit: "CAVEMAN:COMMIT", review: "CAVEMAN:REVIEW", compress: "CAVEMAN:COMPRESS",
+};
 
 function cavemanPart() {
   try {
     const mode = readFileSync(join(homedir(), ".claude", ".caveman-active"), "utf8").trim();
-    if (mode === "full" || !KNOWN_CAVEMAN_MODES.has(mode)) return `${ORANGE}[CAVEMAN]${RESET}`;
-    return `${ORANGE}[CAVEMAN:${mode.toUpperCase()}]${RESET}`;
+    if (!Object.hasOwn(CAVEMAN_BADGE_BY_MODE, mode)) return null;
+    return `${ORANGE}[${CAVEMAN_BADGE_BY_MODE[mode]}]${RESET}`;
   } catch {
     return null;
   }

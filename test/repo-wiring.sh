@@ -60,12 +60,14 @@ checkProfileClaudeSettings() {
   HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
     "$repoRoot/ai/settings.base.json" "$profileOverlayPath" \
     "$renderedProfileSettingsPath" /fixture/home
-  check "the $profileName profile defaults caveman to ultra" \
-    grep -qF '"CAVEMAN_DEFAULT_MODE": "ultra"' "$renderedProfileSettingsPath"
+  check "the $profileName profile defaults caveman to ultracave" \
+    grep -qF '"CAVEMAN_DEFAULT_MODE": "ultracave"' "$renderedProfileSettingsPath"
+  check "the $profileName profile turns caveman telemetry off because it reports the install ID and IP by default" \
+    grep -qF '"CAVEMAN_TELEMETRY": "0"' "$renderedProfileSettingsPath"
   check "the $profileName profile enables the caveman plugin" \
     grep -qF '"caveman@caveman": true' "$renderedProfileSettingsPath"
-  check "the $profileName profile runs the caveman ultra hook" \
-    grep -qF 'caveman-ultra.mjs' "$renderedProfileSettingsPath"
+  check "the $profileName profile leaves caveman mode to the plugin, which honors CAVEMAN_DEFAULT_MODE since 3.1.0" \
+    bash -c '! grep -qF caveman-ultra.mjs "$1"' _ "$renderedProfileSettingsPath"
   local profileSettingsFixturePath="$repoRoot/test/fixtures/ai-settings.$profileName.json"
   if [[ -f "$profileSettingsFixturePath" ]]; then
     check "the shared merger keeps the prior $profileName ai settings bytes" \
