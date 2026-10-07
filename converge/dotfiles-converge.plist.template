@@ -25,9 +25,16 @@
     <key>PATH</key>
     <string>{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
-  <!-- Runs ten minutes after each login, standing in for the timer's OnBootSec; with no calendar slot, sleep and wake alone never trigger a converge. -->
+  <!-- launchd replays the 4am slot on the first wake after it and RunAtLoad covers power-off, so a Mac that sleeps overnight still converges daily; the ten minute sleep lets the network come up. -->
   <key>StandardOutPath</key>
   <string>{{STATE}}/converge.stdout.log</string>
   <key>StandardErrorPath</key>

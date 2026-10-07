@@ -155,8 +155,10 @@ check "darwin runs dot with Homebrew bash" \
   grep -qF "<string>$darwinHomebrewPrefix/bin/bash</string>" "$launchAgentPath"
 check "darwin runs dot through the relocatable alias" \
   grep -qF "<string>$sandbox/.dotfiles/bin/dot</string>" "$launchAgentPath"
-check "the launch agent has no calendar slot because the Mac is rarely on at a fixed hour" \
-  bash -c '! grep -q "<key>StartCalendarInterval</key>" "$1"' _ "$launchAgentPath"
+check "the calendar slot pins hour four because launchd replays it on the first wake after sleep" \
+  bash -c 'sed -n "/<key>StartCalendarInterval<\/key>/,/<\/dict>/p" "$1" | grep -A1 "<key>Hour</key>" | grep -q "<integer>4</integer>"' _ "$launchAgentPath"
+check "the calendar slot pins minute zero so it fires once" \
+  bash -c 'sed -n "/<key>StartCalendarInterval<\/key>/,/<\/dict>/p" "$1" | grep -A1 "<key>Minute</key>" | grep -q "<integer>0</integer>"' _ "$launchAgentPath"
 check "the launch agent runs at login because the machine is rarely on at four" \
   bash -c 'grep -A1 "<key>RunAtLoad</key>" "$1" | grep -q "<true/>"' _ "$launchAgentPath"
 check "the launch agent waits ten minutes so the network is up, like the timer's OnBootSec" \
@@ -172,8 +174,8 @@ check "the launch agent writes stdout under dotfiles state" \
   grep -qF "$sandbox/.local/state/dotfiles/converge.stdout.log" "$launchAgentPath"
 check "the launch agent writes stderr under dotfiles state" \
   grep -qF "$sandbox/.local/state/dotfiles/converge.stderr.log" "$launchAgentPath"
-check "the template says sleep and wake alone never trigger a converge" \
-  grep -qF 'sleep and wake alone never trigger a converge' "$topicDir/dotfiles-converge.plist.template"
+check "the template says a Mac that sleeps overnight still converges daily" \
+  grep -qF 'a Mac that sleeps overnight still converges daily' "$topicDir/dotfiles-converge.plist.template"
 check "darwin probes the agent before loading it" \
   test "$(grep '^launchctl ' "$commandLog" | head -n 1)" = 'launchctl print gui/501/dev.dotfiles.converge'
 check "darwin bootstraps the launch agent" \
