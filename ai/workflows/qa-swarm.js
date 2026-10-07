@@ -20,7 +20,7 @@ function codexDispatchInstruction(promptName, taskLabel, model, reasoningEffort)
 
 async function spawnCodexDispatcher(dispatchPrompt, options) {
   try {
-    return await agent(dispatchPrompt, { model: 'sonnet', agentType: 'codex-dispatcher', ...options })
+    return await agent(dispatchPrompt, { model: 'haiku', agentType: 'codex-dispatcher', ...options })
   } catch (spawnError) {
     log(`codex-dispatcher unavailable (${spawnError.message}); rerun the ai installer and start a new session`)
     return null

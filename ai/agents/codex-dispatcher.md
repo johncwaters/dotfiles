@@ -2,7 +2,7 @@
 name: codex-dispatcher
 description: Relays one prompt to Codex under a read-only sandbox and returns its answer verbatim. Spawned by workflows only, since a workflow script cannot run a shell command itself. Never answers the prompt on its own.
 tools: Write, Bash
-model: sonnet
+model: haiku
 omitClaudeMd: true
 ---
 

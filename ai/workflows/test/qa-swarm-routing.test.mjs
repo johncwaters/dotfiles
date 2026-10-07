@@ -111,7 +111,7 @@ async function routedAfterDispatcherReturns(dispatcherRoute, dispatcherFileClass
     phase: () => {},
     agent: async (prompt, options) => {
       spawnedModels.push(options.model)
-      if (options.model === 'sonnet') {
+      if (options.model === 'haiku') {
         return routerResultFor(dispatcherRoute, dispatcherFileClasses)
       }
       return routerResultFor('ignored', everyChangedFileClassified)
@@ -126,7 +126,7 @@ for (const placeholderRoute of ['OPUS_REQUIRED', 'opus_required']) {
   test(`a dispatcher failure placeholder with route ${JSON.stringify(placeholderRoute)} and empty fileClasses falls back to opus with its reported detail in the degradation note`, async () => {
     const routed = await routedAfterDispatcherReturns(placeholderRoute, [])
 
-    assert.deepEqual(routed.spawnedModels, ['sonnet', 'opus'])
+    assert.deepEqual(routed.spawnedModels, ['haiku', 'opus'])
     assert.equal(routed.routerResult.route, 'opus')
     assert.match(routed.degradationNote, /external router failed with fixture/)
   })
@@ -135,7 +135,7 @@ for (const placeholderRoute of ['OPUS_REQUIRED', 'opus_required']) {
 test('a Codex router answer classifying only some changed files is accepted without an opus fallback', async () => {
   const routeReview = workflowFunctionNamed('routeReview', { ...baseWorkflowArgs, changedFiles: ['src/file.js', 'src/other.js'] }, {
     phase: () => {},
-    agent: async (prompt, options) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: options.model === 'sonnet' ? 'gpt-6.1-sol' : 'ignored' })
+    agent: async (prompt, options) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: options.model === 'haiku' ? 'gpt-6.1-sol' : 'ignored' })
   })
   const routed = await routeReview(['src/file.js', 'src/other.js'])
 
@@ -181,7 +181,7 @@ test('a session without the codex-dispatcher agent type routes on opus instead o
   const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
   const routed = await routeReview(baseWorkflowArgs.changedFiles)
 
-  assert.deepEqual(spawnedModels, ['sonnet', 'opus'])
+  assert.deepEqual(spawnedModels, ['haiku', 'opus'])
   assert.equal(routed.routerResult.route, 'opus')
   assert.match(routed.degradationNote, /router agent death/)
 })
@@ -190,7 +190,7 @@ for (const codexWrittenRoute of ['gpt-6.1-sol', 'code', 'Run code and external r
   test(`a Codex router answer with route ${JSON.stringify(codexWrittenRoute)} is accepted and stamped with the dispatched model`, async () => {
     const routed = await routedAfterDispatcherReturns(codexWrittenRoute, everyChangedFileClassified)
 
-    assert.deepEqual(routed.spawnedModels, ['sonnet'])
+    assert.deepEqual(routed.spawnedModels, ['haiku'])
     assert.equal(routed.routerResult.route, 'gpt-6.1-sol')
     assert.equal(routed.degradationNote, '')
   })
