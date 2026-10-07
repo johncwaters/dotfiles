@@ -7,6 +7,9 @@
   <key>ProgramArguments</key>
   <array>
     <string>{{BASH}}</string>
+    <string>-c</string>
+    <string>sleep 600; exec "$0" "$1"</string>
+    <string>{{BASH}}</string>
     <string>{{HOME}}/.dotfiles/bin/dot</string>
   </array>
   <key>EnvironmentVariables</key>
@@ -22,16 +25,9 @@
     <key>PATH</key>
     <string>{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>4</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
   <key>RunAtLoad</key>
-  <false/>
-  <!-- RandomizedDelaySec and Persistent are omitted because launchd has no equivalents. -->
+  <true/>
+  <!-- Runs ten minutes after each login, standing in for the timer's OnBootSec; with no calendar slot, sleep and wake alone never trigger a converge. -->
   <key>StandardOutPath</key>
   <string>{{STATE}}/converge.stdout.log</string>
   <key>StandardErrorPath</key>

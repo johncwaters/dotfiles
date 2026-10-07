@@ -155,12 +155,12 @@ check "darwin runs dot with Homebrew bash" \
   grep -qF "<string>$darwinHomebrewPrefix/bin/bash</string>" "$launchAgentPath"
 check "darwin runs dot through the relocatable alias" \
   grep -qF "<string>$sandbox/.dotfiles/bin/dot</string>" "$launchAgentPath"
-check "the launch agent fires at hour four" \
-  bash -c 'grep -A1 "<key>Hour</key>" "$1" | grep -q "<integer>4</integer>"' _ "$launchAgentPath"
-check "the launch agent fires at minute zero" \
-  bash -c 'grep -A1 "<key>Minute</key>" "$1" | grep -q "<integer>0</integer>"' _ "$launchAgentPath"
-check "the launch agent does not run immediately when loaded" \
-  bash -c 'grep -A1 "<key>RunAtLoad</key>" "$1" | grep -q "<false/>"' _ "$launchAgentPath"
+check "the launch agent has no calendar slot because the Mac is rarely on at a fixed hour" \
+  bash -c '! grep -q "<key>StartCalendarInterval</key>" "$1"' _ "$launchAgentPath"
+check "the launch agent runs at login because the machine is rarely on at four" \
+  bash -c 'grep -A1 "<key>RunAtLoad</key>" "$1" | grep -q "<true/>"' _ "$launchAgentPath"
+check "the launch agent waits ten minutes so the network is up, like the timer's OnBootSec" \
+  grep -qF '<string>sleep 600; exec "$0" "$1"</string>' "$launchAgentPath"
 check "the launch agent PATH contains Homebrew and the systemd unit entries" \
   grep -qF "$darwinHomebrewPrefix/bin:$darwinHomebrewPrefix/sbin:$sandbox/.npm-global/bin:$sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     "$launchAgentPath"
@@ -172,14 +172,43 @@ check "the launch agent writes stdout under dotfiles state" \
   grep -qF "$sandbox/.local/state/dotfiles/converge.stdout.log" "$launchAgentPath"
 check "the launch agent writes stderr under dotfiles state" \
   grep -qF "$sandbox/.local/state/dotfiles/converge.stderr.log" "$launchAgentPath"
-check "the template names launchd's missing timer semantics" \
-  grep -qF 'launchd has no equivalents' "$topicDir/dotfiles-converge.plist.template"
+check "the template says sleep and wake alone never trigger a converge" \
+  grep -qF 'sleep and wake alone never trigger a converge' "$topicDir/dotfiles-converge.plist.template"
 check "darwin probes the agent before loading it" \
   test "$(grep '^launchctl ' "$commandLog" | head -n 1)" = 'launchctl print gui/501/dev.dotfiles.converge'
 check "darwin bootstraps the launch agent" \
   logHas "launchctl bootstrap gui/501 $launchAgentPath"
 check "darwin never calls systemctl" logLacks 'systemctl '
 check "the first darwin load is reported" outputHas "$darwinFirstOutput" 'loaded'
+
+writeStub sleep <<'STUB'
+#!/usr/bin/env bash
+printf 'sleep %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+STUB
+provideCommand sleep
+writeStub dot <<'STUB'
+#!/usr/bin/env bash
+printf 'dot %s\n' "$#" >> "$DOTFILES_TEST_LOG"
+STUB
+launchAgentArguments=()
+while IFS= read -r launchAgentArgument; do
+  launchAgentArguments+=("$launchAgentArgument")
+done < <(sed -n '/<key>ProgramArguments<\/key>/,/<\/array>/p' "$launchAgentPath" \
+  | sed -n 's|^ *<string>\(.*\)</string>$|\1|p' \
+  | sed -e 's/&quot;/"/g' -e "s/&apos;/'/g" -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&amp;/\&/g')
+launchAgentArguments[0]="$(type -P bash)"
+launchAgentArguments[3]="$(type -P bash)"
+launchAgentArguments[4]="$stubState/available/dot"
+: > "$commandLog"
+launchAgentRunStatus=0
+runInStubbedSandbox "$sandbox" "${launchAgentArguments[@]}" > /dev/null || launchAgentRunStatus=$?
+check "the launch agent arguments run to completion" test "$launchAgentRunStatus" -eq 0
+check "the launch agent sleeps ten minutes exactly once before converging" \
+  test "$(countLogLines '^sleep 600$')" -eq 1
+check "the launch agent runs dot exactly once with no extra arguments" \
+  test "$(countLogLines '^dot 0$')" -eq 1
+check "the launch agent sleeps before it runs dot" \
+  test "$(head -n 1 "$commandLog")" = 'sleep 600'
 
 : > "$commandLog"
 darwinSecondOutput="$(runDarwinInstall)"
