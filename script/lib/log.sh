@@ -52,6 +52,9 @@ adoptCountsFileFromEnvironment() {
 
 # The counts file can be lost mid run, so a topic's exit status carries its own warnings.
 finishTopic() {
+  if [[ -n "${DOTFILES_UPGRADE:-}" ]] && declare -F finishPackageUpgrades >/dev/null; then
+    finishPackageUpgrades
+  fi
   if ((warningsEmittedHere > 0)); then
     exit 1
   fi

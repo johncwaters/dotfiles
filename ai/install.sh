@@ -7,6 +7,10 @@ if [[ -z "${dotfilesRepo:-}" ]]; then
   requireAliasResolvesToRepo
 fi
 
+if [[ -n "${DOTFILES_UPGRADE:-}" ]]; then
+  source "$dotfilesRepo/script/lib/packages.sh"
+fi
+
 claudeHome="$HOME/.claude"
 codexHome="$HOME/.codex"
 claudeSkillsDirectory="$claudeHome/skills"
@@ -305,5 +309,117 @@ NODE
 }
 
 convergeMcpServers
+
+upgradeEnabledClaudePlugins() {
+  [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
+  command -v claude >/dev/null 2>&1 || return 0
+  local enabledPlugins
+  local pluginId
+  local marketplaceName
+  local pluginListing
+  local parsedPlugins
+  local installedVersion
+  local availableVersion
+  declare -A enabledPluginIds=()
+  declare -A refreshedMarketplaces=()
+  declare -A failedMarketplaces=()
+  if ! enabledPlugins="$(node -e '
+    const settings = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+    for (const [pluginId, isEnabled] of Object.entries(settings.enabledPlugins ?? {})) {
+      if (isEnabled === true) console.log(pluginId);
+    }
+  ' "$claudeHome/settings.json")"; then
+    recordFailedUpgrade plugin enabled unknown unknown
+    return 0
+  fi
+  [[ -n "$enabledPlugins" ]] || return 0
+  while IFS= read -r pluginId; do
+    enabledPluginIds["$pluginId"]=1
+    marketplaceName="${pluginId##*@}"
+    [[ -z "${refreshedMarketplaces[$marketplaceName]:-}" ]] || continue
+    refreshedMarketplaces["$marketplaceName"]=1
+    if claude plugin marketplace update "$marketplaceName" >/dev/null 2>&1; then
+      continue
+    fi
+    failedMarketplaces["$marketplaceName"]=1
+  done <<< "$enabledPlugins"
+  if ! pluginListing="$(claude plugin list --json --available 2>/dev/null)"; then
+    while IFS= read -r pluginId; do
+      recordFailedUpgrade plugin "$pluginId" unknown unknown
+    done <<< "$enabledPlugins"
+    return 0
+  fi
+  if ! parsedPlugins="$(node -e '
+    const filesystem = require("node:fs");
+    const path = require("node:path");
+    const listing = JSON.parse(filesystem.readFileSync(0, "utf8"));
+    const marketplacesDirectory = process.argv[1];
+    const readJsonIfPresent = filePath => {
+      try {
+        return JSON.parse(filesystem.readFileSync(filePath, "utf8"));
+      } catch {
+        return undefined;
+      }
+    };
+    const resolveAvailableVersion = pluginId => {
+      const separatorIndex = pluginId.lastIndexOf("@");
+      const pluginName = pluginId.slice(0, separatorIndex);
+      const checkoutDirectory = path.join(marketplacesDirectory, pluginId.slice(separatorIndex + 1));
+      const marketplace = readJsonIfPresent(path.join(checkoutDirectory, ".claude-plugin", "marketplace.json"));
+      const marketplaceEntry = marketplace?.plugins?.find(plugin => plugin.name === pluginName);
+      if (marketplaceEntry?.version) return marketplaceEntry.version;
+      if (marketplaceEntry?.source && typeof marketplaceEntry.source === "object") return "unversioned";
+      if (typeof marketplaceEntry?.source !== "string") return undefined;
+      const pluginManifest = readJsonIfPresent(path.join(checkoutDirectory, marketplaceEntry.source, ".claude-plugin", "plugin.json"));
+      if (pluginManifest && !pluginManifest.version) return "unversioned";
+      return pluginManifest?.version;
+    };
+    for (const entry of listing.installed) {
+      console.log([entry.id, entry.version || "unknown", resolveAvailableVersion(entry.id) || "unknown"].join("\t"));
+    }
+  ' "$claudeHome/plugins/marketplaces" <<< "$pluginListing")"; then
+    while IFS= read -r pluginId; do
+      recordFailedUpgrade plugin "$pluginId" unknown unknown
+    done <<< "$enabledPlugins"
+    return 0
+  fi
+  while IFS=$'\t' read -r pluginId installedVersion availableVersion; do
+    [[ -n "$pluginId" && -n "${enabledPluginIds[$pluginId]:-}" ]] || continue
+    marketplaceName="${pluginId##*@}"
+    if [[ -n "${failedMarketplaces[$marketplaceName]:-}" ]]; then
+      continue
+    fi
+    if [[ "$availableVersion" == unversioned ]]; then
+      areAllUpgradesApproved || continue
+      if claude plugin update "$pluginId" >/dev/null 2>&1; then
+        noteInstalled "$pluginId" "updated"
+        continue
+      fi
+      recordFailedUpgrade plugin "$pluginId" "$installedVersion" unknown
+      continue
+    fi
+    if [[ "$installedVersion" == unknown || "$availableVersion" == unknown ]]; then
+      recordFailedUpgrade plugin "$pluginId" "$installedVersion" "$availableVersion"
+      continue
+    fi
+    versionIsNewer "$installedVersion" "$availableVersion" || continue
+    if ! areAllUpgradesApproved; then
+      recordHeldUpgrade plugin "$pluginId" "$installedVersion" "$availableVersion"
+      continue
+    fi
+    if claude plugin update "$pluginId" >/dev/null 2>&1; then
+      noteInstalled "$pluginId" "upgraded from $installedVersion to $availableVersion"
+      continue
+    fi
+    recordFailedUpgrade plugin "$pluginId" "$installedVersion" "$availableVersion"
+  done <<< "$parsedPlugins"
+  while IFS= read -r pluginId; do
+    marketplaceName="${pluginId##*@}"
+    [[ -n "${failedMarketplaces[$marketplaceName]:-}" ]] || continue
+    recordFailedUpgrade plugin "$pluginId" unknown unknown
+  done <<< "$enabledPlugins"
+}
+
+upgradeEnabledClaudePlugins
 
 finishTopic

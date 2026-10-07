@@ -71,6 +71,59 @@ fi
 emitBody
 STUB
 
+writeStub brew <<'STUB'
+#!/usr/bin/env bash
+printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == outdated ]]; then
+  cat "$DOTFILES_TEST_STATE/brew-outdated.json" 2>/dev/null || printf '{"formulae":[],"casks":[]}\n'
+  exit 0
+fi
+if [[ "${1:-}" == info ]]; then
+  printf '{"formulae":[{"name":"python@3.14"}]}\n'
+  exit 0
+fi
+if [[ "${1:-}" == update ]]; then
+  [[ ! -f "$DOTFILES_TEST_STATE/brew-update-fails" ]]
+  exit $?
+fi
+if [[ "${1:-}" == upgrade ]]; then
+  printf 'brew-upgrade-environment HOMEBREW_NO_AUTO_UPDATE=%s HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=%s\n' \
+    "${HOMEBREW_NO_AUTO_UPDATE:-}" "${HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK:-}" >> "$DOTFILES_TEST_LOG"
+  [[ ! -f "$DOTFILES_TEST_STATE/brew-upgrade-fails" ]]
+  exit $?
+fi
+if [[ "${1:-} ${2:-}" == "list --cask" ]]; then
+  [[ -f "$DOTFILES_TEST_STATE/cask-installed/${3:-}" ]]
+  exit $?
+fi
+if [[ "${1:-} ${2:-}" == "install --cask" ]]; then
+  touch "$DOTFILES_TEST_STATE/cask-installed/${3:-}"
+fi
+for packageName in "$@"; do
+  case "$packageName" in
+    git | gh)
+      cp "$DOTFILES_TEST_STATE/available/$packageName" "$DOTFILES_TEST_STUB_BIN/$packageName"
+      ;;
+    ripgrep)
+      cp "$DOTFILES_TEST_STATE/available/rg" "$DOTFILES_TEST_STUB_BIN/rg"
+      ;;
+    bash-completion@2)
+      mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/etc/profile.d"
+      cp "$DOTFILES_TEST_STATE/available/bash_completion" \
+        "$DOTFILES_TEST_HOMEBREW_PREFIX/etc/profile.d/bash_completion.sh"
+      ;;
+    python3)
+      mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/bin"
+      cp "$DOTFILES_TEST_STATE/available/python3" "$DOTFILES_TEST_HOMEBREW_PREFIX/bin/python3"
+      ;;
+    node)
+      cp "$DOTFILES_TEST_STATE/available/node" "$DOTFILES_TEST_STUB_BIN/node"
+      cp "$DOTFILES_TEST_STATE/available/npm" "$DOTFILES_TEST_STUB_BIN/npm"
+      ;;
+  esac
+done
+STUB
+
 writeStub npm <<'STUB'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -110,6 +163,10 @@ case "$1 ${2:-}" in
     exit 0
     ;;
 esac
+if [[ "$1" == "outdated" ]]; then
+  cat "$DOTFILES_TEST_STATE/npm-outdated.json" 2>/dev/null || printf '{}\n'
+  exit 1
+fi
 if [[ "$1" == "ls" ]]; then
   printf '%s/lib/node_modules\n' "$(currentPrefix)"
   for recordFile in "$installedDir"/*; do
@@ -136,12 +193,19 @@ fi
 if [[ "$1" == "install" ]]; then
   packageSpec="$3"
   packageName="${packageSpec%@latest}"
+  if [[ -f "$DOTFILES_TEST_STATE/npm-upgrade-fails" ]]; then
+    printf 'upgrade unavailable\n' >&2
+    exit 1
+  fi
   if [[ "$packageSpec" == *.tgz ]]; then
     packageName="$(cat "$packageSpec.name")"
   fi
   packageVersion=1.0.0
   if [[ "$packageName" == "@openai/codex" ]]; then
     packageVersion=0.159.0
+  fi
+  if [[ "$packageSpec" == *@latest && -f "$DOTFILES_TEST_STATE/npm-latest-version" ]]; then
+    read -r packageVersion < "$DOTFILES_TEST_STATE/npm-latest-version"
   fi
   printf '%s\n%s\n' "$packageName" "$packageVersion" > "$installedDir/$(encodeName "$packageName")"
   exit 0
@@ -196,12 +260,19 @@ if [[ "${1:-}" == "-m" && "${2:-}" == "pip" && "${3:-}" == "--version" ]]; then
   printf 'pip 24.0\n'
   exit 0
 fi
+if [[ "${1:-} ${2:-} ${3:-}" == "-m pip list" ]]; then
+  cat "$DOTFILES_TEST_STATE/pip-outdated.json" 2>/dev/null || printf '[]\n'
+  exit 0
+fi
 if [[ "${1:-}" == "-c" ]]; then
   moduleName="${2#import }"
   [[ -f "$moduleDir/$moduleName" ]]
   exit $?
 fi
 if [[ "${1:-}" == "-m" && "${2:-}" == "pip" && "${3:-}" == "install" ]]; then
+  if [[ "$*" == *" --upgrade "* && -f "$DOTFILES_TEST_STATE/pip-upgrade-fails" ]]; then
+    exit 1
+  fi
   if [[ "$*" == *" pyyaml" && "$*" != *" --user "* \
     && "$0" != "$HOME/.local/share/dotfiles/python-tools/"* ]]; then
     exit 1
@@ -353,6 +424,154 @@ realBashrcFingerprint() {
 realBashrcBefore="$(realBashrcFingerprint)"
 
 installStatus=0
+
+upgradeHome="$sandbox/upgrade-home"
+mkdir -p "$upgradeHome"
+ln -s "$repoRoot" "$upgradeHome/.dotfiles"
+: > "$upgradeHome/.dotfiles-test-sandbox"
+cp -R "$stubBin" "$sandbox/stubs-before-upgrades"
+cp -R "$stubState" "$sandbox/state-before-upgrades"
+provideCommand brew
+provideCommand node
+provideCommand npm
+provideCommand python3
+writeDarwinDirectoryServiceStub "$stubBin" "$realHome"
+upgradeHomebrewPrefix="$upgradeHome/homebrew"
+mkdir -p "$upgradeHomebrewPrefix/bin" "$upgradeHome/Applications"
+cp "$stubBin/python3" "$upgradeHomebrewPrefix/bin/python3"
+runUpgradeInstall() {
+  runInStubbedSandbox "$upgradeHome" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+    DOTFILES_PROFILE=work DOTFILES_TEST_HOMEBREW_PREFIX="$upgradeHomebrewPrefix" \
+    DOTFILES_TEST_APPLICATIONS_DIRECTORY="$upgradeHome/Applications" \
+    DOTFILES_TEST_BASH_COMPLETION_PATH="$upgradeHomebrewPrefix/etc/profile.d/bash_completion.sh" \
+    NO_COLOR=1 bash "$topicDir/install.sh"
+}
+runUpgradeInstall > /dev/null
+mkdir -p "$upgradeHome/.local/state/dotfiles"
+printf 'plugin example 1.0.0 2.0.0\n' > "$upgradeHome/.local/state/dotfiles/upgrades-held-ai"
+printf 'plugin example 1.0.0 1.1.0\n' > "$upgradeHome/.local/state/dotfiles/upgrades-failed-ai-pending"
+: > "$commandLog"
+runUpgradeInstall > /dev/null
+check "a plain converge queries no outdated packages" logLacks 'outdated'
+check "a plain converge runs no brew upgrade" logLacks 'brew upgrade'
+check "a plain converge runs no pip upgrade" logLacks '--upgrade'
+printf '{"formulae":[{"name":"git","installed_versions":["2.1.0"],"current_version":"2.2.0"},{"name":"node","installed_versions":["22.18.0"],"current_version":"22.19.0"},{"name":"python@3.14","installed_versions":["3.14.0"],"current_version":"3.14.1"},{"name":"vale","installed_versions":["3.0.0"],"current_version":"3.1.0"},{"name":"gh","installed_versions":["2.0.0"],"current_version":"2.1.0","pinned":true}],"casks":[{"name":"slack","installed_versions":["4.1.0"],"current_version":"4.2.0"}]}\n' > "$stubState/brew-outdated.json"
+printf '{"typescript":{"current":"1.0.0","latest":"1.2.0"},"npm":{"current":"11.0.0","latest":"11.1.0"}}\n' > "$stubState/npm-outdated.json"
+printf '1.2.0\n' > "$stubState/npm-latest-version"
+printf '[{"name":"ruff","version":"0.2.0","latest_version":"0.2.1"}]\n' > "$stubState/pip-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null
+upgradeHeldPath="$upgradeHome/.local/state/dotfiles/upgrades-held-packages"
+upgradeFailedPath="$upgradeHome/.local/state/dotfiles/upgrades-failed-packages-pending"
+check "same-major formula applies" logHas 'brew upgrade git'
+check "same-major cask applies" logHas 'brew upgrade --cask slack'
+check "the Node presence path applies same-major updates" logHas 'brew upgrade node'
+check "the Python alias resolves the outdated formula" logHas 'brew upgrade python3'
+check "brew outdated is memoized per topic" test "$(countLogLines '^brew outdated --json=v2$')" -eq 1
+check "brew refreshes its index once before the outdated query" \
+  test "$(grep -m1 -E '^brew (update|outdated)' "$commandLog")" = 'brew update' -a "$(countLogLines '^brew update$')" -eq 1
+check "every brew upgrade skips auto-update and dependent upgrades" \
+  test "$(countLogLines '^brew-upgrade-environment HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1$')" -eq "$(countLogLines '^brew upgrade ')"
+check "pinned formula is never upgraded" logLacks 'brew upgrade gh'
+check "pinned formula is never recorded" bash -c '! grep -qs "formula gh " "$1" "$2"' _ "$upgradeHeldPath" "$upgradeFailedPath"
+check "npm latest is queried once" test "$(countLogLines '^npm outdated -g --json$')" -eq 1
+check "unapproved same-major npm is never installed" logLacks 'npm install -g typescript'
+check "unapproved same-major npm is recorded held" grep -qx 'npm typescript 1.0.0 1.2.0' "$upgradeHeldPath"
+check "unowned brew packages remain untouched" logLacks 'brew upgrade vale'
+check "unowned npm globals remain untouched" logLacks 'npm install -g npm@'
+check "a 0.x patch pip update applies inside the venv" logHas 'pip install --quiet --no-input --upgrade ruff==0.2.1'
+check "pip outdated is memoized" test "$(countLogLines 'pip list --outdated --format=json$')" -eq 1
+printf '[{"name":"ruff","version":"0.1.0","latest_version":"0.2.0"}]\n' > "$stubState/pip-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null
+check "a 0.x minor pip update is held" logLacks '--upgrade ruff'
+check "a 0.x minor pip update is recorded" grep -qx 'pip ruff 0.1.0 0.2.0' "$upgradeHeldPath"
+printf '{"formulae":[{"name":"git","installed_versions":["2.1.0"],"current_version":"3.0.0"}],"casks":[{"name":"slack","installed_versions":["4.1.0"],"current_version":"5.0.0"}]}\n' > "$stubState/brew-outdated.json"
+printf '{"typescript":{"current":"1.2.0","latest":"2.0.0"}}\n' > "$stubState/npm-outdated.json"
+printf '[{"name":"ruff","version":"0.2.0","latest_version":"1.0.0"}]\n' > "$stubState/pip-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null
+check "major formula is held" logLacks 'brew upgrade git'
+check "major cask is held" logLacks 'brew upgrade --cask slack'
+check "major cask is recorded" grep -qx 'cask slack 4.1.0 5.0.0' "$upgradeHeldPath"
+check "major formula is recorded" grep -qx 'formula git 2.1.0 3.0.0' "$upgradeHeldPath"
+check "major npm is never installed" logLacks 'npm install -g typescript'
+check "major npm is recorded" grep -qx 'npm typescript 1.0.0 2.0.0' "$upgradeHeldPath"
+check "major pip is held" logLacks '--upgrade ruff'
+check "major pip is recorded" grep -qx 'pip ruff 0.2.0 1.0.0' "$upgradeHeldPath"
+: > "$commandLog"
+DOTFILES_UPGRADE=all runUpgradeInstall > /dev/null
+check "approval applies major formula" logHas 'brew upgrade git'
+check "approval applies major cask" logHas 'brew upgrade --cask slack'
+check "approval applies major npm through latest" logHas 'npm install -g typescript@latest'
+check "approval applies major pip" logHas '--upgrade ruff==1.0.0'
+check "approval clears the held record" test ! -e "$upgradeHeldPath"
+printf '{"formulae":[{"name":"git","installed_versions":["2.1.0"],"current_version":"2.2.0"}],"casks":[]}\n' > "$stubState/brew-outdated.json"
+printf '{}\n' > "$stubState/npm-outdated.json"
+printf '[]\n' > "$stubState/pip-outdated.json"
+touch "$stubState/brew-upgrade-fails"
+failedUpgradeStatus=0
+failedUpgradeOutput="$(DOTFILES_UPGRADE=1 runUpgradeInstall)" || failedUpgradeStatus=$?
+check "failed upgrade warns and fails the topic" test "$failedUpgradeStatus" -eq 1
+check "failed upgrade names the package" outputMatches "$failedUpgradeOutput" '\[warn\].*git.*upgrade failed'
+check "failed upgrade leaves a pending record" grep -qx 'formula git 2.1.0 2.2.0' "$upgradeFailedPath"
+: > "$commandLog"
+runUpgradeInstall > /dev/null
+check "plain converge preserves failed upgrades" test -s "$upgradeFailedPath"
+check "plain converge still queries no outdated packages" logLacks outdated
+rm -f "$stubState/brew-upgrade-fails"
+printf '{"formulae":[],"casks":[]}\n' > "$stubState/brew-outdated.json"
+
+printf '{"typescript":{"current":"1.2.0","latest":"1.3.0"}}\n' > "$stubState/npm-outdated.json"
+touch "$stubState/npm-upgrade-fails"
+failedNpmStatus=0
+failedNpmOutput="$(DOTFILES_UPGRADE=all runUpgradeInstall)" || failedNpmStatus=$?
+check "failed npm update fails the topic" test "$failedNpmStatus" -eq 1
+check "failed npm update warns once" test "$(grep -cE '\[warn\].*typescript' <<< "$failedNpmOutput")" -eq 1
+check "failed npm update is pending" grep -qx 'npm typescript 1.2.0 1.3.0' "$upgradeFailedPath"
+rm -f "$stubState/npm-upgrade-fails"
+printf '{}\n' > "$stubState/npm-outdated.json"
+printf '[{"name":"ruff","version":"0.2.0","latest_version":"0.2.1"}]\n' > "$stubState/pip-outdated.json"
+touch "$stubState/pip-upgrade-fails"
+failedPipStatus=0
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null || failedPipStatus=$?
+check "failed pip update fails the topic" test "$failedPipStatus" -eq 1
+check "failed pip update is pending" grep -qx 'pip ruff 0.2.0 0.2.1' "$upgradeFailedPath"
+rm -f "$stubState/pip-upgrade-fails"
+: > "$commandLog"
+runInStubbedSandbox "$upgradeHome" DOTFILES_PLATFORM=linux DOTFILES_UPGRADE=1 DOTFILES_UPGRADE_TOPIC=packages \
+  NO_COLOR=1 bash -c 'source "$1/script/lib/packages.sh"; upgradePythonPackage python3 ruff; finishPackageUpgrades' _ "$repoRoot" > /dev/null
+check "Linux pip upgrades only the user site" logHas 'pip list --outdated --format=json --user'
+check "Linux pip applies through the user install path" logHas 'pip install --quiet --no-input --upgrade --user --break-system-packages ruff==0.2.1'
+printf '[]\n' > "$stubState/pip-outdated.json"
+printf '{"formulae":[{"name":"git","installed_versions":["2.1.0"],"current_version":"2.2.0"}],"casks":[]}\n' > "$stubState/brew-outdated.json"
+touch "$stubState/brew-update-fails"
+failedBrewRefreshStatus=0
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null || failedBrewRefreshStatus=$?
+check "failed brew index refresh fails the topic" test "$failedBrewRefreshStatus" -eq 1
+check "failed brew index refresh skips the outdated query" logLacks 'brew outdated'
+check "failed brew index refresh upgrades nothing" logLacks 'brew upgrade'
+check "failed brew index refresh records owned brew packages" grep -qx 'formula git unknown unknown' "$upgradeFailedPath"
+rm -f "$stubState/brew-update-fails"
+printf '{"formulae":[],"casks":[{"name":"slack","installed_versions":["release-a"],"current_version":"release-b"}]}\n' > "$stubState/brew-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null
+check "versions without leading numbers apply" logHas 'brew upgrade --cask slack'
+printf '{"formulae":[],"casks":[]}\n' > "$stubState/brew-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null
+check "a clean rerun issues no brew upgrade" logLacks 'brew upgrade'
+check "a clean rerun issues no npm install" logLacks 'npm install -g'
+check "a clean rerun issues no pip upgrade" logLacks '--upgrade'
+check "a clean upgrade clears failed records" test ! -e "$upgradeFailedPath"
+check "a clean upgrade clears held records" test ! -e "$upgradeHeldPath"
+check "packages preserve another topic's held record" test -s "$upgradeHome/.local/state/dotfiles/upgrades-held-ai"
+check "packages preserve another topic's failure record" test -s "$upgradeHome/.local/state/dotfiles/upgrades-failed-ai-pending"
+rm -rf "$stubBin" "$stubState"
+mv "$sandbox/stubs-before-upgrades" "$stubBin"
+mv "$sandbox/state-before-upgrades" "$stubState"
+
 firstRunOutput="$(runInstall)" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
@@ -482,40 +701,6 @@ check "the work profile skips casks without warning on linux" \
   outputMatches "$workRunOutput" '\[ -- \].*casks.*skipped, requires macOS'
 check "the work profile still installs its python tools" outputHas "$workRunOutput" "ruff"
 
-writeStub brew <<'STUB'
-#!/usr/bin/env bash
-printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-if [[ "${1:-} ${2:-}" == "list --cask" ]]; then
-  [[ -f "$DOTFILES_TEST_STATE/cask-installed/${3:-}" ]]
-  exit $?
-fi
-if [[ "${1:-} ${2:-}" == "install --cask" ]]; then
-  touch "$DOTFILES_TEST_STATE/cask-installed/${3:-}"
-fi
-for packageName in "$@"; do
-  case "$packageName" in
-    git | gh)
-      cp "$DOTFILES_TEST_STATE/available/$packageName" "$DOTFILES_TEST_STUB_BIN/$packageName"
-      ;;
-    ripgrep)
-      cp "$DOTFILES_TEST_STATE/available/rg" "$DOTFILES_TEST_STUB_BIN/rg"
-      ;;
-    bash-completion@2)
-      mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/etc/profile.d"
-      cp "$DOTFILES_TEST_STATE/available/bash_completion" \
-        "$DOTFILES_TEST_HOMEBREW_PREFIX/etc/profile.d/bash_completion.sh"
-      ;;
-    python3)
-      mkdir -p "$DOTFILES_TEST_HOMEBREW_PREFIX/bin"
-      cp "$DOTFILES_TEST_STATE/available/python3" "$DOTFILES_TEST_HOMEBREW_PREFIX/bin/python3"
-      ;;
-    node)
-      cp "$DOTFILES_TEST_STATE/available/node" "$DOTFILES_TEST_STUB_BIN/node"
-      cp "$DOTFILES_TEST_STATE/available/npm" "$DOTFILES_TEST_STUB_BIN/npm"
-      ;;
-  esac
-done
-STUB
 writeStub dscl <<STUB
 #!/usr/bin/env bash
 printf 'dscl %s\n' "\$*" >> "\$DOTFILES_TEST_LOG"

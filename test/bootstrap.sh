@@ -62,6 +62,20 @@ runFakeBootstrap() {
     bash "$fakeRepo/script/bootstrap"
 }
 
+upgradeStateDirectory="$fakeHome/.local/state/dotfiles"
+mkdir -p "$upgradeStateDirectory"
+printf 'formula git 2.1.0 3.0.0\n' > "$upgradeStateDirectory/upgrades-held-retired"
+printf 'formula git 2.1.0 2.2.0\n' > "$upgradeStateDirectory/upgrades-failed-retired-pending"
+printf 'plugin test 1.0.0 2.0.0\n' > "$upgradeStateDirectory/upgrades-held-platform-probe"
+runFakeBootstrap any-platform > /dev/null
+check "plain bootstrap keeps removed topic holds" test -s "$upgradeStateDirectory/upgrades-held-retired"
+check "plain bootstrap keeps removed topic failures" test -s "$upgradeStateDirectory/upgrades-failed-retired-pending"
+DOTFILES_UPGRADE=1 runFakeBootstrap any-platform > /dev/null
+check "upgrade bootstrap clears removed topic holds" test ! -e "$upgradeStateDirectory/upgrades-held-retired"
+check "upgrade bootstrap clears removed topic failures" test ! -e "$upgradeStateDirectory/upgrades-failed-retired-pending"
+check "upgrade bootstrap preserves current topic holds" test -s "$upgradeStateDirectory/upgrades-held-platform-probe"
+rm -f "$upgradeStateDirectory/upgrades-held-platform-probe" "$fakeHome/platform-topic-runs" "$markerPath"
+
 printf '\nbootstrap\n'
 
 workOnLinuxStatus=0

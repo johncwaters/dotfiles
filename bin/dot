@@ -167,6 +167,19 @@ convergedRecord() {
   printf '%s\n' "$record"
 }
 
+reportHeldUpgrades() {
+  local heldPath
+  local heldLine
+  dotfilesStateDirectory >/dev/null 2>&1 || return 0
+  for heldPath in "$dotfilesStateDirectoryPath"/upgrades-held-*; do
+    [[ -s "$heldPath" && -f "$heldPath" && ! -L "$heldPath" ]] || continue
+    while IFS= read -r heldLine; do
+      [[ -n "$heldLine" ]] || continue
+      reportStatusLine held "$heldLine"
+    done < "$heldPath"
+  done
+}
+
 reportStatus() {
   local mainline
   local branch
@@ -214,6 +227,7 @@ reportStatus() {
   reportStatusLine "origin" "$originState"
 
   reportStatusLine "converged" "$record"
+  reportHeldUpgrades
   if [[ "$recordedCommit" != "$(repoGit rev-parse HEAD 2>/dev/null)" ]]; then
     noteDrift "last converge was not this commit"
   fi

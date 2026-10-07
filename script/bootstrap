@@ -286,6 +286,32 @@ ensureDotfilesAlias
 ensureProfileMarker
 noteDetail "topics" "${profileTopics[*]}"
 
+clearRemovedTopicUpgradeRecords() {
+  [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
+  dotfilesStateDirectory || return 0
+  local topicName
+  local recordPath
+  local recordName
+  local recordedTopic
+  declare -A activeTopics
+  for topicName in "${profileTopics[@]}"; do
+    activeTopics["$topicName"]=1
+  done
+  for recordPath in "$dotfilesStateDirectoryPath"/upgrades-held-* "$dotfilesStateDirectoryPath"/upgrades-failed-*-pending; do
+    [[ -e "$recordPath" || -L "$recordPath" ]] || continue
+    recordName="${recordPath##*/}"
+    recordedTopic="${recordName#upgrades-held-}"
+    if [[ "$recordName" == upgrades-failed-*-pending ]]; then
+      recordedTopic="${recordName#upgrades-failed-}"
+      recordedTopic="${recordedTopic%-pending}"
+    fi
+    [[ -z "${activeTopics[$recordedTopic]:-}" ]] || continue
+    clearDotfilesState "$recordName"
+  done
+}
+
+clearRemovedTopicUpgradeRecords
+
 runTopic() {
   local topicName="$1"
   if ! nameIsSafe "$topicName"; then
@@ -298,7 +324,7 @@ runTopic() {
   fi
   local warnedTallyBeforeTopic=$warnedTally
   local topicStatus=0
-  "$BASH" "$dotfilesRepo/$topicName/install.sh" || topicStatus=$?
+  DOTFILES_UPGRADE_TOPIC="$topicName" "$BASH" "$dotfilesRepo/$topicName/install.sh" || topicStatus=$?
   drainCountsIntoTally
   if ((topicStatus == 0)); then
     return 0

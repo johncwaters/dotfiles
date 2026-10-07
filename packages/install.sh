@@ -119,6 +119,9 @@ installNodeJs() {
   refreshSessionPath
   if nodeIsCurrentEnough; then
     notePresent "Node.js" "already installed"
+    if [[ -n "${DOTFILES_UPGRADE:-}" ]] && manager="$(detectPackageManager)" && [[ "$manager" == brew ]]; then
+      upgradeBrewPackage formula node
+    fi
     return 0
   fi
   if ! manager="$(detectPackageManager)"; then
@@ -240,6 +243,7 @@ installProfileCasks() {
     fi
     if caskIsInstalledOrItsAppBundleIsAlreadyInPlace "$brewCommand" "$caskToken" "$bundleName"; then
       notePresent "$caskToken" "already installed"
+      upgradeBrewPackage cask "$caskToken"
       continue
     fi
     noteStarting "$caskToken" "installing via Homebrew"
@@ -278,6 +282,7 @@ npmPackageIsInstalled() {
 installNpmGlobalEntry() {
   local packageEntry="$1"
   local installedVersion="${2:-}"
+  local upgradeSource="${3:-}"
   local packageName
   local packageSource
   local installLog
@@ -286,7 +291,7 @@ installNpmGlobalEntry() {
   packageSource="$(npmPackageSource "$packageEntry")"
   local installDescription="npm install -g $packageSource"
   if [[ -n "$installedVersion" ]]; then
-    packageSource="$packageName@latest"
+    packageSource="${upgradeSource:-$packageName@latest}"
     installDescription="upgrading from $installedVersion; npm install -g $packageSource"
   fi
   noteStarting "$packageName" "$installDescription"
@@ -305,6 +310,63 @@ installNpmGlobalEntry() {
   failureReason="$(npmFailureReason "$installLog")"
   rm -f -- "$installLog"
   noteWarned "$packageName" "npm install failed: $failureReason"
+  return 1
+}
+
+declare -A latestNpmVersions=()
+hasQueriedNpmUpgrades=0
+hasNpmUpgradeQueryFailed=0
+
+queryNpmUpgrades() {
+  ((hasQueriedNpmUpgrades == 0)) || return 0
+  hasQueriedNpmUpgrades=1
+  local outdatedPackages
+  local queryStatus=0
+  local parsedPackages
+  local packageName
+  local availableVersion
+  outdatedPackages="$(npm outdated -g --json 2>/dev/null)" || queryStatus=$?
+  if ((queryStatus > 1)); then
+    hasNpmUpgradeQueryFailed=1
+    return 0
+  fi
+  if ! parsedPackages="$(node -e '
+    const outdatedPackages = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+    if (outdatedPackages.error) process.exit(1);
+    for (const [packageName, entry] of Object.entries(outdatedPackages)) {
+      console.log([packageName, entry.latest].join("\t"));
+    }
+  ' <<< "$outdatedPackages")"; then
+    hasNpmUpgradeQueryFailed=1
+    return 0
+  fi
+  while IFS=$'\t' read -r packageName availableVersion; do
+    [[ -n "$packageName" ]] || continue
+    latestNpmVersions["$packageName"]="$availableVersion"
+  done <<< "$parsedPackages"
+}
+
+upgradeNpmGlobal() {
+  [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
+  local packageName="$1"
+  local installedVersion="$2"
+  local availableVersion
+  queryNpmUpgrades
+  if ((hasNpmUpgradeQueryFailed == 1)); then
+    recordFailedUpgrade npm "$packageName" "$installedVersion" unknown
+    return 0
+  fi
+  availableVersion="${latestNpmVersions[$packageName]:-}"
+  [[ -n "$availableVersion" ]] || return 0
+  versionIsNewer "$installedVersion" "$availableVersion" || return 0
+  if ! areAllUpgradesApproved; then
+    recordHeldUpgrade npm "$packageName" "$installedVersion" "$availableVersion"
+    return 0
+  fi
+  if installNpmGlobalEntry "$packageName" "$installedVersion" "$packageName@latest"; then
+    return 0
+  fi
+  recordFailedUpgradeAlreadyWarned npm "$packageName" "$installedVersion" "$availableVersion"
 }
 
 ensureNpmGlobals() {
@@ -328,13 +390,11 @@ ensureNpmGlobals() {
       continue
     fi
     minimumVersion="$(npmPackageMinimumVersion "$packageEntry")"
-    if [[ -z "$minimumVersion" ]]; then
+    if [[ -n "$minimumVersion" ]] && ! isVersionAtLeast "${installedNpmPackages[$packageName]}" "$minimumVersion"; then
+      pendingEntries+=("$packageEntry")
       continue
     fi
-    if isVersionAtLeast "${installedNpmPackages[$packageName]}" "$minimumVersion"; then
-      continue
-    fi
-    pendingEntries+=("$packageEntry")
+    upgradeNpmGlobal "$packageName" "${installedNpmPackages[$packageName]}"
   done
   if ((${#pendingEntries[@]} == 0)); then
     notePresent "$summaryLabel" "all ${#wantedEntries[@]} present"
@@ -346,7 +406,12 @@ ensureNpmGlobals() {
     if npmPackageIsInstalled "$packageName"; then
       installedVersion="${installedNpmPackages[$packageName]:-unknown}"
     fi
-    installNpmGlobalEntry "$packageEntry" "$installedVersion"
+    if installNpmGlobalEntry "$packageEntry" "$installedVersion"; then
+      continue
+    fi
+    if [[ -n "${DOTFILES_UPGRADE:-}" && -n "$installedVersion" ]]; then
+      recordFailedUpgradeAlreadyWarned npm "$packageName" "$installedVersion" latest
+    fi
   done
 }
 
@@ -417,6 +482,7 @@ ensurePythonPackage() {
   local packageName="$3"
   if "$pythonCommand" -c "import $moduleName" >/dev/null 2>&1; then
     notePresent "$packageName" "already installed"
+    upgradePythonPackage "$pythonCommand" "$packageName"
     return 0
   fi
   noteStarting "$packageName" "pip install"

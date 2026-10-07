@@ -12,6 +12,7 @@ installLinearMouseCask() {
   local brewCommand
   if [[ -d "$(applicationsDirectory)/LinearMouse.app" ]]; then
     notePresent "LinearMouse" "already installed"
+    upgradeBrewPackage cask linearmouse
     return 0
   fi
   brewCommand="$(brewCommandPath || true)"
@@ -21,6 +22,7 @@ installLinearMouseCask() {
   fi
   if "$brewCommand" list --cask linearmouse >/dev/null 2>&1; then
     notePresent "LinearMouse" "already installed"
+    upgradeBrewPackage cask linearmouse
     return 0
   fi
   noteStarting "LinearMouse" "installing via Homebrew"

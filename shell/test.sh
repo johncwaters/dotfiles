@@ -23,6 +23,38 @@ interactiveShell() {
   interactiveShellIn "$sandbox" "$1"
 }
 
+
+upgradeNoticeHome="$sandbox/upgrade-notice-home"
+upgradeNoticeState="$upgradeNoticeHome/.local/state/dotfiles"
+mkdir -p "$upgradeNoticeState"
+printf 'formula git 2.1.0 3.0.0\n' > "$upgradeNoticeState/upgrades-held-packages"
+printf 'plugin example 1.0.0 2.0.0\n' > "$upgradeNoticeState/upgrades-held-ai"
+noticeStdout="$sandbox/notice.stdout"
+noticeStderr="$sandbox/notice.stderr"
+runUpgradeNotice() {
+  env HOME="$upgradeNoticeHome" XDG_STATE_HOME="$upgradeNoticeHome/.local/state" \
+    bash -c 'source "$1"; printf "unchanged\n"' _ "$repoRoot/packages/updates.bash" > "$noticeStdout" 2> "$noticeStderr"
+}
+runUpgradeNotice
+check "held upgrades print one stderr line across topics" test "$(wc -l < "$noticeStderr")" -eq 1
+check "upgrade notice names the approval command" grep -qF 'DOTFILES_UPGRADE=all dot' "$noticeStderr"
+check "upgrade notice leaves stdout unaffected" grep -qx unchanged "$noticeStdout"
+ln -s "$repoRoot" "$upgradeNoticeHome/.dotfiles"
+mkdir -p "$upgradeNoticeHome/.config/dotfiles"
+printf 'packages\n' > "$upgradeNoticeHome/.config/dotfiles/topics"
+env -i HOME="$upgradeNoticeHome" PATH="/usr/bin:/bin" TERM=dumb \
+  "$BASH" --noprofile --rcfile "$repoRoot/shell/bashrc" -i -c 'printf "unchanged\n"' > "$noticeStdout" 2> "$noticeStderr"
+check "interactive topic loading prints one upgrade notice" test "$(grep -c '^dotfiles: upgrades' "$noticeStderr")" -eq 1
+check "interactive upgrade notice leaves stdout unaffected" grep -qx unchanged "$noticeStdout"
+rm -f "$upgradeNoticeState"/upgrades-held-*
+printf 'formula git 2.1.0 2.2.0\n' > "$upgradeNoticeState/upgrades-failed-packages-pending"
+runUpgradeNotice
+check "failed upgrades print a stderr notice" test -s "$noticeStderr"
+rm -f "$upgradeNoticeState/upgrades-failed-packages-pending"
+runUpgradeNotice
+check "a clean shell has no upgrade notice" test ! -s "$noticeStderr"
+check "a clean shell stdout is unaffected" grep -qx unchanged "$noticeStdout"
+
 printf '\nshell topic\n'
 
 installStatus=0

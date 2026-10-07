@@ -295,6 +295,13 @@ check "a moved tag makes the topic exit non-zero" test "$unpinnedStatus" -eq 1
 writeStub brew <<'STUB'
 #!/usr/bin/env bash
 printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == outdated ]]; then
+  cat "$DOTFILES_TEST_STATE/brew-outdated.json" 2>/dev/null || printf '{"formulae":[],"casks":[]}\n'
+  exit 0
+fi
+if [[ "${1:-}" == upgrade ]]; then
+  exit 0
+fi
 if [[ "${1:-} ${2:-}" == "list --cask" ]]; then
   [[ -f "$DOTFILES_TEST_STATE/linearmouse-cask-installed" ]]
   exit $?
@@ -386,5 +393,26 @@ check "darwin does not install over an existing app bundle" \
   logLacks 'brew install --cask linearmouse'
 check "darwin reports an existing app bundle" \
   outputHas "$darwinBundleOutput" 'LinearMouse'
+
+
+ln -s "$(type -P node)" "$coreBin/node"
+printf '{"formulae":[],"casks":[{"name":"linearmouse","installed_versions":["0.9.0"],"current_version":"0.9.1"}]}\n' > "$stubState/brew-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
+check "LinearMouse applies a 0.x patch update with an existing bundle" logHas 'brew upgrade --cask linearmouse'
+printf '{"formulae":[],"casks":[{"name":"linearmouse","installed_versions":["0.9.0"],"current_version":"0.10.0"}]}\n' > "$stubState/brew-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
+check "LinearMouse holds a 0.x minor update" logLacks 'brew upgrade --cask linearmouse'
+printf '{"formulae":[],"casks":[{"name":"linearmouse","installed_versions":["0.9.0"],"current_version":"1.0.0"}]}\n' > "$stubState/brew-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
+check "LinearMouse holds a major update" logLacks 'brew upgrade --cask linearmouse'
+check "LinearMouse writes its own topic record" \
+  grep -qx 'cask linearmouse 0.9.0 1.0.0' "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
+: > "$commandLog"
+DOTFILES_UPGRADE=all runDarwinInstall > /dev/null
+check "LinearMouse applies an approved major update" logHas 'brew upgrade --cask linearmouse'
+check "LinearMouse clears its topic holds after approval" test ! -e "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
 
 reportTopicResults "peripherals"

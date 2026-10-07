@@ -16,6 +16,230 @@ fi
 : "${passwordlessSudoProbe:=unknown}"
 : "${lastPackageInstallFailure:=}"
 
+heldUpgrades=()
+failedUpgrades=()
+if [[ -n "${DOTFILES_UPGRADE:-}" ]]; then
+  declare -A outdatedBrewVersions=()
+  declare -A outdatedPythonVersions=()
+fi
+hasQueriedBrewUpgrades=0
+hasQueriedPythonUpgrades=0
+hasBrewUpgradeQueryFailed=0
+hasPythonUpgradeQueryFailed=0
+
+recordHeldUpgrade() {
+  heldUpgrades+=("$1 $2 $3 $4")
+}
+
+recordFailedUpgradeAlreadyWarned() {
+  failedUpgrades+=("$1 $2 $3 $4")
+}
+
+recordFailedUpgrade() {
+  recordFailedUpgradeAlreadyWarned "$@"
+  noteWarned "$2" "$1 upgrade failed ($3 -> $4)"
+}
+
+finishPackageUpgrades() {
+  [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
+  local topicDirectory="${0%/*}"
+  local upgradeTopic="${DOTFILES_UPGRADE_TOPIC:-${topicDirectory##*/}}"
+  local recordName
+  local recordLines
+  for recordName in held failed; do
+    recordLines=""
+    case "$recordName" in
+      held)
+        if ((${#heldUpgrades[@]} > 0)); then
+          printf -v recordLines '%s\n' "${heldUpgrades[@]}"
+        fi
+        recordName="upgrades-held-$upgradeTopic"
+        ;;
+      failed)
+        if ((${#failedUpgrades[@]} > 0)); then
+          printf -v recordLines '%s\n' "${failedUpgrades[@]}"
+        fi
+        recordName="upgrades-failed-$upgradeTopic-pending"
+        ;;
+    esac
+    if [[ -n "$recordLines" ]]; then
+      writeDotfilesState "$recordName" "${recordLines%$'\n'}"
+      continue
+    fi
+    clearDotfilesState "$recordName"
+  done
+}
+
+versionHasNewMajor() {
+  [[ "$1" =~ ^([0-9]+)(\.([0-9]+))? ]] || return 1
+  local installedMajor="${BASH_REMATCH[1]}"
+  local installedMinor="${BASH_REMATCH[3]:-0}"
+  [[ "$2" =~ ^([0-9]+)(\.([0-9]+))? ]] || return 1
+  local availableMajor="${BASH_REMATCH[1]}"
+  local availableMinor="${BASH_REMATCH[3]:-0}"
+  ((10#$installedMajor == 10#$availableMajor)) || return 0
+  ((10#$installedMajor == 0 && 10#$installedMinor != 10#$availableMinor))
+}
+
+versionIsNewer() {
+  [[ "$1" != "$2" ]] || return 1
+  local installedNumericVersion
+  local availableNumericVersion
+  [[ "$1" =~ ^([0-9]+(\.[0-9]+)*) ]] || return 0
+  installedNumericVersion="${BASH_REMATCH[1]}"
+  [[ "$2" =~ ^([0-9]+(\.[0-9]+)*) ]] || return 0
+  availableNumericVersion="${BASH_REMATCH[1]}"
+  if [[ "$installedNumericVersion" == "$availableNumericVersion" ]]; then
+    [[ "$1" == *-* && "$2" != *-* ]]
+    return $?
+  fi
+  ! isVersionAtLeast "$installedNumericVersion" "$availableNumericVersion"
+}
+
+areAllUpgradesApproved() {
+  [[ "${DOTFILES_UPGRADE:-}" == all ]]
+}
+
+shouldHoldUpgrade() {
+  ! areAllUpgradesApproved || return 1
+  versionHasNewMajor "$1" "$2"
+}
+
+queryBrewUpgrades() {
+  ((hasQueriedBrewUpgrades == 0)) || return 0
+  hasQueriedBrewUpgrades=1
+  local brewCommand
+  local outdatedPackages
+  local parsedPackages
+  local packageKind
+  local packageName
+  local installedVersion
+  local availableVersion
+  brewCommand="$(brewCommandPath)" || { hasBrewUpgradeQueryFailed=1; return 0; }
+  if ! "$brewCommand" update >/dev/null 2>&1; then
+    hasBrewUpgradeQueryFailed=1
+    return 0
+  fi
+  if ! outdatedPackages="$("$brewCommand" outdated --json=v2 2>/dev/null)"; then
+    hasBrewUpgradeQueryFailed=1
+    return 0
+  fi
+  if ! parsedPackages="$(node -e '
+    const outdatedPackages = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+    for (const [collectionName, packageKind] of [["formulae", "formula"], ["casks", "cask"]]) {
+      for (const entry of outdatedPackages[collectionName]) {
+        if (entry.pinned === true) continue;
+        console.log([packageKind, entry.name, entry.installed_versions.at(-1), entry.current_version].join("\t"));
+      }
+    }
+  ' <<< "$outdatedPackages")"; then
+    hasBrewUpgradeQueryFailed=1
+    return 0
+  fi
+  while IFS=$'\t' read -r packageKind packageName installedVersion availableVersion; do
+    [[ -n "$packageName" ]] || continue
+    outdatedBrewVersions["$packageKind:$packageName"]="$installedVersion $availableVersion"
+  done <<< "$parsedPackages"
+}
+
+upgradeBrewPackage() {
+  [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
+  local packageKind="$1"
+  local packageName="$2"
+  local lookupName="$packageName"
+  local installedVersion
+  local availableVersion
+  local brewCommand
+  local upgradeArguments=(upgrade)
+  queryBrewUpgrades
+  if ((hasBrewUpgradeQueryFailed == 1)); then
+    recordFailedUpgrade "$packageKind" "$packageName" unknown unknown
+    return 0
+  fi
+  local hasOutdatedPythonFormula=0
+  local outdatedKey
+  if [[ "$packageName" == python3 ]]; then
+    for outdatedKey in "${!outdatedBrewVersions[@]}"; do
+      [[ "$outdatedKey" == formula:python@* ]] || continue
+      hasOutdatedPythonFormula=1
+    done
+  fi
+  if [[ "$packageName" == python3 && -z "${outdatedBrewVersions[formula:python3]:-}" ]] && ((hasOutdatedPythonFormula == 1)); then
+    brewCommand="$(brewCommandPath)"
+    lookupName="$("$brewCommand" info --json=v2 python3 2>/dev/null | node -e '
+      const formulae = JSON.parse(require("node:fs").readFileSync(0, "utf8")).formulae;
+      console.log(formulae[0].name);
+    ')" || { recordFailedUpgrade formula python3 unknown unknown; return 0; }
+  fi
+  [[ -n "${outdatedBrewVersions[$packageKind:$lookupName]:-}" ]] || return 0
+  read -r installedVersion availableVersion <<< "${outdatedBrewVersions[$packageKind:$lookupName]}"
+  if shouldHoldUpgrade "$installedVersion" "$availableVersion"; then
+    recordHeldUpgrade "$packageKind" "$packageName" "$installedVersion" "$availableVersion"
+    return 0
+  fi
+  [[ "$packageKind" != cask ]] || upgradeArguments+=(--cask)
+  brewCommand="$(brewCommandPath)"
+  if HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 "$brewCommand" "${upgradeArguments[@]}" "$packageName" >/dev/null 2>&1; then
+    noteInstalled "$packageName" "upgraded from $installedVersion to $availableVersion"
+    return 0
+  fi
+  recordFailedUpgrade "$packageKind" "$packageName" "$installedVersion" "$availableVersion"
+}
+
+upgradePythonPackage() {
+  [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
+  local pythonCommand="$1"
+  local packageName="$2"
+  local outdatedPackages
+  local parsedPackages
+  local outdatedName
+  local installedVersion
+  local availableVersion
+  local queryArguments=(list --outdated --format=json)
+  local upgradeArguments=(install --quiet --no-input --upgrade)
+  if ! isDarwin; then
+    queryArguments+=(--user)
+    upgradeArguments+=(--user --break-system-packages)
+  fi
+  if ((hasQueriedPythonUpgrades == 0)); then
+    hasQueriedPythonUpgrades=1
+    if ! outdatedPackages="$("$pythonCommand" -m pip "${queryArguments[@]}" 2>/dev/null)"; then
+      hasPythonUpgradeQueryFailed=1
+    fi
+    if ((hasPythonUpgradeQueryFailed == 0)); then
+      if ! parsedPackages="$(node -e '
+        for (const entry of JSON.parse(require("node:fs").readFileSync(0, "utf8"))) {
+          console.log([entry.name.toLowerCase().replace(/[-_.]+/g, "-"), entry.version, entry.latest_version].join("\t"));
+        }
+      ' <<< "$outdatedPackages")"; then
+        hasPythonUpgradeQueryFailed=1
+      fi
+      while IFS=$'\t' read -r outdatedName installedVersion availableVersion; do
+        [[ -n "$outdatedName" ]] || continue
+        outdatedPythonVersions["$outdatedName"]="$installedVersion $availableVersion"
+      done <<< "${parsedPackages:-}"
+    fi
+  fi
+  if ((hasPythonUpgradeQueryFailed == 1)); then
+    recordFailedUpgrade pip "$packageName" unknown unknown
+    return 0
+  fi
+  local normalizedName="${packageName,,}"
+  normalizedName="${normalizedName//_/-}"
+  normalizedName="${normalizedName//./-}"
+  [[ -n "${outdatedPythonVersions[$normalizedName]:-}" ]] || return 0
+  read -r installedVersion availableVersion <<< "${outdatedPythonVersions[$normalizedName]}"
+  if shouldHoldUpgrade "$installedVersion" "$availableVersion"; then
+    recordHeldUpgrade pip "$packageName" "$installedVersion" "$availableVersion"
+    return 0
+  fi
+  if "$pythonCommand" -m pip "${upgradeArguments[@]}" "$packageName==$availableVersion" </dev/null >/dev/null 2>&1; then
+    noteInstalled "$packageName" "upgraded from $installedVersion to $availableVersion"
+    return 0
+  fi
+  recordFailedUpgrade pip "$packageName" "$installedVersion" "$availableVersion"
+}
+
 userNpmPrefixDirectory() {
   printf '%s\n' "$HOME/.npm-global"
 }
@@ -575,6 +799,17 @@ installPackageTool() {
   refreshSessionPath
   if toolIsPresent "$toolKey" "$commandName"; then
     notePresent "$label" "already installed"
+    if [[ -n "${DOTFILES_UPGRADE:-}" ]] && manager="$(detectPackageManager)" && [[ "$manager" == brew ]]; then
+      mapfile -t packageNameArgs < <(packageNamesForTool "$manager" "$toolKey" || true)
+      if [[ "${packageNameArgs[0]:-}" == --cask ]]; then
+        upgradeBrewPackage cask "${packageNameArgs[1]}"
+        return 0
+      fi
+      local packageName
+      for packageName in "${packageNameArgs[@]}"; do
+        upgradeBrewPackage formula "$packageName"
+      done
+    fi
     return 0
   fi
   if ! manager="$(detectPackageManager)"; then

@@ -248,6 +248,21 @@ check "status reports no drift after a converge" outputHas "$dotStatusOutput" 'd
 check "status exits clean when nothing drifted" test "$dotStatusDrift" -eq 0
 check "status shows the converge record" outputMatches "$dotStatusOutput" "converged    $publishedHead personal [0-9T:-]+Z clean"
 
+printf 'formula git 2.1.0 3.0.0\n' > "$dotHome/.local/state/dotfiles/upgrades-held-packages"
+printf 'plugin caveman@caveman 2.0.0 3.0.0\n' > "$dotHome/.local/state/dotfiles/upgrades-held-ai"
+dotStatusDrift=0
+dotStatusOutput="$(runDot "$dotHome" status 2>&1)" || dotStatusDrift=$?
+check "status reports a package major hold" outputHas "$dotStatusOutput" 'held         formula git 2.1.0 3.0.0'
+check "status reports another topic hold" outputHas "$dotStatusOutput" 'held         plugin caveman@caveman 2.0.0 3.0.0'
+check "major holds do not count as drift" test "$dotStatusDrift" -eq 0
+printf 'formula git 2.1.0 2.2.0\n' > "$dotHome/.local/state/dotfiles/upgrades-failed-packages-pending"
+dotStatusDrift=0
+dotStatusOutput="$(runDot "$dotHome" status 2>&1)" || dotStatusDrift=$?
+check "failed upgrades appear in pending work" outputHas "$dotStatusOutput" 'upgrades-failed-packages-pending'
+check "failed upgrades count as drift" test "$dotStatusDrift" -eq 1
+rm -f "$dotHome/.local/state/dotfiles/upgrades-held-packages" "$dotHome/.local/state/dotfiles/upgrades-held-ai" \
+  "$dotHome/.local/state/dotfiles/upgrades-failed-packages-pending"
+
 : > "$dotHome/.local/state/dotfiles/quiet-pending"
 dotStatusDrift=0
 dotStatusOutput="$(runDot "$dotHome" status 2>&1)" || dotStatusDrift=$?

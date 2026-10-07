@@ -73,6 +73,7 @@ check "the service carries a PATH that finds node without an ambient shell" \
   grep -q '^Environment=PATH=%h/.npm-global/bin:%h/.local/bin:' "$servicePath"
 check "the service refuses to converge a stale checkout when origin is unreachable" \
   grep -qx 'Environment=DOTFILES_REQUIRE_ORIGIN=1' "$servicePath"
+check "the service enables nightly upgrades" grep -qx 'Environment=DOTFILES_UPGRADE=1' "$servicePath"
 check "the service orders itself against no unit the user manager lacks" \
   test "$(grep -c 'network-online.target' "$servicePath" || true)" -eq 0
 check "the timer fires nightly" grep -q '^OnCalendar=\*-\*-\* 04:00:00$' "$timerPath"
@@ -163,6 +164,8 @@ check "the launch agent does not run immediately when loaded" \
 check "the launch agent PATH contains Homebrew and the systemd unit entries" \
   grep -qF "$darwinHomebrewPrefix/bin:$darwinHomebrewPrefix/sbin:$sandbox/.npm-global/bin:$sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     "$launchAgentPath"
+check "the launch agent enables nightly upgrades" \
+  bash -c 'grep -A1 "<key>DOTFILES_UPGRADE</key>" "$1" | grep -q "<string>1</string>"' _ "$launchAgentPath"
 check "the launch agent tells the converge it runs as the agent" \
   bash -c 'grep -A1 "<key>DOTFILES_CONVERGE_AGENT</key>" "$1" | grep -q "<string>1</string>"' _ "$launchAgentPath"
 check "the launch agent writes stdout under dotfiles state" \

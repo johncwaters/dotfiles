@@ -68,6 +68,15 @@ try {
 } catch {}
 runtimeSettings.mcpServers ??= {};
 const [group, action, scopeFlag, scope, serverName, serverConfig] = argumentsPassed;
+if (group === 'plugin') {
+  if (action === 'marketplace') process.exit(fs.existsSync(path.join(process.env.HOME, '.fail-plugin-marketplace')) ? 1 : 0);
+  if (action === 'list') {
+    console.log(fs.readFileSync(path.join(process.env.HOME, '.plugin-list.json'), 'utf8'));
+    process.exit(0);
+  }
+  if (action === 'update') process.exit(fs.existsSync(path.join(process.env.HOME, '.fail-plugin-update')) ? 1 : 0);
+  process.exit(1);
+}
 if (group !== 'mcp') process.exit(1);
 if (action === 'get') process.exit(Object.hasOwn(runtimeSettings.mcpServers, scopeFlag) ? 0 : 1);
 if (scopeFlag !== '--scope' || scope !== 'user') process.exit(1);
@@ -116,6 +125,119 @@ check "converge installs the headless browser for a skill shipping playwright-co
 reviewChecklistPath="$sandbox/.claude/review-checklist.md"
 check "personal profile leaves the review checklist absent" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"
+
+check "plain converge runs no plugin command" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin",'
+cp "$stagedRepo/ai/settings.base.json" "$sandbox/settings-before-plugin-tests.json"
+node -e '
+  const filesystem = require("node:fs");
+  const settingsPath = process.argv[1];
+  const settings = JSON.parse(filesystem.readFileSync(settingsPath, "utf8"));
+  settings.enabledPlugins["companion@caveman"] = true;
+  settings.enabledPlugins["disabled@other"] = false;
+  filesystem.writeFileSync(settingsPath, JSON.stringify(settings));
+' "$stagedRepo/ai/settings.base.json"
+pluginHeldPath="$sandbox/.local/state/dotfiles/upgrades-held-ai"
+pluginFailedPath="$sandbox/.local/state/dotfiles/upgrades-failed-ai-pending"
+pluginMarketplacePath="$sandbox/.claude/plugins/marketplaces/caveman"
+mkdir -p "$pluginMarketplacePath/.claude-plugin"
+writePluginMarketplace() {
+  printf '{"name":"caveman","plugins":[{"name":"caveman","source":"./"},{"name":"companion","source":{"source":"url","url":"https://companion.invalid/companion.git"}%s}]}\n' \
+    "${2:+,\"version\":\"$2\"}" > "$pluginMarketplacePath/.claude-plugin/marketplace.json"
+  printf '{"name":"caveman","version":"%s"}\n' "$1" > "$pluginMarketplacePath/.claude-plugin/plugin.json"
+}
+writeInstalledPlugins() {
+  printf '{"installed":[{"id":"caveman@caveman","version":"%s"},{"id":"disabled@other","version":"1.0.0"},{"id":"companion@caveman","version":"%s"}],"available":[{"pluginId":"disabled@other","name":"disabled","marketplaceName":"other"}]}\n' \
+    "$1" "$2" > "$sandbox/.plugin-list.json"
+}
+writeInstalledPlugins 2.1.0 2.1.0
+writePluginMarketplace 2.2.0 2.2.0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
+check "unapproved plugin update is never applied" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update",'
+check "plugin version resolves from the marketplace source plugin.json" grep -qx 'plugin caveman@caveman 2.1.0 2.2.0' "$pluginHeldPath"
+check "plugin version resolves from the marketplace entry" grep -qx 'plugin companion@caveman 2.1.0 2.2.0' "$pluginHeldPath"
+check "disabled plugin is never held" bash -c '! grep -qF disabled "$1"' _ "$pluginHeldPath"
+check "disabled plugin records no failure" test ! -e "$pluginFailedPath"
+check "plugin marketplace refreshes once" test "$(grep -cxF '["plugin","marketplace","update","caveman"]' "$mcpCommandLog")" -eq 1
+check "plugins are listed once with available versions" test "$(grep -cxF '["plugin","list","--json","--available"]' "$mcpCommandLog")" -eq 1
+writePluginMarketplace 3.0.0 2.2.0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
+check "major plugin is held" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update",'
+check "major plugin is recorded" grep -qx 'plugin caveman@caveman 2.1.0 3.0.0' "$pluginHeldPath"
+: > "$mcpCommandLog"
+runTopicInstall "$stagedTopicDir" > /dev/null
+check "plain converge preserves plugin holds" test -s "$pluginHeldPath"
+check "plain converge still runs no plugin command" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin",'
+DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null
+check "approval applies major plugin" grep -qxF '["plugin","update","caveman@caveman"]' "$mcpCommandLog"
+check "approval applies same-major plugin" grep -qxF '["plugin","update","companion@caveman"]' "$mcpCommandLog"
+check "disabled plugin never updates" bash -c '! grep -qF disabled "$1"' _ "$mcpCommandLog"
+check "approval clears plugin holds" test ! -e "$pluginHeldPath"
+touch "$sandbox/.fail-plugin-update"
+pluginFailureStatus=0
+DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || pluginFailureStatus=$?
+check "failed plugin update fails the topic" test "$pluginFailureStatus" -eq 1
+check "failed plugin update is pending" grep -qx 'plugin caveman@caveman 2.1.0 3.0.0' "$pluginFailedPath"
+rm -f "$sandbox/.fail-plugin-update"
+touch "$sandbox/.fail-plugin-marketplace"
+pluginMarketplaceFailureStatus=0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || pluginMarketplaceFailureStatus=$?
+check "marketplace refresh failure fails the topic" test "$pluginMarketplaceFailureStatus" -eq 1
+check "failed marketplace blocks its plugin update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update",'
+check "marketplace failure leaves the plugin pending" grep -qx 'plugin caveman@caveman unknown unknown' "$pluginFailedPath"
+rm -f "$sandbox/.fail-plugin-marketplace"
+writeInstalledPlugins 3.0.0 2.2.0
+writePluginMarketplace 3.0.0
+unversionedNightlyStatus=0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null || unversionedNightlyStatus=$?
+check "an unversioned url-sourced plugin does not fail a nightly upgrade" test "$unversionedNightlyStatus" -eq 0
+check "an unversioned url-sourced plugin issues no nightly update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update","companion@caveman"]'
+check "an unversioned url-sourced plugin records no nightly hold" bash -c '! grep -qsF companion "$1"' _ "$pluginHeldPath"
+check "an unversioned url-sourced plugin records no nightly failure" bash -c '! grep -qsF companion "$1"' _ "$pluginFailedPath"
+unversionedApprovedStatus=0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || unversionedApprovedStatus=$?
+check "approval updates an unversioned url-sourced plugin" grep -qxF '["plugin","update","companion@caveman"]' "$mcpCommandLog"
+check "an approved unversioned url-sourced plugin update succeeds cleanly" test "$unversionedApprovedStatus" -eq 0
+check "an approved unversioned url-sourced plugin records no failure" bash -c '! grep -qsF companion "$1"' _ "$pluginFailedPath"
+touch "$sandbox/.fail-plugin-update"
+unversionedFailureStatus=0
+DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || unversionedFailureStatus=$?
+check "a failed unversioned plugin update fails the topic" test "$unversionedFailureStatus" -eq 1
+check "a failed unversioned plugin update is pending" grep -qx 'plugin companion@caveman 2.2.0 unknown' "$pluginFailedPath"
+rm -f "$sandbox/.fail-plugin-update"
+printf '{"name":"caveman","plugins":[{"name":"caveman","source":"./"}]}\n' > "$pluginMarketplacePath/.claude-plugin/marketplace.json"
+pluginUnresolvedStatus=0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || pluginUnresolvedStatus=$?
+check "a plugin missing from its marketplace fails the topic" test "$pluginUnresolvedStatus" -eq 1
+check "a plugin missing from its marketplace is pending" grep -qx 'plugin companion@caveman 2.2.0 unknown' "$pluginFailedPath"
+check "a plugin missing from its marketplace issues no update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update","companion@caveman"]'
+writePluginMarketplace 3.0.0 2.2.0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
+check "current plugin issues no update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update",'
+check "current plugin records no hold" test ! -e "$pluginHeldPath"
+check "clean plugin run clears pending failures" test ! -e "$pluginFailedPath"
+writeInstalledPlugins 2.1.0 2.2.0
+printf '{"name":"caveman"}\n' > "$pluginMarketplacePath/.claude-plugin/plugin.json"
+pathSourcedNightlyStatus=0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null || pathSourcedNightlyStatus=$?
+check "an unversioned path-sourced plugin does not fail a nightly upgrade" test "$pathSourcedNightlyStatus" -eq 0
+check "an unversioned path-sourced plugin issues no nightly update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update","caveman@caveman"]'
+check "an unversioned path-sourced plugin records no nightly failure" test ! -e "$pluginFailedPath"
+pathSourcedApprovedStatus=0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || pathSourcedApprovedStatus=$?
+check "approval updates an unversioned path-sourced plugin" grep -qxF '["plugin","update","caveman@caveman"]' "$mcpCommandLog"
+check "an approved unversioned path-sourced plugin update succeeds cleanly" test "$pathSourcedApprovedStatus" -eq 0
+cp "$sandbox/settings-before-plugin-tests.json" "$stagedRepo/ai/settings.base.json"
+: > "$mcpCommandLog"
+
 workMcpOutput="$(runTopicInstall "$stagedTopicDir" work)"
 check "work adds posthog with no consumer header and preserves unmanaged runtime state" \
   mcpRuntimeMatches https://mcp.posthog.com/mcp
