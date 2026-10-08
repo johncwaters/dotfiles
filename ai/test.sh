@@ -532,6 +532,8 @@ check "settings.json keeps the base deny list through the overlay merge" \
   node --input-type=module -e 'import {readFileSync} from "node:fs";import {pathToFileURL} from "node:url";const {buildClaudeProtectedReadRules}=await import(pathToFileURL(process.argv[3]));const readJson=(path)=>JSON.parse(readFileSync(path,"utf8"));const baseDenyList=readJson(process.argv[1]).permissions.deny;const renderedDenyList=readJson(process.argv[2]).permissions.deny;process.exit(baseDenyList.length>0&&JSON.stringify(renderedDenyList)===JSON.stringify([...baseDenyList,...buildClaudeProtectedReadRules()])?0:1)' "$topicDir/settings.base.json" "$settingsPath" "$topicDir/protected-paths.mjs"
 check "settings.json pins the sonnet alias to the model ROUTING.md names" \
   node -e 'const fs=require("fs");const routedSonnetModel=(fs.readFileSync(process.argv[1],"utf8").match(/^\| `sonnet` \(([^)]+)\)/m)||[])[1];const pinnedSonnetModel=JSON.parse(fs.readFileSync(process.argv[2],"utf8")).env.ANTHROPIC_DEFAULT_SONNET_MODEL;process.exit(routedSonnetModel&&routedSonnetModel===pinnedSonnetModel?0:1)' "$topicDir/ROUTING.md" "$settingsPath"
+check "settings.json pins the haiku alias to the model ROUTING.md names" \
+  node -e 'const fs=require("fs");const routedHaikuModel=(fs.readFileSync(process.argv[1],"utf8").match(/^\| `haiku` \(([^)]+)\)/m)||[])[1];const pinnedHaikuModel=JSON.parse(fs.readFileSync(process.argv[2],"utf8")).env.ANTHROPIC_DEFAULT_HAIKU_MODEL;process.exit(routedHaikuModel&&routedHaikuModel===pinnedHaikuModel?0:1)' "$topicDir/ROUTING.md" "$settingsPath"
 
 renderProfileSettings() {
   HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
