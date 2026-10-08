@@ -15,6 +15,10 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   a stub cannot serve because the nested `@AGENTS.md` must resolve in `~/.claude`, beside
   the AGENTS.md link, not beside the profile file; the copy converges by rerunning the
   installer.
+- Agent rules live in AGENTS.md files, never in a profile `CLAUDE.md`, which only imports
+  them (`ai/test.sh` pins this), so Codex gets every rule too. Profile-only rules go in
+  `profiles/<name>/AGENTS.md` so they never reach another profile; Codex reads one global
+  file with no imports, so `ai/install.sh` renders shared plus profile rules into it.
 - Installers are idempotent. A machine is converged by running everything, not by
   remembering what already ran.
 - Removals converge too. Retiring a tool means adding it to a removal list, so machines

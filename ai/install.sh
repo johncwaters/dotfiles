@@ -187,7 +187,26 @@ linkEntry "workflows" "ai/workflows" "$claudeHome/workflows"
 linkEntry "commands" "ai/commands" "$claudeHome/commands"
 linkEntry "hooks" "ai/hooks" "$claudeHome/hooks"
 linkEntry "hud" "ai/hud" "$claudeHome/hud"
-linkEntry "Codex AGENTS.md" "ai/AGENTS.md" "$codexHome/AGENTS.md"
+# Codex reads one global AGENTS.md with no imports, so the profile rules are rendered into it.
+renderCodexAgents() {
+  local codexAgentsPath="$codexHome/AGENTS.md"
+  local profileAgentsPath="$dotfilesRepo/profiles/${profileName:-}/AGENTS.md"
+  mkdir -p -- "$codexHome"
+  if pathIsLinkIntoThisRepo "$codexAgentsPath"; then
+    rm -f -- "$codexAgentsPath"
+  fi
+  clearDestinationIfNotPlainFile "Codex AGENTS.md" "$codexAgentsPath" || return 0
+  local stagedPath
+  stagedPath="$(mktemp "$codexHome/.dotfiles-render.XXXXXX")"
+  cat -- "$dotfilesRepo/ai/AGENTS.md" > "$stagedPath"
+  if [[ -n "${profileName:-}" && -f "$profileAgentsPath" ]]; then
+    printf '\n' >> "$stagedPath"
+    cat -- "$profileAgentsPath" >> "$stagedPath"
+  fi
+  commitStagedFile "Codex AGENTS.md" "$stagedPath" "$codexAgentsPath" "rendered"
+}
+
+renderCodexAgents
 
 if [[ -z "${profileName:-}" ]]; then
   noteWarned "profile files" "no profile resolved, CLAUDE.md and settings.json skipped"
@@ -196,6 +215,19 @@ fi
 
 # CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
 copyEntry "CLAUDE.md" "profiles/$profileName/CLAUDE.md" "$claudeHome/CLAUDE.md"
+convergeProfileAgents() {
+  local profileAgentsSource="profiles/$profileName/AGENTS.md"
+  local profileAgentsDestination="$claudeHome/AGENTS.profile.md"
+  if [[ -f "$dotfilesRepo/$profileAgentsSource" ]]; then
+    linkEntry "AGENTS.profile.md" "$profileAgentsSource" "$profileAgentsDestination"
+    return 0
+  fi
+  pathIsLinkIntoThisRepo "$profileAgentsDestination" || return 0
+  rm -f -- "$profileAgentsDestination"
+  noteApplied "AGENTS.profile.md" "retired link removed"
+}
+
+convergeProfileAgents
 convergeReviewChecklist() {
   local reviewChecklistSource="profiles/$profileName/review-checklist.md"
   local reviewChecklistDestination="$claudeHome/review-checklist.md"

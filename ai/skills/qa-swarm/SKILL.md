@@ -26,7 +26,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAll
 Lane definitions and selection belong to `~/.claude/workflows/qa-swarm.js`.
 `security` stays on fable because security judgment outranks cost.
 
-**CLI routing flag.** Read the profile `CLAUDE.md` `<routing>` rule yourself: a rule forbidding Codex sets `codexAllowed` false, and no such rule means true. Never leave detection to a spawned agent, which is told routing does not bind it. Sending a work diff to a forbidden CLI is a confidentiality breach, not a routing preference. A false flag emits no Codex instruction and uses the substitute below:
+**CLI routing flag.** Read the profile `<routing>` rule in context yourself: a rule forbidding Codex sets `codexAllowed` false, and no such rule means true. Never leave detection to a spawned agent, which is told routing does not bind it. Sending a work diff to a forbidden CLI is a confidentiality breach, not a routing preference. A false flag emits no Codex instruction and uses the substitute below:
 
 | Lane | CLI route | False-flag substitute |
 |---|---|---|

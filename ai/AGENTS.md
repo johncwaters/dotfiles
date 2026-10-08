@@ -110,7 +110,3 @@ Docs and comments carry only the Why: rationale, tradeoffs, invariants with thei
 - At the cap, make room by RETIRING a rule whose code is gone or whose test now pins it, never by trimming words off live ones. Trimming to fit turns the ceiling into a target and leaves the file permanently full.
 - The docs_must_be_enforceable gate blocks NEW docs; this section governs the content of all docs. "The doc gate blocks a new file" is never a reason to dump prose into an existing one.
 </doc_style_why_only>
-
-<posthog_writing>
-Writing or editing PostHog prose (posthog.com docs, handbook, tutorials, blog, changelog, RFCs, PR descriptions), even mid-coding-task: load the `longform-writing` skill (`~/.claude/skills/longform-writing/SKILL.md`) before the first draft, because its description alone misses edits that arrive inside a code task.
-</posthog_writing>

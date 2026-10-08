@@ -299,13 +299,28 @@ runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile preserves a non-repo review checklist" \
   grep -qx 'local review notes' "$reviewChecklistPath"
 rm -f -- "$reviewChecklistPath"
+profileAgentsPath="$sandbox/.claude/AGENTS.profile.md"
+codexAgentsPath="$sandbox/.codex/AGENTS.md"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "work profile links its own AGENTS.md through the alias" \
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
+  "$profileAgentsPath" "$sandbox/.dotfiles/profiles/work/AGENTS.md"
+check "work Codex AGENTS.md is a rendered plain file" \
+  bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$codexAgentsPath"
+check "work Codex AGENTS.md carries the shared rules then the work rules" \
+  bash -c 'diff -q "$1" <(cat "$2"; printf "\n"; cat "$3") > /dev/null' _ \
+  "$codexAgentsPath" "$stagedRepo/ai/AGENTS.md" "$stagedRepo/profiles/work/AGENTS.md"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "personal profile removes the work AGENTS.profile.md link" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$profileAgentsPath"
+check "personal Codex AGENTS.md holds only the shared rules" \
+  cmp -s "$codexAgentsPath" "$stagedRepo/ai/AGENTS.md"
 check "converge skips npm ci while a skill's installed lock is current" \
   test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq 1
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
   ".claude/agents" ".claude/workflows" ".claude/commands" ".claude/hooks" ".claude/hud"
-  ".codex/AGENTS.md"
 )
 
 for destination in "${linkedDestinations[@]}"; do
@@ -518,6 +533,21 @@ check "CLAUDE.md is a plain file, never a symlink" \
   bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$claudeMdPath"
 check "CLAUDE.md matches the profile copy" \
   cmp -s "$claudeMdPath" "$repoRoot/profiles/personal/CLAUDE.md"
+
+profileClaudeMdImportsOnlyAgentsFiles() {
+  local profileDirectory="$1"
+  local expectedImports="@AGENTS.md"
+  if [[ -f "$profileDirectory/AGENTS.md" ]]; then
+    expectedImports+=$'\n@AGENTS.profile.md'
+  fi
+  [[ "$(cat -- "$profileDirectory/CLAUDE.md")" == "$expectedImports" ]]
+}
+
+for profileDirectory in "$repoRoot"/profiles/*/; do
+  profileName="$(basename -- "$profileDirectory")"
+  check "$profileName CLAUDE.md only imports its AGENTS files, so profile rules live in AGENTS.md" \
+    profileClaudeMdImportsOnlyAgentsFiles "$profileDirectory"
+done
 
 check "runtime project state survives" test -f "$sandbox/.claude/projects/live-work/state.json"
 check "credentials survive" test -f "$sandbox/.claude/.credentials.json"

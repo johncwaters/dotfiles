@@ -1,5 +1,5 @@
 <routing>
-Main session loop only; subagents skip per `<scope>`. Single source of truth for model selection and delegation. A profile CLAUDE.md `<routing>` section wins and may amend this by reference.
+Main session loop only; subagents skip per `<scope>`. Single source of truth for model selection and delegation. A profile `<routing>` section wins and may amend this by reference.
 
 Rows verified live 2026-09-25 on codex-cli 0.155.1 and Claude Code 2.1.282; `gpt-6.1-sol` 2026-09-29 on codex-cli 0.159.0; `sonnet` and `fable` 2026-09-28 on 2.1.284; `haiku` 2026-10-07 on 2.1.293. Re-verify a row (run its Access command, update this stamp) when its id errors, a newer tier ships, a plan or price changes, or the stamp is over 90 days old.
 
