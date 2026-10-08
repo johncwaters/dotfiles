@@ -58,6 +58,8 @@ UI/UX stage, or any visual change a repo rule covers: screenshots or a recording
 
 ## Step 5: Build the body
 
+The body is written as the carbon unit, so load `/voice-style` and `/longform-writing` before drafting any prose in it: the feedback block, the description sections, and testing notes. Voice-style supplies the word choice and first person ("from me setting one up myself"); longform-writing's work doc rules supply the shape (answer first, numbers over vague quantities, no machine-writing tells) and decide every conflict with voice-style's casual quirks. The repo's template and rules from Step 2 still own section structure.
+
 Put the feedback block at the top of the template's main description section: the first of `Problem`, `Overview`, `Motivation and Context`, or `Changes` the template has, or `Problem` with no template. A lead line the repo's rules require first stays above it. Never add a new `##` heading; `PostHog/posthog` forbids changing a template's section structure.
 
 ```markdown
