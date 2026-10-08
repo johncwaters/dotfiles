@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node {{HOME}}/.claude/hooks/confine-cloudflare.mjs"
+            "command": "node {{HOME}}/.claude/profile-hooks/confine-cloudflare.mjs"
           }
         ]
       },
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node {{HOME}}/.claude/hooks/gate-posthog-exec-write.mjs"
+            "command": "node {{HOME}}/.claude/profile-hooks/gate-posthog-exec-write.mjs"
           }
         ]
       }

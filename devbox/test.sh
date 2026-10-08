@@ -589,6 +589,14 @@ check "the real work-server profile bootstraps with zero warnings" \
 check "the real work-server bootstrap resolves npm on the box rather than the test host" logHas 'npm ci --omit=dev in '
 check "the real work-server profile records its snapshot commit" \
   cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+check "every hook script the real work-server settings run exists on the box" \
+  node -e '
+const settings = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const hookScriptPaths = Object.values(settings.hooks).flat().flatMap(entry => entry.hooks)
+  .map(hook => hook.command.match(/^node (\S+\.mjs)/)?.[1]).filter(Boolean);
+const missingScriptPaths = hookScriptPaths.filter(scriptPath => !require("fs").existsSync(scriptPath));
+if (hookScriptPaths.length === 0 || missingScriptPaths.length > 0) { console.error(missingScriptPaths); process.exit(1); }
+' "$remoteSnapshotHome/.claude/settings.json"
 check "the real work-server profile leaves the glimmervoid config to the provisioner" \
   test ! -e "$remoteSnapshotHome/.glimmervoid/config.json"
 check "the real work-server bootstrap runs between prepare and provision" snapshotTransferSitsBetweenPrepareAndProvision

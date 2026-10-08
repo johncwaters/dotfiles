@@ -349,7 +349,7 @@ NODE
 
 convergeProfileHooks() {
   local destination="$claudeHome/profile-hooks"
-  if [[ "$profileName" == work ]]; then
+  if [[ "$profileName" == work || "$profileName" == work-server ]]; then
     linkEntry "profile hooks" "profiles/work/hooks" "$destination"
     return 0
   fi
@@ -521,6 +521,7 @@ convergeCodexBackchannels() {
     enabledAssignment="enabled = true"
   fi
   if ! command -v codex > /dev/null 2>&1; then
+    [[ "$profileName" == work ]] || return 0
     noteWarned "Codex MCP backchannels" "codex not found, convergence skipped"
     return 0
   fi
