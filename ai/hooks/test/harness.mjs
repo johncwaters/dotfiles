@@ -9,7 +9,7 @@ export { cleanup as removeAll } from "../../skills/commit/test/helpers.ts";
 export const HOOKS_DIRECTORY = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 export function runHook(scriptName, payload, env = {}, cwd = process.cwd()) {
-  return spawnSync("node", [path.join(HOOKS_DIRECTORY, scriptName)], {
+  return spawnSync("node", [path.resolve(HOOKS_DIRECTORY, scriptName)], {
     cwd,
     input: JSON.stringify(payload),
     encoding: "utf8",

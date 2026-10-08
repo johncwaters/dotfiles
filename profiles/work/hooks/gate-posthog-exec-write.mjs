@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { allow, askPreToolUse, readPayload } from "./hook-io.mjs";
+import { allow, askPreToolUse, readPayload } from "../../../ai/hooks/hook-io.mjs";
 
 const POSTHOG_EXEC_TOOL = /^mcp__.*__exec$/;
 const CALLED_POSTHOG_TOOL = /^\s*call\s+(?:--json\s+)?([A-Za-z0-9_-]+)/;

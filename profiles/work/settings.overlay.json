@@ -12,20 +12,20 @@
     "PreToolUse": [
       {
         "matcher": "^(Bash|Skill|mcp__.*cloudflare.*)$",
-        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/hooks/confine-cloudflare.mjs" }]
+        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/confine-cloudflare.mjs" }]
       },
       {
         "matcher": "^(Skill|ListMcpResourcesTool|ReadMcpResourceTool|mcp__backchannels__.*)$",
-        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/hooks/confine-backchannels.mjs" }]
+        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/confine-backchannels.mjs" }]
       },
       {
         "matcher": "^mcp__.*__exec$",
-        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/hooks/gate-posthog-exec-write.mjs" }]
+        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/gate-posthog-exec-write.mjs" }]
       }
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/hooks/confine-backchannels.mjs" }]
+        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/confine-backchannels.mjs" }]
       }
     ]
   },

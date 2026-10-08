@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
+import { allow, denyPreToolUse, readPayload } from "../../../ai/hooks/hook-io.mjs";
 
 const CLOUDFLARE_MCP_TOOL = /^mcp__.*cloudflare/i;
 const CLOUDFLARE_SKILL = /^cloudflare:/i;

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { runHook } from "./harness.mjs";
+import { runHook } from "../../../../ai/hooks/test/harness.mjs";
 
 function temporaryDirectory(testContext, prefix) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -30,7 +30,7 @@ function homeWithBackchannelClone(testContext) {
 }
 
 function decisionFor(payload, homeDirectory) {
-  const processResult = runHook("confine-cloudflare.mjs", payload, { HOME: homeDirectory });
+  const processResult = runHook(path.join(import.meta.dirname, "..", "confine-cloudflare.mjs"), payload, { HOME: homeDirectory });
   assert.equal(processResult.status, 0);
   if (processResult.stdout === "") return "allow";
   return JSON.parse(processResult.stdout).hookSpecificOutput.permissionDecision;

@@ -119,14 +119,16 @@ check "the repository map names the bubblewrap sandbox" \
 check "the repository map no longer names a Docker matrix" \
   bash -c '! grep -q "Docker matrix" "$1/AGENTS.md"' _ "$repoRoot"
 profileSectionOfReadme="$(sed -n '/^## Profiles/,/^## Topics/p' "$repoRoot/README.md")"
+profileInputMaps="$profileSectionOfReadme
+$(cat "$repoRoot/ai/hooks/AGENTS.md")"
 declare -A checkedProfileInputNames=()
 for profileInputPath in "$repoRoot"/profiles/*/*; do
   profileInputName="$(basename -- "$profileInputPath")"
   [[ -d "$profileInputPath" ]] && profileInputName+="/"
   [[ -z "${checkedProfileInputNames[$profileInputName]:-}" ]] || continue
   checkedProfileInputNames[$profileInputName]=1
-  check "the README profile file list names $profileInputName" \
-    grep -qF "$profileInputName\`" <<< "$profileSectionOfReadme"
+  check "the README or hook map names profile input $profileInputName" \
+    grep -qF "$profileInputName\`" <<< "$profileInputMaps"
 done
 check "the README profile file list names vscodium settings" \
   grep -qF '`vscodium.json`' "$repoRoot/README.md"
@@ -216,6 +218,34 @@ check "the work overlay confines Cloudflare to the backchannel repo because the 
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit((overlay.hooks?.PreToolUse||[]).some((entry)=>["mcp__plugin_cloudflare_cloudflare__execute","Bash","Skill"].every((toolName)=>new RegExp(entry.matcher).test(toolName))&&entry.hooks.some((hook)=>hook.command.includes("confine-cloudflare.mjs")))?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
 check "the work overlay confines backchannels to work repos because it is an internal PostHog tool" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const wires=(entries,names)=>(entries||[]).some((entry)=>names.every((name)=>entry.matcher===undefined||new RegExp(entry.matcher).test(name))&&entry.hooks.some((hook)=>hook.command.includes("confine-backchannels.mjs")));process.exit(wires(overlay.hooks?.PreToolUse,["mcp__backchannels__register_agent","Skill","ListMcpResourcesTool","ReadMcpResourceTool"])&&wires(overlay.hooks?.SessionStart,["startup","resume","clear","compact"])?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "the three work hooks and their tests live only under the work profile" \
+  bash -c 'for hookName in confine-backchannels confine-cloudflare gate-posthog-exec-write; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
+check "work Claude hook commands use the profile hook link" \
+  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const commands=Object.values(overlay.hooks).flatMap(entries=>entries.flatMap(entry=>entry.hooks.map(hook=>hook.command)));process.exit(commands.every(command=>command.includes("/.claude/profile-hooks/"))?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "work Codex denies backchannels tools and gates startup through confinement" \
+  node - "$repoRoot/profiles/work/codex-hooks.json" <<'NODE'
+const fs = require('node:fs');
+const hooks = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).hooks;
+const isConfined = hooks.PreToolUse.some(entry => ['mcp__backchannels__register_agent', 'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].every(toolName => new RegExp(entry.matcher).test(toolName)) && entry.hooks.some(handler => handler.command.includes('/.claude/profile-hooks/confine-backchannels.mjs')));
+const startupHooks = hooks.SessionStart.flatMap(entry => entry.hooks);
+const hasGatedStartup = ['startup', 'resume', 'clear', 'compact'].every(source => hooks.SessionStart.some(entry => new RegExp(entry.matcher).test(source))) && startupHooks.length === 1 && startupHooks[0].command.includes('/.claude/profile-hooks/confine-backchannels.mjs') && startupHooks[0].command.endsWith('--codex-startup');
+process.exit(isConfined && hasGatedStartup ? 0 : 1);
+NODE
+check "only work declares a backchannels MCP server or Codex hooks" \
+  node - "$repoRoot/profiles" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const profilesDirectory = process.argv[2];
+for (const profileName of fs.readdirSync(profilesDirectory)) {
+  const declarationPath = path.join(profilesDirectory, profileName, 'mcp-servers.json');
+  const backchannels = fs.existsSync(declarationPath) ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')).backchannels : undefined;
+  if (profileName === 'work') {
+    if (backchannels?.type !== 'http' || backchannels.url !== 'https://api.backchannels.dev/mcp') process.exit(1);
+    continue;
+  }
+  if (backchannels || fs.existsSync(path.join(profilesDirectory, profileName, 'codex-hooks.json'))) process.exit(1);
+}
+NODE
 check "no profile overlay owns caveman" \
   bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \

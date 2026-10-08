@@ -101,7 +101,38 @@ if (!['add-json', 'remove'].includes(action)) process.exit(1);
 fs.writeFileSync(runtimePath, JSON.stringify(runtimeSettings));
 STUB
 chmod +x "$skillDependencyStubBin/claude"
-printf '{"mcpServers":{"backchannels":{"type":"http","url":"https://unmanaged.invalid/mcp"}},"runtimeToken":"keep-me"}\n' \
+codexMcpCommandLog="$sandbox/codex-mcp-commands.log"
+: > "$codexMcpCommandLog"
+export CODEX_MCP_COMMAND_LOG="$codexMcpCommandLog"
+cat > "$skillDependencyStubBin/codex" <<'STUB'
+#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const argumentsPassed = process.argv.slice(2);
+fs.appendFileSync(process.env.CODEX_MCP_COMMAND_LOG, `${JSON.stringify(argumentsPassed)}\n`);
+const configPath = path.join(process.env.CODEX_HOME, 'config.toml');
+const configText = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
+if (configText.includes('invalid toml')) process.exit(1);
+if (process.env.CODEX_HOME.includes('/.dotfiles-mcp.') && fs.existsSync(path.join(process.env.HOME, '.fail-codex-mcp-stage'))) process.exit(1);
+const serverSection = /\n?\[mcp_servers\.backchannels\]\n([\s\S]*?)(?=\n\[|$)/.exec(configText);
+const [group, action, serverName] = argumentsPassed;
+if (group !== 'mcp') process.exit(1);
+if (action === 'list') {
+  console.log('[]');
+  process.exit(0);
+}
+if (action === 'get') {
+  if (serverName !== 'backchannels' || !serverSection) process.exit(1);
+  const url = /^url = "(.*)"$/m.exec(serverSection[1])?.[1];
+  console.log(JSON.stringify({name: serverName, enabled: !serverSection[1].includes('enabled = false'), transport: {type:'streamable_http', url}}));
+  process.exit(0);
+}
+if (action !== 'remove' || serverName !== 'backchannels' || !serverSection) process.exit(1);
+if (fs.existsSync(path.join(process.env.HOME, '.fail-codex-mcp-remove'))) process.exit(1);
+fs.writeFileSync(configPath, configText.replace(serverSection[0], ''));
+STUB
+chmod +x "$skillDependencyStubBin/codex"
+printf '{"mcpServers":{"foreign":{"type":"http","url":"https://unmanaged.invalid/mcp"}},"runtimeToken":"keep-me"}\n' \
   > "$sandbox/.claude.json"
 
 mcpRuntimeMatches() {
@@ -110,7 +141,8 @@ const fs = require('node:fs');
 const { isDeepStrictEqual } = require('node:util');
 const [runtimePath, expectedPosthogUrl] = process.argv.slice(2);
 const runtimeSettings = JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
-const expectedServers = { backchannels: { type: 'http', url: 'https://unmanaged.invalid/mcp' } };
+const expectedServers = { foreign: { type: 'http', url: 'https://unmanaged.invalid/mcp' } };
+if (expectedPosthogUrl) expectedServers.backchannels = { type: 'http', url: 'https://api.backchannels.dev/mcp' };
 if (expectedPosthogUrl) expectedServers.posthog = { type: 'http', url: expectedPosthogUrl };
 process.exit(isDeepStrictEqual(runtimeSettings.mcpServers, expectedServers) && runtimeSettings.runtimeToken === 'keep-me' ? 0 : 1);
 NODE
@@ -120,11 +152,100 @@ countMcpCommands() {
   grep -cF "[\"mcp\",\"$1\"" "$mcpCommandLog" || true
 }
 
+mkdir -p "$sandbox/.codex" "$sandbox/.agents/skills/backchannels" "$sandbox/.agents/skills/foreign" "$sandbox/.claude/skills/backchannels"
+printf 'foreign skill\n' > "$sandbox/.agents/skills/foreign/SKILL.md"
+printf 'backchannels skill\n' > "$sandbox/.agents/skills/backchannels/SKILL.md"
+printf 'backchannels skill\n' > "$sandbox/.claude/skills/backchannels/SKILL.md"
+cat > "$sandbox/.codex/config.toml" <<'TOML'
+model = "keep-model"
+[hooks.state]
+foreign = { enabled = true, trusted_hash = "keep-trust" }
+[mcp_servers.foreign]
+url = "https://foreign.invalid/mcp"
+[mcp_servers.backchannels]
+url = "https://api.backchannels.dev/mcp"
+TOML
+node - "$sandbox/.codex/hooks.json" "$sandbox/.claude.json" <<'NODE'
+const fs = require('node:fs');
+const [hooksPath, runtimePath] = process.argv.slice(2);
+const foreignHandler = {type:'command', command:'printf foreign-context', timeout:3};
+const backchannelsHandler = {type:'command', command:"node '$HOME/.agents/skills/backchannels/session-start.mjs' 2>/dev/null || cat '$HOME/.agents/skills/backchannels/session-start.txt' 2>/dev/null || true", timeout:5};
+fs.writeFileSync(hooksPath, JSON.stringify({description:'foreign metadata', hooks:{SessionStart:[{matcher:'startup|resume|clear', hooks:[foreignHandler, backchannelsHandler]}], Stop:[{hooks:[foreignHandler]}]}}));
+const runtimeSettings = JSON.parse(fs.readFileSync(runtimePath,'utf8'));
+runtimeSettings.mcpServers.backchannels = {type:'http', url:'https://api.backchannels.dev/mcp'};
+fs.writeFileSync(runtimePath,JSON.stringify(runtimeSettings));
+NODE
+
+backchannelsArtifactsAreAbsent() {
+  node - "$sandbox" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const homeDirectory = process.argv[2];
+const hooks = JSON.parse(fs.readFileSync(path.join(homeDirectory, '.codex/hooks.json'), 'utf8'));
+const runtime = JSON.parse(fs.readFileSync(path.join(homeDirectory, '.claude.json'), 'utf8'));
+const config = fs.readFileSync(path.join(homeDirectory, '.codex/config.toml'), 'utf8');
+const skillPaths = ['.claude/skills/backchannels', '.agents/skills/backchannels', '.claude/profile-hooks'];
+process.exit(!runtime.mcpServers.backchannels && !config.includes('mcp_servers.backchannels') && !JSON.stringify(hooks).includes('backchannels') && skillPaths.every(skillPath => !fs.existsSync(path.join(homeDirectory, skillPath))) ? 0 : 1);
+NODE
+}
+
+foreignBackchannelsNeighboursArePreserved() {
+  node - "$sandbox" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const homeDirectory = process.argv[2];
+const hooks = JSON.parse(fs.readFileSync(path.join(homeDirectory, '.codex/hooks.json'), 'utf8'));
+const config = fs.readFileSync(path.join(homeDirectory, '.codex/config.toml'), 'utf8');
+const foreignStartup = hooks.hooks.SessionStart.find(entry => entry.matcher === 'startup|resume|clear');
+process.exit(hooks.description === 'foreign metadata' && foreignStartup?.hooks.length === 1 && foreignStartup.hooks[0].command === 'printf foreign-context' && hooks.hooks.Stop[0].hooks[0].timeout === 3 && config.includes('model = "keep-model"') && config.includes('[hooks.state]\nforeign = { enabled = true, trusted_hash = "keep-trust" }') && config.includes('[mcp_servers.foreign]\nurl = "https://foreign.invalid/mcp"') && fs.existsSync(path.join(homeDirectory, '.agents/skills/foreign/SKILL.md')) ? 0 : 1);
+NODE
+}
+
+trustCodexHooks() {
+  node - "$sandbox/.codex/hooks.json" "$sandbox/.codex/config.toml" "$1" <<'NODE'
+const fs = require('node:fs');
+const [hooksPath, configPath, trustedHash] = process.argv.slice(2);
+const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
+let configText = fs.readFileSync(configPath, 'utf8');
+for (const [eventName, entries] of Object.entries(hooks)) {
+  entries.forEach((entry, entryIndex) => entry.hooks.forEach((handler, handlerIndex) => {
+    if (!handler.command.includes('confine-backchannels.mjs')) return;
+    const stateKey = `${hooksPath}:${eventName.replace(/(?<=[a-z])(?=[A-Z])/g, '_').toLowerCase()}:${entryIndex}:${handlerIndex}`;
+    const tableHeader = `[hooks.state.${JSON.stringify(stateKey)}]`;
+    configText = configText.split('\n').filter((line, lineIndex, lines) => line !== tableHeader && lines[lineIndex - 1] !== tableHeader).join('\n');
+    configText += `\n${tableHeader}\ntrusted_hash = "${trustedHash}"\n`;
+  }));
+}
+fs.writeFileSync(configPath, configText);
+NODE
+}
+
+codexBackchannelsIsEnabled() {
+  grep -A2 -xF '[mcp_servers.backchannels]' "$sandbox/.codex/config.toml" | grep -qx 'enabled = true'
+}
+
+codexBackchannelsIsDisabled() {
+  grep -A2 -xF '[mcp_servers.backchannels]' "$sandbox/.codex/config.toml" | grep -qx 'enabled = false'
+}
+
 printf '\nai topic\n'
+
+renderFixtureDirectory="$sandbox/render-codex-hooks-fixture"
+mkdir -p "$renderFixtureDirectory"
+node - "$renderFixtureDirectory/hooks.json" <<'NODE'
+const fs = require('node:fs');
+const handler = command => ({type:'command', command});
+fs.writeFileSync(process.argv[2], JSON.stringify({hooks:{SessionStart:[{hooks:[handler('node /srv/backchannels/audit.mjs'), handler("node '$HOME/.agents/skills/backchannels/session-start.mjs' || true"), handler('node "/home/x/.claude/profile-hooks/confine-backchannels.mjs" --codex-startup')]}]}}));
+NODE
+node "$stagedRepo/ai/render-codex-hooks.mjs" "$stagedRepo/ai/codex-hooks.base.json" "$renderFixtureDirectory/hooks.json" "$renderFixtureDirectory/rendered.json" > /dev/null
+check "Codex hook render keeps a foreign hook under another backchannels path and drops only owned and old-installer hooks" \
+  node -e 'const commands = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks.SessionStart.flatMap(entry => entry.hooks.map(handler => handler.command)); process.exit(JSON.stringify(commands) === JSON.stringify(["node /srv/backchannels/audit.mjs"]) ? 0 : 1)' "$renderFixtureDirectory/rendered.json"
 
 installStatus=0
 firstRunOutput="$(runTopicInstall "$stagedTopicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
+check "personal converge removes installer-owned backchannels artifacts" backchannelsArtifactsAreAbsent
+check "personal cleanup preserves foreign hooks, MCP config, skills, and hook trust" foreignBackchannelsNeighboursArePreserved
 check "install says what it did" test -n "$firstRunOutput"
 for skillName in "${workSkillNames[@]}"; do
   check "personal profile leaves work skill $skillName absent" \
@@ -252,7 +373,73 @@ check "an approved unversioned path-sourced plugin update succeeds cleanly" test
 cp "$sandbox/settings-before-plugin-tests.json" "$stagedRepo/ai/settings.base.json"
 : > "$mcpCommandLog"
 
-workMcpOutput="$(runTopicInstall "$stagedTopicDir" work)"
+mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
+printf 'external Claude skill\n' > "$sandbox/.claude/skills/backchannels/SKILL.md"
+printf 'external Codex skill\n' > "$sandbox/.agents/skills/backchannels/SKILL.md"
+printf 'process.stdout.write("backchannels startup context");\n' > "$sandbox/.agents/skills/backchannels/session-start.mjs"
+firstWorkStatus=0
+workMcpOutput="$(runTopicInstall "$stagedTopicDir" work)" || firstWorkStatus=$?
+check "a first work converge warns until Codex hooks are reviewed" test "$firstWorkStatus" -eq 1
+check "work preserves external Claude skill ownership" grep -qx 'external Claude skill' "$sandbox/.claude/skills/backchannels/SKILL.md"
+check "work preserves external Codex skill ownership" grep -qx 'external Codex skill' "$sandbox/.agents/skills/backchannels/SKILL.md"
+check "work links profile hooks through the alias" \
+  bash -c '[[ -L "$1" && "$(readlink "$1")" == "$2" ]]' _ "$sandbox/.claude/profile-hooks" "$sandbox/.dotfiles/profiles/work/hooks"
+check "the shared installed hooks contain none of the three work hooks" \
+  bash -c 'for hookName in confine-backchannels confine-cloudflare gate-posthog-exec-write; do [[ ! -e "$1/$hookName.mjs" ]] || exit 1; done' _ "$sandbox/.claude/hooks"
+check "work configures the Codex backchannels server" grep -qx 'url = "https://api.backchannels.dev/mcp"' "$sandbox/.codex/config.toml"
+check "work preserves foreign hooks and Codex trust" foreignBackchannelsNeighboursArePreserved
+check "a first Codex hook render leaves backchannels disabled" codexBackchannelsIsDisabled
+check "a first Codex hook render asks for hook review" outputHas "$workMcpOutput" "review hooks with /hooks, then rerun dot"
+check "Codex owned hooks render ahead of foreign hooks" \
+  node -e 'const hooks = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks; process.exit(hooks.SessionStart[0].hooks[0].command.includes("confine-backchannels.mjs") && hooks.PreToolUse[0].hooks[0].command.includes("confine-backchannels.mjs") ? 0 : 1)' "$sandbox/.codex/hooks.json"
+trustCodexHooks "sha256:first-trust"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "trusted Codex hooks enable backchannels" codexBackchannelsIsEnabled
+cp "$stagedRepo/profiles/work/codex-hooks.json" "$sandbox/codex-hooks-declaration-backup.json"
+node -e 'const fs = require("node:fs"); fs.writeFileSync(process.argv[1], fs.readFileSync(process.argv[1], "utf8").replaceAll("\"timeout\": 10", "\"timeout\": 9"))' "$stagedRepo/profiles/work/codex-hooks.json"
+changedHooksStatus=0
+changedHooksOutput="$(runTopicInstall "$stagedTopicDir" work)" || changedHooksStatus=$?
+check "changed Codex hooks disable backchannels until re-trusted" codexBackchannelsIsDisabled
+check "changed Codex hooks warn" test "$changedHooksStatus" -eq 1
+runTopicInstall "$stagedTopicDir" work > /dev/null || true
+check "a stale trust hash at an owned hook position does not count" codexBackchannelsIsDisabled
+trustCodexHooks "sha256:second-trust"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "re-trusted changed Codex hooks enable backchannels" codexBackchannelsIsEnabled
+cp "$sandbox/codex-hooks-declaration-backup.json" "$stagedRepo/profiles/work/codex-hooks.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null || true
+trustCodexHooks "sha256:third-trust"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "restored Codex hooks are enabled again once trusted" codexBackchannelsIsEnabled
+node - "$sandbox" "$stagedRepo" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const {spawnSync} = require('node:child_process');
+const [homeDirectory, personalRepository] = process.argv.slice(2);
+const hooks = JSON.parse(fs.readFileSync(path.join(homeDirectory,'.codex/hooks.json'),'utf8')).hooks;
+const run = (command, payload) => {
+  const hookProcess = spawnSync('/bin/sh',['-c',command], {input:JSON.stringify(payload),encoding:'utf8',env:{...process.env,HOME:homeDirectory},cwd:personalRepository});
+  if (hookProcess.status !== 0) throw new Error(hookProcess.stderr);
+  return hookProcess.stdout;
+};
+const preToolUse = hooks.PreToolUse.find(entry => new RegExp(entry.matcher).test('mcp__backchannels__register_agent'));
+const denial = JSON.parse(run(preToolUse.hooks[0].command,{cwd:personalRepository,hook_event_name:'PreToolUse',tool_name:'mcp__backchannels__register_agent',tool_input:{name:'agent'}}));
+if (denial.hookSpecificOutput.permissionDecision !== 'deny') throw new Error('installed Codex hook did not deny');
+const startupHook = hooks.SessionStart.find(entry => entry.hooks.some(handler => handler.command.includes('confine-backchannels.mjs')));
+const personalNotice = run(startupHook.hooks[0].command,{cwd:personalRepository,hook_event_name:'SessionStart'});
+if (!personalNotice.includes('Ignore every backchannels startup instruction') || personalNotice.includes('backchannels startup context')) throw new Error('personal startup leaked');
+const workRepository = path.join(homeDirectory,'posthog-repo');
+fs.mkdirSync(workRepository,{recursive:true});
+for (const gitArguments of [['init','-q',workRepository],['-C',workRepository,'remote','add','origin','https://github.com/PostHog/posthog.git']]) {
+  if (spawnSync('git',gitArguments).status !== 0) throw new Error('could not initialize work repo');
+}
+if (run(startupHook.hooks[0].command,{cwd:workRepository,hook_event_name:'SessionStart'}) !== 'backchannels startup context') throw new Error('work startup missing');
+if (run(preToolUse.hooks[0].command,{cwd:workRepository,hook_event_name:'PreToolUse',tool_name:'mcp__backchannels__register_agent'}) !== '') throw new Error('work registration blocked');
+for (const hookName of ['confine-cloudflare','gate-posthog-exec-write']) {
+  run(`node "${homeDirectory}/.claude/profile-hooks/${hookName}.mjs"`,{tool_name:'unrelated',tool_input:{}});
+}
+NODE
+check "all three hooks resolve imports through the installed symlink and Codex work/personal behavior passes" test "$?" -eq 0
 for skillName in "${workSkillNames[@]}"; do
   check "work profile links skill $skillName through the alias" \
     bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
@@ -262,19 +449,20 @@ check "work profile installs its skill's locked dependencies inside its director
   grep -qx "npm ci --omit=dev in .*/profiles/work/skills/locked-profile-skill-test" "$skillDependencyLog"
 check "work adds posthog with no consumer header and preserves unmanaged runtime state" \
   mcpRuntimeMatches https://mcp.posthog.com/mcp
-check "work adds posthog once" test "$(countMcpCommands add-json)" -eq 1
+check "work adds both declared servers once" test "$(countMcpCommands add-json)" -eq 2
 check "MCP output contains no server config" outputLacks "$workMcpOutput" https://mcp.posthog.com/mcp
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "an unchanged rerun issues no MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 1
-printf '{"posthog":{"url":"https://mcp.posthog.com/mcp","type":"http"}}\n' \
+quietWorkOutput="$(runTopicInstall "$stagedTopicDir" work)"
+check "a work rerun reports no changes" reportsNoChanges "$quietWorkOutput"
+check "an unchanged rerun issues no MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 2
+printf '{"posthog":{"url":"https://mcp.posthog.com/mcp","type":"http"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"}}\n' \
   > "$stagedRepo/profiles/work/mcp-servers.json"
 runTopicInstall "$stagedTopicDir" work > /dev/null
-check "object key order does not trigger MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 1
-printf '{"posthog":{"type":"http","url":"https://changed.invalid/mcp"}}\n' \
+check "object key order does not trigger MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 2
+printf '{"posthog":{"type":"http","url":"https://changed.invalid/mcp"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"}}\n' \
   > "$stagedRepo/profiles/work/mcp-servers.json"
 runTopicInstall "$stagedTopicDir" work > /dev/null
 check "a changed config removes then adds the managed server" \
-  node -e 'const commands = require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse); process.exit(commands.length === 3 && commands[1][1] === "remove" && commands[2][1] === "add-json" ? 0 : 1)' "$mcpCommandLog"
+  node -e 'const commands = require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse); process.exit(commands.length === 4 && commands[2][1] === "remove" && commands[3][1] === "add-json" ? 0 : 1)' "$mcpCommandLog"
 check "a changed URL converges while preserving unmanaged state" mcpRuntimeMatches https://changed.invalid/mcp
 : > "$sandbox/.fail-mcp-remove"
 failedRemovalStatus=0
@@ -284,7 +472,11 @@ check "a failed removal retains ownership for retry" \
   grep -qx posthog "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
 rm -f "$sandbox/.fail-mcp-remove"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
-check "switching to personal removes only the managed server" mcpRuntimeMatches ""
+check "switching to personal removes only the managed servers" mcpRuntimeMatches ""
+check "work to personal removes all backchannels artifacts" backchannelsArtifactsAreAbsent
+check "work to personal preserves foreign hooks, skills, MCP config, and trust" foreignBackchannelsNeighboursArePreserved
+quietPersonalOutput="$(runTopicInstall "$stagedTopicDir" personal)"
+check "a personal rerun reports no changes" reportsNoChanges "$quietPersonalOutput"
 check "successful retirement clears the ownership record" \
   grep -qx '' "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
 cp "$repoRoot/profiles/work/mcp-servers.json" "$stagedRepo/profiles/work/mcp-servers.json"
@@ -297,8 +489,8 @@ check "an unmanaged differing server names the blocked convergence" \
   outputHas "$unmanagedConflictOutput" "unmanaged server with this name blocks convergence"
 check "an unmanaged differing server survives a work converge unchanged" \
   mcpRuntimeMatches https://eu.unmanaged.invalid/mcp
-check "an unmanaged differing server triggers no MCP mutation" \
-  test "$(wc -l < "$mcpCommandLog")" -eq "$mcpCommandCountBeforeUnmanaged"
+check "an unmanaged differing server triggers no mutation beyond adding backchannels" \
+  test "$(wc -l < "$mcpCommandLog")" -eq "$((mcpCommandCountBeforeUnmanaged + 1))"
 check "an unmanaged differing server is not recorded as managed" \
   bash -c '! grep -qx posthog "$1"' _ "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
 node -e 'const fs = require("node:fs"); const runtimeSettings = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); delete runtimeSettings.mcpServers.posthog; fs.writeFileSync(process.argv[1], JSON.stringify(runtimeSettings))' "$sandbox/.claude.json"
@@ -490,6 +682,7 @@ missingClaudeStatus=0
 missingClaudeOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$gitlessBin" \
   bash "$stagedTopicDir/install.sh")" || missingClaudeStatus=$?
 check "an absent claude CLI warns" outputHas "$missingClaudeOutput" "claude not found"
+check "an absent Codex CLI warns" outputHas "$missingClaudeOutput" "codex not found"
 check "an absent claude CLI marks the topic warned" test "$missingClaudeStatus" -eq 1
 check "an absent claude CLI still renders work settings" \
   cmp -s "$sandbox/.claude/CLAUDE.md" "$stagedRepo/profiles/work/CLAUDE.md"
@@ -512,6 +705,140 @@ rm -f "$skillsPath"
 runTopicInstall "$stagedTopicDir" > /dev/null
 check "the skills directory converges again once git is back" \
   bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/commit" ]]' _ "$skillsPath"
+
+runTopicInstall "$stagedTopicDir" work > /dev/null
+node - "$sandbox/.codex/config.toml" <<'NODE'
+const fs = require('node:fs');
+const configPath = process.argv[2];
+fs.writeFileSync(configPath, fs.readFileSync(configPath, 'utf8').replace('https://api.backchannels.dev/mcp', 'https://outdated.invalid/mcp'));
+NODE
+cp "$sandbox/.codex/config.toml" "$sandbox/codex-config-before-failed-render.toml"
+: > "$sandbox/.fail-codex-mcp-stage"
+failedCodexRenderStatus=0
+failedCodexRenderOutput="$(runTopicInstall "$stagedTopicDir" work)" || failedCodexRenderStatus=$?
+check "Codex rejects an invalid staged config with a warning" test "$failedCodexRenderStatus" -eq 1
+check "a rejected Codex render preserves the current config" cmp -s "$sandbox/.codex/config.toml" "$sandbox/codex-config-before-failed-render.toml"
+rm -f "$sandbox/.fail-codex-mcp-stage"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "a changed Codex URL converges" grep -qx 'url = "https://api.backchannels.dev/mcp"' "$sandbox/.codex/config.toml"
+check "a changed Codex URL preserves foreign config and trust" foreignBackchannelsNeighboursArePreserved
+: > "$sandbox/.fail-codex-mcp-remove"
+failedCodexRemovalStatus=0
+failedCodexRemovalOutput="$(runTopicInstall "$stagedTopicDir" personal)" || failedCodexRemovalStatus=$?
+check "a failed Codex removal follows the topic warning convention" test "$failedCodexRemovalStatus" -eq 1
+check "a failed Codex removal preserves the server for the next converge" grep -qxF '[mcp_servers.backchannels]' "$sandbox/.codex/config.toml"
+check "a failed Codex removal still removes startup hooks" bash -c '! grep -q backchannels "$1"' _ "$sandbox/.codex/hooks.json"
+rm -f "$sandbox/.fail-codex-mcp-remove"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "a failed Codex removal converges once the CLI can remove it" backchannelsArtifactsAreAbsent
+cp "$sandbox/.codex/config.toml" "$sandbox/codex-valid-config.toml"
+printf 'invalid toml\n' > "$sandbox/.codex/config.toml"
+invalidCodexConfigStatus=0
+invalidCodexConfigOutput="$(runTopicInstall "$stagedTopicDir" work)" || invalidCodexConfigStatus=$?
+check "an unreadable Codex config warns" test "$invalidCodexConfigStatus" -eq 1
+check "an unreadable Codex config is never overwritten" grep -qx 'invalid toml' "$sandbox/.codex/config.toml"
+cp "$sandbox/codex-valid-config.toml" "$sandbox/.codex/config.toml"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+cp "$sandbox/.codex/hooks.json" "$sandbox/codex-valid-hooks.json"
+printf 'not json\n' > "$sandbox/.codex/hooks.json"
+invalidCodexHooksStatus=0
+runTopicInstall "$stagedTopicDir" work > /dev/null 2>&1 || invalidCodexHooksStatus=$?
+check "unparseable Codex hooks warn" test "$invalidCodexHooksStatus" -eq 1
+check "unparseable Codex hooks preserve the source for correction" grep -qx 'not json' "$sandbox/.codex/hooks.json"
+check "unparseable Codex hooks leave the Codex backchannels server disabled" codexBackchannelsIsDisabled
+cp "$sandbox/codex-valid-hooks.json" "$sandbox/.codex/hooks.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "Codex backchannels is enabled again once its trusted hooks render" codexBackchannelsIsEnabled
+codexTrustEpochPath="$XDG_STATE_HOME/dotfiles/ai-codex-hook-trust-epoch"
+codexTrustBaselinePath="$XDG_STATE_HOME/dotfiles/ai-codex-hook-trust-baseline"
+cp "$sandbox/.codex/hooks.json" "$sandbox/codex-hooks-before-quiet-rerun.json"
+cp "$codexTrustEpochPath" "$sandbox/codex-trust-epoch-before-quiet-rerun"
+quietRerunStatus=0
+runTopicInstall "$stagedTopicDir" work > /dev/null || quietRerunStatus=$?
+check "an unchanged trusted converge reruns quietly" test "$quietRerunStatus" -eq 0
+check "an unchanged converge keeps the Codex trust epoch" cmp -s "$codexTrustEpochPath" "$sandbox/codex-trust-epoch-before-quiet-rerun"
+check "an unchanged converge keeps the Codex hook definitions" cmp -s "$sandbox/.codex/hooks.json" "$sandbox/codex-hooks-before-quiet-rerun.json"
+check "owned Codex hook commands carry the trust epoch" grep -qF -- "--trust-epoch=$(cat "$codexTrustEpochPath")" "$sandbox/.codex/hooks.json"
+rm -f "$codexTrustEpochPath" "$codexTrustBaselinePath"
+lostTrustStateStatus=0
+runTopicInstall "$stagedTopicDir" work > /dev/null || lostTrustStateStatus=$?
+check "lost Codex trust state warns" test "$lostTrustStateStatus" -eq 1
+check "lost Codex trust state disables backchannels" codexBackchannelsIsDisabled
+check "lost Codex trust state rotates the trust epoch" bash -c '! cmp -s "$1" "$2"' _ "$codexTrustEpochPath" "$sandbox/codex-trust-epoch-before-quiet-rerun"
+check "lost Codex trust state changes the owned hook definitions" bash -c '! cmp -s "$1" "$2"' _ "$sandbox/.codex/hooks.json" "$sandbox/codex-hooks-before-quiet-rerun.json"
+trustCodexHooks "sha256:third-trust"
+runTopicInstall "$stagedTopicDir" work > /dev/null || true
+check "the pre-loss trust hash does not count after lost Codex trust state" codexBackchannelsIsDisabled
+trustCodexHooks "sha256:after-state-loss-trust"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "re-trusted hooks after lost Codex trust state enable backchannels" codexBackchannelsIsEnabled
+rm -f "$codexTrustEpochPath" "$codexTrustBaselinePath"
+mv "$stagedRepo/profiles/work/hooks" "$sandbox/work-hooks-aside"
+runTopicInstall "$stagedTopicDir" work > /dev/null 2>&1 || true
+check "a warned profile hooks link still records the Codex trust baseline" test -s "$codexTrustBaselinePath"
+check "a warned profile hooks link leaves backchannels disabled" codexBackchannelsIsDisabled
+trustCodexHooks "sha256:while-link-warned-trust"
+mv "$sandbox/work-hooks-aside" "$stagedRepo/profiles/work/hooks"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "hooks trusted while the profile hooks link warned enable backchannels once it converges" codexBackchannelsIsEnabled
+cp "$stagedRepo/profiles/work/settings.overlay.json" "$sandbox/settings-overlay-backup.json"
+printf 'not json\n' > "$stagedRepo/profiles/work/settings.overlay.json"
+failedClaudeConfinementStatus=0
+failedClaudeConfinementOutput="$(runTopicInstall "$stagedTopicDir" work)" || failedClaudeConfinementStatus=$?
+check "a failed Claude settings render warns" test "$failedClaudeConfinementStatus" -eq 1
+check "a failed Claude settings render withholds the Claude backchannels server" \
+  node -e 'process.exit(require(process.argv[1]).mcpServers.backchannels ? 1 : 0)' "$sandbox/.claude.json"
+check "a failed Claude settings render names the withheld server" \
+  outputHas "$failedClaudeConfinementOutput" "withheld until Claude confinement converges"
+cp "$sandbox/settings-overlay-backup.json" "$stagedRepo/profiles/work/settings.overlay.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "a recovered Claude settings render restores the Claude backchannels server" \
+  node -e 'process.exit(require(process.argv[1]).mcpServers.backchannels ? 0 : 1)' "$sandbox/.claude.json"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+
+settingsHookCommandsResolve() {
+  node - "$sandbox/.claude/settings.json" <<'NODE'
+const fs = require('node:fs');
+const settings = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const commands = Object.values(settings.hooks ?? {}).flatMap(entries => entries.flatMap(entry => entry.hooks.map(handler => handler.command)));
+const scriptPaths = commands.flatMap(command => command.match(/\/[^\s"']+\.mjs/g) ?? []);
+process.exit(scriptPaths.length > 0 && scriptPaths.every(scriptPath => fs.existsSync(scriptPath)) ? 0 : 1);
+NODE
+}
+
+runTopicInstall "$stagedTopicDir" work > /dev/null
+trustCodexHooks "sha256:no-profile-trust"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
+noProfileSnapshot="$sandbox/no-profile-snapshot"
+rm -rf "$noProfileSnapshot"
+mkdir -p "$noProfileSnapshot"
+cp "$sandbox/.claude.json" "$sandbox/.codex/hooks.json" "$sandbox/.codex/config.toml" "$sandbox/.claude/settings.json" "$noProfileSnapshot/"
+noProfileStatus=0
+runTopicInstall "$stagedTopicDir" "" > /dev/null || noProfileStatus=$?
+check "a no-profile converge warns" test "$noProfileStatus" -eq 1
+check "a no-profile converge leaves Claude MCP servers alone" cmp -s "$sandbox/.claude.json" "$noProfileSnapshot/.claude.json"
+check "a no-profile converge leaves Codex hooks alone" cmp -s "$sandbox/.codex/hooks.json" "$noProfileSnapshot/hooks.json"
+check "a no-profile converge leaves Codex MCP config alone" cmp -s "$sandbox/.codex/config.toml" "$noProfileSnapshot/config.toml"
+check "a no-profile converge leaves Claude settings alone" cmp -s "$sandbox/.claude/settings.json" "$noProfileSnapshot/settings.json"
+check "a no-profile converge keeps the profile hooks link" \
+  bash -c '[[ -L "$1" && "$(readlink "$1")" == "$2" ]]' _ "$sandbox/.claude/profile-hooks" "$sandbox/.dotfiles/profiles/work/hooks"
+check "a no-profile converge keeps the backchannels skill directories" \
+  test -d "$sandbox/.claude/skills/backchannels" -a -d "$sandbox/.agents/skills/backchannels"
+check "a no-profile converge leaves every settings hook command pointing at a present script" settingsHookCommandsResolve
+
+runTopicInstall "$stagedTopicDir" work > /dev/null
+mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
+serverStatus=0
+runTopicInstall "$stagedTopicDir" server > /dev/null || serverStatus=$?
+check "server converge follows topic warning convention" test "$serverStatus" -eq 0
+check "server converge removes all backchannels artifacts" backchannelsArtifactsAreAbsent
+check "server cleanup preserves foreign entries" foreignBackchannelsNeighboursArePreserved
+serverRerunStatus=0
+serverRerunOutput="$(runTopicInstall "$stagedTopicDir" server)" || serverRerunStatus=$?
+check "server rerun keeps the expected exit status" test "$serverRerunStatus" -eq 0
+check "server rerun reports no changes" reportsNoChanges "$serverRerunOutput"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
 
 rm -rf "$skillsPath"
 ln -s "$sandbox/deleted-skills-directory" "$skillsPath"
@@ -837,7 +1164,7 @@ check "an overlay hook renders alongside the base hook it shares an event with" 
   bash -c 'grep -q "base-only-hook.mjs" "$1" && grep -q "overlay-only-hook.mjs" "$1"' _ "$hookDestination"
 
 shopt -s nullglob
-hookTestFiles=("$topicDir"/hooks/test/*.test.mjs)
+hookTestFiles=("$topicDir"/hooks/test/*.test.mjs "$repoRoot"/profiles/work/hooks/test/*.test.mjs)
 workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
 openPrTestFiles=("$repoRoot"/profiles/work/skills/open-pr/test/*.test.mjs)

@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Skill|ListMcpResourcesTool|ReadMcpResourceTool|list_mcp_resources|list_mcp_resource_templates|read_mcp_resource|mcp__backchannels__.*)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/profile-hooks/confine-backchannels.mjs\" --trust-epoch={{TRUST_EPOCH}}",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/profile-hooks/confine-backchannels.mjs\" --codex-startup --trust-epoch={{TRUST_EPOCH}}",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

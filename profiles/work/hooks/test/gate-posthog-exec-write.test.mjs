@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { test } from "node:test";
-import { runHook } from "./harness.mjs";
+import { runHook } from "../../../../ai/hooks/test/harness.mjs";
 
 function decisionFor(payload) {
-  const processResult = runHook("gate-posthog-exec-write.mjs", payload);
+  const processResult = runHook(path.join(import.meta.dirname, "..", "gate-posthog-exec-write.mjs"), payload);
   assert.equal(processResult.status, 0);
   if (processResult.stdout === "") return "allow";
   return JSON.parse(processResult.stdout).hookSpecificOutput.permissionDecision;

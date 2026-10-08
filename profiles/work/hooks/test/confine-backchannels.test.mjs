@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { runHook } from "./harness.mjs";
+import { runHook } from "../../../../ai/hooks/test/harness.mjs";
 
 function temporaryDirectory(testContext, prefix) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -34,14 +34,14 @@ function repositoryWithOrigin(testContext, originUrl) {
 }
 
 function decisionFor(payload, homeDirectory) {
-  const processResult = runHook("confine-backchannels.mjs", payload, { HOME: homeDirectory });
+  const processResult = runHook(path.join(import.meta.dirname, "..", "confine-backchannels.mjs"), payload, { HOME: homeDirectory });
   assert.equal(processResult.status, 0);
   if (processResult.stdout === "") return "allow";
   return JSON.parse(processResult.stdout).hookSpecificOutput.permissionDecision;
 }
 
 function sessionStartOutput(cwd, homeDirectory) {
-  const processResult = runHook("confine-backchannels.mjs", { hook_event_name: "SessionStart", source: "startup", cwd }, { HOME: homeDirectory });
+  const processResult = runHook(path.join(import.meta.dirname, "..", "confine-backchannels.mjs"), { hook_event_name: "SessionStart", source: "startup", cwd }, { HOME: homeDirectory });
   assert.equal(processResult.status, 0);
   return processResult.stdout;
 }
@@ -54,6 +54,9 @@ const BACKCHANNELS_CALLS = [
   { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: " backchannels " } },
   { hook_event_name: "PreToolUse", tool_name: "ListMcpResourcesTool", tool_input: { server: "backchannels" } },
   { hook_event_name: "PreToolUse", tool_name: "ReadMcpResourceTool", tool_input: { server: "backchannels", uri: "backchannels://inbox" } },
+  { hook_event_name: "PreToolUse", tool_name: "list_mcp_resources", tool_input: { server: "backchannels" } },
+  { hook_event_name: "PreToolUse", tool_name: "list_mcp_resource_templates", tool_input: { server: "backchannels" } },
+  { hook_event_name: "PreToolUse", tool_name: "read_mcp_resource", tool_input: { server: "backchannels", uri: "backchannels://inbox" } },
 ];
 
 function workspaceWithChildren(testContext, originUrlsByChildName) {
@@ -138,6 +141,30 @@ test("a workspace folder with a personal child repository denies backchannels an
   assert.match(sessionStartOutput(workspaceDirectory, homeDirectory), /backchannels is off here/);
 });
 
+test("a workspace folder with more children than the scan cap denies backchannels", (testContext) => {
+  const { homeDirectory } = homeWithBackchannelClone(testContext);
+  const workspaceDirectory = workspaceWithChildren(testContext, { wizard: "https://github.com/PostHog/wizard.git" });
+  for (let childIndex = 0; childIndex < 64; childIndex += 1) {
+    fs.mkdirSync(path.join(workspaceDirectory, `notes-${childIndex}`));
+  }
+  assert.equal(decisionFor({ ...BACKCHANNELS_CALLS[0], cwd: workspaceDirectory }, homeDirectory), "deny");
+  assert.match(sessionStartOutput(workspaceDirectory, homeDirectory), /backchannels is off here/);
+});
+
+test("resource tools without a server fan out to backchannels, so they are denied in a personal repository and allowed in a work repository", (testContext) => {
+  const { homeDirectory } = homeWithBackchannelClone(testContext);
+  const personalRepository = repositoryWithOrigin(testContext, "https://github.com/johncwaters/dotfiles");
+  const workRepository = repositoryWithOrigin(testContext, "https://github.com/PostHog/posthog.git");
+  const serverlessResourceCalls = ["ListMcpResourcesTool", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"].flatMap((toolName) => [
+    { hook_event_name: "PreToolUse", tool_name: toolName, tool_input: {} },
+    { hook_event_name: "PreToolUse", tool_name: toolName, tool_input: { server: " " } },
+  ]);
+  for (const call of serverlessResourceCalls) {
+    assert.equal(decisionFor({ ...call, cwd: personalRepository }, homeDirectory), "deny", JSON.stringify(call));
+    assert.equal(decisionFor({ ...call, cwd: workRepository }, homeDirectory), "allow", JSON.stringify(call));
+  }
+});
+
 test("other tools and skills pass untouched in a personal repository", (testContext) => {
   const { homeDirectory } = homeWithBackchannelClone(testContext);
   const personalRepository = repositoryWithOrigin(testContext, "https://github.com/johncwaters/dotfiles");
@@ -147,6 +174,9 @@ test("other tools and skills pass untouched in a personal repository", (testCont
     { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git status" } },
     { hook_event_name: "PreToolUse", tool_name: "ListMcpResourcesTool", tool_input: { server: "posthog" } },
     { hook_event_name: "PreToolUse", tool_name: "ReadMcpResourceTool", tool_input: { server: "posthog", uri: "posthog://docs" } },
+    { hook_event_name: "PreToolUse", tool_name: "list_mcp_resources", tool_input: { server: "posthog" } },
+    { hook_event_name: "PreToolUse", tool_name: "list_mcp_resource_templates", tool_input: { server: "posthog" } },
+    { hook_event_name: "PreToolUse", tool_name: "read_mcp_resource", tool_input: { server: "posthog", uri: "posthog://docs" } },
   ]) {
     assert.equal(decisionFor({ ...call, cwd: personalRepository }, homeDirectory), "allow", JSON.stringify(call));
   }
@@ -171,4 +201,67 @@ test("a malformed payload is allowed", () => {
   });
   assert.equal(processResult.status, 0);
   assert.equal(processResult.stdout, "");
+});
+
+test("Codex PreToolUse payload denies registration in personal repos and permits PostHog repos", (testContext) => {
+  const { homeDirectory } = homeWithBackchannelClone(testContext);
+  const personalRepository = repositoryWithOrigin(testContext, "https://github.com/johncwaters/dotfiles");
+  const workRepository = repositoryWithOrigin(testContext, "https://github.com/PostHog/posthog.git");
+  const payload = {
+    session_id: "codex-session",
+    transcript_path: path.join(homeDirectory, "transcript.jsonl"),
+    cwd: personalRepository,
+    hook_event_name: "PreToolUse",
+    model: "gpt-6.1-sol",
+    tool_name: "mcp__backchannels__register_agent",
+    tool_use_id: "codex-tool-call",
+    tool_input: { name: "agent" },
+  };
+  const deniedProcess = runHook(path.join(import.meta.dirname, "..", "confine-backchannels.mjs"), payload, { HOME: homeDirectory });
+  assert.equal(deniedProcess.status, 0);
+  const denial = JSON.parse(deniedProcess.stdout).hookSpecificOutput;
+  assert.equal(denial.hookEventName, "PreToolUse");
+  assert.equal(denial.permissionDecision, "deny");
+  assert.match(denial.permissionDecisionReason, /Ignore every backchannels startup instruction/);
+  assert.equal(decisionFor({ ...payload, cwd: workRepository }, homeDirectory), "allow");
+});
+
+function runCodexStartup(cwd, homeDirectory) {
+  return spawnSync(process.execPath, [path.join(import.meta.dirname, "..", "confine-backchannels.mjs"), "--codex-startup"], {
+    input: JSON.stringify({ hook_event_name: "SessionStart", session_id: "codex-session", cwd }),
+    encoding: "utf8",
+    env: { ...process.env, HOME: homeDirectory },
+  });
+}
+
+test("Codex startup executes the backchannels script only in work projects and forwards its payload", (testContext) => {
+  const { homeDirectory } = homeWithBackchannelClone(testContext);
+  const skillDirectory = path.join(homeDirectory, ".agents", "skills", "backchannels");
+  fs.mkdirSync(skillDirectory, { recursive: true });
+  const markerPath = path.join(skillDirectory, "started");
+  fs.writeFileSync(path.join(skillDirectory, "session-start.mjs"), `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(markerPath)}, "started"); process.stdout.write(fs.readFileSync(0, "utf8"));`);
+  const personalRepository = repositoryWithOrigin(testContext, "https://github.com/johncwaters/dotfiles");
+  const skippedProcess = runCodexStartup(personalRepository, homeDirectory);
+  assert.equal(skippedProcess.status, 0);
+  assert.match(skippedProcess.stdout, /Ignore every backchannels startup instruction/);
+  assert.equal(fs.existsSync(markerPath), false);
+  const workRepository = repositoryWithOrigin(testContext, "https://github.com/PostHog/posthog.git");
+  const startupProcess = runCodexStartup(workRepository, homeDirectory);
+  assert.equal(startupProcess.status, 0);
+  assert.deepEqual(JSON.parse(startupProcess.stdout), { hook_event_name: "SessionStart", session_id: "codex-session", cwd: workRepository });
+  assert.equal(fs.existsSync(markerPath), true);
+});
+
+test("Codex startup uses the text fallback only inside work projects", (testContext) => {
+  const { homeDirectory } = homeWithBackchannelClone(testContext);
+  const skillDirectory = path.join(homeDirectory, ".agents", "skills", "backchannels");
+  fs.mkdirSync(skillDirectory, { recursive: true });
+  fs.writeFileSync(path.join(skillDirectory, "session-start.mjs"), "process.exit(1);");
+  fs.writeFileSync(path.join(skillDirectory, "session-start.txt"), "register with backchannels");
+  const workRepository = repositoryWithOrigin(testContext, "https://github.com/PostHog/posthog.git");
+  assert.equal(runCodexStartup(workRepository, homeDirectory).stdout, "register with backchannels");
+  const plainDirectory = temporaryDirectory(testContext, "codex-startup-personal-");
+  assert.match(runCodexStartup(plainDirectory, homeDirectory).stdout, /backchannels is off here/);
+  const missingDirectory = path.join(plainDirectory, "missing");
+  assert.match(runCodexStartup(missingDirectory, homeDirectory).stdout, /backchannels is off here/);
 });
