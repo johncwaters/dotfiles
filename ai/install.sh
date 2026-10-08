@@ -15,6 +15,10 @@ claudeHome="$HOME/.claude"
 codexHome="$HOME/.codex"
 claudeSkillsDirectory="$claudeHome/skills"
 repoSkillsDirectory="$dotfilesRepo/ai/skills"
+profileSkillsDirectory=""
+if [[ -n "${profileName:-}" && -d "$dotfilesRepo/profiles/$profileName/skills" ]]; then
+  profileSkillsDirectory="$dotfilesRepo/profiles/$profileName/skills"
+fi
 skillsStagingDirectory="$claudeHome/.skills-cutover"
 
 resolvedDirectoryPath() {
@@ -93,29 +97,49 @@ adoptStagedSkillEntries() {
 removeRetiredSkillLinks() {
   local installedSkillPath
   local skillName
-  shopt -s nullglob
+  local linkedSkillTarget
+  shopt -s dotglob nullglob
   for installedSkillPath in "$claudeSkillsDirectory"/*; do
+    [[ -L "$installedSkillPath" ]] || continue
     skillName="$(basename -- "$installedSkillPath")"
-    if [[ -e "$repoSkillsDirectory/$skillName" ]]; then
-      continue
-    fi
-    case "$(symlinkTargetOf "$installedSkillPath")" in
+    linkedSkillTarget="$(symlinkTargetOf "$installedSkillPath")"
+    case "$linkedSkillTarget" in
       "$dotfilesAlias/ai/skills/"* | "$dotfilesRepo/ai/skills/"*)
-        rm -f -- "$installedSkillPath"
-        noteApplied "skill $skillName" "retired link removed"
+        [[ ! -e "$repoSkillsDirectory/$skillName" ]] || continue
         ;;
+      "$dotfilesAlias/profiles/"*/skills/* | "$dotfilesRepo/profiles/"*/skills/*)
+        if [[ -n "$profileSkillsDirectory" && -e "$profileSkillsDirectory/$skillName" ]]; then
+          case "$linkedSkillTarget" in
+            "$dotfilesAlias/profiles/$profileName/skills/$skillName" | "$profileSkillsDirectory/$skillName") continue ;;
+          esac
+        fi
+        ;;
+      *) continue ;;
     esac
+    rm -f -- "$installedSkillPath"
+    noteApplied "skill $skillName" "retired link removed"
   done
-  shopt -u nullglob
+  shopt -u dotglob nullglob
 }
 
 linkRepoSkills() {
+  local skillDirectories=("$repoSkillsDirectory")
+  local skillDirectory
   local repoSkillPath
   local skillName
+  if [[ -n "$profileSkillsDirectory" ]]; then
+    skillDirectories+=("$profileSkillsDirectory")
+  fi
   shopt -s nullglob
-  for repoSkillPath in "$repoSkillsDirectory"/*; do
-    skillName="$(basename -- "$repoSkillPath")"
-    linkEntry "skill $skillName" "ai/skills/$skillName" "$claudeSkillsDirectory/$skillName"
+  for skillDirectory in "${skillDirectories[@]}"; do
+    for repoSkillPath in "$skillDirectory"/*; do
+      skillName="$(basename -- "$repoSkillPath")"
+      if [[ "$skillDirectory" != "$repoSkillsDirectory" && ( -e "$repoSkillsDirectory/$skillName" || -L "$repoSkillsDirectory/$skillName" ) ]]; then
+        noteWarned "skill $skillName" "profile skill conflicts with shared skill, keeping shared skill"
+        continue
+      fi
+      linkEntry "skill $skillName" "${repoSkillPath#"$dotfilesRepo/"}" "$claudeSkillsDirectory/$skillName"
+    done
   done
   shopt -u nullglob
 }
@@ -163,10 +187,16 @@ installSkillDependencies() {
   command -v npm > /dev/null 2>&1 || return 0
   shopt -s nullglob
   skillLockPaths=("$repoSkillsDirectory"/*/package-lock.json)
+  if [[ -n "$profileSkillsDirectory" ]]; then
+    skillLockPaths+=("$profileSkillsDirectory"/*/package-lock.json)
+  fi
   shopt -u nullglob
   for skillLockPath in "${skillLockPaths[@]}"; do
     skillDirectory="$(dirname -- "$skillLockPath")"
     skillName="$(basename -- "$skillDirectory")"
+    if [[ "$skillDirectory" != "$repoSkillsDirectory/$skillName" && ( -e "$repoSkillsDirectory/$skillName" || -L "$repoSkillsDirectory/$skillName" ) ]]; then
+      continue
+    fi
     if skillDependenciesAreStale "$skillDirectory" && ! (cd -- "$skillDirectory" && npm ci --omit=dev); then
       noteWarned "skill $skillName dependencies" "npm ci failed"
       continue

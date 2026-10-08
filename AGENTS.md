@@ -53,6 +53,7 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
 - `script/collect`: pulls live machine state back into the repo
 - `profiles/<name>/profile.json`: the topic list for that machine, in run order, and its optional platform pin
 - `profiles/<name>/packages.txt`: the package groups the `packages` topic installs there
+- `profiles/<name>/skills/`: skills installed only on that profile.
 - `<topic>/install.sh`: idempotent, safe to rerun, no assumptions about run order beyond
   what the profile guarantees; ends at `finishTopic`, which exits non-zero when the topic
   warned so bootstrap still sees the failure if the shared counts file is lost

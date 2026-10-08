@@ -16,13 +16,21 @@ printf 'pre-existing user notes\n' > "$sandbox/.claude/AGENTS.md"
 
 stagedRepo="$sandbox/staged-dotfiles"
 mkdir -p "$stagedRepo"
+stagedRepo="$(cd -- "$stagedRepo" && pwd)"
 cp -R "$repoRoot/." "$stagedRepo"
-rm -rf "$stagedRepo/.git" "$stagedRepo"/ai/skills/*/node_modules
+rm -rf "$stagedRepo/.git" "$stagedRepo"/ai/skills/*/node_modules "$stagedRepo"/profiles/*/skills/*/node_modules
 git init -q -b main "$stagedRepo"
 stagedTopicDir="$stagedRepo/ai"
 singleFileSkillPath="$stagedTopicDir/skills/single-file-skill-test.md"
 printf 'tracked single file skill\n' > "$singleFileSkillPath"
-git -C "$stagedRepo" add -A -- ai/skills
+workSkillNames=()
+for workSkillPath in "$repoRoot"/profiles/work/skills/*/; do
+  workSkillNames+=("$(basename -- "$workSkillPath")")
+done
+profileDependencySkillPath="$stagedRepo/profiles/work/skills/locked-profile-skill-test"
+mkdir -p "$profileDependencySkillPath"
+printf '{}\n' > "$profileDependencySkillPath/package-lock.json"
+(cd -- "$stagedRepo" && git add -A -- ai/skills profiles/*/skills)
 
 foreignSkillName=".synced-cutover-test"
 foreignSkillPath="$stagedTopicDir/skills/$foreignSkillName"
@@ -118,6 +126,12 @@ installStatus=0
 firstRunOutput="$(runTopicInstall "$stagedTopicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check "install says what it did" test -n "$firstRunOutput"
+for skillName in "${workSkillNames[@]}"; do
+  check "personal profile leaves work skill $skillName absent" \
+    bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$sandbox/.claude/skills/$skillName"
+done
+check "personal profile installs no work skill dependencies" \
+  bash -c '! grep -qF /profiles/work/skills/ "$1"' _ "$skillDependencyLog"
 check "converge installs a skill's locked dependencies from inside its directory because npm 11 ci --prefix from elsewhere reports the skill missing from its own lock" \
   grep -qx "npm ci --omit=dev in .*/ai/skills/social-images" "$skillDependencyLog"
 check "converge installs the headless browser for a skill shipping playwright-core" \
@@ -239,6 +253,13 @@ cp "$sandbox/settings-before-plugin-tests.json" "$stagedRepo/ai/settings.base.js
 : > "$mcpCommandLog"
 
 workMcpOutput="$(runTopicInstall "$stagedTopicDir" work)"
+for skillName in "${workSkillNames[@]}"; do
+  check "work profile links skill $skillName through the alias" \
+    bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
+    "$sandbox/.claude/skills/$skillName" "$sandbox/.dotfiles/profiles/work/skills/$skillName"
+done
+check "work profile installs its skill's locked dependencies inside its directory" \
+  grep -qx "npm ci --omit=dev in .*/profiles/work/skills/locked-profile-skill-test" "$skillDependencyLog"
 check "work adds posthog with no consumer header and preserves unmanaged runtime state" \
   mcpRuntimeMatches https://mcp.posthog.com/mcp
 check "work adds posthog once" test "$(countMcpCommands add-json)" -eq 1
@@ -316,7 +337,7 @@ check "personal profile removes the work AGENTS.profile.md link" \
 check "personal Codex AGENTS.md holds only the shared rules" \
   cmp -s "$codexAgentsPath" "$stagedRepo/ai/AGENTS.md"
 check "converge skips npm ci while a skill's installed lock is current" \
-  test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq 1
+  test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq 2
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
@@ -345,6 +366,68 @@ for destination in "${linkedDestinations[@]}"; do
 done
 
 skillsPath="$sandbox/.claude/skills"
+for skillName in "${workSkillNames[@]}"; do
+  check "switching to personal removes work skill $skillName" \
+    bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$skillsPath/$skillName"
+done
+mkdir -p "$skillsPath/open-pr"
+printf 'foreign skill state\n' > "$skillsPath/open-pr/state.json"
+foreignWorkSkillPath="$sandbox/foreign-sprint-update"
+mkdir -p "$foreignWorkSkillPath"
+printf 'foreign linked skill state\n' > "$foreignWorkSkillPath/state.json"
+ln -s "$foreignWorkSkillPath" "$skillsPath/sprint-update"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "personal profile preserves a foreign directory named after a work skill" \
+  bash -c '[[ ! -L "$1" ]] && grep -qx "foreign skill state" "$1/state.json"' _ "$skillsPath/open-pr"
+check "personal profile preserves a foreign symlink named after a work skill" \
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]] && grep -qx "foreign linked skill state" "$1/state.json"' _ \
+  "$skillsPath/sprint-update" "$foreignWorkSkillPath"
+rm -rf "$skillsPath/open-pr"
+rm -f "$skillsPath/sprint-update"
+for skillName in "${workSkillNames[@]}"; do
+  ln -s "$sandbox/.dotfiles/ai/skills/$skillName" "$skillsPath/$skillName"
+done
+runTopicInstall "$stagedTopicDir" work > /dev/null
+for skillName in "${workSkillNames[@]}"; do
+  check "work profile migrates the former shared skill $skillName" \
+    bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
+    "$skillsPath/$skillName" "$sandbox/.dotfiles/profiles/work/skills/$skillName"
+done
+rm -f "$skillsPath/sprint-update"
+ln -s "$stagedRepo/profiles/work/skills/sprint-update" "$skillsPath/sprint-update"
+ln -s "$sandbox/.dotfiles/profiles/retired/skills/commit" "$skillsPath/commit-from-retired-profile"
+ln -s "$stagedRepo/profiles/retired/skills/deleted" "$skillsPath/deleted-profile-skill"
+ln -s "$sandbox/.dotfiles/profiles/work/skills/deleted" "$skillsPath/.hidden-profile-skill"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+for skillName in "${workSkillNames[@]}" commit-from-retired-profile deleted-profile-skill locked-profile-skill-test .hidden-profile-skill; do
+  check "personal profile removes profile skill link $skillName through the alias or clone path" \
+    bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$skillsPath/$skillName"
+done
+profileConflictSkillPath="$stagedRepo/profiles/work/skills/commit"
+mkdir -p "$profileConflictSkillPath"
+printf '{}\n' > "$profileConflictSkillPath/package-lock.json"
+profileConflictStatus=0
+profileConflictOutput="$(runTopicInstall "$stagedTopicDir" work)" || profileConflictStatus=$?
+check "a profile skill conflicting with a shared skill warns" \
+  outputHas "$profileConflictOutput" "profile skill conflicts with shared skill"
+check "a profile skill conflict fails the topic" test "$profileConflictStatus" -eq 1
+check "a profile skill conflict keeps the shared link" \
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
+  "$skillsPath/commit" "$sandbox/.dotfiles/ai/skills/commit"
+check "a conflicting profile skill installs no dependencies" \
+  bash -c '! grep -qF /profiles/work/skills/commit "$1"' _ "$skillDependencyLog"
+rm -rf "$profileConflictSkillPath"
+noProfileSkillsStatus=0
+runTopicInstallWithoutProfile "$stagedTopicDir" > /dev/null || noProfileSkillsStatus=$?
+check "a missing profile still warns" test "$noProfileSkillsStatus" -eq 1
+for skillName in "${workSkillNames[@]}"; do
+  check "a missing profile removes work skill $skillName" \
+    bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$skillsPath/$skillName"
+done
+check "a missing profile keeps shared skills linked" \
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
+  "$skillsPath/commit" "$sandbox/.dotfiles/ai/skills/commit"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "skills is a plain directory, never a whole-directory link" \
   bash -c '[[ -d "$1" && ! -L "$1" ]]' _ "$skillsPath"
 for repoSkillPath in "$stagedTopicDir"/skills/*; do
@@ -761,7 +844,7 @@ shopt -s nullglob
 hookTestFiles=("$topicDir"/hooks/test/*.test.mjs)
 workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
-openPrTestFiles=("$topicDir"/skills/open-pr/test/*.test.mjs)
+openPrTestFiles=("$repoRoot"/profiles/work/skills/open-pr/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
 hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
 shopt -u nullglob

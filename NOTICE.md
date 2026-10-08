@@ -6,7 +6,7 @@ projects and remain under their upstream licenses, not this repo's.
 | Path | Upstream | License |
 |---|---|---|
 | `ai/skills/impeccable/` | [pbakaus/impeccable](https://github.com/pbakaus/impeccable), `skill/` | Apache-2.0 |
-| `ai/skills/posthog-querying/` | [PostHog/posthog](https://github.com/PostHog/posthog), `products/posthog_ai/skills/querying-posthog-data/` | MIT |
+| `profiles/work/skills/posthog-querying/` | [PostHog/posthog](https://github.com/PostHog/posthog), `products/posthog_ai/skills/querying-posthog-data/` | MIT |
 | `ai/skills/ai-slop-cleaner/` | [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode), `skills/ai-slop-cleaner/` | MIT |
 | `fonts/` | [CommitMono](https://commitmono.com) | SIL Open Font License 1.1 |
 | `glimmervoid/sounds/` | two RuneScape Wiki audio clips (Jagex game audio) | private use only |
@@ -45,14 +45,14 @@ Apache-2.0 section 4(a) requires recipients of a redistribution to receive a
 copy of the License; the verbatim Apache-2.0 text ships at
 `ai/skills/impeccable/LICENSE` (byte-identical to upstream's LICENSE file).
 
-## ai/skills/posthog-querying/ (MIT)
+## profiles/work/skills/posthog-querying/ (MIT)
 
 Vendored from https://github.com/PostHog/posthog at
 `products/posthog_ai/skills/querying-posthog-data/`, renamed and snapshotted at an
 earlier upstream revision. PostHog's root `LICENSE` places everything outside `ee/`
 under the MIT Expat license; `products/` is outside `ee/`.
 
-`ai/skills/posthog-error-triage/` is original to this repo. It is not vendored. It
+`profiles/work/skills/posthog-error-triage/` is original to this repo. It is not vendored. It
 names PostHog MCP tools and PostHog skill slugs so it interoperates with them, and
 no upstream copy of it exists.
 
@@ -64,11 +64,11 @@ Ralph-workflow material removed), but the same workflow and structure.
 
 ## MIT notice
 
-Applies to `ai/skills/posthog-querying/` and `ai/skills/ai-slop-cleaner/`, under the
+Applies to `profiles/work/skills/posthog-querying/` and `ai/skills/ai-slop-cleaner/`, under the
 copyrights listed below.
 
 ```
-Copyright (c) 2020-2026 PostHog Inc.      (ai/skills/posthog-querying/)
+Copyright (c) 2020-2026 PostHog Inc.      (profiles/work/skills/posthog-querying/)
 Copyright (c) 2025 Yeachan Heo            (ai/skills/ai-slop-cleaner/)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
