@@ -152,6 +152,8 @@ for profileInputPath in "$repoRoot"/profiles/*/*; do
   check "the README or hook map names profile input $profileInputName" \
     grep -qF "$profileInputName\`" <<< "$profileInputMaps"
 done
+check "work and work-server share one glimmervoid settings file through the sync engine" \
+  bash -c 'test -f "$1/profiles/work/glimmervoid.settings.json" && test ! -e "$1/profiles/work-server/glimmervoid.settings.json" && grep -q "profiles/work/glimmervoid.settings.json" "$1/glimmervoid/install.sh" "$1/profiles/work/devbox/provision.sh"' _ "$repoRoot"
 check "the README profile file list names vscodium settings" \
   grep -qF '`vscodium.json`' "$repoRoot/README.md"
 for examplePath in repos/repos.example.txt glimmervoid/config.example.json \

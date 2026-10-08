@@ -51,6 +51,7 @@ if [[ -z "$realNodePath" ]]; then
   printf 'glimmervoid/test.sh needs node on PATH: the installer reads the dashboard config with it.\n' >&2
   exit 1
 fi
+isolatedWorkPort="$("$realNodePath" -e 'const server=require("net").createServer();server.listen(0,"127.0.0.1",()=>{console.log(server.address().port);server.close()})')"
 
 sandboxTemp="$toolingHome/tmp"
 
@@ -58,7 +59,7 @@ mkdir -p "$sandboxTemp"
 
 linkCoreUtilities bash sh env cat sed awk grep tail head cut tr find sort uniq wc mktemp rm \
   mkdir rmdir cp mv ln readlink basename dirname chmod cksum cmp id date stat touch true false \
-  xargs od tee expr sleep printf test timeout
+  xargs od tee expr sleep printf test timeout uname
 
 writeStub systemctl <<'STUB'
 #!/usr/bin/env bash
@@ -362,10 +363,12 @@ printf '\nglimmervoid topic\n'
 source "$topicDir/test/install.sh" || exit 1
 
 : > "$commandLog"
+mkdir -p "$darwinWorkHome/.glimmervoid"
+printf '{"port":%s}\n' "$isolatedWorkPort" > "$darwinWorkHome/.glimmervoid/config.json"
 darwinWorkStatus=0
 darwinWorkOutput="$(runInstall "$darwinWorkHome" work "" /dev/null darwin)" || darwinWorkStatus=$?
-check "a fresh seed-only work profile warns on darwin" test "$darwinWorkStatus" -eq 1
-check "darwin seeds the work profile config" test -f "$darwinWorkHome/.glimmervoid/config.json"
+check "the work profile applies shared settings on darwin" test "$darwinWorkStatus" -eq 0
+check "darwin keeps the work profile config" test -f "$darwinWorkHome/.glimmervoid/config.json"
 check "darwin exits through the non-serving path" \
   outputHas "$darwinWorkOutput" "skipped, profile does not serve glimmervoid"
 check "darwin never touches systemd" logLacks "systemctl "
@@ -376,5 +379,8 @@ source "$topicDir/test/service.sh" || exit 1
 [[ -s "$topicDir/test/serve.sh" ]] || exit 1
 # shellcheck source=./test/serve.sh
 source "$topicDir/test/serve.sh" || exit 1
+
+check "settings sync exercises apply, collect and a listening server" \
+  "$realNodePath" "$topicDir/test/sync-settings.mjs" "$toolingHome/settings-sync"
 
 reportTopicResults "glimmervoid"

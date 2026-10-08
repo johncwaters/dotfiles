@@ -1,5 +1,5 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-devboxGlimmervoidVersion="0.30.0"
+devboxGlimmervoidMinimumVersion="0.30.0"
 devboxLookupUnauthenticated=3
 source "$devboxTopicDirectory/../script/lib/profile.sh"
 
@@ -7,6 +7,7 @@ readDevboxProfile() {
   local dotfilesRepo="$(cd -- "$devboxTopicDirectory/.." && pwd)"
   local activeProfile="${profileName:-$(resolveProfileName || true)}"
   [[ -n "$activeProfile" ]] || return 1
+  devboxProfileName="$activeProfile"
   devboxProfileDirectory="$devboxTopicDirectory/../profiles/$activeProfile"
   [[ -f "$devboxProfileDirectory/devbox/provision.sh" ]] || return 1
   devboxDeploymentUrl="$(readProfileSetting "$devboxProfileDirectory/coder.json" deploymentUrl)" || return 1
@@ -71,7 +72,7 @@ runDevboxSsh() {
 }
 
 pushDevboxScript() {
-  local remoteArguments=("$devboxGlimmervoidVersion" "${1:-provision}")
+  local remoteArguments=("$devboxGlimmervoidMinimumVersion" "${1:-provision}")
   if [[ "${1:-}" == pair ]]; then
     local pairingLabel="${2:-}"
     local apostropheReplacement="'\"'\"'"
@@ -103,7 +104,7 @@ pushDevboxSnapshot() (
   remoteScript="$(cat "$devboxProfileDirectory/devbox/provision.sh")"
   remoteScript="${remoteScript//\'/$apostropheReplacement}"
   if git -C "$snapshotRepo" archive --format=tar "$snapshotCommit" \
-    | runDevboxSsh bash -c "'$remoteScript'" -- "$devboxGlimmervoidVersion" snapshot "$snapshotCommit"; then
+    | runDevboxSsh bash -c "'$remoteScript'" -- "$devboxGlimmervoidMinimumVersion" snapshot "$snapshotCommit"; then
     pushDevboxScript sync-repos
     return
   fi
@@ -113,9 +114,74 @@ pushDevboxSnapshot() (
 
 provisionDevbox() {
   pushDevboxScript prepare || return
+  collectDevboxSettings || true
   pushDevboxSnapshot || true
   pushDevboxScript provision
 }
+
+devboxCollectedSettingsPath() {
+  printf '%s/dotfiles/devbox-collected-glimmervoid-settings.json\n' "${XDG_STATE_HOME:-$HOME/.local/state}"
+}
+
+devboxSharedSettingsPath() {
+  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  printf '%s/profiles/%s/glimmervoid.settings.json\n' "$snapshotRepo" "$devboxProfileName"
+}
+
+showCollectedDevboxSettings() (
+  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  local stagedPath reviewedCopyPath diffStatus=0
+  stagedPath="$(devboxCollectedSettingsPath)"
+  if [[ ! -f "$stagedPath" ]]; then
+    printf 'devbox collect: no staged box changes\n'
+    return 0
+  fi
+  reviewedCopyPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-devbox-review.XXXXXX")" || return 1
+  trap 'rm -f -- "$reviewedCopyPath"' EXIT
+  chmod 600 "$reviewedCopyPath"
+  cp -- "$stagedPath" "$reviewedCopyPath" || return 1
+  diff -u "$(devboxSharedSettingsPath)" "$reviewedCopyPath" || diffStatus=$?
+  ((diffStatus <= 1)) || return 1
+  node "$snapshotRepo/glimmervoid/sync-settings.mjs" staged-hash "$reviewedCopyPath"
+)
+
+acceptCollectedDevboxSettings() {
+  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  node "$snapshotRepo/glimmervoid/sync-settings.mjs" accept "$(devboxCollectedSettingsPath)" "$(devboxSharedSettingsPath)" "${1:-}"
+}
+
+collectDevboxSettings() (
+  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  local packetPath scriptPath
+  if ! packetPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-devbox-settings.XXXXXX")" || ! scriptPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-devbox-collect.XXXXXX")"; then
+    rm -f -- "${packetPath:-}"
+    printf '[warned] glimmervoid settings: cannot create a collection workspace; nothing staged\n'
+    return 1
+  fi
+  trap 'rm -f -- "$packetPath" "$scriptPath"' EXIT
+  chmod 600 "$packetPath" "$scriptPath"
+  printf '%s\n' "node --input-type=module <<'SETTINGS_MODULE'" > "$scriptPath"
+  cat "$snapshotRepo/glimmervoid/sync-settings.mjs" >> "$scriptPath"
+  printf 'const trackedProjectPaths = %s;\n' "$(node -e 'const fs=require("node:fs");console.log(JSON.stringify((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).projects ?? []).map(project=>project.path)))' "$snapshotRepo/profiles/$devboxProfileName/glimmervoid.settings.json")" >> "$scriptPath"
+  cat >> "$scriptPath" <<'REMOTE'
+const home = process.env.HOME;
+const ledger = readJson(`${home}/.glimmervoid/devbox-imported-defaults.json`);
+const live = settingsFrom(withoutProvisionerUpdateDefault(readJson(`${home}/.glimmervoid/config.json`), ledger));
+const base = settingsFrom(readJson(`${home}/.glimmervoid/dotfiles-settings-base.json`));
+const projectPaths = [...(live.projects ?? []).map(project => project.path), ...translateHome(trackedProjectPaths, home, 'render')].filter(projectPath => fs.existsSync(projectPath));
+console.log(JSON.stringify({ home, live, base, projectPaths }));
+SETTINGS_MODULE
+REMOTE
+  if ! runDevboxSsh bash -s -- collect-settings < "$scriptPath" > "$packetPath"; then
+    printf '[warned] glimmervoid settings: cannot collect box config; nothing staged\n'
+    return 1
+  fi
+  if ! node "$snapshotRepo/glimmervoid/sync-settings.mjs" collect-remote "$(devboxCollectedSettingsPath)" \
+    "$(devboxSharedSettingsPath)" < "$packetPath" 2>/dev/null; then
+    printf '[warned] glimmervoid settings: box config could not be merged; nothing staged\n'
+    return 1
+  fi
+)
 
 runDevboxCommand() {
   local subcommand="${1:-status}"
@@ -125,6 +191,24 @@ runDevboxCommand() {
       if (($# > 0)); then
         printf 'Usage: devbox %s\n' "$subcommand" >&2
         return 1
+      fi
+      ;;
+    collect)
+      case "$#:${1:-}" in
+        0: | 1:--diff | 1:--accept | 2:--accept) ;;
+        *) printf 'Usage: devbox collect [--diff|--accept <hash>]\n' >&2; return 1 ;;
+      esac
+      if [[ -n "${1:-}" ]] && ! readDevboxProfile; then
+        printf 'devbox: no profile deployment configured\n' >&2
+        return 1
+      fi
+      if [[ "${1:-}" == --diff ]]; then
+        showCollectedDevboxSettings
+        return
+      fi
+      if [[ "${1:-}" == --accept ]]; then
+        acceptCollectedDevboxSettings "${2:-}"
+        return
       fi
       ;;
     pair)
@@ -151,7 +235,7 @@ runDevboxCommand() {
         esac
       fi
       ;;
-    *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure}\n' >&2; return 1 ;;
+    *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure|collect [--diff|--accept <hash>]}\n' >&2; return 1 ;;
   esac
   local lookupStatus=0
   resolveDevboxWorkspace || lookupStatus=$?
@@ -201,5 +285,6 @@ runDevboxCommand() {
   case "$subcommand" in
     pair) pushDevboxScript pair "${1:-$(hostname)}" ;;
     restart-glimmervoid) pushDevboxScript restart ;;
+    collect) collectDevboxSettings ;;
   esac
 }

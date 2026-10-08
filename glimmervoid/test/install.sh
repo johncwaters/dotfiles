@@ -90,6 +90,11 @@ workHome="$sandbox"
 mkdir -p "$workHome/.local/bin"
 ln -sf "$stubBin/node" "$workHome/.local/bin/node"
 makeGlimmervoidApp "$workHome"
+mkdir -p "$workHome/.glimmervoid"
+"$realNodePath" "$repoRoot/script/lib/merge-json.mjs" "$repoRoot/glimmervoid/config.example.json" \
+  "$repoRoot/profiles/work/glimmervoid.overlay.json" "$workHome/.glimmervoid/config.json" "$workHome"
+"$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=Number(process.argv[2]);fs.writeFileSync(process.argv[1], JSON.stringify(config))' \
+  "$workHome/.glimmervoid/config.json" "$isolatedWorkPort"
 : > "$commandLog"
 workOutput="$(runInstall "$workHome" work)" || true
 check "a profile that does not serve glimmervoid says the service was skipped" \
@@ -118,7 +123,7 @@ startSandboxHome "glimmervoid-work-no-app"
 appLessWorkHome="$sandbox"
 mkdir -p "$appLessWorkHome/.local/bin" "$appLessWorkHome/.glimmervoid"
 ln -sf "$stubBin/node" "$appLessWorkHome/.local/bin/node"
-printf '{ "port": 3000 }\n' > "$appLessWorkHome/.glimmervoid/config.json"
+printf '{ "port": %s }\n' "$isolatedWorkPort" > "$appLessWorkHome/.glimmervoid/config.json"
 : > "$commandLog"
 appLessWorkStatus=0
 appLessWorkOutput="$(runInstall "$appLessWorkHome" work)" || appLessWorkStatus=$?
@@ -126,18 +131,37 @@ check "a non-serving machine without the app never warns about the app" \
   outputLacks "$appLessWorkOutput" "is not a Glimmervoid checkout"
 check "a settled non-serving machine without the app exits clean" test "$appLessWorkStatus" -eq 0
 
+startSandboxHome "glimmervoid-work-broken-config"
+brokenConfigWorkHome="$sandbox"
+mkdir -p "$brokenConfigWorkHome/.local/bin" "$brokenConfigWorkHome/.glimmervoid"
+ln -sf "$stubBin/node" "$brokenConfigWorkHome/.local/bin/node"
+makeGlimmervoidApp "$brokenConfigWorkHome"
+printf '{ "port": %s, not json\n' "$isolatedWorkPort" > "$brokenConfigWorkHome/.glimmervoid/config.json"
+cp "$brokenConfigWorkHome/.glimmervoid/config.json" "$sandboxTemp/broken-config-before-install"
+: > "$commandLog"
+brokenConfigWorkOutput="$(runInstall "$brokenConfigWorkHome" work 2>&1)" || true
+check "a shared settings sync failure warns with a one-line reason" \
+  outputMatches "$brokenConfigWorkOutput" '\[warn\].*glimmervoid settings.*not applied: .*JSON'
+check "a shared settings sync failure prints no stack trace" outputLacks "$brokenConfigWorkOutput" "sync-settings.mjs:"
+check "a shared settings sync failure leaves the config bytes alone" \
+  cmp -s "$sandboxTemp/broken-config-before-install" "$brokenConfigWorkHome/.glimmervoid/config.json"
+check "a shared settings sync failure still copies the sounds" test -f "$brokenConfigWorkHome/.glimmervoid/sounds/coins.ogg"
+check "a shared settings sync failure still installs the CLI shim" test -x "$brokenConfigWorkHome/.local/bin/glimmervoid"
+
 startSandboxHome "glimmervoid-homebrew-node"
 homebrewNodeHome="$sandbox"
 homebrewNodePrefix="$homebrewNodeHome/homebrew"
 mkdir -p "$homebrewNodePrefix/bin"
+mkdir -p "$homebrewNodeHome/.glimmervoid"
+printf '{"port":%s}\n' "$isolatedWorkPort" > "$homebrewNodeHome/.glimmervoid/config.json"
 ln -sf "$stubBin/node" "$homebrewNodePrefix/bin/node"
 makeGlimmervoidApp "$homebrewNodeHome"
 : > "$commandLog"
 # The homebrew prefix seam refuses an account the passwd database cannot answer for, so this case runs under the real one.
 DOTFILES_TEST_HOMEBREW_PREFIX="$homebrewNodePrefix" \
   runInstall "$homebrewNodeHome" work "" /dev/null darwin "$(id -un)" > /dev/null || true
-check "node reachable only at the homebrew prefix still seeds the config" \
-  test -f "$homebrewNodeHome/.glimmervoid/config.json"
+check "node reachable only at the homebrew prefix still applies shared settings" \
+  test "$(configValue "$homebrewNodeHome" 'require(process.argv[1]).rtk')" = true
 check "node reachable only at the homebrew prefix still installs the CLI shim" \
   test -x "$homebrewNodeHome/.local/bin/glimmervoid"
 check "the shim execs the node the homebrew prefix holds" \

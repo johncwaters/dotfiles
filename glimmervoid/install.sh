@@ -599,6 +599,33 @@ installGlimmervoidCliShim() {
   noteApplied "$label" "~/.local/bin/glimmervoid execs node against $glimmervoidAppDisplayPath/dist/bin/glimmervoid.js"
 }
 
+applyGlimmervoidSharedSettings() {
+  local label="glimmervoid settings"
+  local nodePath settingsSyncOutput settingsSyncErrorPath settingsSyncReason=""
+  if ! nodePath="$(resolveGlimmervoidNodePath)"; then
+    noteWarned "$label" "$(describeGlimmervoidNodeSearch)"
+    return 0
+  fi
+  if ! settingsSyncErrorPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-glimmervoid-settings.XXXXXX")"; then
+    noteWarned "$label" "cannot create a scratch file; shared settings not applied"
+    return 0
+  fi
+  if ! settingsSyncOutput="$("$nodePath" "$dotfilesRepo/glimmervoid/sync-settings.mjs" apply \
+    "$glimmervoidConfigPath" "$dotfilesRepo/profiles/work/glimmervoid.settings.json" \
+    "$glimmervoidConfigDirectory/dotfiles-settings-base.json" "$HOME" 2> "$settingsSyncErrorPath")"; then
+    settingsSyncReason="$(sed -nE 's/^[A-Za-z]*Error: //p' "$settingsSyncErrorPath" | head -n 1)"
+    rm -f -- "$settingsSyncErrorPath"
+    [[ -z "$settingsSyncOutput" ]] || printf '%s\n' "$settingsSyncOutput"
+    noteWarned "$label" "not applied: ${settingsSyncReason:-sync-settings failed}"
+    return 0
+  fi
+  rm -f -- "$settingsSyncErrorPath"
+  printf '%s\n' "$settingsSyncOutput"
+  if [[ "$settingsSyncOutput" == *'[warned]'* ]]; then
+    noteWarned "$label" "see [warned] lines"
+  fi
+}
+
 if ! glimmervoidProfileSettingsAreUsable; then
   finishTopic
 fi
@@ -613,7 +640,12 @@ if ! glimmervoidConfigDirectoryIsUsable; then
 fi
 
 migrateLegacyGlimmervoidConfig
-seedGlimmervoidConfig
+if [[ "$profileName" != work ]]; then
+  seedGlimmervoidConfig
+fi
+if [[ "$profileName" == work ]]; then
+  applyGlimmervoidSharedSettings
+fi
 copyGlimmervoidSoundsAsRegularFiles
 protectGlimmervoidConfig
 

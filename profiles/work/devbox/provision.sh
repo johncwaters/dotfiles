@@ -159,8 +159,22 @@ installedDevboxGlimmervoidVersion() {
   fi
 }
 
+devboxGlimmervoidMeetsMinimum() {
+  node -e '
+    const parseVersion = text => /^(\d+)\.(\d+)\.(\d+)(?:-([^+]+))?(?:\+.*)?$/.exec(text.trim());
+    const installed = parseVersion(process.argv[1]);
+    const minimum = parseVersion(process.argv[2]);
+    if (!installed || !minimum) process.exit(1);
+    for (let index = 1; index <= 3; index++) {
+      if (+installed[index] > +minimum[index]) process.exit(0);
+      if (+installed[index] < +minimum[index]) process.exit(1);
+    }
+    process.exit(installed[4] ? 1 : 0);
+  ' "$1" "$glimmervoidVersion"
+}
+
 requireDevboxReleaseOnRegistry() {
-  if [[ "$(installedDevboxGlimmervoidVersion)" == "$glimmervoidVersion" ]]; then
+  if devboxGlimmervoidMeetsMinimum "$(installedDevboxGlimmervoidVersion)"; then
     return 0
   fi
   local publishedVersion
@@ -175,7 +189,7 @@ requireDevboxReleaseOnRegistry() {
 installDevboxGlimmervoid() {
   local installedVersion
   installedVersion="$(installedDevboxGlimmervoidVersion)"
-  if [[ "$installedVersion" == "$glimmervoidVersion" ]]; then
+  if devboxGlimmervoidMeetsMinimum "$installedVersion"; then
     reportDevboxItem present glimmervoid "$installedVersion"
     return 0
   fi
@@ -237,8 +251,54 @@ installDevboxGhWrapper() {
   cat > "$stagedWrapperPath" <<'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
-GH_TOKEN="$(coder external-auth access-token primary-github)"
-export GH_TOKEN
+targetRepo=""
+arguments=("$@")
+for ((index = 0; index < ${#arguments[@]}; index++)); do
+  case "${arguments[index]}" in
+    -R | --repo) targetRepo="${arguments[index + 1]:-}"; break ;;
+    --repo=*) targetRepo="${arguments[index]#--repo=}"; break ;;
+    -R?*) targetRepo="${arguments[index]#-R}"; break ;;
+  esac
+done
+if [[ -z "$targetRepo" && "${arguments[0]:-}" == api ]]; then
+  for apiArgument in "${arguments[@]:1}"; do
+    apiPath="${apiArgument#/}"
+    [[ "$apiPath" == repos/*/* ]] || continue
+    apiPath="${apiPath#repos/}"
+    apiOwner="${apiPath%%/*}"
+    apiName="${apiPath#*/}"
+    targetRepo="$apiOwner/${apiName%%[/?#]*}"
+    break
+  done
+fi
+if [[ -z "$targetRepo" && "${arguments[0]:-}" == repo && ( "${arguments[1]:-}" == clone || "${arguments[1]:-}" == view ) ]]; then
+  for repoArgument in "${arguments[@]:2}"; do
+    [[ "$repoArgument" != -* ]] || continue
+    if [[ "$repoArgument" == */* ]]; then targetRepo="$repoArgument"; fi
+    break
+  done
+fi
+if [[ -z "$targetRepo" ]]; then
+  targetRepo="$(git remote get-url origin 2>/dev/null || true)"
+fi
+targetRepo="${targetRepo#https://github.com/}"
+targetRepo="${targetRepo#http://github.com/}"
+targetRepo="${targetRepo#ssh://git@github.com/}"
+targetRepo="${targetRepo#git@github.com:}"
+targetRepo="${targetRepo#github.com/}"
+while [[ "$targetRepo" == */ ]]; do targetRepo="${targetRepo%/}"; done
+targetRepo="${targetRepo%.git}"
+if [[ "${targetRepo,,}" == johncwaters/dotfiles ]]; then
+  printf 'gh: dotfiles access is excluded on the box\n' >&2
+  exit 1
+fi
+if [[ -n "${GH_PERSONAL_TOKEN:-}" && "${targetRepo,,}" == johncwaters/* ]]; then
+  export GH_TOKEN="$GH_PERSONAL_TOKEN"
+fi
+if [[ -z "${GH_PERSONAL_TOKEN:-}" || "${targetRepo,,}" != johncwaters/* ]]; then
+  GH_TOKEN="$(coder external-auth access-token primary-github)"
+  export GH_TOKEN
+fi
 exec /usr/bin/gh "$@"
 WRAPPER
   if cmp -s "$stagedWrapperPath" "$wrapperPath"; then
@@ -252,6 +312,61 @@ WRAPPER
   reportDevboxItem installed gh "Coder external auth wrapper"
 }
 
+installDevboxPersonalGitAuth() {
+  local helperPath="$HOME/.local/bin/git-credential-personal"
+  local stagedHelperPath
+  stagedHelperPath="$(mktemp "$HOME/.local/bin/.git-credential-personal.XXXXXX")"
+  cat > "$stagedHelperPath" <<'HELPER'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == get && -n "${GH_PERSONAL_TOKEN:-}" ]] || exit 0
+protocol="" host="" repoPath=""
+while IFS='=' read -r key value; do
+  [[ -n "$key" ]] || break
+  case "$key" in
+    protocol) protocol="$value" ;;
+    host) host="$value" ;;
+    path) repoPath="$value" ;;
+  esac
+done
+[[ "$protocol" == https && "$host" == github.com && "${repoPath,,}" == johncwaters/* ]] || exit 0
+case "${repoPath,,}" in
+  johncwaters/dotfiles | johncwaters/dotfiles.git | johncwaters/dotfiles/* | johncwaters/dotfiles.git/*) exit 0 ;;
+esac
+printf 'username=x-access-token\npassword=%s\n' "$GH_PERSONAL_TOKEN"
+HELPER
+  chmod 700 "$stagedHelperPath"
+  if cmp -s "$helperPath" "$stagedHelperPath"; then
+    rm -f "$stagedHelperPath"
+  fi
+  if [[ -f "$stagedHelperPath" ]]; then
+    mv -f "$stagedHelperPath" "$helperPath"
+  fi
+  git config --global --replace-all credential.https://github.com/johncwaters/.helper ""
+  git config --global --add credential.https://github.com/johncwaters/.helper "$helperPath"
+  git config --global credential.https://github.com/johncwaters/.useHttpPath true
+  if [[ -z "${GH_PERSONAL_TOKEN:-}" && "$devboxAction" != prepare ]]; then
+    reportDevboxItem warned "personal GitHub token" "GH_PERSONAL_TOKEN not set; johncwaters repos will 403"
+  fi
+  if [[ -n "${GH_PERSONAL_TOKEN:-}" && "$devboxAction" != prepare ]]; then
+    probeDevboxPersonalTokenDotfilesAccess
+  fi
+}
+
+probeDevboxPersonalTokenDotfilesAccess() {
+  local dotfilesStatusCode
+  if ! dotfilesStatusCode="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -H @- \
+    https://api.github.com/repos/johncwaters/dotfiles 2>/dev/null <<< "Authorization: Bearer $GH_PERSONAL_TOKEN")"; then
+    reportDevboxItem warned "personal GitHub token" "cannot reach GitHub to check dotfiles access"
+    return 0
+  fi
+  case "$dotfilesStatusCode" in
+    200) reportDevboxItem warned "personal GitHub token" "can read johncwaters/dotfiles; recreate it without that repo" ;;
+    403 | 404) reportDevboxItem present "personal GitHub token" "cannot read johncwaters/dotfiles" ;;
+    *) reportDevboxItem warned "personal GitHub token" "dotfiles access check got HTTP $dotfilesStatusCode" ;;
+  esac
+}
+
 installDevboxPrerequisites() {
   touch "$glimmervoidDirectory/provision.log"
   chmod 600 "$glimmervoidDirectory/provision.log"
@@ -259,10 +374,13 @@ installDevboxPrerequisites() {
   installDevboxGlobals
   installDevboxSandboxTools
   installDevboxGhWrapper
+  installDevboxPersonalGitAuth
 }
 
 mergeDevboxConfig() {
-  DEVBOX_CONFIG_MODE="$1" DEVBOX_PUBLIC_HOST="$2" node -e '
+  DEVBOX_CONFIG_MODE="$1" DEVBOX_PUBLIC_HOST="$2" node --input-type=module -e '
+    import { createRequire } from "node:module";
+    const require = createRequire(`${process.env.HOME}/dotfiles-snapshot/package.json`);
     const fs = require("node:fs");
     const path = require("node:path");
     const crypto = require("node:crypto");
@@ -294,8 +412,21 @@ mergeDevboxConfig() {
     if (!Array.isArray(ledger?.keys) || !Array.isArray(ledger?.hookIds)) throw new Error("devbox-imported-defaults.json must list keys and hookIds; left unchanged");
     const importedKeys = new Set(ledger.keys);
     const importedHookIds = new Set(ledger.hookIds);
+    const settingsPath = path.join(process.env.HOME, "dotfiles-snapshot", "profiles/work/glimmervoid.settings.json");
+    const syncPath = path.join(process.env.HOME, "dotfiles-snapshot", "glimmervoid/sync-settings.mjs");
+    let settingsPlan;
+    let settingsSync;
+    const basePath = path.join(directory, "dotfiles-settings-base.json");
+    if (fs.existsSync(settingsPath)) {
+      settingsSync = await import(syncPath);
+      config = settingsSync.withoutProvisionerUpdateDefault(config, ledger);
+      const wanted = settingsSync.translateHome(settingsSync.settingsFrom(settingsSync.readJson(settingsPath)), process.env.HOME, "render");
+      settingsPlan = settingsSync.planApply(config, wanted, settingsSync.readJson(basePath));
+      config = settingsPlan.config;
+    }
     const defaultsPath = path.join(process.env.HOME, "dotfiles-snapshot", "glimmervoid", "config.example.json");
-    if (fs.existsSync(defaultsPath)) {
+    if (!fs.existsSync(settingsPath) && !ledger.checkForUpdatesMigration && !importedKeys.has("checkForUpdates") && config.checkForUpdates === false) delete config.checkForUpdates;
+    if (!fs.existsSync(settingsPath) && fs.existsSync(defaultsPath)) {
       const defaults = JSON.parse(fs.readFileSync(defaultsPath, "utf8"), (_key, value) =>
         typeof value === "string" ? value.replaceAll("{{HOME}}", process.env.HOME) : value);
       for (const settingName of ["skipPermissionsByDefault", "postTurnChecks", "branchGc"]) {
@@ -316,9 +447,10 @@ mergeDevboxConfig() {
       }
     }
     if (process.env.DEVBOX_CONFIG_MODE === "check") process.exit(0);
-    const nextLedger = { keys: [...importedKeys], hookIds: [...importedHookIds] };
+    const nextLedger = { ...ledger, keys: [...importedKeys], hookIds: [...importedHookIds], checkForUpdatesMigration: true };
     const isLedgerCurrent = hasLedger && isDeepStrictEqual(ledger, nextLedger);
     const writeLedger = () => {
+      if (settingsPlan) settingsSync.writeJson(basePath, settingsPlan.base);
       if (isLedgerCurrent) return;
       const stagedLedgerPath = path.join(directory, `.devbox-imported-defaults.${crypto.randomUUID()}`);
       try {
@@ -334,7 +466,6 @@ mergeDevboxConfig() {
     }
     config.port = 3456;
     config.repoRoots = [path.join(process.env.HOME, "Projects")];
-    config.checkForUpdates = false;
     config.remote = { enabled: true, port: 3457, publicHost: process.env.DEVBOX_PUBLIC_HOST, allowedOrigins: [`https://${process.env.DEVBOX_PUBLIC_HOST}`] };
     const merged = JSON.stringify(config, null, 2) + "\n";
     if (hasConfig && isDeepStrictEqual(parsedOriginal, config)) {
@@ -499,7 +630,7 @@ case "$devboxAction" in
     ;;
   snapshot) installDevboxSnapshot "${3:?missing snapshot commit}"; exit ;;
   sync-repos) holdDevboxProvisionLock; syncDevboxRepositories; exit ;;
-  config-only) requireDevboxPublicHost; holdDevboxProvisionLock; mergeDevboxConfig apply "$devboxPublicHostName"; exit ;;
+  config-only) requireDevboxPublicHost; holdDevboxProvisionLock; convergeDevboxConfig "$devboxPublicHostName"; exit ;;
   status)
     if devboxPortListens 3456; then
       reportRunningDevboxGlimmervoid

