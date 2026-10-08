@@ -1,5 +1,5 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-devboxGlimmervoidVersion="0.29.1"
+devboxGlimmervoidVersion="0.30.0"
 
 resolveDevboxWorkspace() {
   devboxSkipReason=""

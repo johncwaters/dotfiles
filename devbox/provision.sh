@@ -274,12 +274,35 @@ startDevboxGlimmervoid() {
   fi
   touch "$glimmervoidDirectory/server.log"
   chmod 600 "$glimmervoidDirectory/server.log"
-  setsid nohup glimmervoid --config "$glimmervoidDirectory/config.json" \
+  local systemNode glimmervoidScript
+  # node-pty is built against system Node, so the flox bin directory is appended after it, never prepended.
+  systemNode="$(command -v node)"
+  glimmervoidScript="$(readlink -f "$(command -v glimmervoid)")"
+  # Appended without activating: PostHog's on-activate hook runs uv sync, pnpm and builds.
+  local launchPath="$PATH" environmentDescription="" floxBinCandidate nixSystem
+  local floxBinDirectories=()
+  if [[ -d "$HOME/posthog/.flox" ]]; then
+    case "$(uname -m)" in
+      arm64 | aarch64) nixSystem="aarch64-linux" ;;
+      *) nixSystem="$(uname -m)-linux" ;;
+    esac
+    for floxBinCandidate in "$HOME/posthog/.flox/run/${nixSystem}."*-dev/bin; do
+      if [[ -d "$floxBinCandidate" ]]; then
+        floxBinDirectories+=("$floxBinCandidate")
+      fi
+    done
+    environmentDescription="; flox env posthog not on PATH (expected one .flox/run/${nixSystem}.*-dev/bin, found ${#floxBinDirectories[@]})"
+  fi
+  if [[ ${#floxBinDirectories[@]} -eq 1 ]]; then
+    launchPath="$PATH:${floxBinDirectories[0]}"
+    environmentDescription="; flox env posthog"
+  fi
+  PATH="$launchPath" setsid nohup "$systemNode" "$glimmervoidScript" --config "$glimmervoidDirectory/config.json" \
     >> "$glimmervoidDirectory/server.log" 2>&1 < /dev/null &
   local attempt
   for attempt in {1..30}; do
     if devboxPortListens 3456 && devboxPortListens 3457; then
-      reportDevboxItem installed "glimmervoid server" "$(glimmervoid --version); both listeners ready"
+      reportDevboxItem installed "glimmervoid server" "$(glimmervoid --version); both listeners ready$environmentDescription"
       return 0
     fi
     sleep 0.5

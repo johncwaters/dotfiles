@@ -2,12 +2,13 @@
 set -euo pipefail
 
 topicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+pinnedGlimmervoidVersion="$(sed -n 's/^devboxGlimmervoidVersion="\(.*\)"$/\1/p' "$topicDirectory/lib.sh")"
 repoRoot="$(cd -- "$topicDirectory/.." && pwd)"
 export DOTFILES_PLATFORM=linux
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
-linkCoreUtilities bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps
+linkCoreUtilities bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -95,7 +96,7 @@ done
 printf 'running\n' > "$stubState/workspace-status"
 : > "$commandLog"
 runningOutput="$(runInstall)"
-check "running converge pushes with the pinned release" logHas 'coder ssh devbox-fixture -- bash -s -- 0.29.1 provision'
+check "running converge pushes with the pinned release" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
 check "running converge pipes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "running converge does not start a workspace" logLacks 'coder start'
@@ -128,7 +129,7 @@ printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
 upOutput="$(runDevbox up)"
 check "up starts a stopped workspace" logHas 'coder start devbox-fixture --yes'
-check "up waits through the default Coder ssh behavior" logHas 'coder ssh devbox-fixture -- bash -s -- 0.29.1 provision'
+check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
 check "up pushes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
 check "up prints the dashboard URL" outputHas "$upOutput" 'https://fixture.invalid/'
 check "up starts before it connects" outputMatches "$(grep -E 'coder start|coder ssh' "$commandLog" | head -1)" '^coder start'
@@ -147,10 +148,10 @@ printf 'n\n' | runDevbox restart-glimmervoid >/dev/null 2>&1 || restartStatus=$?
 check "restart refuses a negative confirmation" test "$restartStatus" -ne 0
 check "negative confirmation makes no connection" logLacks 'coder ssh'
 printf 'y\n' | runDevbox restart-glimmervoid >/dev/null 2>&1
-check "affirmative confirmation requests the shared restart" logHas '0.29.1 restart'
+check "affirmative confirmation requests the shared restart" logHas "$pinnedGlimmervoidVersion restart"
 : > "$commandLog"
 runDevbox restart-glimmervoid --yes >/dev/null
-check "explicit yes requests the shared restart" logHas '0.29.1 restart'
+check "explicit yes requests the shared restart" logHas "$pinnedGlimmervoidVersion restart"
 
 : > "$commandLog"
 runDevbox pair "laptop's label; literal" >/dev/null
@@ -162,7 +163,7 @@ check "pair defaults to the laptop hostname" test "$(tail -1 "$stubState/remote-
 : > "$commandLog"
 statusOutput="$(runDevbox status)"
 check "status reports the workspace" outputHas "$statusOutput" 'workspace devbox-fixture: running'
-check "status uses the shared remote status action" logHas '0.29.1 status'
+check "status uses the shared remote status action" logHas "$pinnedGlimmervoidVersion status"
 check "status never starts a workspace" logLacks 'coder start'
 printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
@@ -249,12 +250,26 @@ case "${2:-}" in
 esac
 exec "$DOTFILES_TEST_NODE_PATH" "$@"
 STUB
-writeStub glimmervoid <<'STUB'
-#!/usr/bin/env bash
-printf 'glimmervoid %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-[[ "$1" == --version ]] || exit 1
-cat "$DOTFILES_TEST_STATE/glimmervoid-version"
-STUB
+glimmervoidScriptPath="$sandbox/.local/lib/node_modules/glimmervoid/dist/cli.js"
+mkdir -p "${glimmervoidScriptPath%/*}"
+cat > "$glimmervoidScriptPath" <<'JS'
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const stateDirectory = process.env.DOTFILES_TEST_STATE;
+fs.appendFileSync(process.env.DOTFILES_TEST_LOG, `glimmervoid ${process.argv.slice(2).join(" ")}\n`);
+if (process.argv[2] === "--version") {
+  process.stdout.write(fs.readFileSync(path.join(stateDirectory, "glimmervoid-version")));
+  process.exit(0);
+}
+fs.appendFileSync(process.env.DOTFILES_TEST_LOG, `glimmervoid-path ${process.env.PATH}\n`);
+fs.writeFileSync(path.join(stateDirectory, "listening-3456"), "");
+if (fs.existsSync(path.join(stateDirectory, "no-remote-listener"))) process.exit(0);
+fs.writeFileSync(path.join(stateDirectory, "listening-3457"), "");
+JS
+chmod +x "$glimmervoidScriptPath"
+ln -s "$glimmervoidScriptPath" "$stubBin/glimmervoid"
+glimmervoidScriptPath="$(readlink -f "$glimmervoidScriptPath")"
 writeStub codex <<'STUB'
 #!/usr/bin/env bash
 exit 0
@@ -300,12 +315,14 @@ writeStub setsid <<'STUB'
 printf 'setsid %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 umask > "$DOTFILES_TEST_STATE/umask-at-start"
 cp "$HOME/.glimmervoid/config.json" "$DOTFILES_TEST_STATE/config-at-start"
-touch "$DOTFILES_TEST_STATE/listening-3456"
-[[ ! -f "$DOTFILES_TEST_STATE/no-remote-listener" ]] || exit 0
-touch "$DOTFILES_TEST_STATE/listening-3457"
+exec "$@"
 STUB
 writeContainedSudoStub
-for stubName in node glimmervoid npm apt-get setsid; do
+writeStub uname <<'STUB'
+#!/usr/bin/env bash
+printf 'x86_64\n'
+STUB
+for stubName in node npm apt-get setsid uname; do
   provideCommand "$stubName"
 done
 
@@ -338,7 +355,11 @@ check "remote provision installs the requested npm version under the box home" \
 check "remote provision installs missing Codex under the box home" logHas "npm install -g --prefix $sandbox/.local @openai/codex"
 check "remote provision installs both sandbox packages" bash -c 'grep -q bubblewrap "$1" && grep -q socat "$1"' _ "$commandLog"
 check "remote provision detaches the CLI with nohup and its explicit config" \
-  logHas "setsid nohup glimmervoid --config $sandbox/.glimmervoid/config.json"
+  logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
+check "remote provision without a flox environment never calls flox" logLacks 'flox activate'
+check "remote provision without a flox environment leaves PATH unchanged" \
+  bash -c '! grep -E "^glimmervoid-path .*\.flox" "$1" >/dev/null' _ "$commandLog"
+check "remote provision without flox does not report activation" outputLacks "$remoteOutput" 'flox env posthog'
 check "remote provision waits for both listeners" outputHas "$remoteOutput" 'both listeners ready'
 check "remote provision prints the forwarding URL" outputHas "$remoteOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
 check "remote provision writes an executable gh wrapper" test -x "$sandbox/.local/bin/gh"
@@ -347,6 +368,41 @@ check "provisioning never acquires a GitHub token" logLacks 'external-auth'
 check "server log has mode 0600" test "$(fileModeOf "$sandbox/.glimmervoid/server.log")" = 600
 check "glimmervoid starts with the box umask rather than a private one" test "$(cat "$stubState/umask-at-start")" = 0022
 check "provisioned config still has mode 0600 under the box umask" test "$(fileModeOf "$sandbox/.glimmervoid/config.json")" = 600
+
+floxBinDirectory="$sandbox/posthog/.flox/run/x86_64-linux.posthog-dev/bin"
+mkdir -p "$floxBinDirectory" "$sandbox/posthog/.flox/run/x86_64-linux.posthog-run/bin"
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+: > "$commandLog"
+floxRemoteOutput="$(runRemoteProvision)"
+check "remote provision launches the captured node and resolved script directly with the flox env present" \
+  logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
+check "remote provision appends the flox bin directory to the server PATH" \
+  bash -c 'grep -E "^glimmervoid-path .*:$1\$" "$2" >/dev/null' _ "$floxBinDirectory" "$commandLog"
+check "remote provision never appends the run link bin directory" \
+  bash -c '! grep -E "^glimmervoid-path .*posthog-run" "$1" >/dev/null' _ "$commandLog"
+check "remote provision never activates flox" logLacks 'flox activate'
+check "remote provision reports both listeners and the flox environment" \
+  outputHas "$floxRemoteOutput" 'both listeners ready; flox env posthog'
+rm -rf "$sandbox/posthog/.flox/run"
+
+mkdir -p "$sandbox/posthog/.flox/run/x86_64-linux.first-dev/bin" "$sandbox/posthog/.flox/run/x86_64-linux.second-dev/bin"
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+: > "$commandLog"
+ambiguousFloxOutput="$(runRemoteProvision)"
+check "ambiguous flox env leaves the server PATH unchanged" \
+  bash -c '! grep -E "^glimmervoid-path .*\.flox" "$1" >/dev/null' _ "$commandLog"
+check "ambiguous flox env is noted in the status line" outputHas "$ambiguousFloxOutput" 'flox env posthog not on PATH'
+rm -rf "$sandbox/posthog/.flox/run"
+
+mkdir -p "$sandbox/posthog/.flox/run/aarch64-linux.posthog-dev/bin" "$sandbox/posthog/.flox/run/aarch64-linux.posthog-run/bin"
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+: > "$commandLog"
+otherSystemFloxOutput="$(runRemoteProvision)"
+check "flox links for another system leave the server PATH unchanged" \
+  bash -c '! grep -E "^glimmervoid-path .*\.flox" "$1" >/dev/null' _ "$commandLog"
+check "flox links for another system are noted in the status line" \
+  outputHas "$otherSystemFloxOutput" 'flox env posthog not on PATH'
+rm -rf "$sandbox/posthog/.flox"
 
 cp "$sandbox/.local/bin/gh" "$stubState/original-wrapper"
 : > "$commandLog"
@@ -426,21 +482,28 @@ firstLogLineOf() {
   grep -nF -- "$1" "$commandLog" | head -1 | cut -d: -f1
 }
 
-cat > "$stubState/glimmervoid-fixture-server" <<'SERVER'
-#!/usr/bin/env bash
-stateDirectory="$1"
-sandboxHome="$2"
-trap 'cp "$sandboxHome/.glimmervoid/config.json" "$stateDirectory/config-at-stop"; printf "fixture server stopped\n" >> "$stateDirectory/commands.log"; rm -f "$stateDirectory/listening-3456" "$stateDirectory/listening-3457"; exit 0' TERM
-printf '%s\n' "$$" > "$stateDirectory/listener-pid"
-while :; do sleep 0.1; done
-SERVER
-chmod +x "$stubState/glimmervoid-fixture-server"
+fixtureGlimmervoidScript="$sandbox/.local/lib/node_modules/glimmervoid/dist/fixture-server.js"
+cat > "$fixtureGlimmervoidScript" <<'JS'
+const fs = require("node:fs");
+const path = require("node:path");
+const stateDirectory = process.argv[2];
+const sandboxHome = process.argv[3];
+process.on("SIGTERM", () => {
+  fs.copyFileSync(path.join(sandboxHome, ".glimmervoid/config.json"), path.join(stateDirectory, "config-at-stop"));
+  fs.appendFileSync(path.join(stateDirectory, "commands.log"), "fixture server stopped\n");
+  fs.unlinkSync(path.join(stateDirectory, "listening-3456"));
+  fs.unlinkSync(path.join(stateDirectory, "listening-3457"));
+  process.exit(0);
+});
+fs.writeFileSync(path.join(stateDirectory, "listener-pid"), String(process.pid));
+setInterval(() => {}, 100);
+JS
 
 startFixtureGlimmervoidServer() {
   touch "$stubState/listening-3456" "$stubState/listening-3457"
   printf '0.28.0\n' > "$stubState/glimmervoid-version"
   rm -f "$stubState/listener-pid" "$stubState/config-at-stop" "$stubState/config-at-start"
-  ("$stubState/glimmervoid-fixture-server" "$stubState" "$sandbox" &)
+  ("$testNodePath" "$fixtureGlimmervoidScript" "$stubState" "$sandbox" --config "$sandbox/.glimmervoid/config.json" &)
   glimmervoidListenerPid="$(waitForListenerPid)"
   fixtureListenerPids+=("$glimmervoidListenerPid")
 }
@@ -453,7 +516,7 @@ check "restart of an identified glimmervoid listener succeeds" test "$glimmervoi
 check "restart reads the listener PID from ss" logHas "ss -ltnp sport = :3456"
 check "restart terminates the identified glimmervoid listener" bash -c '! kill -0 "$1" 2>/dev/null' _ "$glimmervoidListenerPid"
 check "restart reports the old server stopped" outputHas "$glimmervoidRestartOutput" '[installed] glimmervoid server: stopped'
-check "restart starts a fresh detached server" logHas "setsid nohup glimmervoid --config $sandbox/.glimmervoid/config.json"
+check "restart starts a fresh detached server" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
 check "restart installs the pinned release after the server stops" \
   test "$(firstLogLineOf 'fixture server stopped')" -lt "$(firstLogLineOf "npm install -g --prefix $sandbox/.local glimmervoid@0.29.1")"
 check "restart installs the pinned release before the server starts" \
@@ -516,7 +579,7 @@ check "restart with a failed install fails" test "$failedInstallRestartStatus" -
 check "restart with a failed install names the fallback release" \
   outputHas "$failedInstallRestartOutput" '[warned] glimmervoid: install of 0.29.1 failed; starting installed 0.28.0 instead'
 check "restart with a failed install still stops the old server first" bash -c '! kill -0 "$1" 2>/dev/null' _ "$glimmervoidListenerPid"
-check "restart with a failed install starts the previous release" logHas "setsid nohup glimmervoid --config $sandbox/.glimmervoid/config.json"
+check "restart with a failed install starts the previous release" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
 check "restart with a failed install brings both listeners up" outputHas "$failedInstallRestartOutput" 'both listeners ready'
 rm -f "$stubState/npm-install-failed"
 
@@ -549,7 +612,7 @@ failedInstallProvisionOutput="$(runRemoteProvision)" || failedInstallProvisionSt
 check "provision with a failed install fails" test "$failedInstallProvisionStatus" -ne 0
 check "provision with a failed install names the fallback release" \
   outputHas "$failedInstallProvisionOutput" '[warned] glimmervoid: install of 0.29.1 failed; starting installed 0.28.0 instead'
-check "provision with a failed install starts the previous release" logHas "setsid nohup glimmervoid --config $sandbox/.glimmervoid/config.json"
+check "provision with a failed install starts the previous release" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
 check "provision with a failed install still prints the forwarding URL" \
   outputHas "$failedInstallProvisionOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
 rm -f "$stubState/npm-install-failed"
