@@ -9,7 +9,7 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
 printf 'work\n' > "$DOTFILES_MARKER_PATH"
-linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup tar cut od date
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup tar cut od date cksum
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -33,6 +33,18 @@ case "$1" in
   ssh)
     printf '%s %s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" "${CODER_SSH_USAGE_APP:-}" >> "$DOTFILES_TEST_STATE/ssh-safety"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
+    if [[ -f "$DOTFILES_TEST_STATE/execute-snapshot" && "${*:4}" == *sync-repos ]]; then
+      cat > /dev/null
+      DOTFILES_TEST_REMOTE_SNAPSHOT=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
+        HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 sync-repos
+      exit
+    fi
+    if [[ -f "$DOTFILES_TEST_STATE/execute-config" && "${*:4}" == *provision ]]; then
+      XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" \
+        CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture CODER_WORKSPACE_OWNER_NAME=fixture \
+        bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 config-only
+      exit
+    fi
     if [[ "${*:4}" == *snapshot-status ]]; then
       cat > /dev/null
       if [[ -f "$DOTFILES_TEST_STATE/execute-snapshot" ]]; then
@@ -93,6 +105,25 @@ writeStub git <<'STUB'
 #!/usr/bin/env bash
 printf 'git %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 if [[ "${DOTFILES_TEST_REMOTE_SNAPSHOT:-}" == 1 ]]; then
+  if [[ "${1:-}" == clone ]]; then
+    cloneUrl="${@: -2:1}"
+    cloneDestination="${@: -1}"
+    [[ ! -f "$DOTFILES_TEST_STATE/clone-failed" ]] || exit 128
+    "$DOTFILES_TEST_GIT_PATH" init -q -b main "$cloneDestination" || exit
+    "$DOTFILES_TEST_GIT_PATH" -C "$cloneDestination" remote add origin "$cloneUrl" || exit
+    printf '{"name":"fixture"}\n' > "$cloneDestination/package.json"
+    "$DOTFILES_TEST_GIT_PATH" -C "$cloneDestination" add package.json || exit
+    "$DOTFILES_TEST_GIT_PATH" -C "$cloneDestination" -c user.name=fixture -c user.email=fixture@example.invalid \
+      -c commit.gpgsign=false commit -qm clone || exit
+    "$DOTFILES_TEST_GIT_PATH" -C "$cloneDestination" config branch.main.remote origin || exit
+    "$DOTFILES_TEST_GIT_PATH" -C "$cloneDestination" config branch.main.merge refs/heads/main
+    exit
+  fi
+  if [[ "${3:-}" == pull ]]; then
+    pulledBranch="$("$DOTFILES_TEST_GIT_PATH" -C "$2" symbolic-ref -q --short HEAD)" || exit 1
+    "$DOTFILES_TEST_GIT_PATH" -C "$2" config "branch.$pulledBranch.merge" > /dev/null
+    exit
+  fi
   exec "$DOTFILES_TEST_GIT_PATH" "$@"
 fi
 exec "$DOTFILES_TEST_GIT_PATH" -C "$DOTFILES_TEST_STATE/snapshot-repo" "${@:3}"
@@ -561,6 +592,11 @@ rm -rf "$snapshotFixtureRepo/.git"
 "$testGitPath" -C "$snapshotFixtureRepo" rev-parse HEAD > "$stubState/work-server-commit"
 startEmptyRemoteHome
 remoteLocalBin="$remoteSnapshotHome/.local/bin"
+mkdir -p "$remoteSnapshotHome/posthog"
+"$testGitPath" -C "$remoteSnapshotHome/posthog" init -q -b main
+"$testGitPath" -C "$remoteSnapshotHome/posthog" remote add origin https://github.com/PostHog/posthog
+printf 'template checkout\n' > "$remoteSnapshotHome/posthog/template-owned"
+touch "$stubState/execute-config"
 mkdir -p "$remoteLocalBin"
 ln -s "$BASH" "$remoteLocalBin/bash"
 cat > "$remoteLocalBin/claude" <<'STUB'
@@ -609,6 +645,38 @@ check "trusted work-server confinement converges with zero warnings" \
 check "the real work-server bootstrap resolves npm on the box rather than the test host" logHas 'npm ci --omit=dev in '
 check "the real work-server profile records its snapshot commit" \
   cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+while IFS= read -r declaredRepoEntry; do
+  declaredRepoPath="${declaredRepoEntry%%=*}"
+  declaredRepoUrl="${declaredRepoEntry#*=}"
+  declaredRepoUrl="${declaredRepoUrl%% *}"
+  check "work-server has $declaredRepoPath under the remote home" test -d "$remoteSnapshotHome/$declaredRepoPath/.git"
+  check "work-server $declaredRepoPath has the declared HTTPS origin" \
+    test "$("$testGitPath" -C "$remoteSnapshotHome/$declaredRepoPath" remote get-url origin)" = "$declaredRepoUrl"
+done < "$repoRoot/profiles/work-server/repos.txt"
+check "work-server links the template checkout into Projects" \
+  test "$(readlink "$remoteSnapshotHome/Projects/posthog")" = "$remoteSnapshotHome/posthog"
+check "work-server preserves the template-owned checkout" \
+  grep -qx 'template checkout' "$remoteSnapshotHome/posthog/template-owned"
+check "work-server never re-clones the template checkout" logLacks 'git clone -q -- https://github.com/PostHog/posthog '
+check "work-server never syncs the template checkout through its link" \
+  logLacks "git -C $remoteSnapshotHome/Projects/posthog "
+check "work-server never syncs the template checkout" logLacks "git -C $remoteSnapshotHome/posthog "
+check "work-server never clones the private dotfiles repository" \
+  bash -c '! grep -E "^git clone .*johncwaters/dotfiles" "$1"' _ "$commandLog"
+check "work-server nodeps entries never install repository dependencies" \
+  bash -c '! grep -E "^npm .* in $1/Projects/" "$2"' _ "$remoteSnapshotHome" "$commandLog"
+check "work-server needs no gh authentication" logLacks 'gh api '
+: > "$commandLog"
+matchingWorkServerOutput="$(runDevbox ensure 2>&1)"
+check "a matching work-server snapshot still syncs its repositories" \
+  logHas "git -C $remoteSnapshotHome/Projects/glimmervoid pull --ff-only -q"
+check "a matching work-server snapshot never repeats AI bootstrap" logLacks 'npm ci '
+check "a matching work-server snapshot sends no archive" logLacks 'snapshot transfer'
+check "a matching work-server snapshot reports repository sync" outputHas "$matchingWorkServerOutput" '[present] repos: synced'
+check "a matching work-server snapshot never syncs the template checkout" \
+  bash -c '! grep -qE "^git -C $1/(Projects/)?posthog " "$2"' _ "$remoteSnapshotHome" "$commandLog"
+check "the repository sync log is private" test "$(fileModeOf "$remoteSnapshotHome/.local/state/dotfiles/devbox-repos.log")" = 600
+: > "$commandLog"
 legacyEntryDirectoryKinds=(agents commands workflows)
 for entryKind in "${legacyEntryDirectoryKinds[@]}"; do
   rm -rf "$remoteSnapshotHome/.claude/$entryKind"
@@ -637,10 +705,60 @@ const hookScriptPaths = Object.values(settings.hooks).flat().flatMap(entry => en
 const missingScriptPaths = hookScriptPaths.filter(scriptPath => !require("fs").existsSync(scriptPath));
 if (hookScriptPaths.length === 0 || missingScriptPaths.length > 0) { console.error(missingScriptPaths); process.exit(1); }
 ' "$remoteSnapshotHome/.claude/settings.json"
-check "the real work-server profile leaves the glimmervoid config to the provisioner" \
-  test ! -e "$remoteSnapshotHome/.glimmervoid/config.json"
+check "work-server provisioning converges the Projects repository root" \
+  "$testNodePath" -e 'require("node:assert/strict").deepEqual(require(process.argv[1]).repoRoots, [require("node:path").join(process.argv[2], "Projects")])' \
+  "$remoteSnapshotHome/.glimmervoid/config.json" "$remoteSnapshotHome"
 check "the real work-server bootstrap runs between prepare and provision" snapshotTransferSitsBetweenPrepareAndProvision
-rm -f "$stubState/execute-snapshot"
+rm -f "$remoteSnapshotMarker"
+rm -rf "$remoteSnapshotHome/Projects/glimmervoid"
+touch "$stubState/clone-failed"
+: > "$remoteBootstrapLog"
+failedCloneOutput="$(runDevbox ensure 2>&1)"
+check "a clone failure after a fresh snapshot warns in the repository sync" \
+  outputHas "$failedCloneOutput" '[warned] repos: sync failed'
+check "a clone failure never blocks the snapshot marker" cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+check "a clone failure stays out of the bootstrap log" bash -c '! grep -q "clone failed" "$1"' _ "$remoteBootstrapLog"
+check "a clone failure still reaches provisioning" outputHas "$failedCloneOutput" '[present] config'
+rm -f "$stubState/clone-failed"
+"$testGitPath" -C "$remoteSnapshotHome/Projects/wizard" checkout -q -b local-work
+rm -f "$remoteSnapshotMarker"
+: > "$remoteBootstrapLog"
+: > "$commandLog"
+localBranchOutput="$(runDevbox ensure 2>&1)"
+check "a local branch without upstream warns in the repository sync" \
+  outputHas "$localBranchOutput" '[warned] repos: sync failed'
+check "a local branch without upstream is named in the sync log" \
+  grep -qF 'pull failed' "$remoteSnapshotHome/.local/state/dotfiles/devbox-repos.log"
+check "a local branch without upstream still records the snapshot" \
+  cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+check "the sync after a fresh snapshot retries the failed clone" test -d "$remoteSnapshotHome/Projects/glimmervoid/.git"
+: > "$commandLog"
+afterLocalBranchOutput="$(runDevbox ensure 2>&1)"
+check "the ensure after a repository warning does not re-bootstrap" logLacks 'snapshot transfer'
+check "the ensure after a repository warning keeps the snapshot present" \
+  outputHas "$afterLocalBranchOutput" '[present] dotfiles'
+"$testGitPath" -C "$remoteSnapshotHome/Projects/wizard" checkout -q main
+rm -rf "$remoteSnapshotHome/Projects/glimmervoid"
+touch "$stubState/clone-failed"
+failedMatchingSyncOutput="$(runDevbox ensure 2>&1)"
+check "a matching snapshot warns when a new repository clone fails" outputHas "$failedMatchingSyncOutput" '[warned] repos: sync failed'
+rm -f "$stubState/clone-failed"
+retriedMatchingSyncOutput="$(runDevbox ensure 2>&1)"
+check "the next matching snapshot ensure retries the missing clone" test -d "$remoteSnapshotHome/Projects/glimmervoid/.git"
+check "the matching snapshot retry reports a successful sync" outputHas "$retriedMatchingSyncOutput" '[present] repos: synced'
+rm "$remoteSnapshotHome/Projects/posthog"
+mkdir "$remoteSnapshotHome/Projects/posthog"
+printf 'keep this directory\n' > "$remoteSnapshotHome/Projects/posthog/owner-edit"
+rm -f "$remoteSnapshotMarker"
+runDevbox ensure >/dev/null 2>&1
+check "an occupied PostHog project path is never replaced by a link" \
+  grep -qx 'keep this directory' "$remoteSnapshotHome/Projects/posthog/owner-edit"
+rm -rf "$remoteSnapshotHome/Projects/posthog"
+ln -s "$remoteSnapshotHome/missing-template" "$remoteSnapshotHome/Projects/posthog"
+runDevbox ensure >/dev/null 2>&1
+check "an existing broken PostHog project link is never replaced" \
+  test "$(readlink "$remoteSnapshotHome/Projects/posthog")" = "$remoteSnapshotHome/missing-template"
+rm -f "$stubState/execute-snapshot" "$stubState/execute-config"
 
 mergeConfig() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
@@ -661,7 +779,7 @@ mergeOutput="$(mergeConfig)"
 check "config merge reports a change" outputHas "$mergeOutput" '[installed] config'
 check "config merge has mode 0600" test "$(fileModeOf "$sandbox/.glimmervoid/config.json")" = 600
 check "config merge preserves state and installs the requested remote settings" \
-  "$testNodePath" - "$sandbox/.glimmervoid/config.json" <<'JS'
+  "$testNodePath" - "$sandbox/.glimmervoid/config.json" "$sandbox" <<'JS'
 const assert = require("node:assert/strict");
 const config = require(process.argv[2]);
 assert.deepEqual(config.sessions, [{id: "active", transcript: "keep me"}]);
@@ -670,6 +788,7 @@ assert.equal(config.projects[0].path, "/another/project");
 assert.equal(config.projects[1].id, "bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7");
 assert.equal(config.port, 3456);
 assert.equal(config.checkForUpdates, false);
+assert.deepEqual(config.repoRoots, [require("node:path").join(process.argv[3], "Projects")]);
 assert.deepEqual(config.remote, {enabled: true, port: 3457, publicHost: "3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev", allowedOrigins: ["https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev"]});
 assert.equal(config.coder, undefined);
 JS
@@ -752,9 +871,10 @@ const fs = require("node:fs");
 const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const previous = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 for (const settingName of Object.keys(previous)) {
-  if (settingName === "hooks") continue;
+  if (["hooks", "repoRoots"].includes(settingName)) continue;
   assert.deepEqual(config[settingName], previous[settingName]);
 }
+assert.deepEqual(config.repoRoots, [require("node:path").join(process.argv[4], "Projects")]);
 assert.deepEqual(config.hooks.slice(0, previous.hooks.length), previous.hooks);
 assert.deepEqual(config.hooks.slice(previous.hooks.length), [{ id: "new-hook", command: `node ${process.argv[4]}/.claude/hooks/new.mjs` }]);
 assert.equal(config.hooks.filter(hook => hook.id === "new-hook").length, 1);

@@ -36,6 +36,14 @@ resolveOperatorGitHubOwner() {
   printf '%s\n' "$signedInLogin"
 }
 
+reportUnresolvedGitHubOwner() {
+  if ! command -v gh >/dev/null 2>&1; then
+    noteDetail "repos" "gh not installed, develop sync skipped everywhere"
+    return 0
+  fi
+  noteWarned "repos" "gh could not name your GitHub account, develop sync skipped everywhere"
+}
+
 remoteDefaultBranch() {
   local repoPath="$1"
   local defaultRef
@@ -374,6 +382,10 @@ syncOneRepo() {
     return 1
   fi
   label="$(basename -- "$destination")"
+  if [[ -L "$destination" ]]; then
+    noteDetail "$label" "skipped, $relativePath is a link, not a managed clone"
+    return 0
+  fi
   if [[ ! -e "$destination" ]]; then
     cloneMissingRepo "$label" "$cloneUrl" "$destination" || return 1
     syncDevelopBranch "$label" "$destination"
@@ -415,7 +427,7 @@ fi
 
 operatorGitHubOwner="$(resolveOperatorGitHubOwner)" || operatorGitHubOwner=""
 if [[ -z "$operatorGitHubOwner" ]]; then
-  noteWarned "repos" "gh could not name your GitHub account, develop sync skipped everywhere"
+  reportUnresolvedGitHubOwner
 fi
 
 # Read up front: git and npm inherit stdin, and one prompt would swallow the rest.

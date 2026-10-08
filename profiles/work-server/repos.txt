@@ -1,0 +1,10 @@
+Projects/ai-gateway=https://github.com/PostHog/ai-gateway nodeps
+Projects/context-mill=https://github.com/PostHog/context-mill nodeps
+Projects/posthog.com=https://github.com/PostHog/posthog.com nodeps
+Projects/posthog-js=https://github.com/PostHog/posthog-js nodeps
+Projects/posthog-python=https://github.com/PostHog/posthog-python nodeps
+Projects/twig.com=https://github.com/PostHog/twig.com nodeps
+Projects/wizard=https://github.com/PostHog/wizard nodeps
+Projects/wizard-workbench=https://github.com/PostHog/wizard-workbench nodeps
+Projects/backchannels=https://github.com/johncwaters/backchannels nodeps
+Projects/glimmervoid=https://github.com/johncwaters/glimmervoid nodeps

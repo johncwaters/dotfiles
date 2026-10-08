@@ -97,7 +97,7 @@ for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
   fi
 done
 
-check "work-server runs only ai and git on Linux, leaving glimmervoid to the devbox provisioner" \
+check "work-server runs only ai and git on Linux, leaving glimmervoid and repos to the devbox provisioner" \
   node - "$repoRoot/profiles/work-server" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");

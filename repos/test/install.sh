@@ -91,6 +91,29 @@ check "install accepts a linked worktree with a regular .git file" \
 check "a linked worktree is not warned about as a non-repo" \
   outputLacks "$linkedWorktreeOutput" "is not a git repo"
 
+makeExistingClone "template-posthog" "https://github.com/PostHog/posthog"
+ln -s "$sandbox/template-posthog" "$sandbox/Projects/template-posthog"
+templateList="$sandbox/template-list.txt"
+printf 'Projects/template-posthog=https://github.com/PostHog/posthog nodeps\n' > "$templateList"
+: > "$commandLog"
+templateStatus=0
+templateOutput="$(runInstall "$templateList")" || templateStatus=$?
+check "a repository symlink is skipped without a warning" test "$templateStatus" -eq 0
+check "a repository symlink explains the skip" outputHas "$templateOutput" "is a link, not a managed clone"
+check "a repository symlink is not cloned again" logLacks 'git clone '
+check "a repository symlink is never pulled through the link" logLacks "git -C $sandbox/Projects/template-posthog "
+check "a repository symlink target is never pulled" logLacks "git -C $sandbox/template-posthog "
+check "a repository symlink is preserved" test -L "$sandbox/Projects/template-posthog"
+ln -s "$sandbox/missing-repository" "$sandbox/Projects/broken-link"
+brokenLinkList="$sandbox/broken-link-list.txt"
+printf 'Projects/broken-link=https://github.com/PostHog/posthog nodeps\n' > "$brokenLinkList"
+: > "$commandLog"
+brokenLinkStatus=0
+brokenLinkOutput="$(runInstall "$brokenLinkList")" || brokenLinkStatus=$?
+check "a broken repository link is skipped without a warning" test "$brokenLinkStatus" -eq 0
+check "a broken repository link is not cloned through" logLacks 'git clone '
+check "a broken repository link keeps its target" test "$(readlink "$sandbox/Projects/broken-link")" = "$sandbox/missing-repository"
+
 nestedRepoList="$sandbox/nested-repo-list.txt"
 printf 'Projects/parent/nested=https://github.com/johncwaters/nested\n' > "$nestedRepoList"
 makeExistingClone "Projects/parent" "https://github.com/johncwaters/parent"
@@ -250,11 +273,24 @@ withdrawCommand gh
 noGhStatus=0
 noGhOutput="$(runInstall "$noGhList")" || noGhStatus=$?
 provideCommand gh
-check "a missing gh warns" outputHas "$noGhOutput" "gh could not name your GitHub account"
+check "a missing gh explains skipped develop sync" outputHas "$noGhOutput" "gh not installed"
 check "a missing gh still clones" test -d "$sandbox/Projects/epsilon/.git"
 check "a missing gh skips develop instead of guessing" \
   logLacks "git -C $sandbox/Projects/epsilon branch"
-check "a warning makes the topic exit non-zero" test "$noGhStatus" -eq 1
+check "a missing gh is optional and exits cleanly" test "$noGhStatus" -eq 0
+
+loggedOutGhList="$sandbox/logged-out-gh-list.txt"
+printf 'Projects/zeta=https://github.com/johncwaters/zeta\n' > "$loggedOutGhList"
+: > "$stubState/gh-logged-out"
+: > "$commandLog"
+loggedOutGhStatus=0
+loggedOutGhOutput="$(runInstall "$loggedOutGhList")" || loggedOutGhStatus=$?
+rm -f "$stubState/gh-logged-out"
+check "an installed gh that cannot name the account warns" \
+  outputMatches "$loggedOutGhOutput" '\[warn\].*gh could not name your GitHub account'
+check "an installed gh that cannot name the account still clones" test -d "$sandbox/Projects/zeta/.git"
+check "an installed gh that cannot name the account skips develop" logLacks "git -C $sandbox/Projects/zeta branch"
+check "an installed gh that cannot name the account exits non-zero" test "$loggedOutGhStatus" -eq 1
 
 missingListStatus=0
 missingListOutput="$(runInstall "$sandbox/not-a-list.txt")" || missingListStatus=$?

@@ -11,6 +11,10 @@ source "$topicDirectory/../script/lib/log.sh"
 # shellcheck source=../script/lib/state.sh
 source "$topicDirectory/../script/lib/state.sh"
 repoListPath="$(reposListPath)"
+if reposListIsProfileDeclared "$repoListPath"; then
+  printf 'repos: profile-declared list %s left unchanged; nothing collected\n' "$repoListPath"
+  exit 0
+fi
 glimmervoidConfigPath="$HOME/.glimmervoid/config.json"
 
 if [[ ! -f "$glimmervoidConfigPath" ]]; then

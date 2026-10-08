@@ -38,10 +38,21 @@ function isSameFilesystemObject(firstPath, secondPath) {
 }
 
 function isWorkRepository(directory) {
-  if (POSTHOG_ORIGIN.test(gitOutput(directory, ["remote", "get-url", "origin"]))) return true;
+  const originUrl = gitOutput(directory, ["remote", "get-url", "origin"]);
+  if (POSTHOG_ORIGIN.test(originUrl)) return true;
+  const profilePolicy = JSON.parse(fs.readFileSync(new URL("../ai.json", import.meta.url), "utf8"));
+  const repositoryOrigin = profilePolicy.mcpServers?.backchannels?.repositoryOrigin;
+  const declaredOrigin = normalizedGitHubOrigin(repositoryOrigin);
+  if (declaredOrigin && normalizedGitHubOrigin(originUrl) === declaredOrigin) return true;
   const backchannelGitDirectory = path.join(os.homedir(), "Projects", "backchannel", ".git");
   const commonGitDirectory = gitOutput(directory, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
   return isSameFilesystemObject(commonGitDirectory, backchannelGitDirectory);
+}
+
+function normalizedGitHubOrigin(originUrl) {
+  const repositoryMatch = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/]+\/[^/]+?)\/?$/i.exec(originUrl);
+  if (!repositoryMatch) return "";
+  return repositoryMatch[1].replace(/\.git$/i, "").toLowerCase();
 }
 
 function childDirectories(workspaceDirectory) {

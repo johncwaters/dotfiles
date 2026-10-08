@@ -103,6 +103,28 @@ test("a directory outside any repository denies backchannels", (testContext) => 
   assert.equal(decisionFor({ ...BACKCHANNELS_CALLS[0], cwd: plainDirectory }, homeDirectory), "deny");
 });
 
+test("the declared backchannels origin permits the plural clone and its worktrees", (testContext) => {
+  const homeDirectory = temporaryDirectory(testContext, "declared-backchannels-home-");
+  const cloneDirectory = initializeRepository(path.join(homeDirectory, "Projects", "backchannels"), "https://github.com/johncwaters/backchannels");
+  const worktreeDirectory = path.join(homeDirectory, "feature");
+  const worktreeProcess = spawnSync("git", ["-C", cloneDirectory, "worktree", "add", "-q", "-b", "feature", worktreeDirectory]);
+  assert.equal(worktreeProcess.status, 0);
+  for (const cwd of [cloneDirectory, worktreeDirectory]) {
+    assert.equal(decisionFor({ ...BACKCHANNELS_CALLS[0], cwd }, homeDirectory), "allow");
+    assert.equal(sessionStartOutput(cwd, homeDirectory), "");
+  }
+});
+
+test("the declared repository origin accepts HTTPS and SSH but denies other owners, repos and hosts", (testContext) => {
+  const homeDirectory = temporaryDirectory(testContext, "declared-backchannels-origins-");
+  for (const originUrl of ["https://github.com/johncwaters/backchannels.git", "git@github.com:johncwaters/backchannels.git", "ssh://git@github.com/johncwaters/backchannels"]) {
+    assert.equal(decisionFor({ ...BACKCHANNELS_CALLS[0], cwd: repositoryWithOrigin(testContext, originUrl) }, homeDirectory), "allow", originUrl);
+  }
+  for (const originUrl of ["https://github.com/someoneelse/backchannels", "https://github.com/johncwaters/backchannels-fork", "https://evil.example/johncwaters/backchannels", "https://github.com/johncwaters/glimmervoid", "https://github.com/johncwaters/dotfiles"]) {
+    assert.equal(decisionFor({ ...BACKCHANNELS_CALLS[0], cwd: repositoryWithOrigin(testContext, originUrl) }, homeDirectory), "deny", originUrl);
+  }
+});
+
 test("a failed confinement check denies backchannels and allows other calls", (testContext) => {
   const { homeDirectory } = homeWithBackchannelClone(testContext);
   const missingDirectory = path.join(temporaryDirectory(testContext, "confine-backchannels-missing-"), "does-not-exist");

@@ -44,6 +44,34 @@ holdDevboxProvisionLock() {
   exit 1
 }
 
+linkDevboxTemplateRepository() {
+  local projectPath="$HOME/Projects/posthog"
+  if [[ -e "$projectPath" || -L "$projectPath" || ! -d "$HOME/posthog" ]]; then
+    return 0
+  fi
+  mkdir -p -- "$HOME/Projects"
+  ln -s -- "$HOME/posthog" "$projectPath"
+  reportDevboxItem installed "posthog project" "linked to template checkout"
+}
+
+syncDevboxRepositories() {
+  local snapshotDirectory="$HOME/dotfiles-snapshot"
+  local syncLog="$HOME/.local/state/dotfiles/devbox-repos.log"
+  if [[ ! -f "$snapshotDirectory/repos/install.sh" || ! -f "$snapshotDirectory/profiles/work-server/repos.txt" ]]; then
+    return 0
+  fi
+  linkDevboxTemplateRepository
+  mkdir -p -- "${syncLog%/*}"
+  touch "$syncLog"
+  chmod 600 "$syncLog"
+  if DOTFILES_PROFILE=work-server bash "$snapshotDirectory/repos/install.sh" > "$syncLog" 2>&1 < /dev/null 9>&-; then
+    reportDevboxItem present repos "synced"
+    return 0
+  fi
+  reportDevboxItem warned repos "sync failed; retried next run; see $syncLog"
+  return 1
+}
+
 installDevboxSnapshot() (
   snapshotCommit="$1"
   snapshotDirectory="$HOME/dotfiles-snapshot"
@@ -80,6 +108,7 @@ installDevboxSnapshot() (
   fi
   mv -- "$stagedDirectory" "$snapshotDirectory"
   rm -rf -- "$previousDirectory"
+  linkDevboxTemplateRepository
   PATH="/tmp/coder-script-data/bin:$HOME/.local/bin:$PATH" \
     bash "$snapshotDirectory/script/bootstrap" --profile work-server >> "$bootstrapLog" 2>&1 < /dev/null 9>&-
   printf '%s\n' "$snapshotCommit" > "$snapshotMarker.new"
@@ -304,6 +333,7 @@ mergeDevboxConfig() {
       config.projects.push({ id: "bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7", name: "posthog", path: "/home/coder/posthog" });
     }
     config.port = 3456;
+    config.repoRoots = [path.join(process.env.HOME, "Projects")];
     config.checkForUpdates = false;
     config.remote = { enabled: true, port: 3457, publicHost: process.env.DEVBOX_PUBLIC_HOST, allowedOrigins: [`https://${process.env.DEVBOX_PUBLIC_HOST}`] };
     const merged = JSON.stringify(config, null, 2) + "\n";
@@ -468,6 +498,7 @@ case "$devboxAction" in
     exit
     ;;
   snapshot) installDevboxSnapshot "${3:?missing snapshot commit}"; exit ;;
+  sync-repos) holdDevboxProvisionLock; syncDevboxRepositories; exit ;;
   config-only) requireDevboxPublicHost; holdDevboxProvisionLock; mergeDevboxConfig apply "$devboxPublicHostName"; exit ;;
   status)
     if devboxPortListens 3456; then
@@ -498,6 +529,7 @@ case "$devboxAction" in
     requireDevboxPublicHost
     holdDevboxProvisionLock
     installDevboxPrerequisites
+    linkDevboxTemplateRepository
     exit 0
     ;;
   provision) ;;
@@ -508,6 +540,7 @@ requireDevboxReleaseVersion
 requireDevboxPublicHost
 holdDevboxProvisionLock
 installDevboxPrerequisites
+linkDevboxTemplateRepository
 convergeDevboxConfig "$devboxPublicHostName"
 startDevboxGlimmervoid
 printf 'https://%s/\n' "$devboxPublicHostName"

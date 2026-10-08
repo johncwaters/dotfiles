@@ -1,10 +1,37 @@
 # shellcheck shell=bash
-# install.sh and collect.sh read and write the same list, so neither one gets to decide on its own where it lives.
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../script/lib" && pwd)/profile.sh"
+
+reposProfileListPath() {
+  local dotfilesRepo
+  local activeProfile
+  dotfilesRepo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  activeProfile="${profileName:-$(resolveProfileName || true)}"
+  [[ -n "$activeProfile" ]] || return 1
+  requireSafeName profile "$activeProfile" || return 1
+  local profileListPath="$dotfilesRepo/profiles/$activeProfile/repos.txt"
+  [[ -f "$profileListPath" ]] || return 1
+  printf '%s\n' "$profileListPath"
+}
 
 reposListPath() {
+  if [[ -n "${DOTFILES_REPOS_FILE:-}" ]]; then
+    printf '%s\n' "$DOTFILES_REPOS_FILE"
+    return 0
+  fi
+  if reposProfileListPath; then
+    return 0
+  fi
   local topicDirectory
   topicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-  printf '%s\n' "${DOTFILES_REPOS_FILE:-$topicDirectory/repos.txt}"
+  printf '%s\n' "$topicDirectory/repos.txt"
+}
+
+reposListIsProfileDeclared() {
+  local profilesDirectory
+  local resolvedListPath
+  profilesDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../profiles" && pwd -P)"
+  resolvedListPath="$(realpath -- "$1" 2>/dev/null)" || return 1
+  [[ "$resolvedListPath" == "$profilesDirectory/"*/repos.txt ]]
 }
 
 pathIsRepositoryRoot() {

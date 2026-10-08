@@ -96,14 +96,16 @@ pushDevboxSnapshot() (
   fi
   if [[ "$remoteCommit" == "$snapshotCommit" ]]; then
     printf '[present] dotfiles: %s\n' "$snapshotCommit"
-    return 0
+    pushDevboxScript sync-repos
+    return
   fi
   local remoteScript apostropheReplacement="'\"'\"'"
   remoteScript="$(cat "$devboxProfileDirectory/devbox/provision.sh")"
   remoteScript="${remoteScript//\'/$apostropheReplacement}"
   if git -C "$snapshotRepo" archive --format=tar "$snapshotCommit" \
     | runDevboxSsh bash -c "'$remoteScript'" -- "$devboxGlimmervoidVersion" snapshot "$snapshotCommit"; then
-    return 0
+    pushDevboxScript sync-repos
+    return
   fi
   printf '[warned] dotfiles: snapshot or bootstrap failed\n'
   return 1
