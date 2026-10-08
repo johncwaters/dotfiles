@@ -87,6 +87,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `npm-
 | `repos` | clones the working set |
 | `tailscale` | the tailnet client |
 | `coder` | the Coder CLI |
+| `devbox` | glimmervoid on the Coder devbox, pushed from the laptop to keep the private dotfiles repo off the box |
 | `peripherals` | Logitech tooling and the headset udev rule; LinearMouse on macOS |
 
 Vendored third-party skills are listed in [NOTICE.md](NOTICE.md).
