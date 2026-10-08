@@ -5,45 +5,13 @@ projects and remain under their upstream licenses, not this repo's.
 
 | Path | Upstream | License |
 |---|---|---|
-| `ai/skills/impeccable/` | [pbakaus/impeccable](https://github.com/pbakaus/impeccable), `skill/` | Apache-2.0 |
 | `profiles/work/skills/posthog-querying/` | [PostHog/posthog](https://github.com/PostHog/posthog), `products/posthog_ai/skills/querying-posthog-data/` | MIT |
 | `ai/skills/ai-slop-cleaner/` | [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode), `skills/ai-slop-cleaner/` | MIT |
 | `fonts/` | [CommitMono](https://commitmono.com) | SIL Open Font License 1.1 |
 | `glimmervoid/sounds/` | two RuneScape Wiki audio clips (Jagex game audio) | private use only |
 
-The first four permit redistribution with attribution; the sounds do not, so this repo stays
+The first three permit redistribution with attribution; the sounds do not, so this repo stays
 private while it carries them. Required notices follow.
-
-## ai/skills/impeccable/ (Apache-2.0)
-
-Vendored from https://github.com/pbakaus/impeccable (`skill/`). This is a modified
-snapshot: some upstream reference files are absent, some local reference files have
-no upstream counterpart, and retained files diverge from current upstream text.
-
-```
-Copyright 2025 Paul Bakaus
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use
-this file except in compliance with the License. You may obtain a copy of the
-License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed
-under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-CONDITIONS OF ANY KIND, either express or implied. See the License for the
-specific language governing permissions and limitations under the License.
-```
-
-Attribution carried forward from the upstream `NOTICE.md`: upstream's
-`skill/reference/ios.md` and `skill/reference/android.md` are distilled from
-[ehmo/platform-design-skills](https://github.com/ehmo/platform-design-skills)
-(MIT, author ehmo). Neither file is vendored here, so this notice is
-informational rather than an obligation attaching to the vendored subset.
-
-Apache-2.0 section 4(a) requires recipients of a redistribution to receive a
-copy of the License; the verbatim Apache-2.0 text ships at
-`ai/skills/impeccable/LICENSE` (byte-identical to upstream's LICENSE file).
 
 ## profiles/work/skills/posthog-querying/ (MIT)
 
