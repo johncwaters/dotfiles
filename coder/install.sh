@@ -6,7 +6,17 @@ if [[ -z "${dotfilesRepo:-}" ]]; then
 fi
 source "$dotfilesRepo/script/lib/packages.sh"
 
-coderDeploymentUrl="https://coder.dev.posthog.dev"
+if [[ -z "${profileName:-}" ]]; then
+  noteWarned "Coder CLI" "no profile resolved, convergence skipped"
+  finishTopic
+fi
+if [[ ! -f "$dotfilesRepo/profiles/$profileName/coder.json" ]]; then
+  finishTopic
+fi
+if ! coderDeploymentUrl="$(readProfileSetting "$dotfilesRepo/profiles/$profileName/coder.json" deploymentUrl)"; then
+  noteWarned "Coder CLI" "could not read profile deployment, convergence skipped"
+  finishTopic
+fi
 
 coderReleaseVersion() {
   local versionOutput
@@ -21,7 +31,7 @@ coderReleaseVersion() {
 installCoder() {
   local serverBuildInfo
   if ! serverBuildInfo="$(curl -fsSL --connect-timeout 5 --max-time 10 "$coderDeploymentUrl/api/v2/buildinfo" 2>/dev/null)"; then
-    noteWarned "Coder CLI" "coder.dev.posthog.dev unreachable, connect to Tailscale and rerun"
+    noteWarned "Coder CLI" "$coderDeploymentUrl unreachable, connect to Tailscale and rerun"
     return 0
   fi
   local serverVersionPattern='"version"[[:space:]]*:[[:space:]]*"(v[0-9]+\.[0-9]+\.[0-9]+)(\+[^"[:space:]]+)?"'

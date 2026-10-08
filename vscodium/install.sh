@@ -356,7 +356,7 @@ if isDarwin; then
   keybindingsFile="vscodium/keybindings.darwin.json"
 fi
 linkEntry "VSCodium keybindings" "$keybindingsFile" "$codiumUserDirectory/keybindings.json"
-linkEntry "VSCodium mcp.json" "vscodium/mcp.json" "$codiumUserDirectory/mcp.json"
+convergeProfileLink "VSCodium mcp.json" "vscodium-mcp.json" "$codiumUserDirectory/mcp.json"
 
 writeSection "Extensions"
 syncExtensions

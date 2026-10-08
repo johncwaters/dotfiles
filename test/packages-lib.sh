@@ -242,6 +242,8 @@ check "a sudo that wants a password says so" \
 check "the password warning is emitted once, not once per package" \
   test "$(grep -c 'sudo needs a password' <<< "$sudoRefusalOutput")" -eq 1
 
+DOTFILES_PLATFORM="$(unset DOTFILES_PLATFORM; platformName)"
+
 hostileSystemBin="$sandbox/hostile-system-bin"
 mkdir -p "$hostileSystemBin"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$hostileSystemBin/true"
@@ -316,9 +318,10 @@ darwinReadsTheAccountHomeFromDirectoryServices() {
     == "$realHomeOutsideTheSandbox" ]]
 }
 
-darwinFailsClosedWithoutDirectoryServices() {
+darwinFailsClosedWithoutDirectoryServices() (
+  darwinDirectoryServiceCommand() { return 1; }
   HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="" homeIsTheAccountsOwnHome
-}
+)
 
 check "the account's own home is read from the passwd database" \
   theAccountsOwnHomeIsRecognisedFromThePasswdDatabase
@@ -363,11 +366,12 @@ anOverrideIsHonouredWhereTheAccountDoesNotLive() {
     trustedPlatformTestPath "$sandbox/redirected-shells")" == "$sandbox/redirected-shells" ]]
 }
 
-anOverrideIsRefusedWhereTheAccountLives() {
+anOverrideIsRefusedWhereTheAccountLives() (
+  darwinDirectoryServiceCommand() { printf '%s\n' "$ownHomeDirectoryServiceBin/dscl"; }
   ! HOME="$sandbox" DOTFILES_PLATFORM=darwin \
     DOTFILES_TEST_STUB_BIN="$ownHomeDirectoryServiceBin" \
     trustedPlatformTestPath "$sandbox/redirected-shells"
-}
+)
 
 wrappedRecordBin="$sandbox/wrapped-record-bin"
 mkdir -p "$wrappedRecordBin"
@@ -382,20 +386,23 @@ printf 'NFSHomeDirectory:\n    %s\n' '$wrappedAccountHome'
 STUB
 chmod +x "$wrappedRecordBin/dscl"
 
-darwinReadsAValueDirectoryServicesWrappedOntoItsOwnLine() {
+darwinReadsAValueDirectoryServicesWrappedOntoItsOwnLine() (
+  darwinDirectoryServiceCommand() { printf '%s\n' "$wrappedRecordBin/dscl"; }
   [[ "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$wrappedRecordBin" \
     accountPasswdHome)" == "$wrappedAccountHome" ]]
-}
+)
 
-darwinStillReadsAValueOnTheAttributeLine() {
+darwinStillReadsAValueOnTheAttributeLine() (
+  darwinDirectoryServiceCommand() { printf '%s\n' "$wrappedRecordBin/dscl"; }
   [[ "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$wrappedRecordBin" \
     darwinAccountRecord UserShell)" == "/bin/zsh" ]]
-}
+)
 
-aHomeDirectoryServicesWrappedIsStillRecognisedAsTheAccountsOwn() {
+aHomeDirectoryServicesWrappedIsStillRecognisedAsTheAccountsOwn() (
+  darwinDirectoryServiceCommand() { printf '%s\n' "$wrappedRecordBin/dscl"; }
   HOME="$wrappedAccountHome" DOTFILES_PLATFORM=darwin DOTFILES_TEST_STUB_BIN="$wrappedRecordBin" \
     homeIsTheAccountsOwnHome
-}
+)
 
 mkdir -p "$wrappedAccountHome"
 check "a value directory services wrapped onto its own line is read whole" \

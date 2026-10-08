@@ -25,9 +25,10 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. Work-only hooks and their evidence live in
-`profiles/work/hooks/`; Claude wiring lives in `profiles/work/settings.overlay.json`
-and Codex wiring in `profiles/work/codex-hooks.json`. Shared event wiring lives in `ai/settings.base.json`.
+to Glimmervoid sessions. Profile-only hooks and their evidence belong in
+`profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
+`codex-hooks.json`, so shared hooks cannot import another profile's policy.
+`ai/test.sh` pins the installed paths; shared event wiring lives in `ai/settings.base.json`.
 
 ## Validator constraints
 

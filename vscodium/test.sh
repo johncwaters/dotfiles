@@ -8,6 +8,7 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "vscodium"
+stageTopicWithLinuxAccountLookup
 
 realHome="$HOME"
 realHomePathsNoStubMayName=(
@@ -94,12 +95,9 @@ writeStub curl <<'STUB'
 #!/usr/bin/env bash
 printf 'curl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 stubbedFileMode() {
-  if [[ "${DOTFILES_PLATFORM:-linux}" == "darwin" ]]; then
-    stat -f %Lp "$1"
-    return $?
-  fi
-  stat -c %a "$1"
+  "$DOTFILES_TEST_REAL_NODE" -e 'console.log((require("node:fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$1"
 }
+
 requestedUrl=""
 outputPath=""
 while (($# > 0)); do
@@ -233,7 +231,6 @@ check "every package manager call goes through sudo" \
 linkedDestinations=(
   ".config/VSCodium/User/settings.json"
   ".config/VSCodium/User/keybindings.json"
-  ".config/VSCodium/User/mcp.json"
 )
 for destination in "${linkedDestinations[@]}"; do
   fullPath="$sandbox/$destination"
@@ -536,7 +533,7 @@ provideCommand dscl
 withdrawCommand codium
 : > "$commandLog"
 darwinStatus=0
-darwinOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+darwinOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
   DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_PROFILE=work GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
   NO_COLOR=1 bash "$topicDir/install.sh")" || darwinStatus=$?
@@ -548,14 +545,30 @@ for configurationFile in settings.json keybindings.json mcp.json; do
   check "darwin links $configurationFile into Application Support" \
     test -L "$darwinUserDirectory/$configurationFile"
 done
+check "work owns VSCodium MCP configuration" \
+  test "$(readlink "$darwinUserDirectory/mcp.json")" = "$sandbox/.dotfiles/profiles/work/vscodium-mcp.json"
 check "darwin links the command-based keybindings" \
   test "$(readlink "$darwinUserDirectory/keybindings.json")" \
     = "$sandbox/.dotfiles/vscodium/keybindings.darwin.json"
 check "darwin reports no missing codium CLI" outputLacks "$darwinOutput" 'not on PATH'
 checkRerunIsQuiet "a darwin rerun reports no config changes" \
-  "$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
+  "$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
     DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
     DOTFILES_PROFILE=work GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
     NO_COLOR=1 bash "$topicDir/install.sh")"
+
+installedExtensionManifest "strayextension.with-no-profile-resolved-1.0.0" false
+
+check "personal editor convergence succeeds" runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+  DOTFILES_PROFILE=personal GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
+  NO_COLOR=1 bash "$topicDir/install.sh"
+check "personal retires the work MCP link" test ! -L "$darwinUserDirectory/mcp.json"
+printf '{"servers":{"foreign":{}}}\n' > "$darwinUserDirectory/mcp.json"
+check "personal editor convergence succeeds" runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
+  DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+  DOTFILES_PROFILE=personal GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
+  NO_COLOR=1 bash "$topicDir/install.sh"
+check "personal preserves foreign MCP configuration" grep -q foreign "$darwinUserDirectory/mcp.json"
 
 reportTopicResults "vscodium"

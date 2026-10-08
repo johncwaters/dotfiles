@@ -10,6 +10,8 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "packages"
 
+stageTopicWithLinuxAccountLookup
+
 realHome="$HOME"
 realHomePathsNoStubMayName=(
   "$realHome/.bashrc"
@@ -697,6 +699,8 @@ check "a profile that varies the groups exits clean" test "$workRunStatus" -eq 0
 check "the work profile installs biome through npm-globals" logHas "npm install -g @biomejs/biome"
 check "the work profile installs no system package" logLacks "install -y"
 check "the work profile installs no flatpak" logLacks "flatpak install"
+check "switching to work removes the personal model CLI" logHas "npm uninstall -g @earendil-works/pi-coding-agent"
+check "switching to work removes the personal MCP proxy" logHas "npm uninstall -g mcp-remote"
 check "the work profile skips casks without warning on linux" \
   outputMatches "$workRunOutput" '\[ -- \].*casks.*skipped, requires macOS'
 check "the work profile still installs its python tools" outputHas "$workRunOutput" "ruff"

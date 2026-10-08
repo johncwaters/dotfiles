@@ -104,6 +104,10 @@ installDarwinDevboxAgentWithoutStoppingTheTopic() {
   fi
 }
 
+if ! readDevboxProfile; then
+  notePresent "devbox" "no profile deployment configured"
+  finishTopic
+fi
 installDevbox
 if isDarwin; then
   installDarwinDevboxAgentWithoutStoppingTheTopic

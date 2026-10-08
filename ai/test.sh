@@ -30,7 +30,7 @@ done
 profileDependencySkillPath="$stagedRepo/profiles/work/skills/locked-profile-skill-test"
 mkdir -p "$profileDependencySkillPath"
 printf '{}\n' > "$profileDependencySkillPath/package-lock.json"
-(cd -- "$stagedRepo" && git add -A -- ai/skills profiles/*/skills)
+(cd -- "$stagedRepo" && git add -A -- ai profiles/*/skills)
 
 foreignSkillName=".synced-cutover-test"
 foreignSkillPath="$stagedTopicDir/skills/$foreignSkillName"
@@ -104,33 +104,7 @@ chmod +x "$skillDependencyStubBin/claude"
 codexMcpCommandLog="$sandbox/codex-mcp-commands.log"
 : > "$codexMcpCommandLog"
 export CODEX_MCP_COMMAND_LOG="$codexMcpCommandLog"
-cat > "$skillDependencyStubBin/codex" <<'STUB'
-#!/usr/bin/env node
-const fs = require('node:fs');
-const path = require('node:path');
-const argumentsPassed = process.argv.slice(2);
-fs.appendFileSync(process.env.CODEX_MCP_COMMAND_LOG, `${JSON.stringify(argumentsPassed)}\n`);
-const configPath = path.join(process.env.CODEX_HOME, 'config.toml');
-const configText = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
-if (configText.includes('invalid toml')) process.exit(1);
-if (process.env.CODEX_HOME.includes('/.dotfiles-mcp.') && fs.existsSync(path.join(process.env.HOME, '.fail-codex-mcp-stage'))) process.exit(1);
-const serverSection = /\n?\[mcp_servers\.backchannels\]\n([\s\S]*?)(?=\n\[|$)/.exec(configText);
-const [group, action, serverName] = argumentsPassed;
-if (group !== 'mcp') process.exit(1);
-if (action === 'list') {
-  console.log('[]');
-  process.exit(0);
-}
-if (action === 'get') {
-  if (serverName !== 'backchannels' || !serverSection) process.exit(1);
-  const url = /^url = "(.*)"$/m.exec(serverSection[1])?.[1];
-  console.log(JSON.stringify({name: serverName, enabled: !serverSection[1].includes('enabled = false'), transport: {type:'streamable_http', url}}));
-  process.exit(0);
-}
-if (action !== 'remove' || serverName !== 'backchannels' || !serverSection) process.exit(1);
-if (fs.existsSync(path.join(process.env.HOME, '.fail-codex-mcp-remove'))) process.exit(1);
-fs.writeFileSync(configPath, configText.replace(serverSection[0], ''));
-STUB
+cp "$repoRoot/test/fixtures/codex-mcp.cjs" "$skillDependencyStubBin/codex"
 chmod +x "$skillDependencyStubBin/codex"
 printf '{"mcpServers":{"foreign":{"type":"http","url":"https://unmanaged.invalid/mcp"}},"runtimeToken":"keep-me"}\n' \
   > "$sandbox/.claude.json"
@@ -533,7 +507,7 @@ check "converge skips npm ci while a skill's installed lock is current" \
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
-  ".claude/agents" ".claude/workflows" ".claude/commands" ".claude/hooks" ".claude/hud"
+  ".claude/hooks" ".claude/hud"
 )
 
 for destination in "${linkedDestinations[@]}"; do
@@ -555,6 +529,23 @@ for destination in "${linkedDestinations[@]}"; do
     continue
   fi
   pass "$destination linked through the alias"
+done
+
+for entryKind in agents commands workflows; do
+  check "$entryKind converges through per-entry links" \
+    bash -c '[[ -d "$1" && ! -L "$1" ]]; for entry in "$1"/*; do [[ -L "$entry" && -e "$entry" ]] || exit 1; done' _ "$sandbox/.claude/$entryKind"
+  mkdir -p "$stagedRepo/profiles/work/$entryKind"
+  printf 'profile entry\n' > "$stagedRepo/profiles/work/$entryKind/profile-fixture.md"
+done
+runTopicInstall "$stagedTopicDir" work > /dev/null
+for entryKind in agents commands workflows; do
+  check "$entryKind installs profile additions" test -L "$sandbox/.claude/$entryKind/profile-fixture.md"
+  printf 'foreign entry\n' > "$sandbox/.claude/$entryKind/foreign-fixture.md"
+done
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+for entryKind in agents commands workflows; do
+  check "$entryKind retires another profile's additions" test ! -L "$sandbox/.claude/$entryKind/profile-fixture.md"
+  check "$entryKind preserves foreign entries" grep -qx 'foreign entry' "$sandbox/.claude/$entryKind/foreign-fixture.md"
 done
 
 skillsPath="$sandbox/.claude/skills"
@@ -605,12 +596,16 @@ check "a profile skill conflict keeps the shared link" \
 check "a conflicting profile skill installs no dependencies" \
   bash -c '! grep -qF /profiles/work/skills/commit "$1"' _ "$skillDependencyLog"
 rm -rf "$profileConflictSkillPath"
+rm -f "$stagedTopicDir/skills/social-images/node_modules/.package-lock.json"
+: > "$skillDependencyLog"
 noProfileSkillsStatus=0
 runTopicInstallWithoutProfile "$stagedTopicDir" > /dev/null || noProfileSkillsStatus=$?
+check "a missing profile still installs a shared skill's locked dependencies" \
+  grep -qx "npm ci --omit=dev in .*/ai/skills/social-images" "$skillDependencyLog"
 check "a missing profile still warns" test "$noProfileSkillsStatus" -eq 1
 for skillName in "${workSkillNames[@]}"; do
-  check "a missing profile removes work skill $skillName" \
-    bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$skillsPath/$skillName"
+  check "a missing profile preserves work skill $skillName" \
+    test -L "$skillsPath/$skillName"
 done
 check "a missing profile keeps shared skills linked" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
@@ -678,15 +673,28 @@ runTopicInstall "$stagedTopicDir" work > /dev/null
 check "an unparseable runtime file is treated as an absent server" \
   node -e 'const runtimeSettings = require(process.argv[1]); process.exit(runtimeSettings.mcpServers.posthog.url === "https://mcp.posthog.com/mcp" ? 0 : 1)' "$sandbox/.claude.json"
 cp "$sandbox/runtime-settings-backup.json" "$sandbox/.claude.json"
+mv "$sandbox/.codex/config.toml" "$sandbox/codex-config-aside.toml"
 missingClaudeStatus=0
 missingClaudeOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$gitlessBin" \
   bash "$stagedTopicDir/install.sh")" || missingClaudeStatus=$?
+mv "$sandbox/codex-config-aside.toml" "$sandbox/.codex/config.toml"
 check "an absent claude CLI warns" outputHas "$missingClaudeOutput" "claude not found"
-check "an absent Codex CLI warns" outputHas "$missingClaudeOutput" "codex not found"
+check "an absent Codex CLI with no Codex config is skipped quietly because there is no Codex to confine" \
+  bash -c '! grep -qE "\[warn\] +Codex (hooks|MCP)" <<< "$1"' _ "$missingClaudeOutput"
+absentCodexWithConfigOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$gitlessBin" \
+  bash "$stagedTopicDir/install.sh")" || true
+check "an absent Codex CLI warns when config.toml still declares a confined server" \
+  bash -c 'grep -qE "\[warn\] +Codex MCP backchannels" <<< "$1"' _ "$absentCodexWithConfigOutput"
+check "an absent Codex CLI never asks for a hook review it cannot act on" \
+  bash -c '[[ "$1" != *"review hooks with /hooks"* ]]' _ "$absentCodexWithConfigOutput"
 check "an absent claude CLI marks the topic warned" test "$missingClaudeStatus" -eq 1
 check "an absent claude CLI still renders work settings" \
   cmp -s "$sandbox/.claude/CLAUDE.md" "$stagedRepo/profiles/work/CLAUDE.md"
 check "an absent claude CLI preserves managed and unmanaged servers" mcpRuntimeMatches https://mcp.posthog.com/mcp
+absentCodexRetiredServerOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
+  bash "$stagedTopicDir/install.sh")" || true
+check "an absent Codex CLI warns when config.toml still declares a retired server" \
+  bash -c 'grep -qE "\[warn\] +Codex MCP backchannels" <<< "$1"' _ "$absentCodexRetiredServerOutput"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "retirement after an absent CLI preserves the unmanaged server" mcpRuntimeMatches ""
 rm -rf "$skillsPath"
@@ -774,9 +782,14 @@ runTopicInstall "$stagedTopicDir" work > /dev/null
 check "re-trusted hooks after lost Codex trust state enable backchannels" codexBackchannelsIsEnabled
 rm -f "$codexTrustEpochPath" "$codexTrustBaselinePath"
 mv "$stagedRepo/profiles/work/hooks" "$sandbox/work-hooks-aside"
+rm -f "$sandbox/.claude/profile-hooks"
+mkdir -p "$sandbox/.claude/profile-hooks"
+printf 'foreign hook directory\n' > "$sandbox/.claude/profile-hooks/foreign.txt"
 runTopicInstall "$stagedTopicDir" work > /dev/null 2>&1 || true
 check "a warned profile hooks link still records the Codex trust baseline" test -s "$codexTrustBaselinePath"
-check "a warned profile hooks link leaves backchannels disabled" codexBackchannelsIsDisabled
+check "a foreign hook directory cannot satisfy profile confinement" codexBackchannelsIsDisabled
+check "an absent profile hook declaration preserves the foreign directory" \
+  grep -qx 'foreign hook directory' "$sandbox/.claude/profile-hooks/foreign.txt"
 trustCodexHooks "sha256:while-link-warned-trust"
 mv "$sandbox/work-hooks-aside" "$stagedRepo/profiles/work/hooks"
 runTopicInstall "$stagedTopicDir" work > /dev/null
@@ -794,8 +807,34 @@ cp "$sandbox/settings-overlay-backup.json" "$stagedRepo/profiles/work/settings.o
 runTopicInstall "$stagedTopicDir" work > /dev/null
 check "a recovered Claude settings render restores the Claude backchannels server" \
   node -e 'process.exit(require(process.argv[1]).mcpServers.backchannels ? 0 : 1)' "$sandbox/.claude.json"
-runTopicInstall "$stagedTopicDir" personal > /dev/null
-
+unconfinedChildDirectory="$stagedRepo/profiles/unconfined-child-fixture"
+mkdir -p "$unconfinedChildDirectory"
+printf '{"extends":"work"}\n' > "$unconfinedChildDirectory/ai.json"
+node - "$stagedRepo/profiles/work" "$unconfinedChildDirectory" <<'NODE'
+const fs = require('node:fs');
+const [workDirectory, childDirectory] = process.argv.slice(2);
+const overlay = JSON.parse(fs.readFileSync(`${workDirectory}/settings.overlay.json`, 'utf8'));
+overlay.hooks.PreToolUse = overlay.hooks.PreToolUse.filter(entry => !entry.hooks.some(handler => handler.command.includes('confine-backchannels.mjs')));
+fs.writeFileSync(`${childDirectory}/settings.overlay.json`, JSON.stringify(overlay));
+const codexHooks = JSON.parse(fs.readFileSync(`${workDirectory}/codex-hooks.json`, 'utf8'));
+for (const entry of codexHooks.hooks.PreToolUse) entry.matcher = '^Bash$';
+fs.writeFileSync(`${childDirectory}/codex-hooks.json`, JSON.stringify(codexHooks));
+NODE
+runTopicInstall "$stagedTopicDir" unconfined-child-fixture > /dev/null 2>&1 || true
+trustCodexHooks "sha256:unconfined-child-trust"
+unconfinedChildStatus=0
+unconfinedChildOutput="$(runTopicInstall "$stagedTopicDir" unconfined-child-fixture)" || unconfinedChildStatus=$?
+check "a child overlay without the confining hook withholds the Claude server" \
+  node -e 'process.exit(require(process.argv[1]).mcpServers.backchannels ? 1 : 0)' "$sandbox/.claude.json"
+check "a child overlay without the confining hook names the withheld server" \
+  outputHas "$unconfinedChildOutput" "withheld until Claude confinement converges"
+check "trusted child Codex hooks that miss the server tools keep Codex backchannels disabled" codexBackchannelsIsDisabled
+check "an unwired confined server fails the topic" test "$unconfinedChildStatus" -eq 1
+rm -rf "$unconfinedChildDirectory"
+runTopicInstall "$stagedTopicDir" work > /dev/null 2>&1 || true
+trustCodexHooks "sha256:after-unconfined-child-trust"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "work re-enables confined servers once its own confining hooks are wired again" codexBackchannelsIsEnabled
 settingsHookCommandsResolve() {
   node - "$sandbox/.claude/settings.json" <<'NODE'
 const fs = require('node:fs');
@@ -806,6 +845,126 @@ process.exit(scriptPaths.length > 0 && scriptPaths.every(scriptPath => fs.exists
 NODE
 }
 
+
+mkdir -p "$stagedRepo/profiles/work-server/skills" "$stagedRepo/profiles/personal/skills"
+printf 'child addition\n' > "$stagedRepo/profiles/work-server/skills/child-fixture.md"
+printf 'personal addition\n' > "$stagedRepo/profiles/personal/skills/personal-fixture.md"
+runTopicInstall "$stagedTopicDir" work-server > /dev/null
+check "work-server installs its own addition beside inherited skills" \
+  test "$(readlink "$sandbox/.claude/skills/child-fixture.md")" = "$sandbox/.dotfiles/profiles/work-server/skills/child-fixture.md"
+check "work-server excludes personal additions" test ! -e "$sandbox/.claude/skills/personal-fixture.md"
+check "work-server inherits trusted Codex confinement" codexBackchannelsIsEnabled
+check "work-server installs every settings hook at a present script" settingsHookCommandsResolve
+check "work-server inherits work rules for Claude" \
+  test "$(readlink "$sandbox/.claude/AGENTS.profile.md")" = "$sandbox/.dotfiles/profiles/work/AGENTS.md"
+check "work-server inherits work rules for Codex" \
+  grep -q 'company-sanctioned providers' "$sandbox/.codex/AGENTS.md"
+for skillName in "${workSkillNames[@]}"; do
+  check "work-server inherits $skillName without a copy" \
+    test "$(readlink "$sandbox/.claude/skills/$skillName")" = "$sandbox/.dotfiles/profiles/work/skills/$skillName"
+done
+check "work-server inherits the review checklist" \
+  test "$(readlink "$reviewChecklistPath")" = "$sandbox/.dotfiles/profiles/work/review-checklist.md"
+checkRerunIsQuiet "work-server rerun is quiet" "$(runTopicInstall "$stagedTopicDir" work-server)"
+runTopicInstall "$stagedTopicDir" server > /dev/null
+check "server removes inherited work-only artifacts" backchannelsArtifactsAreAbsent
+check "server retires the child profile addition" test ! -L "$sandbox/.claude/skills/child-fixture.md"
+check "server keeps shared house style" test -L "$sandbox/.claude/skills/house-style"
+runTopicInstall "$stagedTopicDir" work-server > /dev/null
+check "work-server restores the identical trusted Codex hooks" codexBackchannelsIsEnabled
+rm "$stagedRepo/profiles/work-server/skills/child-fixture.md" "$stagedRepo/profiles/personal/skills/personal-fixture.md"
+overridingChildDirectory="$stagedRepo/profiles/overriding-child-fixture"
+mkdir -p "$overridingChildDirectory/skills/sprint-update"
+printf '{"extends":"work"}\n' > "$overridingChildDirectory/ai.json"
+printf 'child override\n' > "$overridingChildDirectory/skills/sprint-update/SKILL.md"
+overridingChildStatus=0
+overridingChildOutput="$(runTopicInstall "$stagedTopicDir" overriding-child-fixture)" || overridingChildStatus=$?
+check "a child skill overriding its parent's skill gets the child link" \
+  test "$(readlink "$sandbox/.claude/skills/sprint-update")" = "$sandbox/.dotfiles/profiles/overriding-child-fixture/skills/sprint-update"
+check "a child skill overriding its parent's skill converges without a warning" test "$overridingChildStatus" -eq 0
+check "a child skill overriding its parent's skill names no duplicate" outputLacks "$overridingChildOutput" "duplicate"
+checkRerunIsQuiet "a child overriding a parent skill reruns quietly" "$(runTopicInstall "$stagedTopicDir" overriding-child-fixture)"
+rm -rf "$overridingChildDirectory"
+
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+
+check "personal installs the shared house style" \
+  test "$(readlink "$sandbox/.claude/skills/house-style")" = "$sandbox/.dotfiles/ai/skills/house-style"
+mv "$stagedRepo/profiles/work" "$stagedRepo/profiles/renamed"
+runTopicInstall "$stagedTopicDir" renamed > /dev/null
+check "a renamed profile still enables its trusted confined server" codexBackchannelsIsEnabled
+check "another profile keeps the shared house style" test -L "$sandbox/.claude/skills/house-style"
+check "a renamed profile links its hooks generically" \
+  test "$(readlink "$sandbox/.claude/profile-hooks")" = "$sandbox/.dotfiles/profiles/renamed/hooks"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "switching away from a renamed profile retires its exclusive tools" backchannelsArtifactsAreAbsent
+mv "$stagedRepo/profiles/renamed" "$stagedRepo/profiles/work"
+
+check "AI inheritance rejects cycles, missing parents, and escaping names before convergence" \
+  node --input-type=module - "$stagedRepo" <<'NODE'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const repository = process.argv[2];
+const { profileLineage, profilePolicy } = await import(pathToFileURL(`${repository}/ai/profile-config.mjs`));
+const inheritedDirectory = `${repository}/profiles/inherited-fixture`;
+fs.mkdirSync(inheritedDirectory);
+for (const parent of ['inherited-fixture', 'absent-fixture', '../work']) {
+  fs.writeFileSync(`${inheritedDirectory}/ai.json`, JSON.stringify({extends: parent}));
+  assert.throws(() => profileLineage('inherited-fixture'));
+}
+fs.writeFileSync(`${inheritedDirectory}/ai.json`, JSON.stringify({extends: 'work-server'}));
+assert.deepEqual(profileLineage('inherited-fixture'), ['work', 'work-server', 'inherited-fixture']);
+assert.equal(profilePolicy('inherited-fixture').mcpServers.backchannels.confined, true);
+assert.deepEqual(profilePolicy('inherited-fixture').removedSkills, []);
+fs.rmSync(inheritedDirectory, {recursive: true});
+NODE
+
+check "Codex combines shared and profile hooks, reruns quietly, and retires deleted declarations" \
+  env HOME="$sandbox" node --input-type=module - "$stagedRepo" "$renderFixtureDirectory" <<'NODE'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+const [repository, fixture] = process.argv.slice(2);
+const basePath = `${repository}/ai/codex-hooks.base.json`;
+const originalBase = fs.readFileSync(basePath);
+const overlayPath = `${fixture}/overlay.json`;
+const runtimePath = `${fixture}/generic-hooks.json`;
+const destinationPath = `${fixture}/generic-rendered.json`;
+const ownedPath = `${fixture}/owned.json`;
+const declaration = command => ({hooks:{Stop:[{hooks:[{type:'command',command}]}]}});
+fs.writeFileSync(basePath, JSON.stringify(declaration('printf shared-hook')));
+fs.writeFileSync(overlayPath, JSON.stringify(declaration('printf profile-hook')));
+fs.writeFileSync(runtimePath, JSON.stringify(declaration('printf foreign-hook')));
+const render = () => {
+  const processOutput = spawnSync(process.execPath, [`${repository}/ai/render-codex-hooks.mjs`, overlayPath, runtimePath, destinationPath, '', ownedPath], {encoding:'utf8'});
+  assert.equal(processOutput.status, 0, processOutput.stderr);
+  fs.copyFileSync(destinationPath, runtimePath);
+  return fs.readFileSync(runtimePath, 'utf8');
+};
+try {
+  const firstRender = render();
+  assert.deepEqual(JSON.parse(firstRender).hooks.Stop.flatMap(entry => entry.hooks.map(handler => handler.command)), ['printf shared-hook', 'printf profile-hook', 'printf foreign-hook']);
+  assert.equal(render(), firstRender);
+  fs.writeFileSync(basePath, '{"hooks":{}}');
+  fs.writeFileSync(overlayPath, '{"hooks":{}}');
+  assert.deepEqual(JSON.parse(render()).hooks.Stop.flatMap(entry => entry.hooks.map(handler => handler.command)), ['printf foreign-hook']);
+} finally {
+  fs.writeFileSync(basePath, originalBase);
+}
+NODE
+
+mkdir -p "$stagedRepo/profiles/minimal"
+printf '@AGENTS.md\n' > "$stagedRepo/profiles/minimal/CLAUDE.md"
+runTopicInstall "$stagedTopicDir" minimal > /dev/null
+check "a profile without an overlay still gets shared hooks" \
+  grep -q inject-routing.mjs "$sandbox/.claude/settings.json"
+check "a profile without an overlay gets no work hooks" \
+  bash -c '! grep -q profile-hooks "$1"' _ "$sandbox/.claude/settings.json"
+check "a profile without declarations retires another profile's artifacts" backchannelsArtifactsAreAbsent
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+
+
 runTopicInstall "$stagedTopicDir" work > /dev/null
 trustCodexHooks "sha256:no-profile-trust"
 runTopicInstall "$stagedTopicDir" work > /dev/null
@@ -813,10 +972,11 @@ mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backcha
 noProfileSnapshot="$sandbox/no-profile-snapshot"
 rm -rf "$noProfileSnapshot"
 mkdir -p "$noProfileSnapshot"
-cp "$sandbox/.claude.json" "$sandbox/.codex/hooks.json" "$sandbox/.codex/config.toml" "$sandbox/.claude/settings.json" "$noProfileSnapshot/"
+cp "$sandbox/.codex/AGENTS.md" "$sandbox/.claude.json" "$sandbox/.codex/hooks.json" "$sandbox/.codex/config.toml" "$sandbox/.claude/settings.json" "$noProfileSnapshot/"
 noProfileStatus=0
 runTopicInstall "$stagedTopicDir" "" > /dev/null || noProfileStatus=$?
 check "a no-profile converge warns" test "$noProfileStatus" -eq 1
+check "a no-profile converge leaves Codex instructions alone" cmp -s "$sandbox/.codex/AGENTS.md" "$noProfileSnapshot/AGENTS.md"
 check "a no-profile converge leaves Claude MCP servers alone" cmp -s "$sandbox/.claude.json" "$noProfileSnapshot/.claude.json"
 check "a no-profile converge leaves Codex hooks alone" cmp -s "$sandbox/.codex/hooks.json" "$noProfileSnapshot/hooks.json"
 check "a no-profile converge leaves Codex MCP config alone" cmp -s "$sandbox/.codex/config.toml" "$noProfileSnapshot/config.toml"
@@ -826,6 +986,39 @@ check "a no-profile converge keeps the profile hooks link" \
 check "a no-profile converge keeps the backchannels skill directories" \
   test -d "$sandbox/.claude/skills/backchannels" -a -d "$sandbox/.agents/skills/backchannels"
 check "a no-profile converge leaves every settings hook command pointing at a present script" settingsHookCommandsResolve
+
+runTopicInstall "$stagedTopicDir" work > /dev/null
+nodelessBin="$sandbox/nodeless-bin"
+mkdir -p "$nodelessBin"
+linkCoreUtilities --into "$nodelessBin" bash basename dirname cat cmp cp chmod find git grep head \
+  ln ls mkdir mktemp mv readlink rm rmdir sed stat tr uname wc
+nodelessSnapshot="$sandbox/nodeless-snapshot"
+rm -rf "$nodelessSnapshot"
+mkdir -p "$nodelessSnapshot"
+cp "$sandbox/.codex/AGENTS.md" "$sandbox/.claude.json" "$sandbox/.codex/hooks.json" "$sandbox/.codex/config.toml" \
+  "$sandbox/.claude/settings.json" "$sandbox/.claude/CLAUDE.md" "$nodelessSnapshot/"
+rm -f "$sandbox/.claude/AGENTS.md" "$skillsPath/commit"
+nodelessStatus=0
+nodelessOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$nodelessBin" \
+  bash "$stagedTopicDir/install.sh")" || nodelessStatus=$?
+check "a converge without node warns" test "$nodelessStatus" -eq 1
+check "a converge without node names the skipped profile policy" \
+  outputHas "$nodelessOutput" "could not read profile policy"
+check "a converge without node still links the shared AGENTS.md" \
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ "$sandbox/.claude/AGENTS.md" "$sandbox/.dotfiles/ai/AGENTS.md"
+check "a converge without node still links shared skills" \
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ "$skillsPath/commit" "$sandbox/.dotfiles/ai/skills/commit"
+for skillName in "${workSkillNames[@]}"; do
+  check "a converge without node preserves work skill $skillName" test -L "$skillsPath/$skillName"
+done
+check "a converge without node keeps the profile hooks link" \
+  bash -c '[[ -L "$1" && "$(readlink "$1")" == "$2" ]]' _ "$sandbox/.claude/profile-hooks" "$sandbox/.dotfiles/profiles/work/hooks"
+check "a converge without node leaves Claude instructions alone" cmp -s "$sandbox/.claude/CLAUDE.md" "$nodelessSnapshot/CLAUDE.md"
+check "a converge without node leaves Codex instructions alone" cmp -s "$sandbox/.codex/AGENTS.md" "$nodelessSnapshot/AGENTS.md"
+check "a converge without node leaves Claude MCP servers alone" cmp -s "$sandbox/.claude.json" "$nodelessSnapshot/.claude.json"
+check "a converge without node leaves Codex hooks alone" cmp -s "$sandbox/.codex/hooks.json" "$nodelessSnapshot/hooks.json"
+check "a converge without node leaves Codex MCP config alone" cmp -s "$sandbox/.codex/config.toml" "$nodelessSnapshot/config.toml"
+check "a converge without node leaves Claude settings alone" cmp -s "$sandbox/.claude/settings.json" "$nodelessSnapshot/settings.json"
 
 runTopicInstall "$stagedTopicDir" work > /dev/null
 mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
@@ -943,10 +1136,10 @@ check "CLAUDE.md matches the profile copy" \
 profileClaudeMdImportsOnlyAgentsFiles() {
   local profileDirectory="$1"
   local expectedImports="@AGENTS.md"
-  if [[ -f "$profileDirectory/AGENTS.md" ]]; then
+  if [[ -n "$(node "$repoRoot/ai/profile-config.mjs" "$(basename -- "$profileDirectory")" AGENTS.md)" ]]; then
     expectedImports+=$'\n@AGENTS.profile.md'
   fi
-  [[ "$(cat -- "$profileDirectory/CLAUDE.md")" == "$expectedImports" ]]
+  [[ "$(cat -- "$(node "$repoRoot/ai/profile-config.mjs" "$(basename -- "$profileDirectory")" CLAUDE.md)")" == "$expectedImports" ]]
 }
 
 for profileDirectory in "$repoRoot"/profiles/*/; do
@@ -985,8 +1178,9 @@ overlayDefinesNoDenyList() {
   node -e 'const overlaySettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlaySettings.permissions&&overlaySettings.permissions.deny?1:0)' "$1"
 }
 
-for profileOverlayPath in "$repoRoot"/profiles/*/settings.overlay.json; do
-  profileName="$(basename -- "$(dirname -- "$profileOverlayPath")")"
+for profileDirectory in "$repoRoot"/profiles/*/; do
+  profileName="$(basename -- "$profileDirectory")"
+  profileOverlayPath="$(node "$repoRoot/ai/profile-config.mjs" "$profileName" settings.overlay.json)"
   renderedProfilePath="$sandbox/deny-probe-$profileName.json"
   check "the $profileName overlay renders" \
     renderProfileSettings "$profileOverlayPath" "$renderedProfilePath"
@@ -998,7 +1192,7 @@ for profileOverlayPath in "$repoRoot"/profiles/*/settings.overlay.json; do
     overlayDefinesNoDenyList "$profileOverlayPath"
 done
 
-check "work-server renders caveman defaults without backchannels confinement or retired plugins" \
+check "work-server renders caveman defaults and confinement without retired plugins" \
   node - "$sandbox/deny-probe-work-server.json" "$topicDir/settings.base.json" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -1009,7 +1203,8 @@ assert.equal(renderedSettings.enabledPlugins["caveman@caveman"], true);
 assert.deepEqual(renderedSettings.extraKnownMarketplaces.caveman, baseSettings.extraKnownMarketplaces.caveman);
 assert.equal(renderedSettings.env.CAVEMAN_DEFAULT_MODE, baseSettings.env.CAVEMAN_DEFAULT_MODE);
 assert.equal(renderedSettings.env.CAVEMAN_TELEMETRY, baseSettings.env.CAVEMAN_TELEMETRY);
-assert.doesNotMatch(renderedText, /confine-backchannels|example-org|[/]org-|telegram@claude-plugins-official/);
+assert.match(renderedText, /confine-backchannels/);
+assert.doesNotMatch(renderedText, /example-org|[/]org-|telegram@claude-plugins-official/);
 JS
 
 check "settings.json keeps the personal permissions allow list" \

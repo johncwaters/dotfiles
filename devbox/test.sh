@@ -8,6 +8,7 @@ export DOTFILES_PLATFORM=linux
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
+printf 'work\n' > "$DOTFILES_MARKER_PATH"
 linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup tar cut od date
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
@@ -35,7 +36,7 @@ case "$1" in
     if [[ "${*:4}" == *snapshot-status ]]; then
       cat > /dev/null
       if [[ -f "$DOTFILES_TEST_STATE/execute-snapshot" ]]; then
-        HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 snapshot-status
+        XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 snapshot-status
         exit
       fi
       cat "$DOTFILES_TEST_STATE/snapshot-commit"
@@ -43,7 +44,7 @@ case "$1" in
     fi
     if [[ "${5:-}" == -c ]]; then
       printf 'snapshot transfer\n' >> "$DOTFILES_TEST_LOG"
-      DOTFILES_TEST_REMOTE_SNAPSHOT=1 HOME="$DOTFILES_TEST_STATE/remote-home" bash -c "${*:4}"
+      DOTFILES_TEST_REMOTE_SNAPSHOT=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" bash -c "${*:4}"
       exit
     fi
     cat > "$DOTFILES_TEST_STATE/pushed-script"
@@ -52,7 +53,7 @@ case "$1" in
     bash -c "set -- ${*:4}; printf '%s\\n' \"\$@\"" > "$DOTFILES_TEST_STATE/remote-arguments"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
     if [[ -f "$DOTFILES_TEST_STATE/execute-provision" ]]; then
-      HOME="$DOTFILES_TEST_STATE/remote-home" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
+      XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
         CODER_WORKSPACE_OWNER_NAME=fixture bash "$DOTFILES_TEST_STATE/provision-with-test-listeners.sh" "${@:7}"
       exit
     fi
@@ -103,7 +104,7 @@ runInstall() {
 }
 
 runDevbox() {
-  runInStubbedSandbox "$sandbox" bash -c 'source "$1/commands.bash"; shift; devbox "$@"' _ "$topicDirectory" "$@"
+  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work bash -c 'source "$1/commands.bash"; shift; devbox "$@"' _ "$topicDirectory" "$@"
 }
 
 snapshotCheckSitsBetweenPrepareAndProvision() {
@@ -185,7 +186,7 @@ printf 'running\n' > "$stubState/workspace-status"
 rm -f "$stubState/ssh-usage-app"
 runningOutput="$(runInstall)"
 check "running converge pushes with the pinned release" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
-check "running converge pipes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
+check "running converge pipes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "converge SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
 check "matching snapshot hash skips archive and bootstrap" logLacks 'archive --format=tar'
@@ -213,7 +214,7 @@ rm -f "$stubState/ssh-usage-app"
 runDevbox ensure >/dev/null
 check "ensure provisions a running workspace with the pinned release" \
   logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
-check "ensure pushes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
+check "ensure pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "ensure disables SSH autostart after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "ensure SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
 check "ensure checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
@@ -369,7 +370,7 @@ printf 'stopped\n' > "$stubState/workspace-status"
 upOutput="$(runDevbox up)"
 check "up starts a stopped workspace" logHas 'coder start devbox-fixture --yes'
 check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
-check "up pushes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
+check "up pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "up prints the dashboard URL" outputHas "$upOutput" 'https://fixture.invalid/'
 check "up checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
 check "up starts before it connects" outputMatches "$(grep -E 'coder start|coder ssh' "$commandLog" | head -1)" '^coder start'
@@ -423,7 +424,7 @@ provideCommand flock
 remoteSnapshotHome="$stubState/remote-home"
 remoteSnapshotMarker="$remoteSnapshotHome/dotfiles-snapshot/.snapshot-commit"
 remoteBootstrapLog="$remoteSnapshotHome/.local/state/dotfiles/devbox-bootstrap.log"
-cp "$topicDirectory/provision.sh" "$stubState/remote-provision.sh"
+cp "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/remote-provision.sh"
 printf 'running\n' > "$stubState/workspace-status"
 
 startEmptyRemoteHome() {
@@ -521,7 +522,7 @@ check "pushed snapshot contains only committed content" \
 check "pushed snapshot excludes untracked secrets" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/untracked-secret"
 check "pushed snapshot has no git directory or repo credentials" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/.git"
 check "plain snapshot convergence records no git revision" \
-  grep -q '^unknown work-server ' "$sandbox/.local/state/dotfiles/converged"
+  grep -q '^unknown work-server ' "$remoteSnapshotHome/.local/state/dotfiles/converged"
 check "snapshot runs work-server bootstrap" logHas 'bootstrap work-server'
 check "snapshot bootstrap makes lasting links through the alias" \
   test -f "$remoteSnapshotHome/.claude/hooks/snapshot-probe.mjs"
@@ -566,6 +567,9 @@ cat > "$remoteLocalBin/claude" <<'STUB'
 #!/usr/bin/env bash
 printf 'claude %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 STUB
+cp "$repoRoot/test/fixtures/codex-mcp.cjs" "$remoteLocalBin/codex"
+chmod +x "$remoteLocalBin/codex"
+export CODEX_MCP_COMMAND_LOG="$commandLog"
 cat > "$remoteLocalBin/npm" <<'STUB'
 #!/usr/bin/env bash
 printf 'npm %s in %s\n' "$*" "$PWD" >> "$DOTFILES_TEST_LOG"
@@ -584,10 +588,46 @@ GITCONFIG
 workServerSnapshotStatus=0
 workServerSnapshotOutput="$(runDevbox ensure 2>&1)" || workServerSnapshotStatus=$?
 check "the real work-server profile bootstraps a fresh box through ensure" test "$workServerSnapshotStatus" -eq 0
-check "the real work-server profile bootstraps with zero warnings" \
+check "the fresh work-server snapshot waits for Codex hook trust" \
+  grep -qF 'open codex, review hooks with /hooks' "$remoteBootstrapLog"
+check "untrusted confinement leaves the snapshot marker absent" test ! -e "$remoteSnapshotMarker"
+check "fresh work-server keeps Codex backchannels disabled" \
+  grep -qF 'enabled = false' "$remoteSnapshotHome/.codex/config.toml"
+node - "$remoteSnapshotHome" <<'NODE'
+const fs = require('node:fs');
+const home = process.argv[2];
+const baseline = fs.readFileSync(`${home}/.local/state/dotfiles/ai-codex-hook-trust-baseline`, 'utf8').trimEnd().split('\n');
+for (const entry of baseline.slice(1)) {
+  const stateKey = entry.split('\t')[0];
+  fs.appendFileSync(`${home}/.codex/config.toml`, `\n[hooks.state.${JSON.stringify(stateKey)}]\ntrusted_hash = "sha256:fixture-approved"\n`);
+}
+NODE
+: > "$remoteBootstrapLog"
+workServerSnapshotOutput="$(runDevbox ensure 2>&1)"
+check "trusted work-server confinement converges with zero warnings" \
   bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$workServerSnapshotOutput" "$remoteBootstrapLog"
 check "the real work-server bootstrap resolves npm on the box rather than the test host" logHas 'npm ci --omit=dev in '
 check "the real work-server profile records its snapshot commit" \
+  cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+legacyEntryDirectoryKinds=(agents commands workflows)
+for entryKind in "${legacyEntryDirectoryKinds[@]}"; do
+  rm -rf "$remoteSnapshotHome/.claude/$entryKind"
+  ln -s "$remoteSnapshotHome/.dotfiles/ai/$entryKind" "$remoteSnapshotHome/.claude/$entryKind"
+done
+rm -f "$remoteSnapshotMarker"
+: > "$remoteBootstrapLog"
+legacyEntryLinksStatus=0
+legacyEntryLinksOutput="$(runDevbox ensure 2>&1)" || legacyEntryLinksStatus=$?
+check "a snapshot bootstrap over whole-directory entry links exits cleanly" test "$legacyEntryLinksStatus" -eq 0
+check "a snapshot bootstrap over whole-directory entry links converges with zero warnings" \
+  bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$legacyEntryLinksOutput" "$remoteBootstrapLog"
+for entryKind in "${legacyEntryDirectoryKinds[@]}"; do
+  firstRepoEntryName="$(basename -- "$(find "$repoRoot/ai/$entryKind" -mindepth 1 -maxdepth 1 | sort | head -1)")"
+  check "a snapshot bootstrap cuts ~/.claude/$entryKind over to per-entry links" \
+    bash -c '[[ -d "$1" && ! -L "$1" && "$(readlink "$1/$2")" == "$3/$2" ]]' _ \
+    "$remoteSnapshotHome/.claude/$entryKind" "$firstRepoEntryName" "$remoteSnapshotHome/.dotfiles/ai/$entryKind"
+done
+check "a snapshot bootstrap over whole-directory entry links records its snapshot commit" \
   cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
 check "every hook script the real work-server settings run exists on the box" \
   node -e '
@@ -604,12 +644,12 @@ rm -f "$stubState/execute-snapshot"
 
 mergeConfig() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
-    CODER_WORKSPACE_OWNER_NAME=fixture bash -s -- 0.29.1 config-only < "$topicDirectory/provision.sh"
+    CODER_WORKSPACE_OWNER_NAME=fixture bash -s -- 0.29.1 config-only < "$repoRoot/profiles/work/devbox/provision.sh"
 }
 
 mergeConfigWithoutWorkspaceName() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_OWNER_NAME=fixture \
-    env -u CODER_WORKSPACE_NAME bash -s -- 0.29.1 config-only < "$topicDirectory/provision.sh"
+    env -u CODER_WORKSPACE_NAME bash -s -- 0.29.1 config-only < "$repoRoot/profiles/work/devbox/provision.sh"
 }
 
 mkdir -p "$sandbox/.glimmervoid"
@@ -858,7 +898,7 @@ awk -v hasProcCommandLines="$hasProcCommandLines" '
     if (hasProcCommandLines == 0) print "devboxProcessCommandLine() { ps -o args= -p \"$1\"; }"
   }
   { print }
-' "$topicDirectory/provision.sh" > "$instrumentedProvisionPath"
+' "$repoRoot/profiles/work/devbox/provision.sh" > "$instrumentedProvisionPath"
 
 runRemoteProvision() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \

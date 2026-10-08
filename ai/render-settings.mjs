@@ -21,7 +21,7 @@ function mergeAllowLists(baseAllowList, overlayAllowList) {
 }
 
 const [basePath, overlayPath, destinationPath, homeOverride] = process.argv.slice(2);
-if (!basePath || !overlayPath || !destinationPath) {
+if (!basePath || !destinationPath) {
   process.stderr.write(
     "render-settings: usage: node render-settings.mjs <base.json> <overlay.json> <out.json> [homeOverride]\n",
   );

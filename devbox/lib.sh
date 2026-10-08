@@ -1,9 +1,24 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 devboxGlimmervoidVersion="0.30.0"
 devboxLookupUnauthenticated=3
+source "$devboxTopicDirectory/../script/lib/profile.sh"
+
+readDevboxProfile() {
+  local dotfilesRepo="$(cd -- "$devboxTopicDirectory/.." && pwd)"
+  local activeProfile="${profileName:-$(resolveProfileName || true)}"
+  [[ -n "$activeProfile" ]] || return 1
+  devboxProfileDirectory="$devboxTopicDirectory/../profiles/$activeProfile"
+  [[ -f "$devboxProfileDirectory/devbox/provision.sh" ]] || return 1
+  devboxDeploymentUrl="$(readProfileSetting "$devboxProfileDirectory/coder.json" deploymentUrl)" || return 1
+  devboxWorkspaceDomain="$(readProfileSetting "$devboxProfileDirectory/coder.json" workspaceDomain)" || return 1
+}
 
 resolveDevboxWorkspace() {
   devboxSkipReason=""
+  if ! readDevboxProfile; then
+    devboxSkipReason="no profile deployment configured"
+    return 1
+  fi
   devboxCoderPath="$HOME/.local/bin/coder"
   if [[ ! -x "$devboxCoderPath" ]]; then
     devboxSkipReason="Coder CLI absent"
@@ -11,7 +26,7 @@ resolveDevboxWorkspace() {
   fi
   local identityJson
   if ! identityJson="$("$devboxCoderPath" whoami --output json 2>/dev/null)"; then
-    devboxSkipReason="coder whoami failed; run coder login https://coder.dev.posthog.dev"
+    devboxSkipReason="coder whoami failed; run coder login ${devboxDeploymentUrl}"
     return "$devboxLookupUnauthenticated"
   fi
   if ! command -v node >/dev/null 2>&1; then
@@ -48,7 +63,7 @@ resolveDevboxWorkspace() {
     devboxSkipReason="no workspace named $devboxWorkspaceName"
     return 1
   fi
-  devboxDashboardUrl="https://3457--dev--$devboxWorkspaceName--$coderUsername.coder.dev.posthog.dev/"
+  devboxDashboardUrl="https://3457--dev--$devboxWorkspaceName--$coderUsername.${devboxWorkspaceDomain}/"
 }
 
 runDevboxSsh() {
@@ -64,7 +79,7 @@ pushDevboxScript() {
     remoteArguments+=("'$pairingLabel'")
   fi
   runDevboxSsh bash -s -- \
-    "${remoteArguments[@]}" < "$devboxTopicDirectory/provision.sh"
+    "${remoteArguments[@]}" < "$devboxProfileDirectory/devbox/provision.sh"
 }
 
 pushDevboxSnapshot() (
@@ -84,7 +99,7 @@ pushDevboxSnapshot() (
     return 0
   fi
   local remoteScript apostropheReplacement="'\"'\"'"
-  remoteScript="$(cat "$devboxTopicDirectory/provision.sh")"
+  remoteScript="$(cat "$devboxProfileDirectory/devbox/provision.sh")"
   remoteScript="${remoteScript//\'/$apostropheReplacement}"
   if git -C "$snapshotRepo" archive --format=tar "$snapshotCommit" \
     | runDevboxSsh bash -c "'$remoteScript'" -- "$devboxGlimmervoidVersion" snapshot "$snapshotCommit"; then

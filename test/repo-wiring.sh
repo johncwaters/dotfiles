@@ -50,7 +50,8 @@ done
 
 checkProfileClaudeSettings() {
   local profileName="$1"
-  local profileOverlayPath="$2"
+  local profileOverlayPath
+  profileOverlayPath="$(node "$repoRoot/ai/profile-config.mjs" "$profileName" settings.overlay.json)"
   if [[ ! -f "$profileOverlayPath" ]]; then
     fail "$profileName has Claude settings for its ai topic"
     return
@@ -108,29 +109,14 @@ for (const excludedFile of ["glimmervoid.json", "glimmervoid.overlay.json", "mcp
 }
 JS
 
-for sharedWorkFile in CLAUDE.md AGENTS.md commit-policy.json; do
-  check "work-server keeps the work $sharedWorkFile content" \
-    cmp -s "$repoRoot/profiles/work/$sharedWorkFile" "$repoRoot/profiles/work-server/$sharedWorkFile"
+for sharedWorkFile in CLAUDE.md AGENTS.md commit-policy.json settings.overlay.json hooks codex-hooks.json skills; do
+  check "work-server inherits work $sharedWorkFile without copying agent additions" \
+    test "$(node "$repoRoot/ai/profile-config.mjs" work-server "$sharedWorkFile")" = \
+    "$repoRoot/profiles/$(case "$sharedWorkFile" in commit-policy.json) printf work-server ;; *) printf work ;; esac)/$sharedWorkFile"
 done
 
-check "work-server keeps work settings except the backchannels hooks" \
-  node - "$repoRoot/profiles" <<'JS'
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const profilesDirectory = process.argv[2];
-const readOverlay = profile => JSON.parse(fs.readFileSync(`${profilesDirectory}/${profile}/settings.overlay.json`, "utf8"));
-const expectedOverlay = readOverlay("work");
-for (const event of Object.keys(expectedOverlay.hooks)) {
-  expectedOverlay.hooks[event] = expectedOverlay.hooks[event].filter(entry =>
-    !entry.hooks.some(hook => hook.command.includes("confine-backchannels")));
-  if (expectedOverlay.hooks[event].length === 0) delete expectedOverlay.hooks[event];
-}
-assert.deepEqual(readOverlay("work-server"), expectedOverlay);
-JS
-
-check "work-server rendered settings contain no backchannels hooks or retired plugins" \
-  bash -c '! grep -Eq "confine-backchannels|example-org|/org-|telegram@claude-plugins-official" "$1"' \
-  _ "$sandbox/rendered-ai-settings.work-server.json"
+check "work-server settings equal work settings including confinement" \
+  cmp -s "$sandbox/rendered-ai-settings.work.json" "$sandbox/rendered-ai-settings.work-server.json"
 
 # These topics confine their commands to the sandbox home without command stubs.
 topicSuitesNeedingStubs() {
@@ -264,7 +250,7 @@ const fs = require('node:fs');
 const hooks = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).hooks;
 const isConfined = hooks.PreToolUse.some(entry => ['mcp__backchannels__register_agent', 'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].every(toolName => new RegExp(entry.matcher).test(toolName)) && entry.hooks.some(handler => handler.command.includes('/.claude/profile-hooks/confine-backchannels.mjs')));
 const startupHooks = hooks.SessionStart.flatMap(entry => entry.hooks);
-const hasGatedStartup = ['startup', 'resume', 'clear', 'compact'].every(source => hooks.SessionStart.some(entry => new RegExp(entry.matcher).test(source))) && startupHooks.length === 1 && startupHooks[0].command.includes('/.claude/profile-hooks/confine-backchannels.mjs') && startupHooks[0].command.endsWith('--codex-startup');
+const hasGatedStartup = ['startup', 'resume', 'clear', 'compact'].every(source => hooks.SessionStart.some(entry => new RegExp(entry.matcher).test(source))) && startupHooks.length === 1 && startupHooks[0].command.includes('/.claude/profile-hooks/confine-backchannels.mjs') && startupHooks[0].command.includes('--codex-startup --trust-epoch={{TRUST_EPOCH}}');
 process.exit(isConfined && hasGatedStartup ? 0 : 1);
 NODE
 check "only work declares a backchannels MCP server or Codex hooks" \
@@ -282,6 +268,41 @@ for (const profileName of fs.readdirSync(profilesDirectory)) {
   if (backchannels || fs.existsSync(path.join(profilesDirectory, profileName, 'codex-hooks.json'))) process.exit(1);
 }
 NODE
+check "every profile with a confined server wires its confining hook for Claude and Codex" \
+  node --input-type=module - "$repoRoot" <<'NODE'
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const repoRoot = process.argv[2];
+const { confiningHookScriptName, profilePolicy, profileSource, wiresConfiningHook } = await import(pathToFileURL(`${repoRoot}/ai/profile-config.mjs`));
+const readHooks = (sourcePath) => (sourcePath ? JSON.parse(fs.readFileSync(sourcePath, 'utf8')).hooks ?? {} : {});
+const unwiredServers = [];
+for (const profileName of fs.readdirSync(`${repoRoot}/profiles`)) {
+  if (!fs.statSync(`${repoRoot}/profiles/${profileName}`).isDirectory()) continue;
+  const declarationPath = profileSource(profileName, 'mcp-servers.json');
+  const declaredServers = declarationPath ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')) : {};
+  const confinedServerNames = Object.entries(profilePolicy(profileName).mcpServers)
+    .filter(([serverName, serverPolicy]) => serverPolicy.confined && Object.hasOwn(declaredServers, serverName))
+    .map(([serverName]) => serverName);
+  const hooksSource = profileSource(profileName, 'hooks');
+  const clientHooks = {
+    claude: readHooks(profileSource(profileName, 'settings.overlay.json')),
+    codex: readHooks(profileSource(profileName, 'codex-hooks.json')),
+  };
+  for (const serverName of confinedServerNames) {
+    const scriptName = confiningHookScriptName(serverName);
+    const hasScript = Boolean(hooksSource) && fs.existsSync(path.join(hooksSource, scriptName));
+    for (const [clientName, hooksByEvent] of Object.entries(clientHooks)) {
+      if (hasScript && wiresConfiningHook(hooksByEvent, `{{HOME}}/.claude/profile-hooks/${scriptName}`, serverName)) continue;
+      unwiredServers.push(`${profileName}/${clientName}/${serverName}`);
+    }
+  }
+}
+if (unwiredServers.length > 0) {
+  console.error(unwiredServers.join('\n'));
+  process.exit(1);
+}
+NODE
 check "no profile overlay owns caveman" \
   bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \
@@ -291,5 +312,33 @@ check "no chmod passes the end-of-options separator BSD chmod rejects" \
   bash -c '! grep -rqE "chmod( +(-[^ |&;#]*|[0-7]{3,4}|[ugoa]*[-+=][rwxXstugo]+))* +--( |$)" --exclude-dir=.git --exclude-dir=.claude "$1"' _ "$repoRoot"
 check "the global npm listing escapes the slash BWK awk ends the regex at" \
   grep -qF 'node_modules[\\\/]' "$repoRoot/script/lib/packages.sh"
+
+check "shared AI runtime and installers contain no profile-specific tool names or profile branches" \
+  node - "$repoRoot" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.argv[2];
+const scan = (relativePath) => {
+  const absolutePath = path.join(root, relativePath);
+  if (fs.statSync(absolutePath).isDirectory()) {
+    for (const entry of fs.readdirSync(absolutePath)) {
+      if (['test', 'node_modules', '.git'].includes(entry) || entry === 'test.sh') continue;
+      scan(path.join(relativePath, entry));
+    }
+    return;
+  }
+  const text = fs.readFileSync(absolutePath, 'utf8');
+  const boundaryText = relativePath === 'ai/skills/house-style/SKILL.md'
+    ? text.replace("Not for PostHog product UI, which follows PostHog's own design system.", '') : text;
+  if (/posthog|backchannels|profiles\/(work|personal|server)\b|profileName[^\n]*(?:==|!=)\s*["']?(?:work|personal|server)\b/i.test(boundaryText)) {
+    throw new Error(`profile-specific shared content: ${relativePath}`);
+  }
+};
+for (const relativePath of ['ai', 'coder/install.sh', 'devbox/lib.sh', 'devbox/install.sh', 'vscodium/install.sh', 'script/lib']) scan(relativePath);
+NODE
+check "house style is shared without a profile copy" \
+  bash -c '[[ -f "$1/ai/skills/house-style/SKILL.md" && ! -e "$1/profiles/personal/skills/house-style" && ! -e "$1/profiles/work/skills/house-style" ]]' _ "$repoRoot"
+check "only the work profile carries the editor MCP and remote provision inputs" \
+  bash -c '[[ -f "$1/profiles/work/vscodium-mcp.json" && -f "$1/profiles/work/devbox/provision.sh" && ! -e "$1/vscodium/mcp.json" && ! -e "$1/devbox/provision.sh" ]]' _ "$repoRoot"
 
 reportTopicResults "repo wiring"

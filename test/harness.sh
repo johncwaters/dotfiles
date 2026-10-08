@@ -101,6 +101,25 @@ startStubbedSandbox() {
   : > "$commandLog"
 }
 
+stageTopicWithLinuxAccountLookup() {
+  [[ ! -x /usr/bin/getent ]] || return 0
+  local stagedRepo="$sandbox/repo"
+  local topicName="${topicDir##*/}"
+  local accountLookupStub="$sandbox/getent"
+  mkdir -p "$stagedRepo"
+  cp -R "$repoRoot/script" "$repoRoot/packages" "$repoRoot/profiles" "$repoRoot/README.md" "$stagedRepo/"
+  if [[ "$topicName" != packages ]]; then
+    cp -R "$topicDir" "$stagedRepo/"
+  fi
+  printf '#!/usr/bin/env bash\nprintf "fixture:x:1000:1000::/non-sandbox-account:/bin/bash\\n"\n' > "$accountLookupStub"
+  chmod +x "$accountLookupStub"
+  sed "s|/usr/bin/getent|$accountLookupStub|g" "$repoRoot/script/lib/platform.sh" > "$stagedRepo/script/lib/platform.sh"
+  repoRoot="$stagedRepo"
+  topicDir="$stagedRepo/$topicName"
+  rm "$sandbox/.dotfiles"
+  ln -s "$stagedRepo" "$sandbox/.dotfiles"
+}
+
 # XDG_STATE_HOME is pinned into the sandbox: inheriting the runner's would write converge state into the real home.
 runInStubbedSandbox() {
   local sandboxHome="$1"

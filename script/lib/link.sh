@@ -133,3 +133,18 @@ linkEntry() {
   recordLinkOutcome "$outcomeVariableName" changed
   noteApplied "$label" "linked"
 }
+
+convergeProfileLink() {
+  local label="$1"
+  local profileRelativeSource="$2"
+  local destination="$3"
+  [[ -n "${profileName:-}" ]] || return 0
+  local profileSource="${4:-profiles/$profileName/$profileRelativeSource}"
+  if [[ -e "$dotfilesRepo/$profileSource" ]]; then
+    linkEntry "$label" "$profileSource" "$destination"
+    return 0
+  fi
+  pathIsLinkIntoThisRepo "$destination" || return 0
+  rm -f -- "$destination"
+  noteApplied "$label" "retired link removed"
+}

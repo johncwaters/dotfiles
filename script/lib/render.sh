@@ -135,6 +135,7 @@ renderJsonTemplate() {
   fi
   local missingInput
   for missingInput in "$rendererPath" "$basePath" "$overlayPath"; do
+    [[ -n "$missingInput" ]] || continue
     if [[ ! -f "$missingInput" ]]; then
       noteWarned "$label" "missing input: $missingInput"
       return 0

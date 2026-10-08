@@ -415,18 +415,18 @@ ensureNpmGlobals() {
   done
 }
 
-wantedNpmGlobalsPath() {
-  local profileListPath="$dotfilesRepo/profiles/${profileName:-}/npm-globals.txt"
-  if [[ -n "${profileName:-}" && -f "$profileListPath" ]]; then
-    printf '%s\n' "$profileListPath"
-    return 0
-  fi
-  printf '%s\n' "$packagesDirectory/npm-globals.txt"
+readProfilePackageList() {
+  local listName="$1"
+  readPackageList "$packagesDirectory/$listName"
+  [[ -n "${profileName:-}" ]] || return 0
+  local profileListPath="$dotfilesRepo/profiles/$profileName/$listName"
+  [[ -f "$profileListPath" ]] || return 0
+  readPackageList "$profileListPath"
 }
 
 installWantedNpmGlobals() {
   local wantedEntries=()
-  mapfile -t wantedEntries < <(readPackageList "$(wantedNpmGlobalsPath)")
+  mapfile -t wantedEntries < <(readProfilePackageList npm-globals.txt)
   ensureNpmGlobals "packages" ${wantedEntries[@]+"${wantedEntries[@]}"}
 }
 
@@ -434,7 +434,7 @@ removeRetiredNpmGlobals() {
   local retiredNames=()
   local presentNames=()
   local packageName
-  mapfile -t retiredNames < <(readPackageList "$packagesDirectory/npm-globals-remove.txt")
+  mapfile -t retiredNames < <(readProfilePackageList npm-globals-remove.txt)
   refreshInstalledNpmPackages
   for packageName in ${retiredNames[@]+"${retiredNames[@]}"}; do
     if npmPackageIsInstalled "$packageName"; then
@@ -458,7 +458,7 @@ removeRetiredNpmGlobals() {
 removeRetiredNpmState() {
   local retiredRelativePaths=()
   local relativePath
-  mapfile -t retiredRelativePaths < <(readPackageList "$packagesDirectory/npm-state-remove.txt")
+  mapfile -t retiredRelativePaths < <(readProfilePackageList npm-state-remove.txt)
   for relativePath in ${retiredRelativePaths[@]+"${retiredRelativePaths[@]}"}; do
     if [[ "$relativePath" == /* || "/$relativePath/" == */../* ]]; then
       noteWarned "~/$relativePath" "refused a path outside the home directory"

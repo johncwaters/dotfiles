@@ -2,7 +2,7 @@
 
 Personal machine setup: Claude Code, editor, shell tooling, fonts, and services.
 
-The `personal` and `server` profiles are Linux-only; `work` is macOS-only. Bootstrap
+The `personal`, `server`, and `work-server` profiles are Linux-only; `work` is macOS-only. Bootstrap
 refuses a mismatch because a partial cross-platform converge leaves the machine inconsistent.
 No Windows.
 
@@ -62,12 +62,20 @@ The [repository invariants and map](AGENTS.md) cover checkout safety and link ow
 ## Profiles
 
 Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `npm-globals.txt`, `AGENTS.md`, `CLAUDE.md`,
-`skills/`, `review-checklist.md`, `mcp-servers.json`, `commit-policy.json`, `settings.overlay.json`,
+`skills/`, `agents/`, `commands/`, `workflows/`, `hooks/`, `ai.json`, `codex-hooks.json`, `review-checklist.md`, `mcp-servers.json`,
+`commit-policy.json`, `settings.overlay.json`, `npm-globals-remove.txt`, `coder.json`, `devbox/`, `vscodium-mcp.json`,
 `glimmervoid.json`, `glimmervoid.overlay.json`, `vscodium.json`.
 
 - `personal`: this workstation
 - `server`: headless, no editor or desktop topics
-- `work`: Claude and Codex only, no other model CLIs, PostHog plugin for its MCP
+- `work`: Claude and Codex only, no other model CLIs; work integrations originate here.
+- `work-server`: Linux devbox; `ai.json` extends work agent additions without inheriting laptop topics.
+
+`ai.json` keeps exclusive tool ownership beside its profile so another profile can retire
+those tools without shared code knowing their names. AI inheritance uses `extends` in `ai.json`;
+`ai/test.sh` pins inherited additions, file fallback, confinement, and profile isolation. `ai/test.sh` pins confinement,
+foreign-entry preservation, quiet reruns, and no-profile preservation; `test/repo-wiring.sh`
+pins the shared boundary. Shared npm entries apply everywhere; profile lists contain only additions.
 
 ## Topics
 
@@ -101,7 +109,7 @@ for `~/.gitconfig.local`, and `shell/localrc.example` for `~/.localrc`.
 `~/.claude/settings.json` is rendered from `ai/settings.base.json` plus the active
 profile's `settings.overlay.json`. `.machine-profile` is written by `script/bootstrap`.
 
-`vscodium/mcp.json` reads its PostHog token from the environment, so
+`profiles/work/vscodium-mcp.json` reads its PostHog token from the environment, so
 `POSTHOG_PERSONAL_API_KEY` has to be exported where VSCodium can see it.
 
 `johnwaters.glimmervoid-visions` is built on this machine and published to no marketplace, so

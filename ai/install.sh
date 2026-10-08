@@ -15,161 +15,215 @@ claudeHome="$HOME/.claude"
 codexHome="$HOME/.codex"
 claudeSkillsDirectory="$claudeHome/skills"
 repoSkillsDirectory="$dotfilesRepo/ai/skills"
-profileSkillsDirectory=""
-if [[ -n "${profileName:-}" && -d "$dotfilesRepo/profiles/$profileName/skills" ]]; then
-  profileSkillsDirectory="$dotfilesRepo/profiles/$profileName/skills"
-fi
-skillsStagingDirectory="$claudeHome/.skills-cutover"
+profilePlanNames() {
+  local action name
+  while IFS=$'\t' read -r action name; do
+    [[ "$action" == "$1" ]] || continue
+    if [[ "$action" == source-* ]]; then
+      printf '%s/%s\n' "$dotfilesRepo" "$name"
+      continue
+    fi
+    printf '%s\n' "$name"
+  done <<< "$profileConvergencePlan"
+}
+
+convergeAiProfileLink() {
+  local label="$1" relativePath="$2" destination="$3"
+  local sourcePath
+  sourcePath="$(profilePlanNames "source-$relativePath")"
+  convergeProfileLink "$label" "$relativePath" "$destination" "${sourcePath#"$dotfilesRepo/"}"
+}
 
 resolvedDirectoryPath() {
   cd -- "$1" 2> /dev/null && pwd -P
 }
 
-repoSkillsIndexIsReadable() {
-  local trackedSkillPaths
+checkoutIsGitArchiveSnapshot() {
+  [[ ! -e "$dotfilesRepo/.git" ]]
+}
+
+repoEntriesIndexIsReadable() {
+  local trackedEntryPaths
+  checkoutIsGitArchiveSnapshot && return 0
   command -v git > /dev/null 2>&1 || return 1
-  trackedSkillPaths="$(git -C "$dotfilesRepo" ls-files -- ai/skills 2> /dev/null)" || return 1
-  [[ -n "$trackedSkillPaths" ]]
+  trackedEntryPaths="$(git -C "$dotfilesRepo" ls-files -- "ai/$entryKind" 2> /dev/null)" || return 1
+  [[ -n "$trackedEntryPaths" ]]
 }
 
-repoSkillEntryIsTracked() {
-  local trackedSkillPaths
-  trackedSkillPaths="$(git -C "$dotfilesRepo" ls-files -- "ai/skills/$1" 2> /dev/null)" || return 1
-  [[ -n "$trackedSkillPaths" ]]
+repoEntryIsTracked() {
+  local trackedEntryPaths
+  checkoutIsGitArchiveSnapshot && return 0
+  trackedEntryPaths="$(git -C "$dotfilesRepo" ls-files -- "ai/$entryKind/$1" 2> /dev/null)" || return 1
+  [[ -n "$trackedEntryPaths" ]]
 }
 
-claudeSkillsLinkPointsOutsideRepoSkills() {
+entryDirectoryLinkPointsOutsideRepo() {
   local linkedDirectory
-  local repoSkillsPath
-  pathIsLinkIntoThisRepo "$claudeSkillsDirectory" || return 1
-  linkedDirectory="$(resolvedDirectoryPath "$claudeSkillsDirectory" || true)"
-  repoSkillsPath="$(resolvedDirectoryPath "$repoSkillsDirectory" || true)"
-  [[ -z "$repoSkillsPath" || "$linkedDirectory" != "$repoSkillsPath" ]]
+  local repoEntriesPath
+  pathIsLinkIntoThisRepo "$installedEntriesDirectory" || return 1
+  linkedDirectory="$(resolvedDirectoryPath "$installedEntriesDirectory" || true)"
+  repoEntriesPath="$(resolvedDirectoryPath "$repoEntriesDirectory" || true)"
+  [[ -z "$repoEntriesPath" || "$linkedDirectory" != "$repoEntriesPath" ]]
 }
 
-stageForeignSkillEntriesOutOfTheRepo() {
-  local repoSkillEntries=()
-  local repoSkillEntry
-  local skillName
+stageForeignEntriesOutOfTheRepo() {
+  local repoEntries=()
+  local repoEntry
+  local entryName
   shopt -s dotglob nullglob
-  repoSkillEntries=("$repoSkillsDirectory"/*)
+  repoEntries=("$repoEntriesDirectory"/*)
   shopt -u dotglob nullglob
-  for repoSkillEntry in "${repoSkillEntries[@]}"; do
-    skillName="$(basename -- "$repoSkillEntry")"
-    if repoSkillEntryIsTracked "$skillName"; then
+  for repoEntry in "${repoEntries[@]}"; do
+    entryName="$(basename -- "$repoEntry")"
+    if repoEntryIsTracked "$entryName"; then
       continue
     fi
-    mkdir -p -- "$skillsStagingDirectory"
-    mv -- "$repoSkillEntry" "$skillsStagingDirectory/$skillName"
+    mkdir -p -- "$entriesStagingDirectory"
+    mv -- "$repoEntry" "$entriesStagingDirectory/$entryName"
   done
 }
 
-cutOverLegacySkillsDirectoryLink() {
-  pathIsLinkIntoThisRepo "$claudeSkillsDirectory" || return 0
-  if ! repoSkillsIndexIsReadable; then
-    noteWarned "skills directory" "git cannot name the tracked skills, cutover skipped"
+cutOverLegacyEntryDirectoryLink() {
+  pathIsLinkIntoThisRepo "$installedEntriesDirectory" || return 0
+  if ! repoEntriesIndexIsReadable; then
+    noteWarned "$entryKind directory" "git cannot name the tracked $entryKind, cutover skipped"
     return 1
   fi
-  stageForeignSkillEntriesOutOfTheRepo
-  rm -f -- "$claudeSkillsDirectory"
+  stageForeignEntriesOutOfTheRepo
+  rm -f -- "$installedEntriesDirectory"
 }
 
-adoptStagedSkillEntries() {
+adoptStagedEntries() {
   local stagedEntries=()
   local stagedEntry
-  local skillName
-  [[ -d "$skillsStagingDirectory" ]] || return 0
+  local entryName
+  [[ -d "$entriesStagingDirectory" ]] || return 0
   shopt -s dotglob nullglob
-  stagedEntries=("$skillsStagingDirectory"/*)
+  stagedEntries=("$entriesStagingDirectory"/*)
   shopt -u dotglob nullglob
   for stagedEntry in "${stagedEntries[@]}"; do
-    skillName="$(basename -- "$stagedEntry")"
-    if [[ -e "$claudeSkillsDirectory/$skillName" || -L "$claudeSkillsDirectory/$skillName" ]]; then
-      noteWarned "skill $skillName" "already in ~/.claude/skills, left in $skillsStagingDirectory"
+    entryName="$(basename -- "$stagedEntry")"
+    if [[ -e "$installedEntriesDirectory/$entryName" || -L "$installedEntriesDirectory/$entryName" ]]; then
+      noteWarned "$entryLabel $entryName" "already in ~/.claude/$entryKind, left in $entriesStagingDirectory"
       continue
     fi
-    mv -- "$stagedEntry" "$claudeSkillsDirectory/$skillName"
-    noteApplied "skill $skillName" "moved out of repo"
+    mv -- "$stagedEntry" "$installedEntriesDirectory/$entryName"
+    noteApplied "$entryLabel $entryName" "moved out of repo"
   done
-  rmdir -- "$skillsStagingDirectory" 2> /dev/null || true
+  rmdir -- "$entriesStagingDirectory" 2> /dev/null || true
 }
 
-sharedSkillExists() {
-  [[ -e "$repoSkillsDirectory/$1" || -L "$repoSkillsDirectory/$1" ]]
+sharedEntryExists() {
+  [[ -e "$repoEntriesDirectory/$1" || -L "$repoEntriesDirectory/$1" ]]
 }
 
-linkTargetsCurrentProfileSkill() {
-  local skillName="$1"
-  local linkedSkillTarget="$2"
-  [[ -n "$profileSkillsDirectory" && -e "$profileSkillsDirectory/$skillName" ]] || return 1
-  [[ "$linkedSkillTarget" == "$dotfilesAlias/profiles/$profileName/skills/$skillName" \
-    || "$linkedSkillTarget" == "$profileSkillsDirectory/$skillName" ]]
+linkTargetsCurrentProfileEntry() {
+  local entryName="$1" linkedEntryTarget="$2"
+  local sourceProfile sourcePath
+  for sourceProfile in "${aiProfileNames[@]}"; do
+    sourcePath="profiles/$sourceProfile/$entryKind/$entryName"
+    [[ -e "$dotfilesRepo/$sourcePath" ]] || continue
+    [[ "$linkedEntryTarget" == "$dotfilesAlias/$sourcePath" || "$linkedEntryTarget" == "$dotfilesRepo/$sourcePath" ]] && return 0
+  done
+  return 1
 }
 
-removeRetiredSkillLinks() {
-  local installedSkillPath
-  local skillName
-  local linkedSkillTarget
+removeRetiredEntryLinks() {
+  local retiredLinkScope="$1"
+  local installedEntryPath
+  local entryName
+  local linkedEntryTarget
   shopt -s dotglob nullglob
-  for installedSkillPath in "$claudeSkillsDirectory"/*; do
-    [[ -L "$installedSkillPath" ]] || continue
-    skillName="$(basename -- "$installedSkillPath")"
-    linkedSkillTarget="$(symlinkTargetOf "$installedSkillPath")"
-    case "$linkedSkillTarget" in
-      "$dotfilesAlias/ai/skills/"* | "$dotfilesRepo/ai/skills/"*)
-        [[ ! -e "$repoSkillsDirectory/$skillName" ]] || continue
+  for installedEntryPath in "$installedEntriesDirectory"/*; do
+    [[ -L "$installedEntryPath" ]] || continue
+    entryName="$(basename -- "$installedEntryPath")"
+    linkedEntryTarget="$(symlinkTargetOf "$installedEntryPath")"
+    case "$linkedEntryTarget" in
+      "$dotfilesAlias/ai/$entryKind/"* | "$dotfilesRepo/ai/$entryKind/"*)
+        [[ "$retiredLinkScope" == shared ]] || continue
+        [[ ! -e "$repoEntriesDirectory/$entryName" ]] || continue
         ;;
-      "$dotfilesAlias/profiles/"*/skills/* | "$dotfilesRepo/profiles/"*/skills/*)
-        ! linkTargetsCurrentProfileSkill "$skillName" "$linkedSkillTarget" || continue
+      "$dotfilesAlias/profiles/"*/$entryKind/* | "$dotfilesRepo/profiles/"*/$entryKind/*)
+        [[ "$retiredLinkScope" == profile ]] || continue
+        ! linkTargetsCurrentProfileEntry "$entryName" "$linkedEntryTarget" || continue
         ;;
       *) continue ;;
     esac
-    rm -f -- "$installedSkillPath"
-    noteApplied "skill $skillName" "retired link removed"
+    rm -f -- "$installedEntryPath"
+    noteApplied "$entryLabel $entryName" "retired link removed"
   done
   shopt -u dotglob nullglob
 }
 
-linkRepoSkills() {
-  local skillDirectories=("$repoSkillsDirectory")
-  local skillDirectory
-  local repoSkillPath
-  local skillName
-  if [[ -n "$profileSkillsDirectory" ]]; then
-    skillDirectories+=("$profileSkillsDirectory")
-  fi
+linkSharedEntries() {
+  local repoEntryPath
+  local entryName
   shopt -s nullglob
-  for skillDirectory in "${skillDirectories[@]}"; do
-    for repoSkillPath in "$skillDirectory"/*; do
-      skillName="$(basename -- "$repoSkillPath")"
-      if [[ "$skillDirectory" != "$repoSkillsDirectory" ]] && sharedSkillExists "$skillName"; then
-        noteWarned "skill $skillName" "profile skill conflicts with shared skill, keeping shared skill"
+  for repoEntryPath in "$repoEntriesDirectory"/*; do
+    entryName="$(basename -- "$repoEntryPath")"
+    linkEntry "$entryLabel $entryName" "${repoEntryPath#"$dotfilesRepo/"}" "$installedEntriesDirectory/$entryName"
+  done
+  shopt -u nullglob
+}
+
+linkProfileEntries() {
+  local entryDirectory
+  local repoEntryPath
+  local entryName
+  local sourceProfile
+  local profileIndex
+  declare -A linkedEntryNames=()
+  shopt -s nullglob
+  for ((profileIndex = ${#aiProfileNames[@]} - 1; profileIndex >= 0; profileIndex--)); do
+    sourceProfile="${aiProfileNames[profileIndex]}"
+    entryDirectory="$dotfilesRepo/profiles/$sourceProfile/$entryKind"
+    for repoEntryPath in "$entryDirectory"/*; do
+      entryName="$(basename -- "$repoEntryPath")"
+      [[ -z "${linkedEntryNames[$entryName]:-}" ]] || continue
+      linkedEntryNames["$entryName"]=1
+      if sharedEntryExists "$entryName"; then
+        noteWarned "$entryLabel $entryName" "profile $entryLabel conflicts with shared $entryLabel, keeping shared $entryLabel"
         continue
       fi
-      linkEntry "skill $skillName" "${repoSkillPath#"$dotfilesRepo/"}" "$claudeSkillsDirectory/$skillName"
+      linkEntry "$entryLabel $entryName" "${repoEntryPath#"$dotfilesRepo/"}" "$installedEntriesDirectory/$entryName"
     done
   done
   shopt -u nullglob
 }
 
-moveSkillsPathAsideUnlessItIsAPlainDirectory() {
-  if [[ ! -L "$claudeSkillsDirectory" ]] && [[ ! -e "$claudeSkillsDirectory" || -d "$claudeSkillsDirectory" ]]; then
+moveEntryDirectoryAsideUnlessPlain() {
+  if [[ ! -L "$installedEntriesDirectory" ]] && [[ ! -e "$installedEntriesDirectory" || -d "$installedEntriesDirectory" ]]; then
     return 0
   fi
-  moveExistingAside "skills directory" "$claudeSkillsDirectory"
+  moveExistingAside "$entryKind directory" "$installedEntriesDirectory"
 }
 
-installRepoSkills() {
-  if claudeSkillsLinkPointsOutsideRepoSkills; then
-    noteWarned "skills directory" "links into the repo outside ai/skills, move it aside by hand"
+convergeSharedEntryDirectory() {
+  local entryKind="$1"
+  local entryLabel="$2"
+  local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
+  local installedEntriesDirectory="$claudeHome/$entryKind"
+  local entriesStagingDirectory="$claudeHome/.$entryKind-cutover"
+  if entryDirectoryLinkPointsOutsideRepo; then
+    noteWarned "$entryKind directory" "links into the repo outside ai/$entryKind, move it aside by hand"
     return 0
   fi
-  cutOverLegacySkillsDirectoryLink || return 0
-  moveSkillsPathAsideUnlessItIsAPlainDirectory
-  mkdir -p -- "$claudeSkillsDirectory"
-  adoptStagedSkillEntries
-  removeRetiredSkillLinks
-  linkRepoSkills
+  cutOverLegacyEntryDirectoryLink || return 0
+  moveEntryDirectoryAsideUnlessPlain
+  mkdir -p -- "$installedEntriesDirectory"
+  adoptStagedEntries
+  removeRetiredEntryLinks shared
+  linkSharedEntries
+}
+
+convergeProfileEntryDirectory() {
+  local entryKind="$1"
+  local entryLabel="$2"
+  local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
+  local installedEntriesDirectory="$claudeHome/$entryKind"
+  [[ -d "$installedEntriesDirectory" && ! -L "$installedEntriesDirectory" ]] || return 0
+  removeRetiredEntryLinks profile
+  linkProfileEntries
 }
 
 skillDependenciesAreStale() {
@@ -186,25 +240,15 @@ installSkillBrowser() {
   noteWarned "skill $skillName browser" "Chromium headless shell install failed"
 }
 
-installSkillDependencies() {
-  local skillLockPaths=()
+installLockedSkillDependencies() {
   local skillLockPath
   local skillDirectory
   local skillName
   command -v node > /dev/null 2>&1 || return 0
   command -v npm > /dev/null 2>&1 || return 0
-  shopt -s nullglob
-  skillLockPaths=("$repoSkillsDirectory"/*/package-lock.json)
-  if [[ -n "$profileSkillsDirectory" ]]; then
-    skillLockPaths+=("$profileSkillsDirectory"/*/package-lock.json)
-  fi
-  shopt -u nullglob
-  for skillLockPath in "${skillLockPaths[@]}"; do
+  for skillLockPath in "$@"; do
     skillDirectory="$(dirname -- "$skillLockPath")"
     skillName="$(basename -- "$skillDirectory")"
-    if [[ "$skillDirectory" != "$repoSkillsDirectory/$skillName" ]] && sharedSkillExists "$skillName"; then
-      continue
-    fi
     if skillDependenciesAreStale "$skillDirectory" && ! (cd -- "$skillDirectory" && npm ci --omit=dev); then
       noteWarned "skill $skillName dependencies" "npm ci failed"
       continue
@@ -213,23 +257,73 @@ installSkillDependencies() {
   done
 }
 
-installRepoSkills
-installSkillDependencies
+installSharedSkillDependencies() {
+  local skillLockPaths=()
+  shopt -s nullglob
+  skillLockPaths=("$repoSkillsDirectory"/*/package-lock.json)
+  shopt -u nullglob
+  installLockedSkillDependencies "${skillLockPaths[@]}"
+}
+
+installProfileSkillDependencies() {
+  local skillLockPaths=()
+  local skillDirectory
+  local skillName
+  local profileIndex
+  declare -A seenSkillNames=()
+  shopt -s nullglob
+  for ((profileIndex = ${#aiProfileNames[@]} - 1; profileIndex >= 0; profileIndex--)); do
+    for skillDirectory in "$dotfilesRepo/profiles/${aiProfileNames[profileIndex]}/skills"/*/; do
+      skillDirectory="${skillDirectory%/}"
+      skillName="$(basename -- "$skillDirectory")"
+      [[ -z "${seenSkillNames[$skillName]:-}" ]] || continue
+      seenSkillNames["$skillName"]=1
+      [[ ! -e "$repoSkillsDirectory/$skillName" && ! -L "$repoSkillsDirectory/$skillName" ]] || continue
+      [[ -f "$skillDirectory/package-lock.json" ]] || continue
+      skillLockPaths+=("$skillDirectory/package-lock.json")
+    done
+  done
+  shopt -u nullglob
+  installLockedSkillDependencies "${skillLockPaths[@]}"
+}
+
+convergeSharedEntryDirectory skills skill
+convergeSharedEntryDirectory agents agent
+convergeSharedEntryDirectory commands command
+convergeSharedEntryDirectory workflows workflow
+installSharedSkillDependencies
 
 linkEntry "AGENTS.md" "ai/AGENTS.md" "$claudeHome/AGENTS.md"
 linkEntry "ROUTING.md" "ai/ROUTING.md" "$claudeHome/ROUTING.md"
 linkEntry "tsconfig.json" "ai/tsconfig.json" "$claudeHome/tsconfig.json"
 linkEntry "types" "ai/types" "$claudeHome/types"
-linkEntry "agents" "ai/agents" "$claudeHome/agents"
-linkEntry "workflows" "ai/workflows" "$claudeHome/workflows"
-linkEntry "commands" "ai/commands" "$claudeHome/commands"
 linkEntry "hooks" "ai/hooks" "$claudeHome/hooks"
 linkEntry "hud" "ai/hud" "$claudeHome/hud"
+
+if [[ -z "${profileName:-}" ]]; then
+  noteWarned "profile files" "no profile resolved, profile-dependent convergence skipped"
+  finishTopic
+fi
+
+if ! profileConvergencePlan="$(node "$dotfilesRepo/ai/profile-config.mjs" "$profileName")"; then
+  noteWarned "profile files" "could not read profile policy, profile-dependent convergence skipped"
+  finishTopic
+fi
+mapfile -t aiProfileNames < <(profilePlanNames include-profile)
+profileHooksSource="$(profilePlanNames source-hooks)"
+profileCodexHooksSource="$(profilePlanNames source-codex-hooks.json)"
+profileMcpServersSource="$(profilePlanNames source-mcp-servers.json)"
+
+convergeProfileEntryDirectory skills skill
+convergeProfileEntryDirectory agents agent
+convergeProfileEntryDirectory commands command
+convergeProfileEntryDirectory workflows workflow
+installProfileSkillDependencies
 
 # Codex reads one global AGENTS.md with no imports, so the profile rules are rendered into it.
 renderCodexAgents() {
   local codexAgentsPath="$codexHome/AGENTS.md"
-  local profileAgentsPath="$dotfilesRepo/profiles/${profileName:-}/AGENTS.md"
+  local profileAgentsPath="$(profilePlanNames source-AGENTS.md)"
   mkdir -p -- "$codexHome"
   if pathIsLinkIntoThisRepo "$codexAgentsPath"; then
     rm -f -- "$codexAgentsPath"
@@ -247,6 +341,40 @@ renderCodexAgents() {
 
 renderCodexAgents
 
+serversLackingWiredConfinement() {
+  local renderedHooksPath="$1"
+  shift
+  node --input-type=module - "$dotfilesRepo/ai/profile-config.mjs" "$renderedHooksPath" "$claudeHome/profile-hooks" "$@" <<'NODE'
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const [profileConfigPath, renderedHooksPath, profileHooksDirectory, ...serverNames] = process.argv.slice(2);
+const { confiningHookScriptName, wiresConfiningHook } = await import(pathToFileURL(profileConfigPath));
+let hooksByEvent = {};
+try {
+  hooksByEvent = JSON.parse(fs.readFileSync(renderedHooksPath, 'utf8')).hooks ?? {};
+} catch {}
+for (const serverName of serverNames) {
+  const confiningScriptPath = `${profileHooksDirectory}/${confiningHookScriptName(serverName)}`;
+  if (fs.existsSync(confiningScriptPath) && wiresConfiningHook(hooksByEvent, confiningScriptPath, serverName)) continue;
+  console.log(serverName);
+}
+NODE
+}
+
+serversWithoutConfinementIn() {
+  local renderedHooksPath="$1"
+  local isClientConfined="$2"
+  local confinedServerNames=()
+  local unconfinedServerNames
+  mapfile -t confinedServerNames < <(profilePlanNames confine-server)
+  ((${#confinedServerNames[@]} > 0)) || return 0
+  if ((isClientConfined == 1)) && unconfinedServerNames="$(serversLackingWiredConfinement "$renderedHooksPath" "${confinedServerNames[@]}")"; then
+    printf '%s' "$unconfinedServerNames"
+    return 0
+  fi
+  printf '%s\n' "${confinedServerNames[@]}"
+}
+
 convergeMcpServers() {
   local convergencePlan
   local managedNames
@@ -263,27 +391,27 @@ convergeMcpServers() {
     noteWarned "MCP servers" "node not found, convergence skipped"
     return 0
   fi
-  local withheldServerName=""
-  if [[ "$profileName" == work ]] && ((isClaudeConfined == 0)); then
-    withheldServerName="backchannels"
-    noteWarned "MCP backchannels" "withheld until Claude confinement converges"
+  local withheldServerNames
+  withheldServerNames="$(serversWithoutConfinementIn "$claudeHome/settings.json" "$isClaudeConfined")"
+  if [[ -n "$withheldServerNames" ]]; then
+    noteWarned "MCP $withheldServerNames" "withheld until Claude confinement converges"
   fi
   managedNames="$(readDotfilesState ai-managed-mcp-servers || true)"
-  if ! convergencePlan="$(node - "$dotfilesRepo/profiles/$profileName/mcp-servers.json" "$HOME/.claude.json" "$managedNames" "$withheldServerName" 2>/dev/null <<'NODE'
+  if ! convergencePlan="$(node - "$profileMcpServersSource" "$HOME/.claude.json" "$managedNames" "$withheldServerNames" "$(profilePlanNames remove-server)" 2>/dev/null <<'NODE'
 const fs = require('node:fs');
 const { isDeepStrictEqual } = require('node:util');
-const [declarationPath, runtimePath, managedNames, withheldServerName] = process.argv.slice(2);
+const [declarationPath, runtimePath, managedNames, withheldServerNames, removedNames] = process.argv.slice(2);
 const declaredServers = fs.existsSync(declarationPath)
   ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')) : {};
 if (!declaredServers || typeof declaredServers !== 'object' || Array.isArray(declaredServers)) process.exit(1);
-if (withheldServerName) delete declaredServers[withheldServerName];
+for (const serverName of withheldServerNames.split("\n").filter(Boolean)) delete declaredServers[serverName];
 let currentServers = {};
 try {
   currentServers = JSON.parse(fs.readFileSync(runtimePath, 'utf8'))?.mcpServers ?? {};
 } catch {}
 if (!currentServers || typeof currentServers !== 'object' || Array.isArray(currentServers)) currentServers = {};
 const managedNameSet = new Set(managedNames.split('\n').filter(Boolean));
-const removedServerNames = Object.hasOwn(declaredServers, "backchannels") ? [] : ["backchannels"];
+const removedServerNames = [...removedNames.split("\n"), ...withheldServerNames.split("\n")].filter(Boolean);
 const serverNames = new Set([...managedNameSet, ...Object.keys(declaredServers), ...removedServerNames]);
 const plan = [];
 for (const serverName of serverNames) {
@@ -347,33 +475,24 @@ NODE
   writeDotfilesState ai-managed-mcp-servers "$remainingNames"
 }
 
-convergeProfileHooks() {
-  local destination="$claudeHome/profile-hooks"
-  if [[ "$profileName" == work || "$profileName" == work-server ]]; then
-    linkEntry "profile hooks" "profiles/work/hooks" "$destination"
-    return 0
-  fi
-  pathIsLinkIntoThisRepo "$destination" || return 0
-  rm -f -- "$destination"
-  noteApplied "profile hooks" "retired link removed"
-}
-
-removeNonWorkBackchannelsSkills() {
-  [[ "$profileName" != work ]] || return 0
-  local removedSkillPaths=("$claudeSkillsDirectory/backchannels" "$HOME/.agents/skills/backchannels")
-  local removedSkillPath
-  for removedSkillPath in "${removedSkillPaths[@]}"; do
-    [[ -e "$removedSkillPath" || -L "$removedSkillPath" ]] || continue
-    if rm -rf -- "$removedSkillPath"; then
-      noteApplied "backchannels skill" "removed $removedSkillPath"
-      continue
-    fi
-    noteWarned "backchannels skill" "could not remove $removedSkillPath"
-  done
+removeExcludedSkills() {
+  local skillName skillPath
+  while IFS= read -r skillName; do
+    [[ -n "$skillName" ]] || continue
+    for skillPath in "$claudeSkillsDirectory/$skillName" "$HOME/.agents/skills/$skillName"; do
+      [[ -e "$skillPath" || -L "$skillPath" ]] || continue
+      if rm -rf -- "$skillPath"; then
+        noteApplied "skill $skillName" "removed $skillPath"
+        continue
+      fi
+      noteWarned "skill $skillName" "could not remove $skillPath"
+    done
+  done < <(profilePlanNames remove-skill)
 }
 
 renderCodexHooksWithEpoch() {
-  codexOwnedHooksManifest="$(node "$dotfilesRepo/ai/render-codex-hooks.mjs" "$1" "$codexHome/hooks.json" "$2" "$3")"
+  dotfilesStatePath ai-codex-owned-hook-commands || return 1
+  codexOwnedHooksManifest="$(node "$dotfilesRepo/ai/render-codex-hooks.mjs" "$1" "$codexHome/hooks.json" "$2" "$3" "$dotfilesStatePathValue")"
 }
 
 newCodexHookTrustEpoch() {
@@ -406,11 +525,11 @@ renderCodexHooks() {
     noteWarned "Codex hooks" "node not on PATH"
     return 0
   fi
-  if [[ "$profileName" == work ]]; then
-    declarationPath="$dotfilesRepo/profiles/work/codex-hooks.json"
+  if [[ -f "$profileCodexHooksSource" ]]; then
+    declarationPath="$profileCodexHooksSource"
     trustEpoch="$(readDotfilesState ai-codex-hook-trust-epoch || true)"
   fi
-  if [[ "$profileName" == work && -z "$trustEpoch" ]]; then
+  if [[ -f "$profileCodexHooksSource" && -z "$trustEpoch" ]]; then
     isTrustBaselineOwed=1
     trustEpoch="$(newCodexHookTrustEpoch)"
   fi
@@ -420,7 +539,7 @@ renderCodexHooks() {
     noteWarned "Codex hooks" "could not render hooks, convergence skipped"
     return 0
   fi
-  if [[ "$profileName" == work ]] && ((isTrustBaselineOwed == 0)); then
+  if [[ -f "$profileCodexHooksSource" ]] && ((isTrustBaselineOwed == 0)); then
     recordedTrustBaseline="$(readDotfilesState ai-codex-hook-trust-baseline || true)"
     if [[ "${recordedTrustBaseline%%$'\n'*}" != "${codexOwnedHooksManifest%%$'\n'*}" ]]; then
       isTrustBaselineOwed=1
@@ -483,6 +602,10 @@ confirmCodexHookTrust() {
   declare -A recordedHashByKey=()
   isCodexHookTrustConfirmed=0
   mapfile -t manifestLines <<< "$codexOwnedHooksManifest"
+  if ((${#manifestLines[@]} < 2)); then
+    noteWarned "Codex hooks" "no confinement hooks declared"
+    return 0
+  fi
   if ! currentTrust="$(readCodexTrustedHashes "${manifestLines[@]:1}" 2>/dev/null)"; then
     noteWarned "Codex hooks" "could not read hook trust from config.toml"
     return 0
@@ -507,7 +630,15 @@ confirmCodexHookTrust() {
   isCodexHookTrustConfirmed=1
 }
 
-convergeCodexBackchannels() {
+codexConfigDeclaresServer() {
+  [[ -f "$codexHome/config.toml" ]] || return 1
+  grep -qE "^[[:space:]]*\[[[:space:]]*mcp_servers[[:space:]]*\.[[:space:]]*[\"']?$1[\"']?[[:space:]]*[].]" "$codexHome/config.toml"
+}
+
+convergeCodexServer() {
+  local serverName="$1"
+  local shouldRemove="$2"
+  local isConfinementMissing="$3"
   local serverConfiguration=""
   local isServerPresent=0
   local configPath="$codexHome/config.toml"
@@ -516,47 +647,67 @@ convergeCodexBackchannels() {
   local urlAssignment
   local isServerEnabled=0
   local enabledAssignment="enabled = false"
-  if [[ "$profileName" == work ]] && ((isCodexConfined == 1)); then
+  if [[ "$shouldRemove" == 0 ]] && ((isConfinementMissing == 0)); then
     isServerEnabled=1
     enabledAssignment="enabled = true"
   fi
   if ! command -v codex > /dev/null 2>&1; then
-    [[ "$profileName" == work ]] || return 0
-    noteWarned "Codex MCP backchannels" "codex not found, convergence skipped"
+    if [[ "$shouldRemove" == 1 || "$isConfinementMissing" == 1 ]] && codexConfigDeclaresServer "$serverName"; then
+      noteWarned "Codex MCP $serverName" "codex not on PATH, config.toml still declares this server"
+    fi
     return 0
   fi
   if ! command -v node > /dev/null 2>&1; then
-    noteWarned "Codex MCP backchannels" "node not on PATH"
+    noteWarned "Codex MCP $serverName" "node not on PATH"
     return 0
   fi
-  if serverConfiguration="$(CODEX_HOME="$codexHome" codex mcp get backchannels --json 2>/dev/null)"; then
+  if serverConfiguration="$(CODEX_HOME="$codexHome" codex mcp get "$serverName" --json 2>/dev/null)"; then
     isServerPresent=1
   fi
   if ((isServerPresent == 0)) && ! CODEX_HOME="$codexHome" codex mcp list --json > /dev/null 2>&1; then
-    noteWarned "Codex MCP backchannels" "could not read configuration, convergence skipped"
+    noteWarned "Codex MCP $serverName" "could not read configuration, convergence skipped"
     return 0
   fi
-  if [[ "$profileName" != work ]]; then
-    ((isServerPresent == 1)) || return 0
-    if CODEX_HOME="$codexHome" codex mcp remove backchannels > /dev/null 2>&1; then
-      noteApplied "Codex MCP backchannels" "removed"
+  if [[ "$shouldRemove" == 1 ]]; then
+    if ((isServerPresent == 0)); then
+      codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
+      writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
       return 0
     fi
-    noteWarned "Codex MCP backchannels" "remove failed"
+    if CODEX_HOME="$codexHome" codex mcp remove "$serverName" > /dev/null 2>&1; then
+      noteApplied "Codex MCP $serverName" "removed"
+      codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
+      writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
+      return 0
+    fi
+    noteWarned "Codex MCP $serverName" "remove failed"
     return 0
   fi
-  if ! urlAssignment="$(node -e 'const servers = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log("url = " + JSON.stringify(servers.backchannels.url))' "$dotfilesRepo/profiles/work/mcp-servers.json")"; then
-    noteWarned "Codex MCP backchannels" "could not read declaration"
+  if ! urlAssignment="$(node -e 'const servers = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log("url = " + JSON.stringify(servers[process.argv[2]].url))' "$profileMcpServersSource" "$serverName")"; then
+    noteWarned "Codex MCP $serverName" "could not read declaration"
     return 0
   fi
   if ((isServerEnabled == 0)); then
-    noteWarned "Codex MCP backchannels" "disabled until Codex confinement converges"
+    noteWarned "Codex MCP $serverName" "disabled until Codex confinement converges"
   fi
-  if ((isServerPresent == 1)) && node -e 'const server = JSON.parse(process.argv[1]); const declared = JSON.parse(require("node:fs").readFileSync(process.argv[2], "utf8")).backchannels; process.exit(Boolean(server.enabled) === (process.argv[3] === "1") && server.transport?.type === "streamable_http" && server.transport.url === declared.url ? 0 : 1)' "$serverConfiguration" "$dotfilesRepo/profiles/work/mcp-servers.json" "$isServerEnabled"; then
+  if ((isServerPresent == 1)) && ! grep -qxF "$serverName" <<< "$codexManagedNames" \
+    && ! profilePlanNames exclusive-server | grep -qxF "$serverName"; then
+    noteWarned "Codex MCP $serverName" "an unmanaged server with this name blocks convergence"
+    return 0
+  fi
+  if ! grep -qxF "$serverName" <<< "$codexManagedNames"; then
+    codexManagedNames+="${codexManagedNames:+$'\n'}$serverName"
+    writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
+    if [[ "$(readDotfilesState ai-managed-codex-mcp-servers || true)" != "$codexManagedNames" ]]; then
+      noteWarned "Codex MCP $serverName" "could not record ownership, convergence skipped"
+      return 0
+    fi
+  fi
+  if ((isServerPresent == 1)) && node -e 'const server = JSON.parse(process.argv[1]); const declared = JSON.parse(require("node:fs").readFileSync(process.argv[2], "utf8"))[process.argv[4]]; process.exit(Boolean(server.enabled) === (process.argv[3] === "1") && server.transport?.type === "streamable_http" && server.transport.url === declared.url ? 0 : 1)' "$serverConfiguration" "$profileMcpServersSource" "$isServerEnabled" "$serverName"; then
     return 0
   fi
   if ! pathIsPlainFileOrAbsent "$configPath"; then
-    noteWarned "Codex MCP backchannels" "config.toml is not a plain file, convergence skipped"
+    noteWarned "Codex MCP $serverName" "config.toml is not a plain file, convergence skipped"
     return 0
   fi
   stagedDirectory="$(mktemp -d "$codexHome/.dotfiles-mcp.XXXXXX")"
@@ -566,74 +717,95 @@ convergeCodexBackchannels() {
   if [[ -f "$configPath" ]]; then
     cat -- "$configPath" > "$stagedPath"
   fi
-  if ((isServerPresent == 1)) && ! CODEX_HOME="$stagedDirectory" codex mcp remove backchannels > /dev/null 2>&1; then
+  if ((isServerPresent == 1)) && ! CODEX_HOME="$stagedDirectory" codex mcp remove "$serverName" > /dev/null 2>&1; then
     rm -rf -- "$stagedDirectory"
-    noteWarned "Codex MCP backchannels" "remove failed"
+    noteWarned "Codex MCP $serverName" "remove failed"
     return 0
   fi
-  printf '\n[mcp_servers.backchannels]\n%s\n%s\n' "$urlAssignment" "$enabledAssignment" >> "$stagedPath"
-  if ! CODEX_HOME="$stagedDirectory" codex mcp get backchannels --json > /dev/null 2>&1; then
+  printf '\n[mcp_servers.%s]\n%s\n%s\n' "$serverName" "$urlAssignment" "$enabledAssignment" >> "$stagedPath"
+  if ! CODEX_HOME="$stagedDirectory" codex mcp get "$serverName" --json > /dev/null 2>&1; then
     rm -rf -- "$stagedDirectory"
-    noteWarned "Codex MCP backchannels" "rendered configuration is invalid, convergence skipped"
+    noteWarned "Codex MCP $serverName" "rendered configuration is invalid, convergence skipped"
     return 0
   fi
   chmod 600 "$stagedPath"
   if mv -f -- "$stagedPath" "$configPath"; then
     rm -rf -- "$stagedDirectory"
-    noteApplied "Codex MCP backchannels" "configured"
+    noteApplied "Codex MCP $serverName" "configured"
     return 0
   fi
   rm -rf -- "$stagedDirectory"
-  noteWarned "Codex MCP backchannels" "could not write configuration"
+  noteWarned "Codex MCP $serverName" "could not write configuration"
 }
 
-if [[ -z "${profileName:-}" ]]; then
-  noteWarned "profile files" "no profile resolved, CLAUDE.md and settings.json skipped"
-  finishTopic
-fi
+convergeCodexServers() {
+  local serverName isConfinementMissing
+  local codexManagedNames
+  local activeServerNames
+  local removedServerNames
+  local unconfinedServerNames
+  declare -A hasRetiredServer=()
+  codexManagedNames="$(readDotfilesState ai-managed-codex-mcp-servers || true)"
+  activeServerNames="$(profilePlanNames codex-server)"
+  unconfinedServerNames="$(serversWithoutConfinementIn "$codexHome/hooks.json" "$isCodexConfined")"
+  removedServerNames="$(profilePlanNames remove-server)"
+  while IFS= read -r serverName; do
+    [[ -n "$serverName" ]] || continue
+    grep -qxF "$serverName" <<< "$activeServerNames" && continue
+    removedServerNames+="${removedServerNames:+$'\n'}$serverName"
+  done <<< "$codexManagedNames"
+  while IFS= read -r serverName; do
+    [[ -n "$serverName" ]] || continue
+    [[ -z "${hasRetiredServer[$serverName]:-}" ]] || continue
+    hasRetiredServer["$serverName"]=1
+    convergeCodexServer "$serverName" 1 0
+  done <<< "$removedServerNames"
+  while IFS= read -r serverName; do
+    [[ -n "$serverName" ]] || continue
+    isConfinementMissing=0
+    if grep -qxF "$serverName" <<< "$unconfinedServerNames"; then
+      isConfinementMissing=1
+    fi
+    convergeCodexServer "$serverName" 0 "$isConfinementMissing"
+  done <<< "$activeServerNames"
+}
 
 # CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
-copyEntry "CLAUDE.md" "profiles/$profileName/CLAUDE.md" "$claudeHome/CLAUDE.md"
+profileClaudeSource="$(profilePlanNames source-CLAUDE.md)"
+copyEntry "CLAUDE.md" "${profileClaudeSource#"$dotfilesRepo/"}" "$claudeHome/CLAUDE.md"
 
-convergeOptionalProfileLink() {
-  local label="$1"
-  local profileSource="profiles/$profileName/$2"
-  local destination="$claudeHome/$label"
-  if [[ -f "$dotfilesRepo/$profileSource" ]]; then
-    linkEntry "$label" "$profileSource" "$destination"
-    return 0
-  fi
-  pathIsLinkIntoThisRepo "$destination" || return 0
-  rm -f -- "$destination"
-  noteApplied "$label" "retired link removed"
-}
-
-convergeOptionalProfileLink "AGENTS.profile.md" "AGENTS.md"
-convergeOptionalProfileLink "review-checklist.md" "review-checklist.md"
+convergeAiProfileLink "AGENTS.profile.md" "AGENTS.md" "$claudeHome/AGENTS.profile.md"
+convergeAiProfileLink "review-checklist.md" "review-checklist.md" "$claudeHome/review-checklist.md"
 
 isClaudeConfined=0
 isCodexConfined=0
 isProfileHooksLinkCurrent=0
 warningsBeforeConfinement="$warningsEmittedHere"
-convergeProfileHooks
-if ((warningsEmittedHere == warningsBeforeConfinement)); then
+convergeAiProfileLink "profile hooks" "hooks" "$claudeHome/profile-hooks"
+if ((warningsEmittedHere == warningsBeforeConfinement)) \
+  && linkIsCurrent "${profileHooksSource#"$dotfilesRepo/"}" "$claudeHome/profile-hooks" \
+  && [[ -d "$claudeHome/profile-hooks" ]]; then
   isProfileHooksLinkCurrent=1
+fi
+profileSettingsOverlayPath="$(profilePlanNames source-settings.overlay.json)"
+if [[ ! -f "$profileSettingsOverlayPath" ]]; then
+  profileSettingsOverlayPath=""
 fi
 renderJsonTemplate "settings.json" \
   "$dotfilesRepo/ai/render-settings.mjs" \
   "$dotfilesRepo/ai/settings.base.json" \
-  "$dotfilesRepo/profiles/$profileName/settings.overlay.json" \
+  "$profileSettingsOverlayPath" \
   "$claudeHome/settings.json"
-if ((warningsEmittedHere == warningsBeforeConfinement)); then
+if ((warningsEmittedHere == warningsBeforeConfinement && isProfileHooksLinkCurrent == 1)) && [[ -n "$profileSettingsOverlayPath" ]]; then
   isClaudeConfined=1
 fi
-removeNonWorkBackchannelsSkills
+removeExcludedSkills
 renderCodexHooks
-if [[ "$profileName" == work ]] && ((isProfileHooksLinkCurrent == 1 && areCodexHooksRendered == 1)); then
+if command -v codex > /dev/null 2>&1 && [[ -f "$profileCodexHooksSource" ]] && ((isProfileHooksLinkCurrent == 1 && areCodexHooksRendered == 1)); then
   confirmCodexHookTrust
   isCodexConfined="$isCodexHookTrustConfirmed"
 fi
-convergeCodexBackchannels
+convergeCodexServers
 convergeMcpServers
 
 upgradeEnabledClaudePlugins() {

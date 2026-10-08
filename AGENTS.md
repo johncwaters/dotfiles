@@ -17,7 +17,8 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   installer.
 - Agent rules live in AGENTS.md files, never in a profile `CLAUDE.md`, which only imports
   them (`ai/test.sh` pins this), so Codex gets every rule too. Profile-only rules go in
-  `profiles/<name>/AGENTS.md` so they never reach another profile; Codex reads one global
+  `profiles/<name>/AGENTS.md` and reach only that profile or its declared AI descendants
+  (`ai/test.sh` pins isolation); Codex reads one global
   file with no imports, so `ai/install.sh` renders shared plus profile rules into it.
 - Installers are idempotent. A machine is converged by running everything, not by
   remembering what already ran.
@@ -53,7 +54,8 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
 - `script/collect`: pulls live machine state back into the repo
 - `profiles/<name>/profile.json`: the topic list for that machine, in run order, and its optional platform pin
 - `profiles/<name>/packages.txt`: the package groups the `packages` topic installs there
-- `profiles/<name>/skills/`: skills installed only on that profile.
+- `profiles/<name>/`: profile additions and exclusive-tool retirement policy (`ai.json`);
+  `ai/test.sh` and `test/repo-wiring.sh` pin isolation so shared installers need no profile names.
 - `<topic>/install.sh`: idempotent, safe to rerun, no assumptions about run order beyond
   what the profile guarantees; ends at `finishTopic`, which exits non-zero when the topic
   warned so bootstrap still sees the failure if the shared counts file is lost
