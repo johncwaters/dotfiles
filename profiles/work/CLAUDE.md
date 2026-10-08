@@ -9,7 +9,3 @@ Main session loop only; subagents skip per `<scope>`. This section overrides the
 <worktree>
 Prefer working in a dedicated git worktree; if the session did not start in one, move to one before making changes. Once in a worktree, stay there: do not switch to another worktree or change the working directory out of it mid-task.
 </worktree>
-
-<posthog_writing>
-Writing or editing PostHog prose (posthog.com docs, handbook, tutorials, blog, changelog, RFCs, PR descriptions), even mid-coding-task: load `/longform-writing` before the first draft, because its description alone misses edits that arrive inside a code task.
-</posthog_writing>
