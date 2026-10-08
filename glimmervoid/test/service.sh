@@ -30,6 +30,12 @@ check "the unit rebuilds dist before starting, with the npm beside the resolved 
 check "the unit no longer conditions on a built dist, the build step heals it instead" \
   bash -c '! grep -q "^ConditionPathExists=" "$1"' _ "$serverUnitPath"
 check "the unit works out of this home" grep -q "^WorkingDirectory=$serverHome/Projects/glimmervoid\$" "$serverUnitPath"
+check "an OOM-killed session leaves the dashboard and its other sessions running" \
+  grep -q "^OOMPolicy=continue\$" "$serverUnitPath"
+check "the unit caps its memory below the whole machine" \
+  bash -c 'max="$(sed -n "s/^MemoryMax=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; [[ -n "$max" ]] && (( 10#$max > 0 && 10#$max < 100 ))' _ "$serverUnitPath"
+check "the unit throttles memory strictly below its hard cap" \
+  bash -c 'max="$(sed -n "s/^MemoryMax=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; high="$(sed -n "s/^MemoryHigh=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; [[ -n "$max" && -n "$high" ]] && (( 10#$high > 0 && 10#$high < 10#$max ))' _ "$serverUnitPath"
 check "the unit carries a rendered PATH" grep -q "^Environment=PATH=.\+\$" "$serverUnitPath"
 check "no placeholder survives the render" \
   bash -c '! grep -qE "__(NODE|NPM|APP_DIR|HOME|PATH)__" "$1"' _ "$serverUnitPath"
