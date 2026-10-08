@@ -33,10 +33,11 @@
   },
   "teamReview": {
     "enabled": true,
+    "autoRebaseMyPrs": true,
     "org": "PostHog",
     "team": "team-wizard-docs",
-    "reReviewAfterHours": 1,
-    "autoRebaseMyPrs": true
+    "reReviewAfterHours": 2,
+    "skipIdleAfterDays": 14
   },
   "benchmarks": {
     "enabled": true
@@ -80,6 +81,12 @@
   ],
   "projects": [
     {
+      "id": "3b747d44-db6d-4632-a354-094f3da7fa68",
+      "name": "glimmervoid",
+      "path": "{{HOME}}/Projects/glimmervoid",
+      "dangerouslySkipPermissions": true
+    },
+    {
       "id": "7ffca8ec-e2fa-4790-99f9-f0a6c847b6c7",
       "name": "ai-gateway",
       "path": "{{HOME}}/Projects/ai-gateway",
@@ -95,18 +102,6 @@
       "id": "696557ae-ee88-44e3-9856-6708a5bfa373",
       "name": "context-mill",
       "path": "{{HOME}}/Projects/context-mill",
-      "dangerouslySkipPermissions": true
-    },
-    {
-      "id": "007cf8dc-0e62-4cdf-b55b-fa6b8ade3ac9",
-      "name": "dotfiles",
-      "path": "{{HOME}}/Projects/dotfiles",
-      "dangerouslySkipPermissions": true
-    },
-    {
-      "id": "3b747d44-db6d-4632-a354-094f3da7fa68",
-      "name": "glimmervoid",
-      "path": "{{HOME}}/Projects/glimmervoid",
       "dangerouslySkipPermissions": true
     },
     {
@@ -143,6 +138,12 @@
       "id": "fbcd7a34-8f05-4212-a8ba-bbe3c9ad844c",
       "name": "wizard-workbench",
       "path": "{{HOME}}/Projects/wizard-workbench",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "007cf8dc-0e62-4cdf-b55b-fa6b8ade3ac9",
+      "name": "dotfiles",
+      "path": "{{HOME}}/Projects/dotfiles",
       "dangerouslySkipPermissions": true
     }
   ],
