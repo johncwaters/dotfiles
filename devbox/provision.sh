@@ -243,7 +243,7 @@ reportRunningDevboxGlimmervoid() {
       const response = await fetch("http://127.0.0.1:3456/control-token");
       if (!response.ok) process.exit(1);
       const { token } = await response.json();
-      const socket = new WebSocket(`ws://127.0.0.1:3456/control?token=${encodeURIComponent(token)}`);
+      const socket = new WebSocket(`ws://127.0.0.1:3456/control?token=${encodeURIComponent(token)}`, { headers: { Origin: "http://127.0.0.1:3456" } });
       socket.addEventListener("error", () => process.exit(1));
       socket.addEventListener("message", (event) => {
         const snapshot = JSON.parse(event.data);
