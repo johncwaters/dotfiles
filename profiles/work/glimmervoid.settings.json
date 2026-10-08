@@ -80,8 +80,26 @@
   ],
   "projects": [
     {
-      "id": "b4683867-4ebc-46c2-aa85-5b4734a1f1c3",
-      "name": "dotfiles (2)",
+      "id": "7ffca8ec-e2fa-4790-99f9-f0a6c847b6c7",
+      "name": "ai-gateway",
+      "path": "{{HOME}}/Projects/ai-gateway",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "e05d2f0d-871f-46c6-90b1-54fc7ff993be",
+      "name": "backchannels",
+      "path": "{{HOME}}/Projects/backchannels",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "696557ae-ee88-44e3-9856-6708a5bfa373",
+      "name": "context-mill",
+      "path": "{{HOME}}/Projects/context-mill",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "007cf8dc-0e62-4cdf-b55b-fa6b8ade3ac9",
+      "name": "dotfiles",
       "path": "{{HOME}}/Projects/dotfiles",
       "dangerouslySkipPermissions": true
     },
@@ -92,21 +110,39 @@
       "dangerouslySkipPermissions": true
     },
     {
-      "id": "f549f49c-8c26-44fc-8c91-5ecc962ba640",
-      "name": "glimmervoid (2)",
-      "path": "{{HOME}}/Projects/glimmervoid",
+      "id": "6a4bc09b-cf3a-472f-809e-4a0f7a64919c",
+      "name": "posthog-js",
+      "path": "{{HOME}}/Projects/posthog-js",
       "dangerouslySkipPermissions": true
     },
     {
-      "id": "007cf8dc-0e62-4cdf-b55b-fa6b8ade3ac9",
-      "name": "dotfiles",
-      "path": "{{HOME}}/Projects/dotfiles",
+      "id": "e50c9d60-a781-407e-8e7c-12f194773a29",
+      "name": "posthog-python",
+      "path": "{{HOME}}/Projects/posthog-python",
       "dangerouslySkipPermissions": true
     },
     {
-      "id": "8de9d7f8-addc-4948-8806-d20ff91ac2e8",
-      "name": "glimmervoid (3)",
-      "path": "{{HOME}}/Projects/glimmervoid",
+      "id": "14ceaa7a-8abf-4724-be26-53825116e4bd",
+      "name": "posthog.com",
+      "path": "{{HOME}}/Projects/posthog.com",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "8552b9e8-c6dd-473d-9ece-4a17884fafec",
+      "name": "twig.com",
+      "path": "{{HOME}}/Projects/twig.com",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "2cbf48fc-a49d-4c16-bf06-dc371cfbed4c",
+      "name": "wizard",
+      "path": "{{HOME}}/Projects/wizard",
+      "dangerouslySkipPermissions": true
+    },
+    {
+      "id": "fbcd7a34-8f05-4212-a8ba-bbe3c9ad844c",
+      "name": "wizard-workbench",
+      "path": "{{HOME}}/Projects/wizard-workbench",
       "dangerouslySkipPermissions": true
     }
   ],

@@ -152,6 +152,35 @@ for profileInputPath in "$repoRoot"/profiles/*/*; do
   check "the README or hook map names profile input $profileInputName" \
     grep -qF "$profileInputName\`" <<< "$profileInputMaps"
 done
+# shellcheck source=../repos/paths.sh
+source "$repoRoot/repos/paths.sh"
+
+repoListEntryPaths() {
+  local listLine
+  while IFS= read -r listLine || [[ -n "$listLine" ]]; do
+    listLine="$(normalizeListLine "$listLine")"
+    listLineIsAnEntry "$listLine" || continue
+    normalizeListPath "${listLine%%=*}"
+  done < "$1"
+}
+
+everyListedRepoIsAGlimmervoidProject() {
+  repoListEntryPaths "$1" | node -e '
+const fs = require("node:fs");
+const [settingsPath] = process.argv.slice(1);
+const projects = JSON.parse(fs.readFileSync(settingsPath, "utf8")).projects;
+const projectPaths = new Set(projects.map(project => project.path));
+const projectPathCounts = projects.reduce((counts, project) => counts.set(project.path, (counts.get(project.path) ?? 0) + 1), new Map());
+const missingRepoPaths = fs.readFileSync(0, "utf8").split("\n").filter(relativePath => relativePath !== "")
+  .filter(relativePath => relativePath !== "Projects/posthog")
+  .filter(relativePath => !projectPaths.has(`{{HOME}}/${relativePath}`));
+const duplicatedPaths = [...projectPathCounts].filter(([, count]) => count > 1).map(([projectPath]) => projectPath);
+if (missingRepoPaths.length > 0 || duplicatedPaths.length > 0) { console.error({ missingRepoPaths, duplicatedPaths }); process.exit(1); }
+' "$2"
+}
+
+check "every work-server repo except the template posthog checkout is a glimmervoid project in the shared settings" \
+  everyListedRepoIsAGlimmervoidProject "$repoRoot/profiles/work-server/repos.txt" "$repoRoot/profiles/work/glimmervoid.settings.json"
 check "work and work-server share one glimmervoid settings file through the sync engine" \
   bash -c 'test -f "$1/profiles/work/glimmervoid.settings.json" && test ! -e "$1/profiles/work-server/glimmervoid.settings.json" && grep -q "profiles/work/glimmervoid.settings.json" "$1/glimmervoid/install.sh" "$1/profiles/work/devbox/provision.sh"' _ "$repoRoot"
 check "the README profile file list names vscodium settings" \
