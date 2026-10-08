@@ -28,6 +28,22 @@ requireDevboxPublicHost() {
   exit 1
 }
 
+holdDevboxProvisionLock() {
+  mkdir -p -m 700 "$glimmervoidDirectory"
+  exec 9>> "$glimmervoidDirectory/provision.lock"
+  local lockStatus=0
+  flock -w 120 9 || lockStatus=$?
+  if ((lockStatus == 0)); then
+    return 0
+  fi
+  if ((lockStatus == 1)); then
+    reportDevboxItem warned provision "another run is in progress"
+    exit 1
+  fi
+  reportDevboxItem warned provision "cannot take ~/.glimmervoid/provision.lock; flock exited $lockStatus"
+  exit 1
+}
+
 devboxPortListens() {
   (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
 }
@@ -298,7 +314,7 @@ startDevboxGlimmervoid() {
     environmentDescription="; flox env posthog"
   fi
   PATH="$launchPath" setsid nohup "$systemNode" "$glimmervoidScript" --config "$glimmervoidDirectory/config.json" \
-    >> "$glimmervoidDirectory/server.log" 2>&1 < /dev/null &
+    >> "$glimmervoidDirectory/server.log" 2>&1 < /dev/null 9>&- &
   local attempt
   for attempt in {1..30}; do
     if devboxPortListens 3456 && devboxPortListens 3457; then
@@ -345,7 +361,7 @@ stopDevboxGlimmervoid() {
 }
 
 case "$devboxAction" in
-  config-only) requireDevboxPublicHost; mergeDevboxConfig apply "$devboxPublicHostName"; exit ;;
+  config-only) requireDevboxPublicHost; holdDevboxProvisionLock; mergeDevboxConfig apply "$devboxPublicHostName"; exit ;;
   status)
     if devboxPortListens 3456; then
       reportRunningDevboxGlimmervoid
@@ -360,7 +376,7 @@ case "$devboxAction" in
   restart)
     requireDevboxReleaseVersion
     requireDevboxPublicHost
-    mkdir -p -m 700 "$glimmervoidDirectory"
+    holdDevboxProvisionLock
     requireDevboxReleaseOnRegistry
     requireMergeableDevboxConfig "$devboxPublicHostName"
     stopDevboxGlimmervoid
@@ -376,7 +392,7 @@ esac
 
 requireDevboxReleaseVersion
 requireDevboxPublicHost
-mkdir -p -m 700 "$glimmervoidDirectory"
+holdDevboxProvisionLock
 touch "$glimmervoidDirectory/provision.log"
 chmod 600 "$glimmervoidDirectory/provision.log"
 installDevboxNode

@@ -8,7 +8,7 @@ export DOTFILES_PLATFORM=linux
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
-linkCoreUtilities bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -32,6 +32,7 @@ case "$1" in
   ssh)
     cat > "$DOTFILES_TEST_STATE/pushed-script"
     printf '%s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" > "$DOTFILES_TEST_STATE/ssh-autostart-disabled"
+    printf '%s\n' "${CODER_SSH_USAGE_APP:-}" > "$DOTFILES_TEST_STATE/ssh-usage-app"
     bash -c "set -- ${*:4}; printf '%s\\n' \"\$@\"" > "$DOTFILES_TEST_STATE/remote-arguments"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
     if [[ -f "$DOTFILES_TEST_STATE/provision-output" ]]; then
@@ -58,15 +59,32 @@ missingCoderOutput="$(runInstall)"
 check "absent Coder skips cleanly without a warning" outputLacks "$missingCoderOutput" '[warn]'
 check "absent Coder explains the skip" outputHas "$missingCoderOutput" 'Coder CLI absent'
 check "absent Coder never connects" logLacks 'coder ssh'
+missingCoderEnsureStatus=0
+missingCoderEnsureOutput="$(runDevbox ensure 2>&1)" || missingCoderEnsureStatus=$?
+check "ensure without Coder exits cleanly" test "$missingCoderEnsureStatus" -eq 0
+check "ensure without Coder prints one informational line" \
+  test "$(wc -l <<< "$missingCoderEnsureOutput" | tr -d ' ')" -eq 1
+check "ensure without Coder names the skip" outputHas "$missingCoderEnsureOutput" 'devbox ensure: skipped; Coder CLI absent'
+check "ensure without Coder never connects or starts" logLacks 'coder '
 
 mkdir -p "$sandbox/.local/bin"
 cp "$stubState/available/coder" "$sandbox/.local/bin/coder"
 touch "$stubState/logged-out"
-loggedOutOutput="$(runInstall)"
-check "logged-out converge explains the skip" outputHas "$loggedOutOutput" 'not logged in'
-check "logged-out converge does not warn" outputLacks "$loggedOutOutput" '[warn]'
+loggedOutStatus=0
+loggedOutOutput="$(runInstall)" || loggedOutStatus=$?
+check "a failing coder whoami warns in converge" outputHas "$loggedOutOutput" '[warn] devbox'
+check "a failing coder whoami names the login fix in converge" \
+  outputHas "$loggedOutOutput" 'coder whoami failed; run coder login https://coder.dev.posthog.dev'
+check "a failing coder whoami yields a nonzero converge status" test "$loggedOutStatus" -eq 1
 check "logged-out converge never connects" logLacks 'coder ssh'
 check "logged-out converge never starts a box" logLacks 'coder start'
+loggedOutEnsureStatus=0
+loggedOutEnsureError="$(runDevbox ensure 2>&1 >/dev/null)" || loggedOutEnsureStatus=$?
+check "a failing coder whoami fails ensure" test "$loggedOutEnsureStatus" -ne 0
+check "a failing coder whoami tells the ensure log how to log in" \
+  outputHas "$loggedOutEnsureError" 'devbox ensure: coder whoami failed; run coder login https://coder.dev.posthog.dev'
+check "logged-out ensure never connects" logLacks 'coder ssh'
+check "logged-out ensure never starts a box" logLacks 'coder start'
 rm -f "$stubState/logged-out"
 
 if [[ -z "$testNodePath" ]]; then
@@ -81,6 +99,15 @@ check "missing workspace skips cleanly" outputLacks "$missingWorkspaceOutput" '[
 check "missing workspace names the expected workspace" outputHas "$missingWorkspaceOutput" 'no workspace named devbox-fixture'
 check "missing workspace never connects" logLacks 'coder ssh'
 check "missing workspace never starts a box" logLacks 'coder start'
+missingWorkspaceEnsureStatus=0
+missingWorkspaceEnsureOutput="$(runDevbox ensure 2>&1)" || missingWorkspaceEnsureStatus=$?
+check "ensure without a workspace exits cleanly" test "$missingWorkspaceEnsureStatus" -eq 0
+check "ensure without a workspace prints one informational line" \
+  test "$(wc -l <<< "$missingWorkspaceEnsureOutput" | tr -d ' ')" -eq 1
+check "ensure without a workspace names the skip" \
+  outputHas "$missingWorkspaceEnsureOutput" 'devbox ensure: skipped; no workspace named devbox-fixture'
+check "ensure without a workspace never connects" logLacks 'coder ssh'
+check "ensure without a workspace never starts a box" logLacks 'coder start'
 rm -f "$stubState/no-workspace"
 
 for workspaceStatus in stopped starting failed; do
@@ -91,14 +118,19 @@ for workspaceStatus in stopped starting failed; do
   check "$workspaceStatus workspace names its status" outputHas "$skippedOutput" "is $workspaceStatus"
   check "$workspaceStatus workspace never connects" logLacks 'coder ssh'
   check "$workspaceStatus workspace never starts from converge" logLacks 'coder start'
+  runDevbox ensure >/dev/null
+  check "ensure skips $workspaceStatus without connecting" logLacks 'coder ssh'
+  check "ensure never starts a $workspaceStatus workspace" logLacks 'coder start'
 done
 
 printf 'running\n' > "$stubState/workspace-status"
 : > "$commandLog"
+rm -f "$stubState/ssh-usage-app"
 runningOutput="$(runInstall)"
 check "running converge pushes with the pinned release" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
 check "running converge pipes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
+check "converge SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
 check "running converge does not start a workspace" logLacks 'coder start'
 check "an unchanged provision reports no laptop changes" reportsNoChanges "$runningOutput"
 check "an unchanged provision reports the devbox as present" outputMatches "$runningOutput" '\[ -- \] devbox +devbox-fixture provisioned'
@@ -115,6 +147,151 @@ check "a remote warning yields a nonzero converge status" test "$warnedStatus" -
 check "a remote warning is counted as a laptop warning" outputHas "$warnedOutput" '[warn] devbox'
 check "a remote warning outranks a remote install" outputLacks "$warnedOutput" '[ ++ ] devbox'
 rm -f "$stubState/provision-output"
+
+: > "$commandLog"
+rm -f "$stubState/ssh-usage-app"
+runDevbox ensure >/dev/null
+check "ensure provisions a running workspace with the pinned release" \
+  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+check "ensure pushes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
+check "ensure disables SSH autostart after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
+check "ensure SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
+check "ensure never starts a running workspace" logLacks 'coder start'
+
+for failureMarker in list-failed ssh-failed; do
+  touch "$stubState/$failureMarker"
+  ensureFailureStatus=0
+  runDevbox ensure >/dev/null 2>&1 || ensureFailureStatus=$?
+  check "ensure propagates $failureMarker" test "$ensureFailureStatus" -ne 0
+  rm -f "$stubState/$failureMarker"
+done
+
+ensureUsageStatus=0
+runDevbox ensure extra >/dev/null 2>&1 || ensureUsageStatus=$?
+check "ensure rejects extra arguments" test "$ensureUsageStatus" -ne 0
+
+writeStub id <<'STUB'
+#!/usr/bin/env bash
+if [[ "${1:-}" == -u ]]; then printf '501\n'; fi
+STUB
+writeStub launchctl <<'STUB'
+#!/usr/bin/env bash
+printf 'launchctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+loadedMarker="$DOTFILES_TEST_STATE/devbox-agent-loaded"
+case "${1:-}" in
+  print) [[ -f "$loadedMarker" ]] ;;
+  bootout) rm -f "$loadedMarker" ;;
+  bootstrap)
+    [[ ! -f "$DOTFILES_TEST_STATE/launch-bootstrap-fails" ]] || exit 1
+    touch "$loadedMarker"
+    ;;
+  *) exit 1 ;;
+esac
+STUB
+provideCommand id
+provideCommand launchctl
+writeDarwinDirectoryServiceStub "$stubBin"
+
+darwinHomebrewPrefix="$sandbox/homebrew"
+launchAgentPath="$sandbox/Library/LaunchAgents/dev.dotfiles.devbox.ensure.plist"
+launchAgentPending="$sandbox/.local/state/dotfiles/launchd-dev.dotfiles.devbox.ensure-pending"
+runDarwinInstall() {
+  runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin \
+    DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
+    DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDirectory/install.sh"
+}
+
+: > "$commandLog"
+runInstall >/dev/null
+check "linux never renders the devbox launch agent" test ! -e "$launchAgentPath"
+check "linux never calls launchctl" logLacks 'launchctl '
+
+touch "$stubState/logged-out"
+: > "$commandLog"
+loggedOutDarwinStatus=0
+loggedOutDarwinOutput="$(runDarwinInstall)" || loggedOutDarwinStatus=$?
+check "darwin installs the poller while logged out" test -f "$launchAgentPath"
+check "a logged-out darwin install warns only about the login" \
+  test "$(grep -c '\[warn\]' <<< "$loggedOutDarwinOutput")" -eq 1
+check "a logged-out darwin install exits with its login warning" test "$loggedOutDarwinStatus" -eq 1
+check "darwin uses the converge label namespace" grep -qF '<string>dev.dotfiles.devbox.ensure</string>' "$launchAgentPath"
+check "darwin invokes Homebrew bash" grep -qF "<string>$darwinHomebrewPrefix/bin/bash</string>" "$launchAgentPath"
+check "darwin invokes devbox through the dotfiles alias" \
+  grep -qF "<string>$sandbox/.dotfiles/devbox/commands.bash</string>" "$launchAgentPath"
+check "darwin invokes the ensure action" grep -qF '<string>ensure</string>' "$launchAgentPath"
+check "darwin polls every ten minutes" \
+  bash -c 'grep -A1 "<key>StartInterval</key>" "$1" | grep -q "<integer>600</integer>"' _ "$launchAgentPath"
+check "darwin runs the poller at load" \
+  bash -c 'grep -A1 "<key>RunAtLoad</key>" "$1" | grep -q "<true/>"' _ "$launchAgentPath"
+check "darwin uses no calendar schedule" \
+  bash -c '! grep -q StartCalendarInterval "$1"' _ "$launchAgentPath"
+check "darwin logs stdout under converge state" \
+  grep -qF "$sandbox/.local/state/dotfiles/devbox-ensure.stdout.log" "$launchAgentPath"
+check "darwin logs stderr under converge state" \
+  grep -qF "$sandbox/.local/state/dotfiles/devbox-ensure.stderr.log" "$launchAgentPath"
+check "darwin supplies a PATH with Homebrew and Coder" \
+  grep -qF "$darwinHomebrewPrefix/bin:$darwinHomebrewPrefix/sbin:$sandbox/.npm-global/bin:$sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin" "$launchAgentPath"
+check "darwin protects the rendered plist" test "$(fileModeOf "$launchAgentPath")" = 600
+check "darwin probes the poller" logHas 'launchctl print gui/501/dev.dotfiles.devbox.ensure'
+check "darwin bootstraps the poller" logHas "launchctl bootstrap gui/501 $launchAgentPath"
+check "installing a logged-out poller never connects" logLacks 'coder ssh'
+
+: > "$commandLog"
+secondDarwinStatus=0
+secondDarwinOutput="$(runDarwinInstall)" || secondDarwinStatus=$?
+check "unchanged darwin install reports no changes" reportsNoChanges "$secondDarwinOutput"
+check "unchanged logged-out darwin install exits with its login warning" test "$secondDarwinStatus" -eq 1
+check "unchanged darwin install probes the poller" logHas 'launchctl print gui/501/dev.dotfiles.devbox.ensure'
+check "unchanged darwin install never boots out" logLacks 'launchctl bootout'
+check "unchanged darwin install never bootstraps" logLacks 'launchctl bootstrap'
+rm -f "$stubState/logged-out"
+
+launchAgentArguments=()
+while IFS= read -r launchAgentArgument; do
+  launchAgentArguments+=("$launchAgentArgument")
+done < <(sed -n '/<key>ProgramArguments<\/key>/,/<\/array>/p' "$launchAgentPath" \
+  | sed -n 's|^ *<string>\(.*\)</string>$|\1|p')
+launchAgentArguments[0]="$(type -P bash)"
+: > "$commandLog"
+runInStubbedSandbox "$sandbox" "${launchAgentArguments[@]}" >/dev/null
+check "rendered program arguments provision through ensure" \
+  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+check "rendered program arguments never start a workspace" logLacks 'coder start'
+
+printf 'hand edit\n' >> "$launchAgentPath"
+: > "$commandLog"
+runDarwinInstall >/dev/null
+check "changed darwin install boots out the old poller" logHas "launchctl bootout gui/501 $launchAgentPath"
+check "changed darwin install loads the refreshed poller" logHas "launchctl bootstrap gui/501 $launchAgentPath"
+check "changed darwin install preserves hand edits" test -f "$launchAgentPath.pre-dotfiles.bak"
+
+rm -f "$stubState/devbox-agent-loaded"
+touch "$stubState/launch-bootstrap-fails"
+: > "$commandLog"
+failedAgentStatus=0
+failedAgentOutput="$(runDarwinInstall)" || failedAgentStatus=$?
+check "failed poller load fails install" test "$failedAgentStatus" -ne 0
+check "failed poller load remains owed" test -f "$launchAgentPending"
+check "failed poller load still provisions the box" \
+  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+check "failed poller load is reported as a launch agent warning" outputHas "$failedAgentOutput" '[warn] devbox launch agent'
+check "darwin provisions the box before it loads the poller" \
+  outputMatches "$(grep -E 'coder ssh|launchctl bootstrap' "$commandLog" | head -1)" '^coder ssh'
+rm -f "$stubState/launch-bootstrap-fails"
+runDarwinInstall >/dev/null
+check "a later install clears the owed poller load" test ! -e "$launchAgentPending"
+
+printf 'hand edit\n' >> "$launchAgentPath"
+: > "$commandLog"
+reloadOwedStatus=0
+reloadOwedOutput="$(DOTFILES_CONVERGE_AGENT=1 runDarwinInstall)" || reloadOwedStatus=$?
+check "an owed reload under the converge agent fails install" test "$reloadOwedStatus" -ne 0
+check "an owed reload under the converge agent is reported" outputHas "$reloadOwedOutput" 'reload owed'
+check "an owed reload under the converge agent still provisions the box" \
+  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+check "an owed reload under the converge agent never boots out its poller" logLacks 'launchctl bootout'
+runDarwinInstall >/dev/null
+check "a later install pays the owed reload" test ! -e "$launchAgentPending"
 
 for failureMarker in list-failed ssh-failed; do
   touch "$stubState/$failureMarker"
@@ -161,8 +338,10 @@ check "pair sends exactly one label argument" test "$(wc -l < "$stubState/remote
 runDevbox pair >/dev/null
 check "pair defaults to the laptop hostname" test "$(tail -1 "$stubState/remote-arguments")" = "$(hostname)"
 : > "$commandLog"
+rm -f "$stubState/ssh-usage-app"
 statusOutput="$(runDevbox status)"
 check "status reports the workspace" outputHas "$statusOutput" 'workspace devbox-fixture: running'
+check "status SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
 check "status uses the shared remote status action" logHas "$pinnedGlimmervoidVersion status"
 check "status never starts a workspace" logLacks 'coder start'
 printf 'stopped\n' > "$stubState/workspace-status"
@@ -170,6 +349,13 @@ printf 'stopped\n' > "$stubState/workspace-status"
 stoppedStatusOutput="$(runDevbox status)"
 check "stopped status does not connect" logLacks 'coder ssh'
 check "stopped status prints the owner forwarding URL" outputHas "$stoppedStatusOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
+
+writeStub flock <<'STUB'
+#!/usr/bin/env bash
+printf 'flock %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+[[ ! -f "$DOTFILES_TEST_STATE/provision-lock-held" ]]
+STUB
+provideCommand flock
 
 mergeConfig() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
@@ -205,6 +391,17 @@ JS
 backups=("$sandbox/.glimmervoid"/config.json.*.bak)
 check "config merge backs up the original bytes" cmp -s "$stubState/original-config" "${backups[0]}"
 check "config backup has mode 0600" test "$(fileModeOf "${backups[0]}")" = 600
+check "config-only waits a bounded time for the provision lock" grep -qx 'flock -w 120 9' "$commandLog"
+cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-held-lock"
+touch "$stubState/provision-lock-held"
+heldLockMergeStatus=0
+heldLockMergeOutput="$(mergeConfig)" || heldLockMergeStatus=$?
+check "config-only refuses while another run holds the provision lock" test "$heldLockMergeStatus" -ne 0
+check "config-only names the run holding the provision lock" \
+  outputHas "$heldLockMergeOutput" '[warned] provision: another run is in progress'
+check "config-only under a held lock keeps the config bytes" \
+  cmp -s "$stubState/config-before-held-lock" "$sandbox/.glimmervoid/config.json"
+rm -f "$stubState/provision-lock-held"
 secondMergeOutput="$(mergeConfig)"
 check "second config merge reports present" outputHas "$secondMergeOutput" '[present] config'
 check "second config merge does not duplicate projects" \
@@ -313,6 +510,7 @@ STUB
 writeStub setsid <<'STUB'
 #!/usr/bin/env bash
 printf 'setsid %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ -e /dev/fd/9 ]]; then touch "$DOTFILES_TEST_STATE/server-inherited-lock"; fi
 umask > "$DOTFILES_TEST_STATE/umask-at-start"
 cp "$HOME/.glimmervoid/config.json" "$DOTFILES_TEST_STATE/config-at-start"
 exec "$@"
@@ -368,6 +566,28 @@ check "provisioning never acquires a GitHub token" logLacks 'external-auth'
 check "server log has mode 0600" test "$(fileModeOf "$sandbox/.glimmervoid/server.log")" = 600
 check "glimmervoid starts with the box umask rather than a private one" test "$(cat "$stubState/umask-at-start")" = 0022
 check "provisioned config still has mode 0600 under the box umask" test "$(fileModeOf "$sandbox/.glimmervoid/config.json")" = 600
+check "provision waits a bounded time for the provision lock" logHas 'flock -w 120 9'
+check "the started server never holds the provision lock" test ! -e "$stubState/server-inherited-lock"
+
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+printf '0.28.0\n' > "$stubState/glimmervoid-version"
+touch "$stubState/provision-lock-held"
+: > "$commandLog"
+heldLockProvisionStatus=0
+heldLockProvisionOutput="$(runRemoteProvision)" || heldLockProvisionStatus=$?
+check "an overlapping provision fails" test "$heldLockProvisionStatus" -ne 0
+check "an overlapping provision names the run in progress" \
+  outputHas "$heldLockProvisionOutput" '[warned] provision: another run is in progress'
+check "an overlapping provision installs nothing" logLacks 'npm install'
+check "an overlapping provision installs no system package" logLacks 'apt-get'
+check "an overlapping provision starts no server" logLacks 'setsid'
+touch "$stubState/listening-3456" "$stubState/listening-3457"
+: > "$commandLog"
+heldLockStatusOutput="$(runRemoteProvision status)"
+check "status reads the box while a provision holds the lock" outputHas "$heldLockStatusOutput" 'glimmervoid server'
+check "status never takes the provision lock" logLacks 'flock'
+rm -f "$stubState/provision-lock-held"
+printf '0.29.1\n' > "$stubState/glimmervoid-version"
 
 floxBinDirectory="$sandbox/posthog/.flox/run/x86_64-linux.posthog-dev/bin"
 mkdir -p "$floxBinDirectory" "$sandbox/posthog/.flox/run/x86_64-linux.posthog-run/bin"
@@ -543,6 +763,18 @@ check "restart without a Coder workspace variable keeps the config bytes" \
 backupsAfterMissingHostRestart=("$sandbox/.glimmervoid"/config.json.*.bak)
 check "restart without a Coder workspace variable writes no backup" \
   test "${#backupsAfterMissingHostRestart[@]}" -eq "${#backupsBeforeMissingHostRestart[@]}"
+
+touch "$stubState/provision-lock-held"
+: > "$commandLog"
+heldLockRestartStatus=0
+heldLockRestartOutput="$(runRemoteProvision restart)" || heldLockRestartStatus=$?
+check "restart waits behind a running ensure or provision" test "$heldLockRestartStatus" -ne 0
+check "restart names the run holding the provision lock" \
+  outputHas "$heldLockRestartOutput" '[warned] provision: another run is in progress'
+check "restart behind a held lock kills nothing" kill -0 "$glimmervoidListenerPid"
+check "restart behind a held lock installs nothing" logLacks 'npm'
+check "restart behind a held lock starts nothing" logLacks 'setsid'
+rm -f "$stubState/provision-lock-held"
 
 printf '{"port":3000,}\n' > "$sandbox/.glimmervoid/config.json"
 cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-invalid-restart"

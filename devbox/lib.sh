@@ -1,5 +1,6 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 devboxGlimmervoidVersion="0.30.0"
+devboxLookupUnauthenticated=3
 
 resolveDevboxWorkspace() {
   devboxSkipReason=""
@@ -10,8 +11,8 @@ resolveDevboxWorkspace() {
   fi
   local identityJson
   if ! identityJson="$("$devboxCoderPath" whoami --output json 2>/dev/null)"; then
-    devboxSkipReason="Coder not logged in; run coder login https://coder.dev.posthog.dev"
-    return 1
+    devboxSkipReason="coder whoami failed; run coder login https://coder.dev.posthog.dev"
+    return "$devboxLookupUnauthenticated"
   fi
   if ! command -v node >/dev/null 2>&1; then
     printf 'devbox: node is required to read Coder workspace metadata\n' >&2
@@ -58,7 +59,7 @@ pushDevboxScript() {
     pairingLabel="${pairingLabel//\'/$apostropheReplacement}"
     remoteArguments+=("'$pairingLabel'")
   fi
-  CODER_SSH_DISABLE_AUTOSTART=true "$devboxCoderPath" ssh "$devboxWorkspaceName" -- bash -s -- \
+  CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- bash -s -- \
     "${remoteArguments[@]}" < "$devboxTopicDirectory/provision.sh"
 }
 
@@ -66,7 +67,7 @@ runDevboxCommand() {
   local subcommand="${1:-status}"
   if (($# > 0)); then shift; fi
   case "$subcommand" in
-    up | status)
+    up | status | ensure)
       if (($# > 0)); then
         printf 'Usage: devbox %s\n' "$subcommand" >&2
         return 1
@@ -96,13 +97,30 @@ runDevboxCommand() {
         esac
       fi
       ;;
-    *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status}\n' >&2; return 1 ;;
+    *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure}\n' >&2; return 1 ;;
   esac
-  if ! resolveDevboxWorkspace; then
+  local lookupStatus=0
+  resolveDevboxWorkspace || lookupStatus=$?
+  if [[ "$subcommand" == ensure ]] && ((lookupStatus == 1)); then
+    printf 'devbox ensure: skipped; %s\n' "$devboxSkipReason"
+    return 0
+  fi
+  if [[ "$subcommand" == ensure ]] && ((lookupStatus == devboxLookupUnauthenticated)); then
+    printf 'devbox ensure: %s\n' "$devboxSkipReason" >&2
+    return 1
+  fi
+  if ((lookupStatus != 0)); then
     printf 'devbox: %s\n' "${devboxSkipReason:-workspace lookup failed}" >&2
     return 1
   fi
   case "$subcommand" in
+    ensure)
+      if [[ "$devboxWorkspaceStatus" != running ]]; then
+        return 0
+      fi
+      pushDevboxScript provision
+      return
+      ;;
     up)
       case "$devboxWorkspaceStatus" in
         stopped) "$devboxCoderPath" start "$devboxWorkspaceName" --yes || return ;;
