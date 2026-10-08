@@ -2,6 +2,7 @@
 @biomejs/biome
 @earendil-works/pi-coding-agent
 @openai/codex>=0.159.0
+mcp-remote>=0.14.3
 postiz
 typescript
 typescript-language-server

@@ -603,7 +603,7 @@ check "~/.bashrc keeps ~/.local/bin on PATH" grep -q '\.local/bin' "$sandbox/.ba
 check "~/.bashrc keeps the npm prefix on PATH" grep -q '\.npm-global/bin' "$sandbox/.bashrc"
 
 for wantedNpmPackage in @ast-grep/napi @biomejs/biome @earendil-works/pi-coding-agent \
-  @openai/codex postiz typescript typescript-language-server; do
+  @openai/codex mcp-remote postiz typescript typescript-language-server; do
   check "$wantedNpmPackage is installed globally" logHas "npm install -g $wantedNpmPackage"
 done
 check "a retired package that is present is uninstalled" logHas "npm uninstall -g oh-my-claude-sisyphus"
