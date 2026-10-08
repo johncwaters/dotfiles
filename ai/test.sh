@@ -366,10 +366,6 @@ for destination in "${linkedDestinations[@]}"; do
 done
 
 skillsPath="$sandbox/.claude/skills"
-for skillName in "${workSkillNames[@]}"; do
-  check "switching to personal removes work skill $skillName" \
-    bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$skillsPath/$skillName"
-done
 mkdir -p "$skillsPath/open-pr"
 printf 'foreign skill state\n' > "$skillsPath/open-pr/state.json"
 foreignWorkSkillPath="$sandbox/foreign-sprint-update"

@@ -94,6 +94,18 @@ adoptStagedSkillEntries() {
   rmdir -- "$skillsStagingDirectory" 2> /dev/null || true
 }
 
+sharedSkillExists() {
+  [[ -e "$repoSkillsDirectory/$1" || -L "$repoSkillsDirectory/$1" ]]
+}
+
+linkTargetsCurrentProfileSkill() {
+  local skillName="$1"
+  local linkedSkillTarget="$2"
+  [[ -n "$profileSkillsDirectory" && -e "$profileSkillsDirectory/$skillName" ]] || return 1
+  [[ "$linkedSkillTarget" == "$dotfilesAlias/profiles/$profileName/skills/$skillName" \
+    || "$linkedSkillTarget" == "$profileSkillsDirectory/$skillName" ]]
+}
+
 removeRetiredSkillLinks() {
   local installedSkillPath
   local skillName
@@ -108,11 +120,7 @@ removeRetiredSkillLinks() {
         [[ ! -e "$repoSkillsDirectory/$skillName" ]] || continue
         ;;
       "$dotfilesAlias/profiles/"*/skills/* | "$dotfilesRepo/profiles/"*/skills/*)
-        if [[ -n "$profileSkillsDirectory" && -e "$profileSkillsDirectory/$skillName" ]]; then
-          case "$linkedSkillTarget" in
-            "$dotfilesAlias/profiles/$profileName/skills/$skillName" | "$profileSkillsDirectory/$skillName") continue ;;
-          esac
-        fi
+        ! linkTargetsCurrentProfileSkill "$skillName" "$linkedSkillTarget" || continue
         ;;
       *) continue ;;
     esac
@@ -134,7 +142,7 @@ linkRepoSkills() {
   for skillDirectory in "${skillDirectories[@]}"; do
     for repoSkillPath in "$skillDirectory"/*; do
       skillName="$(basename -- "$repoSkillPath")"
-      if [[ "$skillDirectory" != "$repoSkillsDirectory" && ( -e "$repoSkillsDirectory/$skillName" || -L "$repoSkillsDirectory/$skillName" ) ]]; then
+      if [[ "$skillDirectory" != "$repoSkillsDirectory" ]] && sharedSkillExists "$skillName"; then
         noteWarned "skill $skillName" "profile skill conflicts with shared skill, keeping shared skill"
         continue
       fi
@@ -194,7 +202,7 @@ installSkillDependencies() {
   for skillLockPath in "${skillLockPaths[@]}"; do
     skillDirectory="$(dirname -- "$skillLockPath")"
     skillName="$(basename -- "$skillDirectory")"
-    if [[ "$skillDirectory" != "$repoSkillsDirectory/$skillName" && ( -e "$repoSkillsDirectory/$skillName" || -L "$repoSkillsDirectory/$skillName" ) ]]; then
+    if [[ "$skillDirectory" != "$repoSkillsDirectory/$skillName" ]] && sharedSkillExists "$skillName"; then
       continue
     fi
     if skillDependenciesAreStale "$skillDirectory" && ! (cd -- "$skillDirectory" && npm ci --omit=dev); then
@@ -217,6 +225,7 @@ linkEntry "workflows" "ai/workflows" "$claudeHome/workflows"
 linkEntry "commands" "ai/commands" "$claudeHome/commands"
 linkEntry "hooks" "ai/hooks" "$claudeHome/hooks"
 linkEntry "hud" "ai/hud" "$claudeHome/hud"
+
 # Codex reads one global AGENTS.md with no imports, so the profile rules are rendered into it.
 renderCodexAgents() {
   local codexAgentsPath="$codexHome/AGENTS.md"
@@ -245,32 +254,22 @@ fi
 
 # CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
 copyEntry "CLAUDE.md" "profiles/$profileName/CLAUDE.md" "$claudeHome/CLAUDE.md"
-convergeProfileAgents() {
-  local profileAgentsSource="profiles/$profileName/AGENTS.md"
-  local profileAgentsDestination="$claudeHome/AGENTS.profile.md"
-  if [[ -f "$dotfilesRepo/$profileAgentsSource" ]]; then
-    linkEntry "AGENTS.profile.md" "$profileAgentsSource" "$profileAgentsDestination"
+
+convergeOptionalProfileLink() {
+  local label="$1"
+  local profileSource="profiles/$profileName/$2"
+  local destination="$claudeHome/$label"
+  if [[ -f "$dotfilesRepo/$profileSource" ]]; then
+    linkEntry "$label" "$profileSource" "$destination"
     return 0
   fi
-  pathIsLinkIntoThisRepo "$profileAgentsDestination" || return 0
-  rm -f -- "$profileAgentsDestination"
-  noteApplied "AGENTS.profile.md" "retired link removed"
+  pathIsLinkIntoThisRepo "$destination" || return 0
+  rm -f -- "$destination"
+  noteApplied "$label" "retired link removed"
 }
 
-convergeProfileAgents
-convergeReviewChecklist() {
-  local reviewChecklistSource="profiles/$profileName/review-checklist.md"
-  local reviewChecklistDestination="$claudeHome/review-checklist.md"
-  if [[ -f "$dotfilesRepo/$reviewChecklistSource" ]]; then
-    linkEntry "review-checklist.md" "$reviewChecklistSource" "$reviewChecklistDestination"
-    return 0
-  fi
-  pathIsLinkIntoThisRepo "$reviewChecklistDestination" || return 0
-  rm -f -- "$reviewChecklistDestination"
-  noteApplied "review-checklist.md" "retired link removed"
-}
-
-convergeReviewChecklist
+convergeOptionalProfileLink "AGENTS.profile.md" "AGENTS.md"
+convergeOptionalProfileLink "review-checklist.md" "review-checklist.md"
 renderJsonTemplate "settings.json" \
   "$dotfilesRepo/ai/render-settings.mjs" \
   "$dotfilesRepo/ai/settings.base.json" \

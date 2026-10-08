@@ -118,10 +118,16 @@ check "the repository map names the bubblewrap sandbox" \
   grep -q 'shared bubblewrap sandbox' "$repoRoot/AGENTS.md"
 check "the repository map no longer names a Docker matrix" \
   bash -c '! grep -q "Docker matrix" "$1/AGENTS.md"' _ "$repoRoot"
-check "the README profile file list names glimmervoid settings" \
-  grep -qF '`glimmervoid.json`' "$repoRoot/README.md"
-check "the README profile file list names glimmervoid overlays" \
-  grep -qF '`glimmervoid.overlay.json`' "$repoRoot/README.md"
+profileSectionOfReadme="$(sed -n '/^## Profiles/,/^## Topics/p' "$repoRoot/README.md")"
+declare -A checkedProfileInputNames=()
+for profileInputPath in "$repoRoot"/profiles/*/*; do
+  profileInputName="$(basename -- "$profileInputPath")"
+  [[ -d "$profileInputPath" ]] && profileInputName+="/"
+  [[ -z "${checkedProfileInputNames[$profileInputName]:-}" ]] || continue
+  checkedProfileInputNames[$profileInputName]=1
+  check "the README profile file list names $profileInputName" \
+    grep -qF "$profileInputName\`" <<< "$profileSectionOfReadme"
+done
 check "the README profile file list names vscodium settings" \
   grep -qF '`vscodium.json`' "$repoRoot/README.md"
 for examplePath in repos/repos.example.txt glimmervoid/config.example.json \
