@@ -7,7 +7,7 @@ projects and remain under their upstream licenses, not this repo's.
 |---|---|---|
 | `profiles/work/skills/posthog-querying/` | [PostHog/posthog](https://github.com/PostHog/posthog), `products/posthog_ai/skills/querying-posthog-data/` | MIT |
 | `ai/skills/ai-slop-cleaner/` | [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode), `skills/ai-slop-cleaner/` | MIT |
-| `fonts/` | [CommitMono](https://commitmono.com) | SIL Open Font License 1.1 |
+| `fonts/` | [CommitMono](https://commitmono.com) | SIL Open Font License 1.1, text in `fonts/OFL.txt` |
 | `glimmervoid/sounds/` | two RuneScape Wiki audio clips (Jagex game audio) | private use only |
 
 The first three permit redistribution with attribution; the sounds do not, so this repo stays

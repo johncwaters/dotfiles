@@ -25,6 +25,7 @@ Dark vs. light is never a default. Write one sentence of physical scene first: w
 ### Typography
 
 - The house monospace is CommitMono, the face `fonts/install.sh` puts on every machine. Self-host it as woff2 under the SIL OFL; never fall back to a system mono without saying so.
+- CommitMono licensing is settled, do not re-research it: SIL OFL 1.1, (c) 2023 Eigil Nikolajsen, no Reserved Font Name, verbatim text in `fonts/OFL.txt`. Converting the dotfiles `.otf` files to woff2 (fontTools `flavor = 'woff2'` plus brotli) and bundling them in any app is allowed, provided that licence file ships beside the fonts; never sell the font on its own. Glimmervoid's `assets/fonts/` is the worked example.
 - Body line length 65–75ch.
 - Hierarchy through scale and weight, at least a 1.25 ratio between steps. Monospace references get hierarchy from weight, case, and rules instead of size.
 
