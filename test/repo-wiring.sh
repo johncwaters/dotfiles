@@ -96,6 +96,42 @@ for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
   fi
 done
 
+check "work-server runs only ai and git on Linux, leaving glimmervoid to the devbox provisioner" \
+  node - "$repoRoot/profiles/work-server" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const profileDirectory = process.argv[2];
+const readProfileJson = name => JSON.parse(fs.readFileSync(`${profileDirectory}/${name}`, "utf8"));
+assert.deepEqual(readProfileJson("profile.json"), { platform: "linux", topics: ["ai", "git"] });
+for (const excludedFile of ["glimmervoid.json", "glimmervoid.overlay.json", "mcp-servers.json", "packages.txt"]) {
+  assert.equal(fs.existsSync(`${profileDirectory}/${excludedFile}`), false);
+}
+JS
+
+for sharedWorkFile in CLAUDE.md AGENTS.md commit-policy.json; do
+  check "work-server keeps the work $sharedWorkFile content" \
+    cmp -s "$repoRoot/profiles/work/$sharedWorkFile" "$repoRoot/profiles/work-server/$sharedWorkFile"
+done
+
+check "work-server keeps work settings except the backchannels hooks" \
+  node - "$repoRoot/profiles" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const profilesDirectory = process.argv[2];
+const readOverlay = profile => JSON.parse(fs.readFileSync(`${profilesDirectory}/${profile}/settings.overlay.json`, "utf8"));
+const expectedOverlay = readOverlay("work");
+for (const event of Object.keys(expectedOverlay.hooks)) {
+  expectedOverlay.hooks[event] = expectedOverlay.hooks[event].filter(entry =>
+    !entry.hooks.some(hook => hook.command.includes("confine-backchannels")));
+  if (expectedOverlay.hooks[event].length === 0) delete expectedOverlay.hooks[event];
+}
+assert.deepEqual(readOverlay("work-server"), expectedOverlay);
+JS
+
+check "work-server rendered settings contain no backchannels hooks or retired plugins" \
+  bash -c '! grep -Eq "confine-backchannels|example-org|/org-|telegram@claude-plugins-official" "$1"' \
+  _ "$sandbox/rendered-ai-settings.work-server.json"
+
 # These topics confine their commands to the sandbox home without command stubs.
 topicSuitesNeedingStubs() {
   topicDirectoriesWithAnInstaller | grep -Evx 'ai|git|shell'

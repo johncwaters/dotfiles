@@ -76,7 +76,7 @@ installDevbox() {
     return 0
   fi
   local provisionOutput
-  if provisionOutput="$(pushDevboxScript)"; then
+  if provisionOutput="$(provisionDevbox)"; then
     printf '%s\n' "$provisionOutput"
     if [[ "$provisionOutput" == *'[warned]'* ]]; then
       noteWarned "devbox" "$devboxWorkspaceName needs attention; see [warned] lines"

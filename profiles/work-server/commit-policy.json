@@ -1,0 +1,12 @@
+{
+  "profile": "work",
+  "commitBranches": {
+    "forbid": [
+      "main",
+      "master"
+    ],
+    "onForbidden": "create-feature-branch"
+  },
+  "mainline": "auto",
+  "afterCommit": "pull-request"
+}

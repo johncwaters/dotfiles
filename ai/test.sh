@@ -998,6 +998,20 @@ for profileOverlayPath in "$repoRoot"/profiles/*/settings.overlay.json; do
     overlayDefinesNoDenyList "$profileOverlayPath"
 done
 
+check "work-server renders caveman defaults without backchannels confinement or retired plugins" \
+  node - "$sandbox/deny-probe-work-server.json" "$topicDir/settings.base.json" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const renderedText = fs.readFileSync(process.argv[2], "utf8");
+const renderedSettings = JSON.parse(renderedText);
+const baseSettings = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+assert.equal(renderedSettings.enabledPlugins["caveman@caveman"], true);
+assert.deepEqual(renderedSettings.extraKnownMarketplaces.caveman, baseSettings.extraKnownMarketplaces.caveman);
+assert.equal(renderedSettings.env.CAVEMAN_DEFAULT_MODE, baseSettings.env.CAVEMAN_DEFAULT_MODE);
+assert.equal(renderedSettings.env.CAVEMAN_TELEMETRY, baseSettings.env.CAVEMAN_TELEMETRY);
+assert.doesNotMatch(renderedText, /confine-backchannels|example-org|[/]org-|telegram@claude-plugins-official/);
+JS
+
 check "settings.json keeps the personal permissions allow list" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.allow.includes("Bash(node:*)")?0:1)' "$settingsPath"
 check "settings.json keeps the base allow list through the overlay merge" \

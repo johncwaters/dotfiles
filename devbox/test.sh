@@ -8,7 +8,7 @@ export DOTFILES_PLATFORM=linux
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
-linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink dirname chmod cmp hostname touch mktemp stat wc sleep ps nohup tar cut od date
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -30,11 +30,32 @@ case "$1" in
     ;;
   start) printf 'running\n' > "$DOTFILES_TEST_STATE/workspace-status" ;;
   ssh)
+    printf '%s %s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" "${CODER_SSH_USAGE_APP:-}" >> "$DOTFILES_TEST_STATE/ssh-safety"
+    [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
+    if [[ "${*:4}" == *snapshot-status ]]; then
+      cat > /dev/null
+      if [[ -f "$DOTFILES_TEST_STATE/execute-snapshot" ]]; then
+        HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 snapshot-status
+        exit
+      fi
+      cat "$DOTFILES_TEST_STATE/snapshot-commit"
+      exit
+    fi
+    if [[ "${5:-}" == -c ]]; then
+      printf 'snapshot transfer\n' >> "$DOTFILES_TEST_LOG"
+      DOTFILES_TEST_REMOTE_SNAPSHOT=1 HOME="$DOTFILES_TEST_STATE/remote-home" bash -c "${*:4}"
+      exit
+    fi
     cat > "$DOTFILES_TEST_STATE/pushed-script"
     printf '%s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" > "$DOTFILES_TEST_STATE/ssh-autostart-disabled"
     printf '%s\n' "${CODER_SSH_USAGE_APP:-}" > "$DOTFILES_TEST_STATE/ssh-usage-app"
     bash -c "set -- ${*:4}; printf '%s\\n' \"\$@\"" > "$DOTFILES_TEST_STATE/remote-arguments"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
+    if [[ -f "$DOTFILES_TEST_STATE/execute-provision" ]]; then
+      HOME="$DOTFILES_TEST_STATE/remote-home" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
+        CODER_WORKSPACE_OWNER_NAME=fixture bash "$DOTFILES_TEST_STATE/provision-with-test-listeners.sh" "${@:7}"
+      exit
+    fi
     if [[ -f "$DOTFILES_TEST_STATE/provision-output" ]]; then
       cat "$DOTFILES_TEST_STATE/provision-output"
       exit 0
@@ -45,12 +66,48 @@ case "$1" in
 esac
 STUB
 
+testGitPath="$(type -P git)"
+export DOTFILES_TEST_GIT_PATH="$testGitPath"
+snapshotFixtureRepo="$stubState/snapshot-repo"
+mkdir -p "$snapshotFixtureRepo/script" "$snapshotFixtureRepo/profiles/work-server" "$snapshotFixtureRepo/snapshot-probe"
+cp -R "$repoRoot/script/." "$snapshotFixtureRepo/script/"
+printf '{"platform":"linux","topics":["snapshot-probe"]}\n' > "$snapshotFixtureRepo/profiles/work-server/profile.json"
+cat > "$snapshotFixtureRepo/snapshot-probe/install.sh" <<'TOPIC'
+#!/usr/bin/env bash
+printf 'bootstrap %s\n' "$DOTFILES_PROFILE" >> "$DOTFILES_TEST_LOG"
+printf '%s\n' "$PATH" > "$DOTFILES_TEST_STATE/bootstrap-path"
+if [[ -e "$HOME/dotfiles-snapshot/.snapshot-commit" ]]; then touch "$DOTFILES_TEST_STATE/marker-during-bootstrap"; fi
+[[ ! -f "$DOTFILES_TEST_STATE/bootstrap-failed" ]] || exit 1
+mkdir -p "$HOME/.claude/hooks"
+ln -sf "$HOME/.dotfiles/snapshot-probe/hook.mjs" "$HOME/.claude/hooks/snapshot-probe.mjs"
+TOPIC
+printf 'committed hook\n' > "$snapshotFixtureRepo/snapshot-probe/hook.mjs"
+"$testGitPath" -C "$snapshotFixtureRepo" init -q -b main
+"$testGitPath" -C "$snapshotFixtureRepo" add .
+"$testGitPath" -C "$snapshotFixtureRepo" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm snapshot
+"$testGitPath" -C "$snapshotFixtureRepo" rev-parse HEAD > "$stubState/snapshot-commit"
+printf 'uncommitted hook\n' > "$snapshotFixtureRepo/snapshot-probe/hook.mjs"
+printf 'untracked secret\n' > "$snapshotFixtureRepo/untracked-secret"
+writeStub git <<'STUB'
+#!/usr/bin/env bash
+printf 'git %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${DOTFILES_TEST_REMOTE_SNAPSHOT:-}" == 1 ]]; then
+  exec "$DOTFILES_TEST_GIT_PATH" "$@"
+fi
+exec "$DOTFILES_TEST_GIT_PATH" -C "$DOTFILES_TEST_STATE/snapshot-repo" "${@:3}"
+STUB
+provideCommand git
+
 runInstall() {
   runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 bash "$topicDirectory/install.sh"
 }
 
 runDevbox() {
   runInStubbedSandbox "$sandbox" bash -c 'source "$1/commands.bash"; shift; devbox "$@"' _ "$topicDirectory" "$@"
+}
+
+snapshotCheckSitsBetweenPrepareAndProvision() {
+  [[ "$(sed -nE 's/^coder ssh .* (prepare|provision|snapshot-status)$/\1/p' "$commandLog" | tr '\n' ' ')" == 'prepare snapshot-status provision ' ]]
 }
 
 printf '\ndevbox topic\n'
@@ -131,6 +188,9 @@ check "running converge pushes with the pinned release" logHas "coder ssh devbox
 check "running converge pipes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "converge SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
+check "matching snapshot hash skips archive and bootstrap" logLacks 'archive --format=tar'
+check "matching snapshot hash reports dotfiles present" outputHas "$runningOutput" '[present] dotfiles'
+check "converge checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
 check "running converge does not start a workspace" logLacks 'coder start'
 check "an unchanged provision reports no laptop changes" reportsNoChanges "$runningOutput"
 check "an unchanged provision reports the devbox as present" outputMatches "$runningOutput" '\[ -- \] devbox +devbox-fixture provisioned'
@@ -156,6 +216,7 @@ check "ensure provisions a running workspace with the pinned release" \
 check "ensure pushes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
 check "ensure disables SSH autostart after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "ensure SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
+check "ensure checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
 check "ensure never starts a running workspace" logLacks 'coder start'
 
 for failureMarker in list-failed ssh-failed; do
@@ -256,6 +317,7 @@ launchAgentArguments[0]="$(type -P bash)"
 runInStubbedSandbox "$sandbox" "${launchAgentArguments[@]}" >/dev/null
 check "rendered program arguments provision through ensure" \
   logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+check "rendered launchd ensure checks the snapshot" logHas "snapshot-status"
 check "rendered program arguments never start a workspace" logLacks 'coder start'
 
 printf 'hand edit\n' >> "$launchAgentPath"
@@ -309,6 +371,7 @@ check "up starts a stopped workspace" logHas 'coder start devbox-fixture --yes'
 check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
 check "up pushes the exact standalone script" cmp -s "$topicDirectory/provision.sh" "$stubState/pushed-script"
 check "up prints the dashboard URL" outputHas "$upOutput" 'https://fixture.invalid/'
+check "up checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
 check "up starts before it connects" outputMatches "$(grep -E 'coder start|coder ssh' "$commandLog" | head -1)" '^coder start'
 : > "$commandLog"
 runDevbox up >/dev/null
@@ -356,6 +419,180 @@ printf 'flock %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 [[ ! -f "$DOTFILES_TEST_STATE/provision-lock-held" ]]
 STUB
 provideCommand flock
+
+remoteSnapshotHome="$stubState/remote-home"
+remoteSnapshotMarker="$remoteSnapshotHome/dotfiles-snapshot/.snapshot-commit"
+remoteBootstrapLog="$remoteSnapshotHome/.local/state/dotfiles/devbox-bootstrap.log"
+cp "$topicDirectory/provision.sh" "$stubState/remote-provision.sh"
+printf 'running\n' > "$stubState/workspace-status"
+
+startEmptyRemoteHome() {
+  rm -rf "$remoteSnapshotHome"
+  mkdir -p "$remoteSnapshotHome"
+  touch "$remoteSnapshotHome/.dotfiles-test-sandbox"
+}
+
+remoteSnapshotWasPushed() {
+  grep -qx 'snapshot transfer' "$commandLog"
+}
+
+firstLineNumberMatching() {
+  grep -nE -- "$1" "$commandLog" | head -1 | cut -d: -f1
+}
+
+snapshotTransferSitsBetweenPrepareAndProvision() {
+  local prepareLine transferLine provisionLine
+  prepareLine="$(firstLineNumberMatching "^coder ssh .* $pinnedGlimmervoidVersion prepare$")"
+  transferLine="$(firstLineNumberMatching '^snapshot transfer$')"
+  provisionLine="$(firstLineNumberMatching "^coder ssh .* $pinnedGlimmervoidVersion provision$")"
+  [[ -n "$prepareLine" && -n "$transferLine" && -n "$provisionLine" ]] \
+    && ((prepareLine < transferLine && transferLine < provisionLine))
+}
+
+startEmptyRemoteHome
+touch "$stubState/execute-snapshot" "$stubState/bootstrap-failed"
+: > "$commandLog"
+firstFailedSnapshotStatus=0
+firstFailedSnapshotOutput="$(runDevbox ensure 2>&1)" || firstFailedSnapshotStatus=$?
+check "a failed first bootstrap leaves ensure succeeding on its provision" test "$firstFailedSnapshotStatus" -eq 0
+check "a failed first bootstrap reports dotfiles warned" outputHas "$firstFailedSnapshotOutput" '[warned] dotfiles'
+check "a failed first bootstrap still provisions after the snapshot" snapshotTransferSitsBetweenPrepareAndProvision
+check "a failed first bootstrap places the committed tree" \
+  grep -qx 'committed hook' "$remoteSnapshotHome/dotfiles-snapshot/snapshot-probe/hook.mjs"
+check "a failed first bootstrap records no snapshot commit" test ! -e "$remoteSnapshotMarker"
+: > "$commandLog"
+runDevbox ensure >/dev/null 2>&1
+check "the ensure after a failed first bootstrap pushes the snapshot again" remoteSnapshotWasPushed
+check "the ensure after a failed first bootstrap still records no snapshot commit" test ! -e "$remoteSnapshotMarker"
+
+startEmptyRemoteHome
+mkdir -p "$remoteSnapshotHome/dotfiles-snapshot" "$remoteSnapshotHome/dotfiles-snapshot.old" "$remoteSnapshotHome/dotfiles-snapshot.new"
+printf 'old-commit\n' > "$remoteSnapshotMarker"
+printf 'old snapshot\n' > "$remoteSnapshotHome/dotfiles-snapshot/old-content"
+printf 'stale previous\n' > "$remoteSnapshotHome/dotfiles-snapshot.old/stale-previous"
+printf 'stale staged\n' > "$remoteSnapshotHome/dotfiles-snapshot.new/stale-staged"
+ln -s "$remoteSnapshotHome/dotfiles-snapshot" "$remoteSnapshotHome/.dotfiles"
+printf 'Coder PATH setup\n' > "$remoteSnapshotHome/.bashrc"
+rm -f "$stubState/marker-during-bootstrap"
+: > "$commandLog"
+failedSnapshotStatus=0
+failedSnapshotOutput="$(runDevbox ensure 2>&1)" || failedSnapshotStatus=$?
+check "a failed bootstrap leaves ensure succeeding on its provision" test "$failedSnapshotStatus" -eq 0
+check "a failed bootstrap reports dotfiles warned" outputHas "$failedSnapshotOutput" '[warned] dotfiles'
+check "a failed bootstrap still provisions after the snapshot" snapshotTransferSitsBetweenPrepareAndProvision
+check "stale previous and staged snapshots never block a run" remoteSnapshotWasPushed
+check "a stale previous snapshot is cleared" test ! -e "$remoteSnapshotHome/dotfiles-snapshot.old"
+check "a stale staged snapshot is cleared rather than shipped" \
+  bash -c '[[ ! -e "$1/dotfiles-snapshot.new" && ! -e "$1/dotfiles-snapshot/stale-staged" ]]' _ "$remoteSnapshotHome"
+check "a failed bootstrap keeps the new tree instead of rolling back" \
+  grep -qx 'committed hook' "$remoteSnapshotHome/dotfiles-snapshot/snapshot-probe/hook.mjs"
+check "a failed bootstrap drops the previous tree" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/old-content"
+check "a failed bootstrap records no snapshot commit" test ! -e "$remoteSnapshotMarker"
+check "bootstrap never sees a snapshot commit recorded ahead of it" test ! -e "$stubState/marker-during-bootstrap"
+check "a failed bootstrap leaves the dotfiles alias usable" test -d "$remoteSnapshotHome/.dotfiles"
+check "snapshot bootstrap holds the provision lock" logHas 'flock -w 120 9'
+check "bootstrap failure evidence is in the private log" \
+  grep -q 'snapshot-probe.*install.sh exited 1' "$remoteBootstrapLog"
+: > "$commandLog"
+failedSnapshotConvergeStatus=0
+failedSnapshotConvergeOutput="$(runInstall 2>&1)" || failedSnapshotConvergeStatus=$?
+check "snapshot failure maps to a laptop converge warning" outputHas "$failedSnapshotConvergeOutput" '[warn] devbox'
+check "snapshot failure fails laptop converge" test "$failedSnapshotConvergeStatus" -eq 1
+check "the converge after a failed bootstrap retries it against a fresh push" remoteSnapshotWasPushed
+touch "$stubState/provision-lock-held"
+: > "$commandLog"
+heldSnapshotOutput="$(runDevbox ensure 2>&1)"
+check "a held provision lock reports dotfiles warned" outputHas "$heldSnapshotOutput" '[warned] dotfiles: cannot read remote snapshot commit'
+check "a held provision lock transfers no snapshot" logLacks 'snapshot transfer'
+check "a held provision lock records no snapshot commit" test ! -e "$remoteSnapshotMarker"
+rm -f "$stubState/provision-lock-held"
+rm -f "$stubState/bootstrap-failed" "$stubState/marker-during-bootstrap"
+: > "$commandLog"
+snapshotOutput="$(runDevbox ensure)"
+check "a retried bootstrap that succeeds reports dotfiles installed" outputHas "$snapshotOutput" '[installed] dotfiles'
+check "pushed snapshot records committed HEAD" \
+  cmp -s "$stubState/snapshot-commit" "$remoteSnapshotMarker"
+check "the snapshot commit is recorded only after bootstrap exits" test ! -e "$stubState/marker-during-bootstrap"
+check "the snapshot commit is private" test "$(fileModeOf "$remoteSnapshotMarker")" = 600
+check "the snapshot commit leaves no staged copy behind" test ! -e "$remoteSnapshotMarker.new"
+check "archive pins the recorded HEAD hash" logHas "archive --format=tar $(cat "$stubState/snapshot-commit")"
+check "pushed snapshot contains only committed content" \
+  grep -qx 'committed hook' "$remoteSnapshotHome/dotfiles-snapshot/snapshot-probe/hook.mjs"
+check "pushed snapshot excludes untracked secrets" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/untracked-secret"
+check "pushed snapshot has no git directory or repo credentials" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/.git"
+check "plain snapshot convergence records no git revision" \
+  grep -q '^unknown work-server ' "$sandbox/.local/state/dotfiles/converged"
+check "snapshot runs work-server bootstrap" logHas 'bootstrap work-server'
+check "snapshot bootstrap makes lasting links through the alias" \
+  test -f "$remoteSnapshotHome/.claude/hooks/snapshot-probe.mjs"
+check "snapshot bootstrap preserves Coder shell setup" grep -qx 'Coder PATH setup' "$remoteSnapshotHome/.bashrc"
+check "snapshot bootstrap includes Coder and local commands on PATH" \
+  grep -qF "/tmp/coder-script-data/bin:$remoteSnapshotHome/.local/bin:" "$stubState/bootstrap-path"
+check "bootstrap log has mode 0600" test "$(fileModeOf "$remoteBootstrapLog")" = 600
+check "successful snapshot removes the old directory" test ! -e "$remoteSnapshotHome/dotfiles-snapshot.old"
+check "snapshot bootstrap finishes before provision" \
+  test "$(firstLineNumberMatching '^bootstrap work-server$')" -lt \
+       "$(firstLineNumberMatching "^coder ssh .* $pinnedGlimmervoidVersion provision$")"
+mv "$remoteSnapshotHome/dotfiles-snapshot" "$remoteSnapshotHome/dotfiles-snapshot.old"
+: > "$commandLog"
+runDevbox ensure >/dev/null
+check "a swap interrupted between its renames is repaired by a fresh push" remoteSnapshotWasPushed
+check "the repaired swap records committed HEAD" cmp -s "$stubState/snapshot-commit" "$remoteSnapshotMarker"
+check "the repaired swap clears the stranded previous tree" test ! -e "$remoteSnapshotHome/dotfiles-snapshot.old"
+check "the repaired swap leaves the dotfiles alias resolving" \
+  grep -qx 'committed hook' "$remoteSnapshotHome/.dotfiles/snapshot-probe/hook.mjs"
+: > "$commandLog"
+matchingSnapshotOutput="$(runDevbox ensure)"
+check "next ensure skips a matching snapshot" outputHas "$matchingSnapshotOutput" '[present] dotfiles'
+check "next ensure transfers no archive" logLacks 'archive --format=tar'
+check "next ensure does not bootstrap" logLacks 'bootstrap work-server'
+check "every automated SSH disables autostart and activity reporting" \
+  bash -c '! grep -vx "true disable" "$1"' _ "$stubState/ssh-safety"
+
+rm -rf "$snapshotFixtureRepo"
+mkdir -p "$snapshotFixtureRepo"
+cp -R "$repoRoot/." "$snapshotFixtureRepo"
+rm -rf "$snapshotFixtureRepo/.git"
+"$testGitPath" -C "$snapshotFixtureRepo" init -q -b main
+"$testGitPath" -C "$snapshotFixtureRepo" add -A
+"$testGitPath" -C "$snapshotFixtureRepo" -c user.name=fixture -c user.email=fixture@example.invalid \
+  -c commit.gpgsign=false commit -qm work-server
+"$testGitPath" -C "$snapshotFixtureRepo" rev-parse HEAD > "$stubState/work-server-commit"
+startEmptyRemoteHome
+remoteLocalBin="$remoteSnapshotHome/.local/bin"
+mkdir -p "$remoteLocalBin"
+ln -s "$BASH" "$remoteLocalBin/bash"
+cat > "$remoteLocalBin/claude" <<'STUB'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+STUB
+cat > "$remoteLocalBin/npm" <<'STUB'
+#!/usr/bin/env bash
+printf 'npm %s in %s\n' "$*" "$PWD" >> "$DOTFILES_TEST_LOG"
+mkdir -p node_modules/.bin
+printf '{}\n' > node_modules/.package-lock.json
+printf '#!/usr/bin/env bash\nprintf "playwright-core %%s\\n" "$*" >> "$DOTFILES_TEST_LOG"\n' > node_modules/.bin/playwright-core
+chmod +x node_modules/.bin/playwright-core
+STUB
+chmod +x "$remoteLocalBin/claude" "$remoteLocalBin/npm"
+cat > "$remoteSnapshotHome/.gitconfig" <<'GITCONFIG'
+[user]
+	name = Devbox Author
+	email = devbox@example.invalid
+GITCONFIG
+: > "$commandLog"
+workServerSnapshotStatus=0
+workServerSnapshotOutput="$(runDevbox ensure 2>&1)" || workServerSnapshotStatus=$?
+check "the real work-server profile bootstraps a fresh box through ensure" test "$workServerSnapshotStatus" -eq 0
+check "the real work-server profile bootstraps with zero warnings" \
+  bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$workServerSnapshotOutput" "$remoteBootstrapLog"
+check "the real work-server bootstrap resolves npm on the box rather than the test host" logHas 'npm ci --omit=dev in '
+check "the real work-server profile records its snapshot commit" \
+  cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+check "the real work-server profile leaves the glimmervoid config to the provisioner" \
+  test ! -e "$remoteSnapshotHome/.glimmervoid/config.json"
+check "the real work-server bootstrap runs between prepare and provision" snapshotTransferSitsBetweenPrepareAndProvision
+rm -f "$stubState/execute-snapshot"
 
 mergeConfig() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
@@ -438,7 +675,87 @@ mergeConfig >/dev/null 2>&1 || invalidConfigStatus=$?
 check "invalid runtime config fails instead of being replaced" test "$invalidConfigStatus" -ne 0
 check "invalid runtime config preserves its bytes" grep -qx 'invalid JSON' "$sandbox/.glimmervoid/config.json"
 
-rm -f "$sandbox/.glimmervoid/config.json"
+mkdir -p "$sandbox/dotfiles-snapshot/glimmervoid"
+cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json"
+cp "$stubState/server-saved-config" "$sandbox/.glimmervoid/config.json"
+"$testNodePath" - "$sandbox/.glimmervoid/config.json" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json" <<'JS'
+const fs = require("node:fs");
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const defaults = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+config.skipPermissionsByDefault = false;
+config.postTurnChecks = { mode: "check", custom: true };
+config.branchGc = null;
+config.hooks = [{ ...defaults.hooks[0], command: "custom command", enabled: false }, { id: "local-hook", command: "keep me" }];
+config.teams = [{ id: "local-team" }];
+config.repoRoots = ["/local/root"];
+config.sessionRecords = { active: { transcript: "kept" } };
+defaults.hooks.push({ id: "new-hook", command: "node {{HOME}}/.claude/hooks/new.mjs" });
+defaults.hooks.push({ id: "new-hook", command: "duplicate must be ignored" });
+fs.writeFileSync(process.argv[2], JSON.stringify(config));
+fs.writeFileSync(process.argv[3], JSON.stringify(defaults));
+JS
+printf 'live session record\n' > "$sandbox/.glimmervoid/session-record"
+cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-defaults"
+defaultsOutput="$(mergeConfig)"
+check "operator defaults add missing hooks by id without overwriting live values" \
+  "$testNodePath" - "$sandbox/.glimmervoid/config.json" "$stubState/config-before-defaults" "$sandbox" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const previous = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+for (const settingName of Object.keys(previous)) {
+  if (settingName === "hooks") continue;
+  assert.deepEqual(config[settingName], previous[settingName]);
+}
+assert.deepEqual(config.hooks.slice(0, previous.hooks.length), previous.hooks);
+assert.deepEqual(config.hooks.slice(previous.hooks.length), [{ id: "new-hook", command: `node ${process.argv[4]}/.claude/hooks/new.mjs` }]);
+assert.equal(config.hooks.filter(hook => hook.id === "new-hook").length, 1);
+assert.equal(config.autoRecoverSeconds, undefined);
+JS
+check "operator defaults preserve session record files" grep -qx 'live session record' "$sandbox/.glimmervoid/session-record"
+secondDefaultsOutput="$(mergeConfig)"
+check "operator defaults are idempotent" outputHas "$secondDefaultsOutput" '[present] config'
+importedDefaultsLedger="$sandbox/.glimmervoid/devbox-imported-defaults.json"
+check "imported defaults are recorded with mode 0600" test "$(fileModeOf "$importedDefaultsLedger")" = 600
+check "imported defaults record every default key and hook id once" \
+  "$testNodePath" - "$importedDefaultsLedger" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const ledger = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const defaults = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const defaultKeys = ["skipPermissionsByDefault", "postTurnChecks", "branchGc"].filter(settingName => Object.hasOwn(defaults, settingName));
+assert.deepEqual([...ledger.keys].sort(), defaultKeys.sort());
+assert.deepEqual([...ledger.hookIds].sort(), [...new Set(defaults.hooks.map(hook => hook.id))].sort());
+JS
+"$testNodePath" - "$sandbox/.glimmervoid/config.json" <<'JS'
+const fs = require("node:fs");
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+delete config.skipPermissionsByDefault;
+delete config.postTurnChecks;
+delete config.branchGc;
+config.hooks = config.hooks.filter(hook => hook.id !== "new-hook");
+fs.writeFileSync(process.argv[2], JSON.stringify(config));
+JS
+cp "$sandbox/.glimmervoid/config.json" "$stubState/config-after-operator-removal"
+removedDefaultsOutput="$(mergeConfig)"
+check "operator-removed defaults report the config current" outputHas "$removedDefaultsOutput" '[present] config'
+check "operator-removed defaults and hooks are never imported again" \
+  cmp -s "$stubState/config-after-operator-removal" "$sandbox/.glimmervoid/config.json"
+rm -f "$importedDefaultsLedger"
+mergeConfig >/dev/null
+check "defaults never recorded as imported fill only missing settings and hooks from the snapshot" \
+  "$testNodePath" - "$sandbox/.glimmervoid/config.json" "$repoRoot/glimmervoid/config.example.json" <<'JS'
+const assert = require("node:assert/strict");
+const config = require(process.argv[2]);
+const defaults = require(process.argv[3]);
+for (const settingName of ["skipPermissionsByDefault", "postTurnChecks", "branchGc"]) {
+  assert.deepEqual(config[settingName], defaults[settingName]);
+}
+assert.equal(config.hooks.filter(hook => hook.id === "new-hook").length, 1);
+JS
+cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json"
+
+rm -f "$sandbox/.glimmervoid/config.json" "$importedDefaultsLedger"
 export DOTFILES_TEST_NODE_PATH="$testNodePath"
 writeStub node <<'STUB'
 #!/usr/bin/env bash
@@ -634,6 +951,42 @@ check "remote rerun leaves the running server untouched" logLacks 'setsid'
 check "remote rerun reports the running version rather than the upgraded CLI" outputHas "$rerunRemoteOutput" 'already running; 0.28.0; left running'
 check "remote rerun reports no changes" outputLacks "$rerunRemoteOutput" '[installed]'
 
+"$testNodePath" - "$sandbox/.glimmervoid/config.json" <<'JS'
+const fs = require("node:fs");
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+delete config.postTurnChecks;
+config.hooks = [];
+fs.writeFileSync(process.argv[2], JSON.stringify(config));
+JS
+cp "$sandbox/.glimmervoid/config.json" "$stubState/config-after-removal-while-running"
+: > "$commandLog"
+removedWhileRunningOutput="$(runRemoteProvision)"
+check "operator-removed defaults raise no pending warning while the server runs" \
+  outputLacks "$removedWhileRunningOutput" '[warned] config'
+check "operator-removed defaults stay removed while the server runs" \
+  cmp -s "$stubState/config-after-removal-while-running" "$sandbox/.glimmervoid/config.json"
+rm -f "$importedDefaultsLedger"
+cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-pending-defaults"
+: > "$commandLog"
+pendingDefaultsOutput="$(runRemoteProvision)"
+check "defaults never imported are pending while the server runs" outputHas "$pendingDefaultsOutput" '[warned] config: changes pending'
+check "pending defaults are not recorded as imported" test ! -e "$importedDefaultsLedger"
+check "pending defaults leave live config bytes untouched" \
+  cmp -s "$stubState/config-before-pending-defaults" "$sandbox/.glimmervoid/config.json"
+check "pending defaults never restart the server" logLacks 'setsid'
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+runRemoteProvision >/dev/null
+check "not-running provision applies pending defaults before starting" \
+  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const defaults = require(process.argv[3]);
+assert.deepEqual(config.postTurnChecks, defaults.postTurnChecks);
+assert.equal(config.hooks[0].id, defaults.hooks[0].id);
+JS
+check "applied defaults are recorded as imported" test -f "$importedDefaultsLedger"
+
 rm -f "$stubState/listening-3457"
 : > "$commandLog"
 missingRemoteOutput="$(runRemoteProvision)"
@@ -649,6 +1002,7 @@ rm -f "$stubState/sandbox-install-failed"
 touch "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 printf '{"port":3000,"sessions":["live"]}' > "$sandbox/.glimmervoid/config.json"
+rm -f "$importedDefaultsLedger"
 cp "$sandbox/.glimmervoid/config.json" "$stubState/live-config"
 backupsBeforePending=("$sandbox/.glimmervoid"/config.json.*.bak)
 : > "$commandLog"
@@ -744,6 +1098,18 @@ check "restart installs the pinned release before the server starts" \
 check "restart confirms the pinned release is published before the server stops" \
   test "$(firstLogLineOf 'npm view glimmervoid@0.29.1 version')" -lt "$(firstLogLineOf 'fixture server stopped')"
 check "restart leaves the config unmerged while the server runs" grep -q '"port":3000' "$stubState/config-at-stop"
+check "restart applies operator defaults after stopping and before starting" \
+  "$testNodePath" - "$stubState/config-at-stop" "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const before = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const after = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const defaults = require(process.argv[4]);
+assert.equal(before.postTurnChecks, undefined);
+assert.deepEqual(after.postTurnChecks, defaults.postTurnChecks);
+assert.equal(after.hooks[0].id, defaults.hooks[0].id);
+assert.deepEqual(after.sessions, before.sessions);
+JS
 check "restart merges the config before the server starts" \
   "$testNodePath" -e 'process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).port === 3456 ? 0 : 1)' "$stubState/config-at-start"
 
@@ -848,6 +1214,48 @@ check "provision with a failed install starts the previous release" logHas "sets
 check "provision with a failed install still prints the forwarding URL" \
   outputHas "$failedInstallProvisionOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
 rm -f "$stubState/npm-install-failed"
+
+rm -rf "$snapshotFixtureRepo"
+mkdir -p "$snapshotFixtureRepo/script" "$snapshotFixtureRepo/profiles/work-server" \
+  "$snapshotFixtureRepo/fresh-box-probe" "$snapshotFixtureRepo/glimmervoid"
+cp -R "$repoRoot/script/." "$snapshotFixtureRepo/script/"
+printf '{"platform":"linux","topics":["fresh-box-probe"]}\n' > "$snapshotFixtureRepo/profiles/work-server/profile.json"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$snapshotFixtureRepo/fresh-box-probe/install.sh"
+cp "$repoRoot/glimmervoid/config.example.json" "$snapshotFixtureRepo/glimmervoid/config.example.json"
+"$testGitPath" -C "$snapshotFixtureRepo" init -q -b main
+"$testGitPath" -C "$snapshotFixtureRepo" add .
+"$testGitPath" -C "$snapshotFixtureRepo" -c user.name=fixture -c user.email=fixture@example.invalid \
+  -c commit.gpgsign=false commit -qm fresh-box
+startEmptyRemoteHome
+rm -f "$stubState/listening-3456" "$stubState/listening-3457" "$stubState/config-at-start"
+printf '0.28.0\n' > "$stubState/glimmervoid-version"
+touch "$stubState/execute-snapshot" "$stubState/execute-provision"
+: > "$commandLog"
+freshBoxStatus=0
+freshBoxOutput="$(runDevbox ensure 2>&1)" || freshBoxStatus=$?
+check "a fresh box ensure through the real provision phases succeeds" test "$freshBoxStatus" -eq 0
+check "a fresh box bootstraps the snapshot between prepare and provision" snapshotTransferSitsBetweenPrepareAndProvision
+check "a fresh box starts its server exactly once" test "$(countLogLines '^setsid nohup ')" -eq 1
+check "a fresh box reports no pending config" outputLacks "$freshBoxOutput" 'changes pending'
+check "a fresh box starts its server with the imported operator defaults" \
+  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" "$remoteSnapshotHome" <<'JS'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const defaults = JSON.parse(fs.readFileSync(process.argv[3], "utf8"), (_key, value) =>
+  typeof value === "string" ? value.replaceAll("{{HOME}}", process.argv[4]) : value);
+for (const settingName of ["skipPermissionsByDefault", "postTurnChecks", "branchGc"]) {
+  assert.deepEqual(config[settingName], defaults[settingName]);
+}
+assert.deepEqual(config.hooks, defaults.hooks);
+JS
+: > "$commandLog"
+freshBoxSecondEnsureOutput="$(runDevbox ensure 2>&1)"
+check "the ensure after a fresh box prints no pending config warning" outputLacks "$freshBoxSecondEnsureOutput" 'changes pending'
+check "the ensure after a fresh box finds the config current" outputHas "$freshBoxSecondEnsureOutput" '[present] config: current'
+check "the ensure after a fresh box leaves its server running" logLacks 'setsid'
+rm -f "$stubState/execute-snapshot" "$stubState/execute-provision"
+printf '0.28.0\n' > "$stubState/glimmervoid-version"
 
 writeStub sleep <<'STUB'
 #!/usr/bin/env bash

@@ -51,6 +51,10 @@ resolveDevboxWorkspace() {
   devboxDashboardUrl="https://3457--dev--$devboxWorkspaceName--$coderUsername.coder.dev.posthog.dev/"
 }
 
+runDevboxSsh() {
+  CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- "$@"
+}
+
 pushDevboxScript() {
   local remoteArguments=("$devboxGlimmervoidVersion" "${1:-provision}")
   if [[ "${1:-}" == pair ]]; then
@@ -59,8 +63,41 @@ pushDevboxScript() {
     pairingLabel="${pairingLabel//\'/$apostropheReplacement}"
     remoteArguments+=("'$pairingLabel'")
   fi
-  CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- bash -s -- \
+  runDevboxSsh bash -s -- \
     "${remoteArguments[@]}" < "$devboxTopicDirectory/provision.sh"
+}
+
+pushDevboxSnapshot() (
+  set -o pipefail
+  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  local snapshotCommit remoteCommit
+  if ! snapshotCommit="$(git -C "$snapshotRepo" rev-parse HEAD)"; then
+    printf '[warned] dotfiles: cannot read committed HEAD\n'
+    return 1
+  fi
+  if ! remoteCommit="$(pushDevboxScript snapshot-status)"; then
+    printf '[warned] dotfiles: cannot read remote snapshot commit\n'
+    return 1
+  fi
+  if [[ "$remoteCommit" == "$snapshotCommit" ]]; then
+    printf '[present] dotfiles: %s\n' "$snapshotCommit"
+    return 0
+  fi
+  local remoteScript apostropheReplacement="'\"'\"'"
+  remoteScript="$(cat "$devboxTopicDirectory/provision.sh")"
+  remoteScript="${remoteScript//\'/$apostropheReplacement}"
+  if git -C "$snapshotRepo" archive --format=tar "$snapshotCommit" \
+    | runDevboxSsh bash -c "'$remoteScript'" -- "$devboxGlimmervoidVersion" snapshot "$snapshotCommit"; then
+    return 0
+  fi
+  printf '[warned] dotfiles: snapshot or bootstrap failed\n'
+  return 1
+)
+
+provisionDevbox() {
+  pushDevboxScript prepare || return
+  pushDevboxSnapshot || true
+  pushDevboxScript provision
 }
 
 runDevboxCommand() {
@@ -118,7 +155,7 @@ runDevboxCommand() {
       if [[ "$devboxWorkspaceStatus" != running ]]; then
         return 0
       fi
-      pushDevboxScript provision
+      provisionDevbox
       return
       ;;
     up)
@@ -127,7 +164,7 @@ runDevboxCommand() {
         running | starting) ;;
         *) printf 'devbox: workspace is %s; cannot provision\n' "$devboxWorkspaceStatus" >&2; return 1 ;;
       esac
-      pushDevboxScript
+      provisionDevbox
       return
       ;;
     status)

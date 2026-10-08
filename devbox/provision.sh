@@ -44,6 +44,49 @@ holdDevboxProvisionLock() {
   exit 1
 }
 
+installDevboxSnapshot() (
+  snapshotCommit="$1"
+  snapshotDirectory="$HOME/dotfiles-snapshot"
+  stagedDirectory="$HOME/dotfiles-snapshot.new"
+  previousDirectory="$HOME/dotfiles-snapshot.old"
+  snapshotMarker="$snapshotDirectory/.snapshot-commit"
+  bootstrapLog="$HOME/.local/state/dotfiles/devbox-bootstrap.log"
+  holdDevboxProvisionLock
+  reportFailedDevboxSnapshot() {
+    if (($? == 0)); then
+      return 0
+    fi
+    reportDevboxItem warned dotfiles "snapshot or bootstrap failed; retried next run; see $bootstrapLog"
+  }
+  trap reportFailedDevboxSnapshot EXIT
+  umask 077
+  rm -rf -- "$stagedDirectory" "$previousDirectory"
+  if [[ "$(cat "$snapshotMarker" 2>/dev/null || true)" == "$snapshotCommit" ]]; then
+    cat > /dev/null
+    reportDevboxItem present dotfiles "$snapshotCommit"
+    return 0
+  fi
+  mkdir -p -- "${bootstrapLog%/*}"
+  touch "$bootstrapLog"
+  chmod 600 "$bootstrapLog"
+  if [[ -L "$snapshotDirectory" || ( -e "$snapshotDirectory" && ! -d "$snapshotDirectory" ) ]]; then
+    reportDevboxItem warned dotfiles "~/dotfiles-snapshot is not a directory; left unchanged"
+    return 1
+  fi
+  mkdir -p -- "$stagedDirectory"
+  tar -xf - -C "$stagedDirectory" >> "$bootstrapLog" 2>&1
+  if [[ -d "$snapshotDirectory" ]]; then
+    mv -- "$snapshotDirectory" "$previousDirectory"
+  fi
+  mv -- "$stagedDirectory" "$snapshotDirectory"
+  rm -rf -- "$previousDirectory"
+  PATH="/tmp/coder-script-data/bin:$HOME/.local/bin:$PATH" \
+    bash "$snapshotDirectory/script/bootstrap" --profile work-server >> "$bootstrapLog" 2>&1 < /dev/null 9>&-
+  printf '%s\n' "$snapshotCommit" > "$snapshotMarker.new"
+  mv -f -- "$snapshotMarker.new" "$snapshotMarker"
+  reportDevboxItem installed dotfiles "$snapshotCommit; work-server bootstrapped"
+)
+
 devboxPortListens() {
   (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
 }
@@ -180,6 +223,15 @@ WRAPPER
   reportDevboxItem installed gh "Coder external auth wrapper"
 }
 
+installDevboxPrerequisites() {
+  touch "$glimmervoidDirectory/provision.log"
+  chmod 600 "$glimmervoidDirectory/provision.log"
+  installDevboxNode
+  installDevboxGlobals
+  installDevboxSandboxTools
+  installDevboxGhWrapper
+}
+
 mergeDevboxConfig() {
   DEVBOX_CONFIG_MODE="$1" DEVBOX_PUBLIC_HOST="$2" node -e '
     const fs = require("node:fs");
@@ -201,7 +253,52 @@ mergeDevboxConfig() {
     }
     const parsedOriginal = structuredClone(config);
     if (!config || Array.isArray(config) || typeof config !== "object") throw new Error("config.json must contain an object");
+    const ledgerPath = path.join(directory, "devbox-imported-defaults.json");
+    const hasLedger = fs.existsSync(ledgerPath);
+    if (hasLedger && !fs.lstatSync(ledgerPath).isFile()) throw new Error("devbox-imported-defaults.json must be a regular file");
+    let ledger;
+    try {
+      ledger = hasLedger ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { keys: [], hookIds: [] };
+    } catch {
+      throw new Error("devbox-imported-defaults.json is invalid JSON; left unchanged");
+    }
+    if (!Array.isArray(ledger?.keys) || !Array.isArray(ledger?.hookIds)) throw new Error("devbox-imported-defaults.json must list keys and hookIds; left unchanged");
+    const importedKeys = new Set(ledger.keys);
+    const importedHookIds = new Set(ledger.hookIds);
+    const defaultsPath = path.join(process.env.HOME, "dotfiles-snapshot", "glimmervoid", "config.example.json");
+    if (fs.existsSync(defaultsPath)) {
+      const defaults = JSON.parse(fs.readFileSync(defaultsPath, "utf8"), (_key, value) =>
+        typeof value === "string" ? value.replaceAll("{{HOME}}", process.env.HOME) : value);
+      for (const settingName of ["skipPermissionsByDefault", "postTurnChecks", "branchGc"]) {
+        if (!Object.hasOwn(defaults, settingName) || importedKeys.has(settingName)) continue;
+        if (!Object.hasOwn(config, settingName)) config[settingName] = defaults[settingName];
+        importedKeys.add(settingName);
+      }
+      if (Array.isArray(defaults.hooks) && defaults.hooks.some(hook => hook?.id && !importedHookIds.has(hook.id))) {
+        if (!Object.hasOwn(config, "hooks")) config.hooks = [];
+        if (!Array.isArray(config.hooks)) throw new Error("config.hooks must contain an array; left unchanged");
+        const installedHookIds = new Set(config.hooks.map(hook => hook?.id));
+        for (const hook of defaults.hooks) {
+          if (!hook?.id || importedHookIds.has(hook.id)) continue;
+          if (!installedHookIds.has(hook.id)) config.hooks.push(hook);
+          installedHookIds.add(hook.id);
+          importedHookIds.add(hook.id);
+        }
+      }
+    }
     if (process.env.DEVBOX_CONFIG_MODE === "check") process.exit(0);
+    const nextLedger = { keys: [...importedKeys], hookIds: [...importedHookIds] };
+    const isLedgerCurrent = hasLedger && isDeepStrictEqual(ledger, nextLedger);
+    const writeLedger = () => {
+      if (isLedgerCurrent) return;
+      const stagedLedgerPath = path.join(directory, `.devbox-imported-defaults.${crypto.randomUUID()}`);
+      try {
+        fs.writeFileSync(stagedLedgerPath, JSON.stringify(nextLedger, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+        fs.renameSync(stagedLedgerPath, ledgerPath);
+      } finally {
+        fs.rmSync(stagedLedgerPath, { force: true });
+      }
+    };
     if (!Array.isArray(config.projects)) config.projects = [];
     if (!config.projects.some((project) => project?.path === "/home/coder/posthog")) {
       config.projects.push({ id: "bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7", name: "posthog", path: "/home/coder/posthog" });
@@ -212,6 +309,7 @@ mergeDevboxConfig() {
     const merged = JSON.stringify(config, null, 2) + "\n";
     if (hasConfig && isDeepStrictEqual(parsedOriginal, config)) {
       fs.chmodSync(configPath, 0o600);
+      writeLedger();
       console.log("[present] config: current; runtime records preserved");
       process.exit(0);
     }
@@ -229,6 +327,7 @@ mergeDevboxConfig() {
     } finally {
       fs.rmSync(stagedPath, { force: true });
     }
+    writeLedger();
     console.log("[installed] config: merged; runtime records preserved");
   '
 }
@@ -361,6 +460,14 @@ stopDevboxGlimmervoid() {
 }
 
 case "$devboxAction" in
+  snapshot-status)
+    holdDevboxProvisionLock
+    if [[ -f "$HOME/dotfiles-snapshot/.snapshot-commit" ]]; then
+      cat "$HOME/dotfiles-snapshot/.snapshot-commit"
+    fi
+    exit
+    ;;
+  snapshot) installDevboxSnapshot "${3:?missing snapshot commit}"; exit ;;
   config-only) requireDevboxPublicHost; holdDevboxProvisionLock; mergeDevboxConfig apply "$devboxPublicHostName"; exit ;;
   status)
     if devboxPortListens 3456; then
@@ -386,6 +493,13 @@ case "$devboxAction" in
     printf 'https://%s/\n' "$devboxPublicHostName"
     exit "$hasFailedGlimmervoidInstall"
     ;;
+  prepare)
+    requireDevboxReleaseVersion
+    requireDevboxPublicHost
+    holdDevboxProvisionLock
+    installDevboxPrerequisites
+    exit 0
+    ;;
   provision) ;;
   *) printf 'devbox: unknown remote action\n' >&2; exit 1 ;;
 esac
@@ -393,12 +507,7 @@ esac
 requireDevboxReleaseVersion
 requireDevboxPublicHost
 holdDevboxProvisionLock
-touch "$glimmervoidDirectory/provision.log"
-chmod 600 "$glimmervoidDirectory/provision.log"
-installDevboxNode
-installDevboxGlobals
-installDevboxSandboxTools
-installDevboxGhWrapper
+installDevboxPrerequisites
 convergeDevboxConfig "$devboxPublicHostName"
 startDevboxGlimmervoid
 printf 'https://%s/\n' "$devboxPublicHostName"
