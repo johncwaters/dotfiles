@@ -25,7 +25,7 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 ## Execution Posture
 
 - Preserve behavior unless the user explicitly asks for behavior changes.
-- Lock behavior with focused regression tests first whenever practical.
+- Lock behavior by running the existing tests and the code path; write a new test only as a regression test for a bug actually fixed or for an uncovered contract whose break would be silent.
 - Prefer deletion over addition.
 - Reuse existing utilities and patterns before introducing new ones.
 - Avoid new dependencies unless the user explicitly requests them.
@@ -33,7 +33,7 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 
 ## From /commit
 
-Clean only the files /commit passes (preflight's `paths`). Never create files, including tests; run existing tests only. Skip the UI/design category and checklist. Limit naming, error-handling cleanup, and test reinforcement to lines already changed. Return to `/commit` for review.
+Clean only the files /commit passes (preflight's `paths`). Never create files, including tests; run existing tests only. Skip the UI/design category and checklist. Limit naming, error-handling cleanup, and low-value test removal to lines already changed. Return to `/commit` for review.
 
 ## Scoped File-List Usage
 
@@ -58,7 +58,7 @@ In review mode:
    - leftover dead code or unused exports
    - duplicate logic that should have been consolidated
    - needless wrappers or abstractions that still blur boundaries
-   - missing tests or weak verification for preserved behavior
+   - weak verification for preserved behavior
    - cleanup that appears to have changed behavior without intent
 4. Produce a reviewer verdict with required follow-ups.
 5. Hand needed changes back to a separate writer pass instead of fixing and approving in one step.
@@ -67,7 +67,7 @@ In review mode:
 
 1. **Protect current behavior first**
    - Identify what must stay the same.
-   - Add or run the narrowest regression tests needed before editing.
+   - Run the existing tests that cover it before editing; add one only for a fixed bug or an uncovered contract whose break would be silent.
    - If tests cannot come first, record the verification plan explicitly before touching code.
 
 2. **Bound the pass**
@@ -79,7 +79,7 @@ In review mode:
    - **Dead code**: unused code, unreachable branches, stale flags, debug leftovers
    - **Needless abstraction**: pass-through wrappers, speculative indirection, single-use helper layers
    - **Boundary violations**: hidden coupling, misplaced responsibilities, wrong-layer imports or side effects
-   - **Missing tests**: behavior not locked, weak regression coverage, edge-case gaps
+   - **Low-value tests**: assertions mirroring the implementation, mocks of the unit under test, coverage-padding per-function cases, tests of constants or config shape; never a regression test for a fixed bug or a test of a contract whose break would be silent
    - **UI/design defaults**: generic visual patterns that make an AI-built interface feel unreviewed.
 
 ### UI/Design Reviewer Checklist
@@ -97,7 +97,7 @@ Use these as review prompts, not absolute bans. Keep intentional brand, accessib
    - **Pass 1: Dead code deletion**
    - **Pass 2: Duplicate removal**
    - **Pass 3: Naming and error-handling cleanup**
-   - **Pass 4: Test reinforcement**
+   - **Pass 4: Low-value test removal**, keeping regression tests for fixed bugs and tests of silent-break contracts
    - Re-run targeted verification after each pass.
    - Do not bundle unrelated refactors into the same edit set.
 

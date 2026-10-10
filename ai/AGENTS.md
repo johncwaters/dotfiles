@@ -26,6 +26,16 @@ Session hygiene: commit each completed slice as it lands rather than batching at
 Before any completion claim or auto-commit: zero pending tasks, tests passing, and verification evidence collected by actually exercising the change, not just typechecking. Never self-approve in the same context. Review is a ladder of read-only engines with one writer: `qa-swarm` finds, `code-review` triages and judges, the `finding-fixer` agent is the only thing that edits inside the loop, and the caller owns the loop. /commit runs that loop and is the single gate for local work; /pr-review is the gate for a pull request and never fixes anything. Never spawn a reviewer agent directly or invoke `qa-swarm` yourself; `qa-swarm` owns lane selection behind `code-review`, and a second review path is how findings stop composing. If verification fails, keep iterating.
 </verification>
 
+<tests>
+Write few tests; the default for a change is zero new ones. Agent-written unit tests mostly restate the code, pin implementation details, or mock the unit under test, so they catch nothing and tax every later change.
+- Add a test only for a bug actually fixed (one regression test reproducing it) or a contract other code depends on whose break would be silent. Drive it through the real components, not doubles.
+- Never write tests per function or branch for coverage; tests of constants, config shape, getters, or framework behavior; assertions that mirror the implementation; or snapshots of incidental output.
+- Extend an existing test before adding one. One end-to-end check beats many unit tests of its parts.
+- Verification is running the change and the existing suite, not writing a test for it.
+- A repo's own instruction file that requires tests wins.
+- The `necessity` lane of /commit, when it runs, flags net-new tests that fail this bar.
+</tests>
+
 <auto_commit>
 Main session loop only; subagents skip per `<scope>`. Change complete and every gate passed (tests green, verification evidence collected, zero pending tasks): run the /commit workflow immediately, without waiting to be asked. Skip only when the user said not to commit, the work was assessment or exploration with no code change, or the change is one slice of a larger plan still in flight.
 </auto_commit>
