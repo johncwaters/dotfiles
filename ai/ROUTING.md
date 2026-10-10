@@ -7,7 +7,7 @@ Int and speed 1 (low) to 10 (high). Cost is list API price, USD per 1M tokens in
 
 | Model | Int | Speed | $/1M in / out | Access | Use for |
 |---|---|---|---|---|---|
-| `opus` (claude-opus-5-5) | 9 | 6 | 4 / 20 | default session model; Agent `model=opus` | Main loop orchestrator; default Claude tier (rule 2) |
+| `opus` (claude-opus-5-5) | 9 | 6 | 4 / 20 | default session model; Agent `model=opus` | Main loop; default Claude tier (rule 2) |
 | `fable` (claude-fable-5-1) | 10 | 5 | 10 / 50 | Agent `model=fable` | Spawned slices where top judgment beats cost (security review pinned here) |
 | `sonnet` (claude-sonnet-5-5) | 8 | 8 | 2 / 10 | Agent `model=sonnet`; `settings.base.json` pins the alias via `ANTHROPIC_DEFAULT_SONNET_MODEL`, since Claude Code 2.1.284 still resolves it to claude-sonnet-5 | Rule 2 downgrade only |
 | `haiku` (claude-haiku-5-5) | 5 | 10 | 0.10 / 0.50 (0.50 / 2.50 past 100K-token prompts) | Agent `model=haiku`; `settings.base.json` pins the alias via `ANTHROPIC_DEFAULT_HAIKU_MODEL`, so a Claude Code alias change cannot move the relay off the evaluated model | Rule 2 floor; `codex-dispatcher` relay, where a 2026-10-07 eval tied `sonnet` on router success, Codex failure, and verbatim relay |
@@ -34,7 +34,7 @@ Decision order for any delegated task:
 Delegation prompts: the target cannot see this conversation, so carry objective, definition of done, paths, prior decisions, constraints, an output contract that fits back into context, and boundaries. Agent prompts carry literal `Scope:`, `Out of scope:`, and `Definition of done:` lines or `hooks/enforce-spawn-model.mjs` denies them. Do not restate AGENTS.md rules Claude subagents and Codex already read (global plus repo copy).
 
 Posture by session model:
-- Opus (default): orchestrator. Decompose, dispatch independent slices concurrently per the decision order, keep planning, synthesis, and verification in the main loop; judge every result before relaying it. Direct work only for single commands, trivial one-file edits, answers already in context, and live back-and-forth. Everything else goes out per rule 1; when torn, dispatch.
+- Opus (default): do Claude-side work in the main loop. Spawning Claude subagents to orchestrate did not pay: 2026-09/10 logs showed delegating sessions costing about 3x per edit with no drop in review findings, because the main loop's context, not the subagents, carries the spend. Codex is flat-rate, so still send it self-contained coding slices per rule 1; ask for a short receipt (files changed, checks run) and verify by running checks rather than rereading its diff into context. Spawn a Claude subagent only for independent slices worth running in parallel, broad read-only sweeps (`Explore`, rule 4), or digging whose transcript would bloat the main context more than its answer. Skills and workflows that spawn agents by their own instructions (`/commit`, `qa-swarm`, `plan-challenge`) run as written; this posture governs only discretionary spawns.
 - Fable (opt-in): same posture as Opus; spend it where top judgment beats cost.
 - Other: apply the decision order directly.
 </routing>

@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 // Statusline HUD, OMC-style formatting. Claude Code pipes a JSON payload on
 // stdin; print one line. Payload fields used: model.{id,display_name},
-// context_window.{used_percentage,total_input_tokens,context_window_size},
+// context_window.{used_percentage,current_usage,context_window_size}, cost.total_cost_usd,
 // rate_limits.{five_hour,seven_day}.{used_percentage,resets_at}.
 // Fail open: any error renders whatever is known, never crashes the statusline.
 
@@ -18,7 +18,7 @@ const RED = "\x1b[31m";
 const ORANGE = "\x1b[38;5;172m";
 
 // OMC thresholds: rate limits warn at 70, critical at 90;
-// context warns at 70, suggests compaction at 80, critical at 85.
+// context (as a share of the auto-compact window) warns at 70, suggests compaction at 80, critical at 85.
 function limitColor(pct) {
   if (pct >= 90) return RED;
   if (pct >= 70) return YELLOW;
@@ -75,6 +75,54 @@ function fmtTokens(n) {
   return String(n);
 }
 
+// https://platform.claude.com/docs/en/about-claude/pricing (Opus 5.5 cache hit), checked 2026-10-10.
+const OPUS_5_5_CACHE_READ_USD_PER_MILLION = 0.2;
+
+function contextTokensInUse(contextWindow) {
+  const usage = contextWindow.current_usage;
+  if (usage) {
+    return (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+  }
+  if (typeof contextWindow.used_percentage !== "number" || typeof contextWindow.context_window_size !== "number") return null;
+  return Math.round((contextWindow.used_percentage / 100) * contextWindow.context_window_size);
+}
+
+function configuredAutoCompactWindow() {
+  const fromEnvironment = Number.parseInt(process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || "", 10);
+  if (fromEnvironment > 0) return fromEnvironment;
+  try {
+    const settings = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"));
+    return typeof settings.autoCompactWindow === "number" ? settings.autoCompactWindow : null;
+  } catch {
+    return null;
+  }
+}
+
+function autoCompactWindow(contextWindowSize) {
+  const configuredWindow = configuredAutoCompactWindow();
+  if (!configuredWindow) return contextWindowSize;
+  if (typeof contextWindowSize !== "number") return configuredWindow;
+  return Math.min(configuredWindow, contextWindowSize);
+}
+
+function contextTokensLabel(tokensInUse, compactWindow) {
+  if (!compactWindow) return fmtTokens(tokensInUse);
+  const { color, suffix } = contextStyle(clampPct((tokensInUse / compactWindow) * 100));
+  return `${color}${fmtTokens(tokensInUse)}/${fmtTokens(compactWindow)}${suffix}${RESET}`;
+}
+
+function contextPart(payload) {
+  const contextWindow = payload.context_window || {};
+  const tokensInUse = contextTokensInUse(contextWindow);
+  if (tokensInUse === null) return null;
+  const compactWindow = autoCompactWindow(contextWindow.context_window_size);
+  const segment = `${DIM}ctx:${RESET}${contextTokensLabel(tokensInUse, compactWindow)}`;
+  const isOpus55 = ((payload.model && payload.model.id) || "").startsWith("claude-opus-5-5");
+  if (!isOpus55) return segment;
+  const cacheReadUsdPerCall = (tokensInUse / 1e6) * OPUS_5_5_CACHE_READ_USD_PER_MILLION;
+  return `${segment} ${DIM}~$${cacheReadUsdPerCall.toFixed(2)}/call${RESET}`;
+}
+
 const CAVEMAN_BADGE_BY_MODE = {
   caveman: "CAVEMAN", lite: "CAVEMAN", full: "CAVEMAN",
   ultracave: "ULTRACAVE", ultra: "ULTRACAVE",
@@ -108,16 +156,11 @@ function render(payload) {
   const limits = [limitPart("5h", rl.five_hour), limitPart("wk", rl.seven_day)].filter(Boolean);
   if (limits.length > 0) parts.push(limits.join(" "));
 
-  const cw = payload.context_window || {};
-  if (typeof cw.used_percentage === "number") {
-    const pct = clampPct(cw.used_percentage);
-    const { color, suffix } = contextStyle(pct);
-    let seg = `${DIM}ctx:${RESET}${color}${pct}%${suffix}${RESET}`;
-    const used = fmtTokens(cw.total_input_tokens);
-    const size = fmtTokens(cw.context_window_size);
-    if (used && size) seg += ` ${DIM}(${used}/${size})${RESET}`;
-    parts.push(seg);
-  }
+  const contextSegment = contextPart(payload);
+  if (contextSegment) parts.push(contextSegment);
+
+  const sessionCostUsd = payload.cost && payload.cost.total_cost_usd;
+  if (typeof sessionCostUsd === "number") parts.push(`${DIM}session:${RESET}$${sessionCostUsd.toFixed(2)}`);
 
   const caveman = cavemanPart();
   if (caveman) parts.push(caveman);

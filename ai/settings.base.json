@@ -145,7 +145,12 @@
     "type": "command",
     "command": "node {{HOME}}/.claude/hud/subagent-hud.mjs"
   },
-  "effortLevel": "high",
+  "autoCompactWindow": 300000,
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    }
+  },
   "awaySummaryEnabled": false,
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
