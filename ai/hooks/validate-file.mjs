@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
+import { reconstruct } from "./edit-replay.mjs";
 
 const TEXT_EXTS = new Set([
   ".json", ".jsonc", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".mts", ".cts",
@@ -44,24 +45,6 @@ function deny(filePath, diagnostic) {
     .filter(Boolean)
     .join("\n");
   denyPreToolUse(reason);
-}
-
-function applyEdit(text, oldStr, newStr, replaceAll) {
-  if (oldStr === undefined) return text;
-  if (replaceAll) return text.split(oldStr).join(newStr ?? "");
-  const i = text.indexOf(oldStr);
-  if (i === -1) return text;
-  return text.slice(0, i) + (newStr ?? "") + text.slice(i + oldStr.length);
-}
-
-function reconstruct(ti, filePath) {
-  if (typeof ti.content === "string") return ti.content;
-  if (!ti.edits && ti.old_string === undefined) return undefined;
-  const orig = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
-  if (ti.edits) {
-    return ti.edits.reduce((c, e) => applyEdit(c, e.old_string, e.new_string, e.replace_all), orig);
-  }
-  return applyEdit(orig, ti.old_string, ti.new_string, ti.replace_all);
 }
 
 function posOf(content, index) {

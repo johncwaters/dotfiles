@@ -1233,6 +1233,7 @@ countSettingsCommand() {
 check "the routing SessionStart hook reaches the profile" test "$(countSettingsCommand inject-routing.mjs)" -eq 1
 check "the finding scope hook reaches the profile" test "$(countSettingsCommand check-finding-scope.mjs)" -eq 1
 check "the plan challenge hook reaches the profile" test "$(countSettingsCommand challenge-plan.mjs)" -eq 1
+check "the design spec hook reaches the profile" test "$(countSettingsCommand validate-spec.mjs)" -eq 1
 check "the retired sync hook is gone" test "$(countSettingsCommand sync-agents-md.mjs)" -eq 0
 check "commit and pr attribution render empty from the base" \
   node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(s.attribution.commit===""&&s.attribution.pr===""?0:1)' "$settingsPath"
@@ -1376,6 +1377,7 @@ shopt -s nullglob
 hookTestFiles=("$topicDir"/hooks/test/*.test.mjs "$repoRoot"/profiles/work/hooks/test/*.test.mjs)
 workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
+specTestFiles=("$topicDir"/skills/spec/test/*.test.ts)
 openPrTestFiles=("$repoRoot"/profiles/work/skills/open-pr/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
 hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
@@ -1383,11 +1385,16 @@ shopt -u nullglob
 check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
 check "workflow behavior tests are present" test "${#workflowTestFiles[@]}" -gt 0
 check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
+check "design spec contract tests are present" test "${#specTestFiles[@]}" -gt 0
 check "open-pr evidence tests are present" test "${#openPrTestFiles[@]}" -gt 0
 check "social-images render tests are present" test "${#socialImagesTestFiles[@]}" -gt 0
 check "hud tests are present" test "${#hudTestFiles[@]}" -gt 0
 if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
   check "hook, workflow, commit, open-pr, social-images, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}" "${hudTestFiles[@]}"
+fi
+
+if ((${#specTestFiles[@]} > 0)); then
+  check "design spec render and documentation contracts pass" node --test --test-concurrency=1 "${specTestFiles[@]}"
 fi
 
 reportTopicResults "ai"

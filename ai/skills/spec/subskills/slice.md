@@ -1,9 +1,10 @@
 # Slice
 
-Size each slice for a ticket agent that starts with only the ticket.
+Cut the work into units, each sized for a ticket agent that starts with only the ticket.
 
-1. Order slices by dependency; each leaves the repo working.
-2. Budget one slice at roughly 150k tokens of session context. Measure its reading with `wc -c` over the `reads` and `changes` paths at four bytes per token, and split a slice above about 50k tokens of reading.
-3. Merge a slice into its neighbor until `done when` is a command to run or a behavior to observe, then measure the merged slice again.
-4. List in `implements` every decision the slice enacts; the ticket carries them once the design spec is deleted.
-5. Move a slice that depends on an open question, directly or through `depends on`, out of Slices into that question's `defers` field, then renumber.
+1. Add one unit per piece of work that leaves the repo working, with a `dependsOn` edge to each unit it builds on.
+2. Write each unit's contract: `reads` is what the ticket agent studies first, `changes` is every path it may touch, and `checks` are the commands that exit 0 once the unit is done.
+3. Fit the reading budget. The validator sizes `reads` plus `changes` at four bytes per token against 50k tokens, leaving the rest of a 150k session for the work. Split a unit above it; where the smallest verifiable unit is still above it, keep that unit whole with a `budgetWaiver` saying why.
+4. Join each unit to every decision it enacts with an `implements` edge; the ticket carries those decisions once the design spec is deleted. Mark a decision that binds every unit `isConstraint`.
+5. Give a unit that waits on an open question a `deferredBy` edge to it, and the same edge to every unit that depends on that unit.
+6. Set status `sliced`.

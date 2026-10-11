@@ -1,67 +1,66 @@
 ---
 name: spec
-description: Turns a feature request into a design spec. Sketches the feature from the repo, asks the carbon unit rounds of questions until every decision and edge case is settled, cuts the result into ticket-sized slices, and runs plan-challenge on them. Use for /spec, "spec this", "sharpen this", "grill me on this", and any feature request that used to go through plan mode.
+description: Turns a feature request into a design spec, a typed and validated JSON graph of decisions and units of work. Sketches the feature from the repo, asks the carbon unit rounds of questions until every decision and edge case is settled, cuts the result into ticket-sized units with verifiable contracts, and runs plan-challenge on them. Use for /spec, "spec this", "sharpen this", "grill me on this", and any feature request that used to go through plan mode.
 ---
 
 # Spec
 
 Surface a feature's hidden decisions while the carbon unit is here to make them.
 
-Terms: design spec, sketch, branch, question round, decision, open question, slice, ticket, challenge stamp. Defined in `~/.dotfiles/GLOSSARY.md`; read it first.
+Terms: design spec, sketch, branch, question round, decision, open question, unit of work, contract, ticket, challenge stamp. Defined in `~/.dotfiles/GLOSSARY.md`; read it first.
 
 **Input.** The feature in the carbon unit's words and the repo in the working directory.
 
-**Output.** A design spec at `~/.claude/specs/<repo>/<slug>.md` ending in its challenge stamp. It is the only file this skill writes.
+**Output.** A design spec at `~/.claude/specs/<repo>/<slug>.json` with status `challenged`. It is the only file this skill writes.
 
 ## Subskills
 
 Read each file under `subskills/` as you reach it.
 
-| Order | Subskill | Status it sets |
-|-------|----------|----------------|
-| 1 | `sketch.md` | `sketch` |
-| 2 | `grill.md` | `grilled` |
-| 3 | `slice.md` | `sliced` |
-| 4 | `challenge.md` | `challenged` |
+| Order | Subskill | Status it sets | The graph then holds |
+|-------|----------|----------------|----------------------|
+| 1 | `sketch.md` | `sketch` | one goal, and a branch per guess |
+| 2 | `grill.md` | `grilled` | zero branches |
+| 3 | `slice.md` | `sliced` | units with full contracts, every decision implemented or a constraint |
+| 4 | `challenge.md` | `challenged` | the challenge stamp |
 
-An existing design spec resumes at the subskill after its Status.
+An existing design spec resumes at the subskill after its status. A `challenged` one resumes in `grill.md` when the carbon unit brings the answer to an open question.
 
-## Design spec file
+## Design spec graph
 
-```text
-# <feature name>
-
-Status: <sketch | grilled | sliced | challenged>
-Request: <the carbon unit's words, verbatim>
-
-## Goal
-<one or two sentences>
-
-## Non-goals
-- <the nearest thing this feature leaves out>
-
-## Branches
-- B1: <question> | leaning: <current guess> | blocks: <B numbers>
-
-## Decisions
-- D1: <question> | answer: <choice> | why: <reason> | source: <decided | read file:line | assumed>
-
-## Open questions
-- Q1: <question> | settled by: <what would answer it> | defers: <slices waiting on it>
-
-## Slices
-1. <verb phrase naming the change>
-   - implements: <D numbers>
-   - reads: <paths>
-   - changes: <paths>
-   - done when: <command to run or behavior to observe>
-   - depends on: <slice numbers>
-
-CHALLENGE: <kept> kept, <shrunk> shrunk, <cut> cut
+```json
+{
+  "status": "sliced",
+  "request": "let me export my deck as csv",
+  "repoRoot": "/home/me/Projects/decks",
+  "nodes": [
+    { "id": "G1", "kind": "goal", "text": "A deck exports to a CSV file from the deck page." },
+    { "id": "N1", "kind": "nonGoal", "text": "Importing a CSV." },
+    { "id": "D1", "kind": "decision", "question": "Which columns?", "answer": "Name, set, quantity.", "why": "Matches what trading sites import.", "source": "decided" },
+    { "id": "D2", "kind": "decision", "question": "Where is the CSV built?", "answer": "In the export module.", "why": "It already streams the JSON export.", "source": "read", "evidence": "src/export/index.ts:14" },
+    { "id": "Q1", "kind": "openQuestion", "question": "Is price a column?", "settledBy": "The pricing provider's license terms." },
+    { "id": "U1", "kind": "unit", "title": "Add the CSV writer", "reads": ["src/export/"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }] },
+    { "id": "U2", "kind": "unit", "title": "Add the price column", "reads": ["src/export/csv.ts"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }] }
+  ],
+  "edges": [
+    { "from": "U1", "kind": "implements", "to": "D1" },
+    { "from": "U1", "kind": "implements", "to": "D2" },
+    { "from": "U2", "kind": "implements", "to": "D1" },
+    { "from": "U2", "kind": "dependsOn", "to": "U1" },
+    { "from": "U2", "kind": "deferredBy", "to": "Q1" }
+  ]
+}
 ```
 
-Inside Slices, slice heads are the only numbered lines at column zero and their fields stay indented, because `plan-challenge` reads every column-zero numbered line as a step.
+Further fields: a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
+
+The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` for its status. Its denial names each rule and the fix; apply them and write again. Run the same checks, or view the graph, at any time:
+
+```
+node ~/.claude/skills/spec/validate.ts <spec.json>
+node ~/.claude/skills/spec/render.ts <spec.json> tree
+```
 
 ## Hand off
 
-Reply with the path, the slice count, every open question with the slices it defers, and every `assumed` decision. Implementation and ticket cutting begin when the carbon unit starts them.
+Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. Implementation and ticket cutting begin when the carbon unit starts them.

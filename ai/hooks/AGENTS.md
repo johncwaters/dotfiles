@@ -13,6 +13,7 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 | Script | Role | Evidence |
 |--------|------|----------|
 | `validate-file.mjs` | PreToolUse syntax, character, and instruction-size guard | `test/validate-file.test.mjs` |
+| `validate-spec.mjs` | PreToolUse design graph contract guard | `test/validate-spec.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
 | `gate-codex-dispatch.mjs` | PreToolUse subagent Codex ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
 | `challenge-plan.mjs` | PreToolUse plan-challenge stamp gate | `test/challenge-plan.test.mjs` |
