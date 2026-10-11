@@ -5,7 +5,7 @@ description: Draft, edit, or critique long-form writing: blog posts, articles, n
 
 # Long-form writing
 
-Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies stakes, rhythm, and momentum; PostHog supplies opinions, candor, precision, and skimmable structure. Blogs lean on both. Teaching guides lead with the concept. Work docs lead with the answer and spend at most one Sorkin flourish. When voice-style also fires on a long-form piece, this skill's structure and mechanics win over its casual message quirks (typos, apostrophe plurals, emoticons, idk or lol), while the author's word choice and warmth can still carry over.
+Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies stakes, rhythm, and momentum; PostHog supplies opinions, candor, precision, and skimmable structure. Blogs lean on both. Teaching guides lead with the concept. Work docs lead with the answer and spend at most one Sorkin flourish. When voice-style also fires on a long-form piece, this skill's structure and mechanics win over its casual message quirks (typos, apostrophe plurals, emoticons, idk or lol), while the author's word choice and warmth can still carry over. A playful social post is the exception, covered under the post template.
 
 ## Workflow
 
@@ -30,6 +30,16 @@ Social post formatting, from the author's own edits to a drafted LinkedIn post:
 
 - One or two sentences per paragraph with a blank line between, because the feed is skimmed on a phone and a four-sentence block reads as a wall.
 - Spend the one allowed aside as a casual parenthetical in the author's voice ("only two eyes, duh"), placed right after the claim it deflates; the author adds this when the draft has none.
+
+Playful posts, from the author's rewrite of a drafted post that carried a clip of merge celebration animations. The draft opened "My pull requests now end in a bowling strike", listed all five animations, named the product, and conceded that the feature "does nothing for the code". The author posted this instead, 168 characters:
+
+> Software is soooo boring and lifeless. Rounded corners, no sense of satisfaction, and lame colors. I introduce to you: celebrations! Next, loot boxes. (Sold separately)
+
+- A fun post commits to the bit and never explains, justifies, or concedes it, because the apology is what kills the joke. The author's ran exaggerated complaint, petty specifics, mock-ceremonial reveal, absurd escalation; borrow the commitment and not that skeleton, because a second post on the same skeleton reads as a formula.
+- Attached media is the payoff, so the copy never describes what the clip or image shows; listing the animations spent the reveal before the reader pressed play.
+- No announcement frame ("So I built X", "I added X to Y, my Z for W"), which the author called incredibly generic, and no product name, feature count, or link unless the author supplies one.
+- Here voice-style's banter outranks this skill's restraint: stretched vowels, `!`, mock-grand phrasing, and a deadpan closing parenthetical all stay, while typos, chat abbreviations, and emoticons still go.
+- One joke long, in one short paragraph. The author's own posts run under 200 characters, so a fun post that needs a second paragraph is a different post.
 
 ## Teaching guide template
 

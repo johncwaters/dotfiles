@@ -28,7 +28,7 @@ function isRecord(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function isNonemptyString(value) {
+export function isNonemptyString(value) {
     return typeof value === 'string' && value.trim().length > 0
 }
 
@@ -310,7 +310,7 @@ export function buildPngViolations(bytes, placement, label = 'PNG') {
     return violations
 }
 
-function escapeHtml(text) {
+export function escapeHtml(text) {
     return String(text).replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`)
 }
 
@@ -321,7 +321,7 @@ export function renderContactSheet(altTextByFileName, title) {
     return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${styles}</style></head><body><h1>${escapeHtml(title)}</h1><main>${cells.join('')}</main></body></html>`
 }
 
-function writeFileRefusingSymlink(filePath, contents) {
+export function writeFileRefusingSymlink(filePath, contents) {
     if (lstatSync(filePath, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`refusing to write through symlink: ${filePath}`)
     const fileDescriptor = openSync(filePath, fileSystemConstants.O_WRONLY | fileSystemConstants.O_CREAT | fileSystemConstants.O_TRUNC | fileSystemConstants.O_NOFOLLOW, 0o644)
     try {
@@ -352,7 +352,7 @@ export function writeAltTextAndSheet(outputDirectory, renderedAltTextByFileName,
     if (sheetTitle) writeFileRefusingSymlink(previewPath, renderContactSheet(altTextByFileName, sheetTitle))
 }
 
-async function launchBrowser() {
+export async function launchBrowser() {
     const { chromium } = await import('playwright-core')
     const options = { headless: true, args: ['--force-color-profile=srgb'] }
     try {
