@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>HIDKeyboardModifierMappingDst</key>
+		<integer>30064771299</integer>
+		<key>HIDKeyboardModifierMappingSrc</key>
+		<integer>30064771296</integer>
+	</dict>
+	<dict>
+		<key>HIDKeyboardModifierMappingDst</key>
+		<integer>30064771296</integer>
+		<key>HIDKeyboardModifierMappingSrc</key>
+		<integer>30064771299</integer>
+	</dict>
+	<dict>
+		<key>HIDKeyboardModifierMappingDst</key>
+		<integer>30064771303</integer>
+		<key>HIDKeyboardModifierMappingSrc</key>
+		<integer>30064771300</integer>
+	</dict>
+	<dict>
+		<key>HIDKeyboardModifierMappingDst</key>
+		<integer>30064771300</integer>
+		<key>HIDKeyboardModifierMappingSrc</key>
+		<integer>30064771303</integer>
+	</dict>
+</array>
+</plist>

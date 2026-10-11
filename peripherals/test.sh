@@ -327,9 +327,48 @@ case "${1:-}" in
   bootstrap) touch "$loadedMarker" ;;
 esac
 STUB
+writeStub defaults <<'STUB'
+#!/usr/bin/env bash
+printf 'defaults %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+hostScope=any
+if [[ "${1:-}" == "-currentHost" ]]; then
+  hostScope=currentHost
+  shift
+fi
+domainDirectory="$DOTFILES_TEST_STATE/defaults/$hostScope/$2"
+case "$1" in
+  export) printf '%s\n' "$domainDirectory" > "$3" ;;
+  write) mkdir -p "$domainDirectory" && printf '%s\n' "$4" > "$domainDirectory/$3" ;;
+  *) exit 1 ;;
+esac
+STUB
+writeStub PlistBuddy <<'STUB'
+#!/usr/bin/env bash
+valueKey="${3#Print :}"
+IFS= read -r domainDirectory < "$4"
+[[ -f "$domainDirectory/$valueKey" ]] && cat "$domainDirectory/$valueKey"
+STUB
+writeStub pgrep <<'STUB'
+#!/usr/bin/env bash
+[[ -f "$DOTFILES_TEST_STATE/alt-tab-running" ]]
+STUB
+writeStub osascript <<'STUB'
+#!/usr/bin/env bash
+printf 'osascript %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+rm -f "$DOTFILES_TEST_STATE/alt-tab-running"
+STUB
+writeStub open <<'STUB'
+#!/usr/bin/env bash
+printf 'open %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+touch "$DOTFILES_TEST_STATE/alt-tab-running"
+STUB
 provideCommand brew
 provideCommand id
 provideCommand launchctl
+for keyboardCommand in defaults pgrep osascript open; do
+  provideCommand "$keyboardCommand"
+done
+touch "$stubState/alt-tab-running"
 writeDarwinDirectoryServiceStub "$stubBin"
 
 darwinApplicationsDirectory="$sandbox/Applications"
@@ -343,6 +382,7 @@ runDarwinInstall() {
   runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_PROFILE=work \
     DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
     DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
+    DOTFILES_TEST_PLISTBUDDY="$stubState/available/PlistBuddy" \
     NO_COLOR=1 bash "$topicDir/install.sh"
 }
 
@@ -373,6 +413,23 @@ check "darwin skips Piper" outputLacks "$darwinFirstOutput" 'Piper'
 check "darwin skips headsetcontrol" outputLacks "$darwinFirstOutput" 'headsetcontrol'
 check "darwin never installs Linux packages" logLacks 'apt-get '
 check "darwin never touches udev" logLacks 'udevadm '
+check "darwin swaps Control and Command on the Adv360 Pro only" \
+  cmp -s "$stubState/defaults/currentHost/-g/com.apple.keyboard.modifiermapping.7504-24926-0" \
+  "$topicDir/keyboard/kinesis-modifier-mapping.plist"
+for altTabShortcutKey in holdShortcut; do
+  check "darwin writes the captured AltTab $altTabShortcutKey" \
+    cmp -s "$stubState/defaults/any/com.lwouis.alt-tab-macos/$altTabShortcutKey" \
+    "$topicDir/keyboard/alt-tab/$altTabShortcutKey.plist"
+done
+altTabQuitBeforeWrites() {
+  local quitLine
+  local firstWriteLine
+  quitLine="$(grep -nF -m1 -- 'osascript ' "$commandLog" | cut -d: -f1)"
+  firstWriteLine="$(grep -nF -m1 -- 'defaults write com.lwouis.alt-tab-macos' "$commandLog" | cut -d: -f1)"
+  [[ -n "$quitLine" && -n "$firstWriteLine" ]] && ((quitLine < firstWriteLine))
+}
+check "darwin quits a running AltTab before writing its shortcuts" altTabQuitBeforeWrites
+check "darwin relaunches AltTab after writing its shortcuts" logHas 'open -b com.lwouis.alt-tab-macos'
 
 : > "$commandLog"
 darwinSecondStatus=0
@@ -382,6 +439,8 @@ check "darwin second run reports no changes" reportsNoChanges "$darwinSecondOutp
 check "darwin second run does not reinstall the cask" logLacks 'brew install --cask linearmouse'
 check "darwin second run does not bootstrap again" logLacks 'launchctl bootstrap'
 check "darwin second run does not boot out the agent" logLacks 'launchctl bootout'
+check "darwin second run writes no defaults" logLacks ' write '
+check "darwin second run leaves AltTab running" logLacks 'osascript '
 
 rm -f "$stubState/linearmouse-cask-installed"
 mkdir -p "$darwinApplicationsDirectory/LinearMouse.app"

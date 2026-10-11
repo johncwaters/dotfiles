@@ -68,10 +68,95 @@ installDarwinLinearMouse() {
     "$plistPath" "$plistChanged"
 }
 
+applyKinesisModifierSwap() {
+  local noteLabel="Adv360 Pro modifiers"
+  if liveDefaultsValueMatches currentHost -g "$kinesisModifierMappingKey" "$kinesisModifierMappingPath"; then
+    notePresent "$noteLabel" "Control and Command swapped"
+    return 0
+  fi
+  if ! writeTrackedDefaultsValue currentHost -g "$kinesisModifierMappingKey" "$kinesisModifierMappingPath"; then
+    noteWarned "$noteLabel" "defaults write failed"
+    return 1
+  fi
+  noteApplied "$noteLabel" "Control and Command swapped"
+  noteDetail "$noteLabel" "takes effect when the keyboard next connects"
+}
+
+altTabIsRunning() {
+  pgrep -x AltTab >/dev/null 2>&1
+}
+
+waitForAltTabToQuit() {
+  local remainingChecks=10
+  while ((remainingChecks > 0)); do
+    if ! altTabIsRunning; then
+      return 0
+    fi
+    sleep 0.5
+    remainingChecks=$((remainingChecks - 1))
+  done
+  ! altTabIsRunning
+}
+
+quitAltTab() {
+  if ! osascript -e "tell application id \"$altTabDomain\" to quit" >/dev/null 2>&1; then
+    return 1
+  fi
+  waitForAltTabToQuit
+}
+
+# AltTab caches every shortcut in memory, so a running copy sees a written one only after a relaunch.
+applyAltTabShortcuts() {
+  local noteLabel="AltTab shortcuts"
+  local shortcutKey
+  local staleShortcutKeys=()
+  local wasRunning=0
+  local failedShortcutKey=""
+  local relaunchFailed=0
+  for shortcutKey in "${altTabShortcutKeys[@]}"; do
+    if ! liveDefaultsValueMatches any "$altTabDomain" "$shortcutKey" "$altTabShortcutDirectory/$shortcutKey.plist"; then
+      staleShortcutKeys+=("$shortcutKey")
+    fi
+  done
+  if ((${#staleShortcutKeys[@]} == 0)); then
+    notePresent "$noteLabel" "Option switches windows"
+    return 0
+  fi
+  if altTabIsRunning; then
+    wasRunning=1
+  fi
+  if ((wasRunning == 1)) && ! quitAltTab; then
+    noteWarned "$noteLabel" "AltTab did not quit, shortcuts not written"
+    return 1
+  fi
+  for shortcutKey in "${staleShortcutKeys[@]}"; do
+    if ! writeTrackedDefaultsValue any "$altTabDomain" "$shortcutKey" "$altTabShortcutDirectory/$shortcutKey.plist"; then
+      failedShortcutKey="$shortcutKey"
+      break
+    fi
+  done
+  if ((wasRunning == 1)) && ! open -b "$altTabDomain" >/dev/null 2>&1; then
+    noteWarned "$noteLabel" "AltTab did not relaunch"
+    relaunchFailed=1
+  fi
+  if [[ -n "$failedShortcutKey" ]]; then
+    noteWarned "$noteLabel" "defaults write failed for $failedShortcutKey"
+    return 1
+  fi
+  if ((relaunchFailed == 1)); then
+    return 1
+  fi
+  noteApplied "$noteLabel" "Option switches windows"
+}
+
 if isDarwin; then
   # shellcheck source=../script/lib/launchd.sh
   source "$dotfilesRepo/script/lib/launchd.sh"
+  # shellcheck source=./keyboard.sh
+  source "$dotfilesRepo/peripherals/keyboard.sh"
   installDarwinLinearMouse
+  applyKinesisModifierSwap
+  applyAltTabShortcuts
   finishTopic
 fi
 
