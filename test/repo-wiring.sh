@@ -372,4 +372,53 @@ check "house style is shared without a profile copy" \
 check "only the work profile carries the editor MCP and remote provision inputs" \
   bash -c '[[ -f "$1/profiles/work/vscodium-mcp.json" && -f "$1/profiles/work/devbox/provision.sh" && ! -e "$1/vscodium/mcp.json" && ! -e "$1/devbox/provision.sh" ]]' _ "$repoRoot"
 
+termsLabelPattern=$'^[ \t>#*+_0-9.)-]*Terms[*_]*:[*_]*'
+
+docsCarryingATermsLabel() {
+  grep -rlE --include='*.md' --exclude-dir=node_modules --exclude-dir=.git \
+    -- "$termsLabelPattern" "$repoRoot" | grep -vxF -- "$repoRoot/GLOSSARY.md"
+}
+
+wrappedLineDecorationPattern=$'^[ \t>]*'
+
+glossaryTermsCitedByDoc() {
+  awk -v termsLabelPattern="$termsLabelPattern" \
+    -v wrappedLineDecorationPattern="$wrappedLineDecorationPattern" '
+    function endTermsSentence() { print ""; isInsideTermsSentence = 0 }
+    function joinTermsText(termsText) {
+      printf "%s ", termsText
+      if (termsText ~ /\.([ \t]|$)/) endTermsSentence()
+    }
+    $0 ~ termsLabelPattern {
+      sub(termsLabelPattern, "")
+      isInsideTermsSentence = 1
+      joinTermsText($0)
+      next
+    }
+    !isInsideTermsSentence { next }
+    { sub(wrappedLineDecorationPattern, "") }
+    /^$/ { endTermsSentence(); next }
+    { joinTermsText($0) }
+    END { if (isInsideTermsSentence) print "" }
+  ' "$1" \
+    | sed -E 's/\.([[:space:]].*)?$//' \
+    | tr ',' '\n' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' | grep . | sort -u
+}
+
+everyCitedGlossaryTermIsDefined() {
+  local citingDocPath citedTerm citedTermCount
+  local citingDocCount=0
+  while IFS= read -r citingDocPath; do
+    citingDocCount=$((citingDocCount + 1))
+    citedTermCount=0
+    while IFS= read -r citedTerm; do
+      citedTermCount=$((citedTermCount + 1))
+      grep -qF -- "- **$citedTerm**:" "$repoRoot/GLOSSARY.md" || return 1
+    done < <(glossaryTermsCitedByDoc "$citingDocPath")
+    ((citedTermCount > 0)) || return 1
+  done < <(docsCarryingATermsLabel)
+  ((citingDocCount > 0))
+}
+check "every glossary term a doc cites is defined in GLOSSARY.md" everyCitedGlossaryTermIsDefined
+
 reportTopicResults "repo wiring"
