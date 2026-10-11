@@ -109,8 +109,16 @@ installDevboxSnapshot() (
   mv -- "$stagedDirectory" "$snapshotDirectory"
   rm -rf -- "$previousDirectory"
   linkDevboxTemplateRepository
+  local convergedRecord="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/converged"
+  rm -f -- "$convergedRecord"
   PATH="/tmp/coder-script-data/bin:$HOME/.local/bin:$PATH" \
     bash "$snapshotDirectory/script/bootstrap" --profile work-server >> "$bootstrapLog" 2>&1 < /dev/null 9>&-
+  local convergeOutcome
+  convergeOutcome="$(awk '{ print $4 }' "$convergedRecord" 2>/dev/null || true)"
+  if [[ "$convergeOutcome" != "clean" ]]; then
+    reportDevboxItem warned dotfiles "work-server bootstrap ${convergeOutcome:-left no converge record}; retried next run; see $bootstrapLog"
+    return 0
+  fi
   printf '%s\n' "$snapshotCommit" > "$snapshotMarker.new"
   mv -f -- "$snapshotMarker.new" "$snapshotMarker"
   reportDevboxItem installed dotfiles "$snapshotCommit; work-server bootstrapped"

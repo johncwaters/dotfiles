@@ -52,6 +52,16 @@ rm -f -- "${DOTFILES_COUNTS_FILE:-}"
 finishTopic
 TOPIC
 
+mkdir -p "$fakeRepo/aborting" "$fakeRepo/profiles/aborting"
+printf '{ "topics": ["aborting"] }\n' > "$fakeRepo/profiles/aborting/profile.json"
+cat > "$fakeRepo/aborting/install.sh" <<'TOPIC'
+#!/usr/bin/env bash
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../script/lib" && pwd)/context.sh"
+noteWarned "aborting" "warned before aborting"
+false
+finishTopic
+TOPIC
+
 runFakeBootstrap() {
   local selectedProfile="$1"
   local selectedPlatform="${2:-linux}"
@@ -114,7 +124,10 @@ bootstrapOutput="$(runFakeBootstrap personal)" || bootstrapStatus=$?
 
 check "a topic owning the EXIT trap still reports its change" outputHas "$bootstrapOutput" '2 changed'
 check "a topic owning the EXIT trap still reports its warning" outputHas "$bootstrapOutput" '1 warnings'
-check "a warning from a trapping topic still fails the run" test "$bootstrapStatus" -eq 1
+check "a run that only warned exits zero" test "$bootstrapStatus" -eq 0
+check "a run that only warned says it converged with warnings" outputHas "$bootstrapOutput" 'Converged with warnings in'
+check "a run that only warned recaps its warnings after the summary" \
+  outputHas "$(sed -n '/Converged with warnings/,$p' <<< "$bootstrapOutput")" 'and warned anyway'
 check "the marker was written on the first run" grep -qx 'personal' "$markerPath"
 
 convergedRecord="$fakeHome/.local/state/dotfiles/converged"
@@ -127,9 +140,16 @@ check "a one off profile does not repoint the machine" grep -qx 'personal' "$mar
 vandalStatus=0
 bootstrapOutput="$(runFakeBootstrap vandal)" || vandalStatus=$?
 check "a topic that deletes the counts file cannot erase an earlier warning" \
-  outputHas "$bootstrapOutput" '2 warnings'
+  outputHas "$bootstrapOutput" '1 warnings'
 check "a lost tally is reported" outputHas "$bootstrapOutput" 'the shared tally was lost mid run'
+check "a lost tally is counted as a failure" outputHas "$bootstrapOutput" 'Failed in'
 check "a lost tally still fails the run" test "$vandalStatus" -eq 1
+
+abortingStatus=0
+abortingOutput="$(runFakeBootstrap aborting)" || abortingStatus=$?
+check "a topic that warns then aborts before finishing fails the run" test "$abortingStatus" -eq 1
+check "a topic that warns then aborts before finishing is reported as failed" \
+  outputHas "$abortingOutput" 'Failed in'
 
 : > "$markerPath"
 runFakeBootstrap personal > /dev/null 2>&1 || true
@@ -184,7 +204,7 @@ check "a converge record that could not be written is named" \
   outputHas "$refusedStateOutput" 'is not a plain directory'
 check "a converge record that could not be written reaches the summary" \
   outputHas "$refusedStateOutput" '1 warnings'
-check "a converge record that could not be written fails the run" test "$refusedStateStatus" -eq 1
+check "a converge record that could not be written only warns" test "$refusedStateStatus" -eq 0
 
 env HOME="$fakeHome" XDG_STATE_HOME="$fakeHome/.local/state" DOTFILES_MARKER_PATH="$markerPath" \
   DOTFILES_PROFILE=recording NO_COLOR=1 bash "$fakeRepo/script/bootstrap" > /dev/null 2>&1 || true

@@ -46,7 +46,8 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
 ## Map
 
 - `script/bootstrap`: points `~/.dotfiles` at this clone, reads the profile, runs its
-  topics in listed order
+  topics in listed order; a run with only `noteWarned` exits 0, since callers read non-zero
+  as broken, and any `noteFailed` exits 1; `test/bootstrap.sh` pins both
 - `script/lib/`: shared helpers (logging, linking, rendering, profile parsing)
 - `script/lib/merge-json.mjs`: shared base-plus-overlay JSON merge with `{{HOME}}`
   substitution, used by `ai` and `glimmervoid`

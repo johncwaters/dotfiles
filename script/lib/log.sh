@@ -55,6 +55,7 @@ finishTopic() {
   if [[ -n "${DOTFILES_UPGRADE:-}" ]] && declare -F finishPackageUpgrades >/dev/null; then
     finishPackageUpgrades
   fi
+  appendCountToken finished
   if ((warningsEmittedHere > 0)); then
     exit 1
   fi
@@ -98,9 +99,17 @@ notePresent() {
 }
 
 noteWarned() {
-  writeLine "warn" "$colorRed" "$1" "$2"
+  writeLine "warn" "$colorYellow" "$1" "$2"
   warningsEmittedHere=$((warningsEmittedHere + 1))
   appendCountToken warned
+  appendCountToken "warned-note $1"$'\t'"$2"
+}
+
+noteFailed() {
+  writeLine "fail" "$colorRed" "$1" "$2"
+  warningsEmittedHere=$((warningsEmittedHere + 1))
+  appendCountToken failed
+  appendCountToken "failed-note $1"$'\t'"$2"
 }
 
 warningCountSoFar() {
@@ -121,7 +130,30 @@ writeSummary() {
   local installedCount="$3"
   local presentCount="$4"
   local warnedCount="$5"
+  local failedCount="$6"
+  local tallies="$appliedCount changed, $installedCount installed, $presentCount already current, $warnedCount warnings"
   printf '\n'
-  printf '%s  Done in %ss: %s changed, %s installed, %s already current, %s warnings.%s\n' \
-    "$colorCyan" "$elapsedSeconds" "$appliedCount" "$installedCount" "$presentCount" "$warnedCount" "$colorReset"
+  if ((failedCount > 0)); then
+    printf '%s  Failed in %ss: %s, %s failed.%s\n' "$colorRed" "$elapsedSeconds" "$tallies" "$failedCount" "$colorReset"
+    return 0
+  fi
+  if ((warnedCount > 0)); then
+    printf '%s  Converged with warnings in %ss: %s.%s\n' "$colorYellow" "$elapsedSeconds" "$tallies" "$colorReset"
+    return 0
+  fi
+  printf '%s  Converged in %ss: %s.%s\n' "$colorGreen" "$elapsedSeconds" "$tallies" "$colorReset"
+}
+
+writeRecap() {
+  local title="$1"
+  local mark="$2"
+  local color="$3"
+  shift 3
+  (($# > 0)) || return 0
+  printf '\n'
+  printf '%s  %s%s\n' "$color" "$title" "$colorReset"
+  local recordedNote
+  for recordedNote in "$@"; do
+    writeLine "$mark" "$color" "${recordedNote%%$'\t'*}" "${recordedNote#*$'\t'}"
+  done
 }

@@ -241,9 +241,22 @@ appliedTally=0
 installedTally=0
 presentTally=0
 warnedTally=0
+failedTally=0
+finishedTopicTally=0
+warnedNotes=()
+failedNotes=()
 
 countNoteTokens() {
   grep -c -x -F -e "$1" -- "$countsFile" 2>/dev/null || true
+}
+
+bankNotes() {
+  local notePrefix="$1"
+  local -n bankedNotes="$2"
+  local recordedNote
+  while IFS= read -r recordedNote; do
+    bankedNotes+=("$recordedNote")
+  done < <(sed -n "s/^$notePrefix //p" -- "$countsFile" 2>/dev/null)
 }
 
 seedCountsFile() {
@@ -265,12 +278,16 @@ countsFileIsOurs() {
 drainCountsIntoTally() {
   if ! countsFileIsOurs; then
     seedCountsFile
-    noteWarned "counts" "the shared tally was lost mid run, earlier notes may be undercounted"
+    noteFailed "counts" "the shared tally was lost mid run, earlier notes may be undercounted"
   fi
   appliedTally=$((appliedTally + $(countNoteTokens applied)))
   installedTally=$((installedTally + $(countNoteTokens installed)))
   presentTally=$((presentTally + $(countNoteTokens present)))
   warnedTally=$((warnedTally + $(countNoteTokens warned)))
+  failedTally=$((failedTally + $(countNoteTokens failed)))
+  finishedTopicTally=$((finishedTopicTally + $(countNoteTokens finished)))
+  bankNotes warned-note warnedNotes
+  bankNotes failed-note failedNotes
   seedCountsFile
 }
 
@@ -315,25 +332,29 @@ clearRemovedTopicUpgradeRecords
 runTopic() {
   local topicName="$1"
   if ! nameIsSafe "$topicName"; then
-    noteWarned "$topicName" "invalid topic name"
+    noteFailed "$topicName" "invalid topic name"
     return 0
   fi
   if ! topicIsKnown "$topicName"; then
-    noteWarned "$topicName" "no such topic in this repo"
+    noteFailed "$topicName" "no such topic in this repo"
     return 0
   fi
   local warnedTallyBeforeTopic=$warnedTally
+  local failedTallyBeforeTopic=$failedTally
+  local finishedTopicTallyBeforeTopic=$finishedTopicTally
   local topicStatus=0
   DOTFILES_UPGRADE_TOPIC="$topicName" "$BASH" "$dotfilesRepo/$topicName/install.sh" || topicStatus=$?
   drainCountsIntoTally
   if ((topicStatus == 0)); then
     return 0
   fi
-  if ((warnedTally > warnedTallyBeforeTopic)); then
-    noteDetail "$topicName" "install.sh exited $topicStatus, warned above"
+  if ((failedTally > failedTallyBeforeTopic)); then
     return 0
   fi
-  noteWarned "$topicName" "install.sh exited $topicStatus"
+  if ((finishedTopicTally > finishedTopicTallyBeforeTopic && warnedTally > warnedTallyBeforeTopic)); then
+    return 0
+  fi
+  noteFailed "$topicName" "install.sh exited $topicStatus before finishing"
 }
 
 # The first darwin converge installs Homebrew's bash during this run, so PATH still answers bash with the 3.2 a topic cannot use.
@@ -370,6 +391,9 @@ recordConverge() {
   if ((warnedTally != 0)); then
     outcome="warned"
   fi
+  if ((failedTally != 0)); then
+    outcome="failed"
+  fi
   writeDotfilesState "$convergedStateName" \
     "$(convergedCommit) $profileName $(date -u +%Y-%m-%dT%H:%M:%SZ) $outcome"
 }
@@ -382,8 +406,11 @@ writeSummary "$((SECONDS - scriptStartSeconds))" \
   "$appliedTally" \
   "$installedTally" \
   "$presentTally" \
-  "$warnedTally"
+  "$warnedTally" \
+  "$failedTally"
+writeRecap "Warnings" "warn" "$colorYellow" "${warnedNotes[@]+"${warnedNotes[@]}"}"
+writeRecap "Failures" "fail" "$colorRed" "${failedNotes[@]+"${failedNotes[@]}"}"
 
-if ((warnedTally != 0)); then
+if ((failedTally != 0)); then
   exit 1
 fi
