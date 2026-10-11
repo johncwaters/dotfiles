@@ -24,8 +24,10 @@ here.
   answers; a dependent question waits for the next round.
 - **decision**: A closed branch, recorded with its answer, its reason, and its source:
   `decided` by the carbon unit, `read` from the repo at a cited file and line, or `assumed`
-  when the recommendation stood in for an answer the carbon unit never gave. Nothing
-  downstream may reopen a `decided` one without asking.
+  when the recommendation stood in for an answer the carbon unit never gave, or when the
+  challenge overturned the answer they gave on evidence verified in the repo. Only the
+  challenge may overturn a `decided` one; it then reads `assumed` and keeps the displaced
+  answer in its reason, so the hand off lists both.
 - **open question**: A branch deliberately left open, recorded with what would settle it.
   A unit of work that waits on one is deferred: it stays in the graph, out of the
   challenge and out of ticket cutting, until the question is answered.
