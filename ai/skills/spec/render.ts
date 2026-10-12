@@ -1,32 +1,9 @@
-import type { DesignSpec, Unit } from "./lib/graph.ts";
+import type { DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
+import { unitsInDependencyOrder } from "./lib/unit-order.ts";
 
 function oneLine(text: string): string {
   return text.replace(/[\r\n]+/g, " ");
-}
-
-function unitsInDependencyOrder(spec: DesignSpec): Unit[] {
-  const unitsById = new Map(spec.nodes.filter((node): node is Unit => node.kind === "unit").map((unit) => [unit.id, unit]));
-  const dependenciesById = new Map<string, string[]>();
-  for (const edge of spec.edges) {
-    if (edge.kind !== "dependsOn") continue;
-    const dependencies = dependenciesById.get(edge.from) ?? [];
-    dependencies.push(edge.to);
-    dependenciesById.set(edge.from, dependencies);
-  }
-  const orderedUnits: Unit[] = [];
-  const visited = new Set<string>();
-  function visit(unit: Unit): void {
-    if (visited.has(unit.id)) return;
-    visited.add(unit.id);
-    for (const dependencyId of dependenciesById.get(unit.id) ?? []) {
-      const dependency = unitsById.get(dependencyId as Unit["id"]);
-      if (dependency) visit(dependency);
-    }
-    orderedUnits.push(unit);
-  }
-  for (const unit of unitsById.values()) visit(unit);
-  return orderedUnits;
 }
 
 function render(spec: DesignSpec, mode: string): string {
