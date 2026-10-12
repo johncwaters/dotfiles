@@ -4,6 +4,22 @@ testRepoRoot="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../script/lib/platform.sh
 source "$testRepoRoot/script/lib/platform.sh"
 
+# Suites run in this interpreter but their stubs and topic installers resolve bash from PATH; either at macOS /bin/bash 3.2 fails dozens of checks for no real defect.
+requireModernBash() {
+  local pathBash pathBashVersion="missing"
+  pathBash="$(type -P bash || true)"
+  if [[ -n "$pathBash" ]]; then
+    pathBashVersion="$("$pathBash" -c 'printf %s "$BASH_VERSION"' || true)"
+  fi
+  if ((BASH_VERSINFO[0] >= 4)) && [[ -n "$pathBash" ]] && "$pathBash" -c '((BASH_VERSINFO[0] >= 4))'; then
+    return 0
+  fi
+  printf 'test harness: Bash 4 or newer required for both the interpreter (got %s) and the first bash on PATH (%s, got %s); run: PATH="%s/bin:$PATH" bash %s\n' \
+    "$BASH_VERSION" "${pathBash:-none}" "$pathBashVersion" "$(homebrewPrefix || true)" "$0" >&2
+  exit 2
+}
+requireModernBash
+
 : "${DOTFILES_PLATFORM:=linux}"
 export DOTFILES_PLATFORM
 
