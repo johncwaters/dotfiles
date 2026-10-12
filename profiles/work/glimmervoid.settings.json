@@ -26,7 +26,7 @@
     "mode": "fix"
   },
   "visions": {
-    "enabled": true,
+    "enabled": false,
     "dispatch": {
       "enabled": true
     }
