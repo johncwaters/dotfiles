@@ -250,3 +250,25 @@ test("a failed diagnostic harvest cannot turn a syntax denial into an allow", ()
   ));
   assert.match(denialReason, /invalid TS syntax/);
 });
+
+test("a workflow script parses as the async function body the runtime runs it as", () => {
+  const enginePath = path.join(validatorHome, "module-syntax-engine");
+  writeExecutable(enginePath, `#!${process.execPath}
+const { spawnSync } = require("node:child_process");
+const source = require("node:fs").readFileSync(0, "utf8");
+process.exit(spawnSync(process.execPath, ["--input-type=module", "--check"], { input: source }).status);
+`);
+  const engineEnvironment = { ...validatorEnvironment, BIOME_BIN: enginePath };
+  const workflowScript = "export const meta = { name: 'review' }\nconst verdict = await agent('review')\nreturn verdict\n";
+  const workflowWrite = validateWrite({ file_path: "workflows/scripts/review.js", content: workflowScript }, engineEnvironment);
+  assert.equal(workflowWrite.status, 0, workflowWrite.stderr);
+  assert.equal(workflowWrite.stdout, "");
+  for (const deniedWrite of [
+    { file_path: "workflows/scripts/review.js", content: `${workflowScript}return (\n` },
+    { file_path: "workflows/scripts/review.js", content: `${workflowScript}}\nfunction leftover() {\n` },
+    { file_path: "workflows/scripts/review.js", content: `${workflowScript}})\nlog(() => {\n` },
+    { file_path: "source/review.js", content: workflowScript },
+  ]) {
+    assert.match(readDenialReason(validateWrite(deniedWrite, engineEnvironment)), /invalid JS syntax/);
+  }
+});

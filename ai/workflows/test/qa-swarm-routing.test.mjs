@@ -293,6 +293,8 @@ test('the confirm round scopes lanes to the fix delta and keeps a HIGH finding i
   assert.ok(lanePrompts[0].includes('Exact REVIEW_CMD: git diff roundonetree roundtwotree\n'))
   assert.match(lanePrompts[0], /^Scope: changed files src\/fixed\.js\nsrc\/reverted\.js under git diff roundonetree roundtwotree$/m)
   assert.ok(workflowResponse.includes(highFindingInRevertedFile))
+  assert.equal(await runWorkflow({ ...workflowArgs, round: { ...confirmRound, touchedFiles: [''] } }, runtimeBindings), 'No fix delta for a confirm round, no run.')
+  assert.equal(lanePrompts.length, 1)
 })
 
 test('a lane summary reporting overflow lands in the truncated lane list when every finding is dropped', async () => {

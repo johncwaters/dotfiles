@@ -144,9 +144,8 @@ function formatRoundState() {
     return 'Round state: none.'
   }
   return `Round number: ${args.round.number}
-Fix delta files: ${formatLines(args.round.touchedFiles)}
 Whole change, for reading a carried check in context only: ${args.reviewCmd}
-This is the confirm round. Round 1 swept the whole change, so REVIEW_CMD here is only the fix delta the writer made since then. Do two things and nothing else: check each carried finding above, and review the lines the fix delta adds or removes. A carried finding still present keeps its own severity and is anchored where the defect now sits, exempt from the anchoring rule even when the fix delta left that line alone. Report a first-time finding only at HIGH or CRITICAL and only when a fix-delta line causes it; anything else first-time gets at most one summary sentence.`
+This is the confirm round. Round 1 swept the whole change, so REVIEW_CMD here is only the writer's fix delta since then. Do only two things: check each carried finding above, and review the lines the fix delta adds or removes. A carried finding still present keeps its own severity and is anchored where the defect now sits, exempt from the anchoring rule even when the fix delta left that line alone. Report a first-time finding only at HIGH or CRITICAL and only when a fix-delta line causes it; anything else first-time gets at most one summary sentence.`
 }
 
 function normalizeFilePath(filePath) {
@@ -624,7 +623,7 @@ function buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, r
   const routerRatings = routerResult ? `danger ${routerResult.danger}; complexity ${routerResult.complexity}; danger fact ${routerResult.dangerFact}; route ${routerResult.route}` : 'router unavailable'
   const classifiedFiles = routerResult ? JSON.stringify(filesClassifiedForLane(routerResult, laneName)) : '(router unavailable)'
   const lanePrompt = `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
-Out of scope: pre-existing issues outside that set; unchanged lines inside it are read, never anchored
+Out of scope: pre-existing issues outside that set, carried checks excepted; unchanged lines inside it are read, never anchored
 Definition of done: this lane's STRUCTURED_FINDINGS block followed by one OVERALL_SUMMARY paragraph
 
 Repo path: ${args.repoPath}
@@ -805,12 +804,12 @@ if (args.codexAllowed && !dispatchNoncePattern.test(String(args.dispatchNonce ??
 }
 
 const runsConfirmRound = isConfirmRound()
-if (runsConfirmRound && !args.round.fixDeltaCmd) {
+const fixDeltaFileNames = runsConfirmRound && Array.isArray(args.round.touchedFiles) ? [...new Set(args.round.touchedFiles.map(normalizeFilePath).filter(Boolean))] : []
+if (runsConfirmRound && !(args.round.fixDeltaCmd && fixDeltaFileNames.length > 0)) {
   return 'No fix delta for a confirm round, no run.'
 }
 
 const changedFileNames = new Set(args.changedFiles.map(normalizeFilePath))
-const fixDeltaFileNames = runsConfirmRound && Array.isArray(args.round.touchedFiles) ? [...new Set(args.round.touchedFiles.map(normalizeFilePath))] : []
 const reviewedFileNameSet = new Set([...changedFileNames, ...fixDeltaFileNames])
 const reviewedFileNames = [...reviewedFileNameSet]
 const laneScopeFileNames = runsConfirmRound ? fixDeltaFileNames : reviewedFileNames

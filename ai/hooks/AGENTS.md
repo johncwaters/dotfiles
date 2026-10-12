@@ -44,6 +44,11 @@ to Glimmervoid sessions. Profile-only hooks and their evidence belong in
   `biome check --reporter=json` only after denial; accept only `category === "parse"`
   to exclude lint messages. Harvest failure must preserve denial with a generic
   reason, never allow the write.
+- A `.js` file under a `workflows` directory that opens with `export const meta =` runs
+  as an async function body, so top-level `return` is legal there. Only after the plain
+  parse fails, compile that body with the AsyncFunction constructor without calling it: a
+  textual wrapper can be closed early by the body's own brackets. The retry can turn a
+  denial into an allow and never the reverse.
 - Preserve real basenames for stdin and harvest files so Biome recognizes JSONC
   names such as `tsconfig.json`. A synthetic `f.json` rejects valid config.
 - Preserve both explicit Edit `content` and old/new-string replay; both payload

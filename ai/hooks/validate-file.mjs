@@ -258,7 +258,37 @@ function validateJson(content) {
   }
 }
 
-function harvestBiomeDiagnostic(content, filePath, cmd) {
+const WORKFLOW_META_EXPORT = "export const meta =";
+
+function isWorkflowScript(filePath, content) {
+  const directoryNames = path.dirname(path.resolve(filePath)).split(path.sep);
+  return (
+    path.extname(filePath) === ".js" &&
+    directoryNames.includes("workflows") &&
+    content.startsWith(WORKFLOW_META_EXPORT)
+  );
+}
+
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+
+function blankWorkflowExport(content) {
+  return content.replace("export", " ".repeat("export".length));
+}
+
+function wrapWorkflowBodyAsFunction(workflowBody) {
+  return `(async () => {\n${workflowBody}\n});`;
+}
+
+function hasWorkflowBodySyntaxError(workflowBody) {
+  try {
+    new AsyncFunction(workflowBody);
+    return false;
+  } catch (compileError) {
+    return compileError instanceof SyntaxError;
+  }
+}
+
+function harvestBiomeDiagnostic(content, filePath, cmd, wrapperLineCount = 0) {
   if (!cmd) return null;
   let dir = null;
   try {
@@ -274,7 +304,7 @@ function harvestBiomeDiagnostic(content, filePath, cmd) {
     const d = (j.diagnostics || []).find((x) => x && x.category === "parse");
     if (!d) return null;
     const start = d.location && d.location.start;
-    const where = start ? loc(start.line, start.column) : null;
+    const where = start ? loc(start.line - wrapperLineCount, start.column) : null;
     const why = typeof d.message === "string" ? d.message : String(d.message || "parse error");
     let fix = null;
     for (const a of d.advices || []) {
@@ -301,7 +331,8 @@ function validateWithBiome(content, ext, filePath) {
   const jsonFallback = () => (ext === ".json" ? validateJson(content) : null);
   if (!cmd) return jsonFallback();
   const [bin, ...pre] = cmd;
-  const r = runStdin(bin, [...pre, "format", `--stdin-file-path=${path.basename(filePath)}`], content);
+  const formatArguments = [...pre, "format", `--stdin-file-path=${path.basename(filePath)}`];
+  const r = runStdin(bin, formatArguments, content);
   if (r.error) return jsonFallback();
   if (r.status === 0) return null;
   // A project biome.json can disable the formatter outright (formatter.enabled=false).
@@ -309,7 +340,11 @@ function validateWithBiome(content, ext, filePath) {
   // not a syntax verdict: fall back / fail open, never deny.
   const out = [r.stderr || "", r.stdout || ""].join(" ");
   if (out.includes("formatter is currently disabled")) return jsonFallback();
-  const harvested = harvestBiomeDiagnostic(content, filePath, cmd);
+  const isWorkflow = isWorkflowScript(filePath, content);
+  const workflowBody = isWorkflow ? blankWorkflowExport(content) : null;
+  if (isWorkflow && !hasWorkflowBodySyntaxError(workflowBody)) return null;
+  const parsedContent = isWorkflow ? wrapWorkflowBodyAsFunction(workflowBody) : content;
+  const harvested = harvestBiomeDiagnostic(parsedContent, filePath, cmd, isWorkflow ? 1 : 0);
   if (harvested) return harvested;
   const label = ext === ".json" || ext === ".jsonc" ? "JSON" : ext.slice(1).toUpperCase();
   return {

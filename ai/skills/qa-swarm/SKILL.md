@@ -11,7 +11,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAll
 
 ## Contract with the caller
 
-**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, the changed-file set that `REVIEW_CMD` produces as repo-relative paths from `git diff --name-only`, the `codexAllowed` flag read off the profile routing rule, and 2 to 4 sentences of context the lanes cannot derive from the diff. The changed-file set is what every lane is scoped to and what the script drops findings against, so a run without it reviews nothing and returns an empty block that reads as clean. Optionally a scope restriction (`-- <paths>`), and, from an earlier round, three separate lists: findings already settled as `NIT` or `AMBIGUOUS`, which lanes are told not to re-report; findings a writer claims to have fixed, which lanes are told to **check specifically** and to report again at whatever severity if the defect is still there, exempt from any reporting bar; and findings a writer declined, which lanes are told to report again if still present, likewise exempt from any bar. On round 2, the confirm round, also pass the round number, the fix delta command, and the files it names; lanes review that delta and the carried checks alone, because a second full sweep finds fresh MEDIUM findings every time and the loop never converges. The three lists must never be merged: telling a lane to skip a finding somebody claims to have fixed is how an unverified fix becomes an approval, and a declined finding is neither settled nor claimed fixed, so folding it into either list buries a live defect the writer refused to touch.
+**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, the changed-file set that `REVIEW_CMD` produces as repo-relative paths from `git diff --name-only`, the `codexAllowed` flag read off the profile routing rule, and 2 to 4 sentences of context the lanes cannot derive from the diff. The changed-file set is what round 1 lanes are scoped to and what the script drops findings against, so a run without it reviews nothing and returns an empty block that reads as clean. Optionally a scope restriction (`-- <paths>`), and, from an earlier round, three separate lists: findings already settled as `NIT` or `AMBIGUOUS`, which lanes are told not to re-report; findings a writer claims to have fixed, which lanes are told to **check specifically** and to report again at whatever severity if the defect is still there, exempt from any reporting bar; and findings a writer declined, which lanes are told to report again if still present, likewise exempt from any bar. On round 2, the confirm round, also pass the round number, the fix delta command, and the files it names, which join the set findings are dropped against; lanes review that delta and the carried checks alone, because a second full sweep finds fresh MEDIUM findings every time and the loop never converges. The three lists must never be merged: telling a lane to skip a finding somebody claims to have fixed is how an unverified fix becomes an approval, and a declined finding is neither settled nor claimed fixed, so folding it into either list buries a live defect the writer refused to touch.
 
 **No `REVIEW_CMD`, no run.** Say so and stop. Pinning scope is `code-review`'s job, and computing a second pin here would let two layers review two different trees while believing they reviewed one.
 
@@ -43,7 +43,7 @@ Build `args` from the caller's inputs. When `codexAllowed` is true, set `dispatc
 
 To re-run a dead retry under `resumeFromRunId` without replaying its cached output, pass a new `retryAttemptId`.
 
-Workflow tool absent in this session: read `~/.claude/workflows/qa-swarm.js`, spawn the lane set it names in one message with multiple calls, as before, and converge by the rules in that script.
+Workflow tool absent in this session: read `~/.claude/workflows/qa-swarm.js`, spawn the lane set it names in one message with multiple calls, and converge by the rules in that script.
 
 ## Step 2: Return
 
@@ -53,6 +53,6 @@ The summary paragraph says: how many findings survived convergence, which lanes 
 
 ## Token discipline
 
-- Round 1 has a router pass plus one `code` lane. The confirm round skips the router. Every extra lane is another full pass, and `security` runs on fable, the priciest tier.
+- Round 1 has a router pass plus one `code` lane. The confirm round skips the router. Every extra lane is another full pass.
 - Never paste diff text into a prompt. Hand over `REVIEW_CMD` and let the lane run git itself.
 - The router exists to keep lanes off work they do not need. A plan that delegates everything every time means the router prompt is wrong.
