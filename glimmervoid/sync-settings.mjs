@@ -64,6 +64,8 @@ export function translateHome(value, home, direction) {
 }
 
 function mergeValue(live, wanted, base, key, mode, warn, exists) {
+  const isLiveProjectListAlreadySeeded = mode === 'apply' && key === 'projects' && Array.isArray(live) && live.length > 0;
+  if (isLiveProjectListAlreadySeeded) return live;
   if ([live, wanted, base].every(value => value === undefined || hasIds(value)) && [live, wanted, base].some(Array.isArray)) {
     const liveById = new Map((live ?? []).map(entry => [entry.id, entry]));
     const wantedById = new Map((wanted ?? []).map(entry => [entry.id, entry]));

@@ -121,6 +121,14 @@ check('missing project paths stay tracked without being added to live config', (
   assert.deepEqual(collected, wanted);
 });
 
+check('apply leaves an already seeded live project list exactly as it is', () => {
+  const liveProject = { id: 'box-only', path: sandbox, wasActive: true, resumeSessionId: 'transcript' };
+  const config = { projects: [liveProject] };
+  const dotfilesOnlyProject = { id: 'dotfiles-only', path: sandbox };
+  const planned = planApply(config, { projects: [dotfilesOnlyProject] }, settingsFrom(config));
+  assert.deepEqual(planned.config.projects, [liveProject]);
+});
+
 check('a project skipped for a missing path is added once its path exists', () => {
   const projectPath = path.join(sandbox, 'appears-later');
   fs.rmSync(projectPath, { recursive: true, force: true });
