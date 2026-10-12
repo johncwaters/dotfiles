@@ -25,11 +25,18 @@ resolveDevboxWorkspace() {
     devboxSkipReason="Coder CLI absent"
     return 1
   fi
-  local identityJson
-  if ! identityJson="$("$devboxCoderPath" whoami --output json 2>/dev/null)"; then
-    devboxSkipReason="coder whoami failed; run coder login ${devboxDeploymentUrl}"
+  local identityJson whoamiErrorPath whoamiError
+  if ! whoamiErrorPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-coder-whoami.XXXXXX")"; then
+    printf 'devbox: cannot create a temporary file for coder whoami\n' >&2
+    return 2
+  fi
+  if ! identityJson="$("$devboxCoderPath" whoami --output json 2>"$whoamiErrorPath")"; then
+    whoamiError="$(tr -s '\n' ' ' < "$whoamiErrorPath")"
+    rm -f -- "$whoamiErrorPath"
+    devboxSkipReason="coder whoami failed; run coder login ${devboxDeploymentUrl}; coder said: ${whoamiError:-nothing}"
     return "$devboxLookupUnauthenticated"
   fi
+  rm -f -- "$whoamiErrorPath"
   if ! command -v node >/dev/null 2>&1; then
     printf 'devbox: node is required to read Coder workspace metadata\n' >&2
     return 2

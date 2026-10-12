@@ -20,7 +20,7 @@ writeStub coder <<'STUB'
 printf 'coder %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 case "$1" in
   whoami)
-    [[ ! -f "$DOTFILES_TEST_STATE/logged-out" ]] || exit 1
+    if [[ -f "$DOTFILES_TEST_STATE/logged-out" ]]; then printf 'keyring locked\n' >&2; exit 1; fi
     printf '[{"url":"https://coder.example","username":"fixture"}]\n'
     ;;
   list)
@@ -188,6 +188,8 @@ loggedOutEnsureError="$(runDevbox ensure 2>&1 >/dev/null)" || loggedOutEnsureSta
 check "a failing coder whoami fails ensure" test "$loggedOutEnsureStatus" -ne 0
 check "a failing coder whoami tells the ensure log how to log in" \
   outputHas "$loggedOutEnsureError" 'devbox ensure: coder whoami failed; run coder login https://coder.dev.posthog.dev'
+check "a failing coder whoami keeps coder's own error in the ensure log" \
+  outputHas "$loggedOutEnsureError" 'coder said: keyring locked'
 check "logged-out ensure never connects" logLacks 'coder ssh'
 check "logged-out ensure never starts a box" logLacks 'coder start'
 rm -f "$stubState/logged-out"
