@@ -117,6 +117,10 @@ printf 'untracked secret\n' > "$snapshotFixtureRepo/untracked-secret"
 writeStub git <<'STUB'
 #!/usr/bin/env bash
 printf 'git %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "${1:-}" == --version ]]; then
+  printf 'git version %s\n' "$(cat "$DOTFILES_TEST_STATE/git-version" 2>/dev/null || printf '2.55.0')"
+  exit
+fi
 if [[ "${1:-}" == config ]]; then
   exec "$DOTFILES_TEST_GIT_PATH" "$@"
 fi
@@ -1008,7 +1012,12 @@ case "$*" in
     cp "$DOTFILES_TEST_STATE/available/bwrap" "$DOTFILES_TEST_STUB_BIN/bwrap"
     ;;
   *socat*) cp "$DOTFILES_TEST_STATE/available/socat" "$DOTFILES_TEST_STUB_BIN/socat" ;;
+  *" git") printf '2.55.0\n' > "$DOTFILES_TEST_STATE/git-version" ;;
 esac
+STUB
+writeStub add-apt-repository <<'STUB'
+#!/usr/bin/env bash
+printf 'add-apt-repository %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 STUB
 writeStub setsid <<'STUB'
 #!/usr/bin/env bash
@@ -1023,7 +1032,7 @@ writeStub uname <<'STUB'
 #!/usr/bin/env bash
 printf 'x86_64\n'
 STUB
-for stubName in node npm apt-get setsid uname; do
+for stubName in node npm apt-get add-apt-repository setsid uname; do
   provideCommand "$stubName"
 done
 
@@ -1184,6 +1193,13 @@ touch "$stubState/sandbox-install-failed"
 optionalFailureOutput="$(runRemoteProvision)"
 check "optional sandbox failure does not fail provision" outputHas "$optionalFailureOutput" '[warned] bwrap'
 rm -f "$stubState/sandbox-install-failed"
+
+printf '2.43.0\n' > "$stubState/git-version"
+: > "$commandLog"
+oldGitOutput="$(runRemoteProvision)"
+check "git without GIT_NO_LAZY_FETCH is upgraded from the git-core PPA" \
+  bash -c 'grep -q "add-apt-repository -y ppa:git-core/ppa" "$1" && grep -q "apt-get install -y git$" "$1"' _ "$commandLog"
+check "the upgraded git is reported" outputHas "$oldGitOutput" '[installed] git: git version 2.55.0'
 
 touch "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"

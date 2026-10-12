@@ -375,6 +375,48 @@ probeDevboxPersonalTokenDotfilesAccess() {
   esac
 }
 
+devboxGitSupportsNoLazyFetch() {
+  local gitVersionText
+  gitVersionText="$(git --version 2>/dev/null)" || return 1
+  [[ "$gitVersionText" =~ ([0-9]+)\.([0-9]+) ]] || return 1
+  local majorVersion="${BASH_REMATCH[1]}"
+  local minorVersion="${BASH_REMATCH[2]}"
+  # GIT_NO_LAZY_FETCH, which docaudit sets, first shipped in git 2.45; noble ships 2.43.
+  ((majorVersion > 2 || (majorVersion == 2 && minorVersion >= 45)))
+}
+
+installDevboxModernGit() {
+  if devboxGitSupportsNoLazyFetch; then
+    reportDevboxItem present git "$(git --version)"
+    return 0
+  fi
+  if sudo -n add-apt-repository -y ppa:git-core/ppa >> "$glimmervoidDirectory/provision.log" 2>&1 \
+    && installDevboxAptPackages git && devboxGitSupportsNoLazyFetch; then
+    reportDevboxItem installed git "$(git --version)"
+    return 0
+  fi
+  reportDevboxItem warned git "older than 2.45 and the git-core PPA install failed; see ~/.glimmervoid/provision.log"
+}
+
+installDevboxDocauditSchedule() {
+  local docauditHome="$HOME/docaudit"
+  if [[ ! -x "$docauditHome/run.sh" ]]; then
+    return 0
+  fi
+  local currentCrontab
+  currentCrontab="$(crontab -l 2>/dev/null)" || currentCrontab=""
+  if grep -qF "docaudit/run.sh" <<< "$currentCrontab"; then
+    reportDevboxItem present docaudit "cron entry"
+    return 0
+  fi
+  local scheduleLine="0 15 * * 1-5 flock -n $docauditHome/.lock $docauditHome/run.sh >> $docauditHome/docaudit.log 2>&1"
+  if { [[ -z "$currentCrontab" ]] || printf '%s\n' "$currentCrontab"; printf '%s\n' "$scheduleLine"; } | crontab -; then
+    reportDevboxItem installed docaudit "cron entry, weekdays 15:00 UTC"
+    return 0
+  fi
+  reportDevboxItem warned docaudit "could not write the cron entry"
+}
+
 installDevboxPrerequisites() {
   touch "$glimmervoidDirectory/provision.log"
   chmod 600 "$glimmervoidDirectory/provision.log"
@@ -383,6 +425,8 @@ installDevboxPrerequisites() {
   installDevboxSandboxTools
   installDevboxGhWrapper
   installDevboxPersonalGitAuth
+  installDevboxModernGit
+  installDevboxDocauditSchedule
 }
 
 mergeDevboxConfig() {
