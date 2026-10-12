@@ -10,7 +10,7 @@ here.
   conversation could build it. It is a typed JSON graph of nodes and edges that the `spec`
   skill writes to `~/.claude/specs/<repo>/<slug>.json`; `ai/skills/spec/lib/graph.ts` is
   the type, and a write hook refuses a graph that breaks it. It lives outside any repo
-  because it is deleted once its tickets exist: a spec that outlives its tickets drifts
+  because it is deleted once its tickets are built: a spec that outlives its tickets drifts
   from the code and gets trusted anyway. It replaces the Claude Code plan as what
   `plan-challenge` judges.
 - **sketch**: The first draft of a design spec, written from the feature request and a read
@@ -29,8 +29,9 @@ here.
   challenge may overturn a `decided` one; it then reads `assumed` and keeps the displaced
   answer in its reason, so the hand off lists both.
 - **open question**: A branch deliberately left open, recorded with what would settle it.
-  A unit of work that waits on one is deferred: it stays in the graph, out of the
-  challenge and out of ticket cutting, until the question is answered.
+  A unit of work that waits on one is deferred: it stays in the graph and out of the
+  challenge, and the cut into tickets waits until the question is answered, because one
+  design spec becomes one intent.
 - **unit of work**: One node of work in a design spec, sized to become exactly one ticket
   and verifiable by itself. Its edges say which decisions it implements, which units it
   depends on, and which open question defers it.
@@ -40,9 +41,15 @@ here.
   carries it.
 - **ticket**: One unit of work cut into a self-contained work order that an agent finishes
   in a single session of roughly 150k tokens of context, counting everything that session
-  reads, writes, runs, and reviews. Self-contained because the design spec is gone by the
-  time the ticket is worked, so the ticket carries its contract and the decisions it
-  implements.
+  reads, writes, runs, and reviews. Self-contained because the agent working it is handed
+  the ticket and never the design spec, so the ticket carries its contract and the
+  decisions it implements.
+- **intent**: The parent work order for a whole feature: its objective, success criteria,
+  risk tier, boundary, and write scopes, with every ticket that builds it.
+  `ai/skills/spec/cut.ts` renders a challenged design spec as one intent file beside the
+  spec with no model in the path, so the same spec always gives the same intent. A whole
+  intent goes to the Glimmervoid factory or to one dedicated session, never split between
+  them, so one builder owns the order its tickets land in.
 - **challenge stamp**: The `CHALLENGE: <kept> kept, <shrunk> shrunk, <cut> cut` line
   `plan-challenge` produces for what it judged, stored in a design spec's
   `challengeStamp` beside `challengedUnitIds`, the ids of the units it judged. It means

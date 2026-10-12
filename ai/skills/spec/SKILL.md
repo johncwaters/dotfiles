@@ -7,11 +7,11 @@ description: Turns a feature request into a design spec, a typed and validated J
 
 Surface a feature's hidden decisions while the carbon unit is here to make them.
 
-Terms: design spec, sketch, branch, question round, decision, open question, unit of work, contract, ticket, challenge stamp. Defined in `~/.dotfiles/GLOSSARY.md`; read it first.
+Terms: design spec, sketch, branch, question round, decision, open question, unit of work, contract, ticket, intent, challenge stamp. Defined in `~/.dotfiles/GLOSSARY.md`; read it first.
 
 **Input.** The feature in the carbon unit's words and the repo in the working directory.
 
-**Output.** A design spec at `~/.claude/specs/<repo>/<slug>.json` with status `challenged`. It is the only file this skill writes.
+**Output.** A design spec at `~/.claude/specs/<repo>/<slug>.json` with status `challenged`, and once the carbon unit starts the cut, its intent file beside it.
 
 ## Subskills
 
@@ -61,6 +61,19 @@ node ~/.claude/skills/spec/validate.ts <spec.json>
 node ~/.claude/skills/spec/render.ts <spec.json> tree
 ```
 
+## Cut and build
+
+A `challenged` design spec with every open question answered cuts into one intent, a ticket per unit:
+
+```
+node ~/.claude/skills/spec/cut.ts <spec.json>
+```
+
+It writes `<slug>.intent.json` beside the design spec, or names what to settle first. The whole intent takes one route, chosen by the carbon unit:
+
+- **Factory**, for a design spec whose repo is Glimmervoid, the one repository the harness builds. Reply with the intent path and `node test/factory/run.ts --target gated-clone --intent-file <intent.json>`, run from a Glimmervoid checkout. Name the design spec and the intent file for the carbon unit to delete once the intent closes.
+- **Dedicated session**, for any repo. Read `subskills/build.md`.
+
 ## Hand off
 
-Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. Implementation and ticket cutting begin when the carbon unit starts them.
+Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. The cut and the build begin when the carbon unit starts them.

@@ -158,13 +158,14 @@ Directive: ...
 Confidence: high|medium|low
 Scope-risk: narrow|moderate|broad
 Not-tested: ...
+Ticket: <spec-slug>/<ticket-id>
 ```
 
 `type` is one of feat, fix, refactor, chore, docs, test, style, perf, build, ci.
 `description` is one line, 72 characters or fewer, no trailing period. Trailers are
 optional as a block, but a message that carries any trailer must carry `Confidence` and
 must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested` are
-included only when they apply. Omit the whole trailer block only for a genuinely trivial change (a
+included only when they apply, and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the whole trailer block only for a genuinely trivial change (a
 version bump with no logic change).
 
 Check a draft before landing with `node "$HOME/.claude/skills/commit/preflight.ts"

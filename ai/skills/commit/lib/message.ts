@@ -18,6 +18,7 @@ export const TRAILER_LABELS = [
   "Confidence",
   "Scope-risk",
   "Not-tested",
+  "Ticket",
 ] as const;
 
 export const REQUIRED_TRAILER_LABELS = ["Confidence", "Scope-risk"] as const;
