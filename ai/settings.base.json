@@ -13,7 +13,8 @@
     "pr": ""
   },
   "enabledPlugins": {
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "cc-plugin-diff@builtin": false
   },
   "extraKnownMarketplaces": {
     "caveman": {
