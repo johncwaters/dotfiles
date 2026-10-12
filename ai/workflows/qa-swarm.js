@@ -135,18 +135,18 @@ function formatLines(lines) {
   return lines.join('\n')
 }
 
-function formatRoundState(round, isNarrowedFollowupRound, narrowingLostToScopeRestriction) {
-  if (!round) {
+function isConfirmRound() {
+  return Boolean(args.round && args.round.number >= 2)
+}
+
+function formatRoundState() {
+  if (!isConfirmRound()) {
     return 'Round state: none.'
   }
-  const roundFacts = `Round number: ${round.number}\nRound touched files: ${formatLines(round.touchedFiles)}\nReporting bar: ${round.reportingBar}`
-  if (isNarrowedFollowupRound) {
-    return `${roundFacts}\nThis round reviews only the narrowed set and the regression and declined checks. Everything else was swept in round 1.`
-  }
-  if (narrowingLostToScopeRestriction) {
-    return `${roundFacts}\nThis round keeps the full sweep because REVIEW_CMD already carries a scope restriction, so the narrowed set could not be applied. Focus on the round touched files and the regression and declined checks.`
-  }
-  return `${roundFacts}\nThis round keeps the full sweep because no narrowed changed files are available. Focus on the round touched files and the regression and declined checks.`
+  return `Round number: ${args.round.number}
+Fix delta files: ${formatLines(args.round.touchedFiles)}
+Whole change, for reading a carried check in context only: ${args.reviewCmd}
+This is the confirm round. Round 1 swept the whole change, so REVIEW_CMD here is only the fix delta the writer made since then. Do two things and nothing else: check each carried finding above, and review the lines the fix delta adds or removes. A carried finding still present keeps its own severity and is anchored where the defect now sits, exempt from the anchoring rule even when the fix delta left that line alone. Report a first-time finding only at HIGH or CRITICAL and only when a fix-delta line causes it; anything else first-time gets at most one summary sentence.`
 }
 
 function normalizeFilePath(filePath) {
@@ -156,10 +156,6 @@ function normalizeFilePath(filePath) {
     return trimmedPath.slice(repoPathPrefix.length).replace(/^(\.\/)+/, '')
   }
   return trimmedPath.replace(/^(\.\/)+/, '')
-}
-
-function shellQuotedPath(filePath) {
-  return `'${String(filePath).replace(/'/g, "'\\''")}'`
 }
 
 function laneNamesRecommendedBy(routerResult) {
@@ -592,18 +588,18 @@ function applyLaneCap(candidateLaneNames, reason) {
   }
 }
 
-function selectLaneNames(routerResult, isNarrowedFollowupRound) {
+function selectLaneNames(routerResult) {
   const carriedLaneOwners = laneOwnersCarriedIntoThisRound()
-  if (isNarrowedFollowupRound) {
-    const followupLaneNames = ['code']
+  if (isConfirmRound()) {
+    const confirmLaneNames = ['code']
     if (carriedLaneOwners.has('security')) {
-      followupLaneNames.push('security')
+      confirmLaneNames.push('security')
     }
-    appendCarriedLaneNames(followupLaneNames, carriedLaneOwners, ['code', 'security', 'necessity', 'external'])
+    appendCarriedLaneNames(confirmLaneNames, carriedLaneOwners, ['code', 'security', 'necessity', 'external'])
     if (carriedLaneOwners.has('external')) {
-      followupLaneNames.push('external')
+      confirmLaneNames.push('external')
     }
-    return applyLaneCap(followupLaneNames, 'follow-up rounds use code plus carried claimed-fixed and declined owners, never necessity, with external last only when carried')
+    return applyLaneCap(confirmLaneNames, 'the confirm round uses code plus carried claimed-fixed and declined owners, never necessity, with external last only when carried')
   }
   if (!routerResult) {
     const noRouterLaneNames = ['code', 'security']
@@ -618,19 +614,13 @@ function selectLaneNames(routerResult, isNarrowedFollowupRound) {
   for (const laneName of recommendedLaneNames) {
     appendUniqueLaneName(candidateLaneNames, laneName)
   }
-  if (args.round && args.round.number >= 2) {
-    appendCarriedLaneNames(candidateLaneNames, carriedLaneOwners, ['external'])
-  }
   if (routerResult.danger === 'HIGH') {
     candidateLaneNames.push('external')
   }
-  if (!args.round || args.round.number < 2) {
-    return applyLaneCap(candidateLaneNames, 'round one uses router recommendations in value order, forces security on a security-surface file or HIGH danger, and adds external last only for HIGH danger')
-  }
-  return applyLaneCap(candidateLaneNames, 'a later round with no touched files keeps router recommendations and carried owners, forces security on its existing rule, and adds external last only for HIGH danger')
+  return applyLaneCap(candidateLaneNames, 'round one uses router recommendations in value order, forces security on a security-surface file or HIGH danger, and adds external last only for HIGH danger')
 }
 
-function buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, reviewCmd, isNarrowedFollowupRound, narrowingLostToScopeRestriction) {
+function buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, reviewCmd) {
   const routerRatings = routerResult ? `danger ${routerResult.danger}; complexity ${routerResult.complexity}; danger fact ${routerResult.dangerFact}; route ${routerResult.route}` : 'router unavailable'
   const classifiedFiles = routerResult ? JSON.stringify(filesClassifiedForLane(routerResult, laneName)) : '(router unavailable)'
   const lanePrompt = `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
@@ -651,7 +641,7 @@ ${formatLines(args.claimedFixed)}
 Declined findings: report each again if still present, exempt from any bar. Report a finding that is still present under this lane's own tag, with its original reviewer tag at the start of the body. A carried check is exempt from the lane-discipline rule here too, so report it even when it belongs to another lane's discipline:
 ${formatLines(args.declined)}
 
-${formatRoundState(args.round, isNarrowedFollowupRound, narrowingLostToScopeRestriction)}
+${formatRoundState()}
 Router ratings: ${routerRatings}
 Files classified into this lane: ${classifiedFiles}
 Spawned lane set: ${laneNames.join(', ')}
@@ -760,30 +750,6 @@ ${formatConvergenceSummary('<count>', convergenceFacts)}
 When zero findings survive, put the literal (none) on the line after STRUCTURED_FINDINGS:. Extend the lane list after the verbatim phrase \"truncated lanes: \" with every lane whose summary carries the phrase overflow dropped, comma-separated, and write none when that union is empty. Do not return a verdict, risk tier, fix, or recommendation.`
 }
 
-function isFollowupRoundWithTouchedFiles() {
-  return Boolean(args.round && args.round.number >= 2 && Array.isArray(args.round.touchedFiles) && args.round.touchedFiles.length > 0)
-}
-
-function narrowFileNamesForFollowup(changedFileNames) {
-  const candidateFileNames = [...args.round.touchedFiles]
-  for (const findingLine of [...(args.claimedFixed || []), ...(args.declined || [])]) {
-    const parsedFinding = parseFindingLine(findingLine)
-    if (!parsedFinding) {
-      continue
-    }
-    candidateFileNames.push(parsedFinding.fields.file)
-  }
-  const narrowedFileNames = []
-  for (const candidateFileName of candidateFileNames) {
-    const normalizedCandidateFileName = normalizeFilePath(candidateFileName)
-    if (!changedFileNames.has(normalizedCandidateFileName) || narrowedFileNames.includes(normalizedCandidateFileName)) {
-      continue
-    }
-    narrowedFileNames.push(normalizedCandidateFileName)
-  }
-  return narrowedFileNames
-}
-
 function isFindingOwnedByLane(parsedFinding, laneName) {
   return reviewerTagsFrom(parsedFinding.fields.reviewer).some((reviewerTag) => {
     const normalizedReviewerTag = reviewerTag.toLowerCase()
@@ -838,34 +804,33 @@ if (args.codexAllowed && !dispatchNoncePattern.test(String(args.dispatchNonce ??
   return 'No valid dispatchNonce for a Codex-allowed run, no run.'
 }
 
+const runsConfirmRound = isConfirmRound()
+if (runsConfirmRound && !args.round.fixDeltaCmd) {
+  return 'No fix delta for a confirm round, no run.'
+}
+
 const changedFileNames = new Set(args.changedFiles.map(normalizeFilePath))
-const narrowedFollowupFileNames = isFollowupRoundWithTouchedFiles() ? narrowFileNamesForFollowup(changedFileNames) : []
-const reviewCmdCarriesScopeRestriction = String(args.reviewCmd).includes(' -- ')
-const isNarrowedFollowupRound = narrowedFollowupFileNames.length > 0 && !reviewCmdCarriesScopeRestriction
-const narrowingLostToScopeRestriction = narrowedFollowupFileNames.length > 0 && reviewCmdCarriesScopeRestriction
-const reviewedFileNames = isNarrowedFollowupRound ? narrowedFollowupFileNames : [...changedFileNames]
-const reviewedFileNameSet = new Set(reviewedFileNames)
-const laneReviewCmd = isNarrowedFollowupRound ? `${args.reviewCmd} -- ${reviewedFileNames.map(shellQuotedPath).join(' ')}` : args.reviewCmd
-const filesToClassify = isFollowupRoundWithTouchedFiles() ? args.round.touchedFiles : args.changedFiles
-const routingNote = isNarrowedFollowupRound ? `routing skipped because round ${args.round.number} is a follow-up` : ''
-const routeOutcome = isNarrowedFollowupRound
+const fixDeltaFileNames = runsConfirmRound && Array.isArray(args.round.touchedFiles) ? [...new Set(args.round.touchedFiles.map(normalizeFilePath))] : []
+const reviewedFileNameSet = new Set([...changedFileNames, ...fixDeltaFileNames])
+const reviewedFileNames = [...reviewedFileNameSet]
+const laneScopeFileNames = runsConfirmRound ? fixDeltaFileNames : reviewedFileNames
+const laneReviewCmd = runsConfirmRound ? args.round.fixDeltaCmd : args.reviewCmd
+const routingNote = runsConfirmRound ? `routing skipped because round ${args.round.number} is the confirm round` : ''
+const routeOutcome = runsConfirmRound
   ? { routerResult: null, degradationNote: '' }
-  : await routeReview(filesToClassify)
+  : await routeReview(args.changedFiles)
 const routerResult = routeOutcome.routerResult
-const laneSelection = selectLaneNames(routerResult, isNarrowedFollowupRound)
+const laneSelection = selectLaneNames(routerResult)
 const laneNames = laneSelection.laneNames
 const laneNamesCutByCap = laneSelection.laneNamesCutByCap
 const laneNamesCutByCapForLog = laneNamesCutByCap.length > 0 ? laneNamesCutByCap.join(', ') : 'none'
 log(`Chosen lanes: ${laneNames.join(', ')} because ${laneSelection.reason}. Cut by the ${maxLanesPerRun}-lane cap: ${laneNamesCutByCapForLog}.`)
 
 phase('Review')
-const lanePrompts = new Map(laneNames.map((laneName) => [laneName, buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, laneReviewCmd, isNarrowedFollowupRound, narrowingLostToScopeRestriction)]))
+const lanePrompts = new Map(laneNames.map((laneName) => [laneName, buildLanePrompt(laneName, routerResult, laneNames, laneScopeFileNames, laneReviewCmd)]))
 const laneTexts = await parallel(laneNames.map((laneName) => () => spawnLane(laneName, lanePrompts.get(laneName))))
 const parsedResponses = new Map()
 const degradationNotes = routeOutcome.degradationNote === '' ? [] : [routeOutcome.degradationNote]
-if (narrowingLostToScopeRestriction) {
-  degradationNotes.push('REVIEW_CMD already carries a scope restriction, so this follow-up round swept the full changed-file set instead of narrowing to the touched files')
-}
 
 for (let laneIndex = 0; laneIndex < laneNames.length; laneIndex += 1) {
   const laneName = laneNames[laneIndex]
@@ -885,7 +850,7 @@ for (let laneIndex = 0; laneIndex < laneNames.length; laneIndex += 1) {
   parsedResponses.set(laneName, parsedResponse)
 }
 
-if (!routerResult && !isNarrowedFollowupRound) {
+if (!routerResult && !runsConfirmRound) {
   degradationNotes.push('router unavailable; no-router default lane set used')
 }
 

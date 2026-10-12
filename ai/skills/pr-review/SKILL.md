@@ -12,7 +12,7 @@ The pull request entry point of the review ladder. It reviews somebody's work an
 - Reviewing another carbon unit's pull request, which is the case this exists for
 - Leaving an audit record on a pull request the local flow already opened, when asked
 
-Reviewing your own uncommitted work is not this skill. That is `/commit`, which loops a review against a writer for at most three rounds. This skill has no writer and therefore no loop.
+Reviewing your own uncommitted work is not this skill. That is `/commit`, which runs a review, a writer, and one confirming review. This skill has no writer and therefore no loop.
 
 ## Step 1: Resolve the pull request
 

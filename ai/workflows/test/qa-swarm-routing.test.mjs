@@ -41,7 +41,7 @@ async function emittedRoutingPrompts(workflowArgs) {
   const routeReview = workflowFunctionNamed('routeReview', workflowArgs, runtimeBindings)
   await routeReview(workflowArgs.changedFiles)
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', workflowArgs)
-  emittedPrompts.push(buildLanePrompt('external', routerResult, ['code', 'external'], workflowArgs.changedFiles, workflowArgs.reviewCmd, false, false))
+  emittedPrompts.push(buildLanePrompt('external', routerResult, ['code', 'external'], workflowArgs.changedFiles, workflowArgs.reviewCmd))
   const buildJudgmentPrompt = workflowFunctionNamed('buildJudgmentPrompt', workflowArgs)
   const convergenceFacts = {
     lanesRun: 'code, external',
@@ -75,7 +75,7 @@ test('each lane receives its own review checklist heading', () => {
   const laneNames = ['code', 'structure', 'external']
 
   for (const laneName of ['code', 'redteam', 'structure', 'scale', 'necessity', 'external']) {
-    const lanePrompt = buildLanePrompt(laneName, null, laneNames, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd, false, false)
+    const lanePrompt = buildLanePrompt(laneName, null, laneNames, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd)
 
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
     assert.ok(lanePrompt.includes(`## ${laneName} as extra checks`))
@@ -101,6 +101,8 @@ test('disabling Codex emits no Codex execution instruction in any prompt', async
   assert.doesNotMatch(emittedPrompts.join('\n'), /codex exec/)
   assert.match(emittedPrompts.join('\n'), /Codex CLI/)
 })
+
+const confirmRound = { number: 2, touchedFiles: ['src/file.js'], fixDeltaCmd: 'git diff roundonetree roundtwotree' }
 
 const everyChangedFileClassified = baseWorkflowArgs.changedFiles.map((file) => ({ file, class: 'logic' }))
 
@@ -155,7 +157,7 @@ test('Codex dispatch goes through the codex-dispatcher agent under the read-only
   const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
   await routeReview(baseWorkflowArgs.changedFiles)
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
-  const externalPrompt = buildLanePrompt('external', null, ['code', 'external'], baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd, false, false)
+  const externalPrompt = buildLanePrompt('external', null, ['code', 'external'], baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd)
 
   assert.equal(dispatchSpawns[0].options.agentType, 'codex-dispatcher')
   for (const prompt of [dispatchSpawns[0].prompt, externalPrompt]) {
@@ -200,7 +202,7 @@ test('a zero-finding lane with verified safe and no overflow converges to a cano
   const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe claimed defect was verified safe. No overflow.'
   const workflowArgs = {
     ...baseWorkflowArgs,
-    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+    round: confirmRound
   }
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
@@ -223,7 +225,7 @@ test('a judgment death returns the death string and a new retryAttemptId changes
   }
   const workflowArgs = {
     ...baseWorkflowArgs,
-    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+    round: confirmRound
   }
   const calledLabelsByRun = []
   const promptsByLabel = new Map()
@@ -256,7 +258,7 @@ test('a lane summary denying overflow converges mechanically and keeps its findi
   const laneResponse = `STRUCTURED_FINDINGS:\n${findingLine}\n\nOVERALL_SUMMARY:\nOne defect stands. No overflow.`
   const workflowArgs = {
     ...baseWorkflowArgs,
-    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+    round: confirmRound
   }
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
@@ -271,12 +273,33 @@ test('a lane summary denying overflow converges mechanically and keeps its findi
   assert.match(workflowResponse, /truncated lanes: none$/)
 })
 
+test('the confirm round scopes lanes to the fix delta and keeps a HIGH finding in a fix-delta file that left the changed-file set', async () => {
+  const highFindingInRevertedFile = '- file: src/reverted.js | line: 9 | side: LEFT | severity: HIGH | reviewer: code/logic | body: The fix removed the guard.'
+  const laneResponse = `STRUCTURED_FINDINGS:\n${highFindingInRevertedFile}\n\nOVERALL_SUMMARY:\nNo overflow.`
+  const workflowArgs = {
+    ...baseWorkflowArgs,
+    changedFiles: ['src/file.js', 'src/fixed.js', 'src/untouched.js'],
+    round: { ...confirmRound, touchedFiles: ['src/fixed.js', 'src/reverted.js'] }
+  }
+  const lanePrompts = []
+  const runtimeBindings = workflowRuntimeReturning((prompt) => {
+    lanePrompts.push(prompt)
+    return laneResponse
+  })
+
+  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+
+  assert.equal(lanePrompts.length, 1)
+  assert.ok(lanePrompts[0].includes('Exact REVIEW_CMD: git diff roundonetree roundtwotree\n'))
+  assert.match(lanePrompts[0], /^Scope: changed files src\/fixed\.js\nsrc\/reverted\.js under git diff roundonetree roundtwotree$/m)
+  assert.ok(workflowResponse.includes(highFindingInRevertedFile))
+})
+
 test('a lane summary reporting overflow lands in the truncated lane list when every finding is dropped', async () => {
   const laneResponse = 'STRUCTURED_FINDINGS:\n- file: src/other.js | line: 3 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing.\n\nOVERALL_SUMMARY:\nOverflow dropped 3 further findings.'
   const workflowArgs = {
     ...baseWorkflowArgs,
-    changedFiles: ['src/file.js', 'src/other.js'],
-    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+    round: confirmRound
   }
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
@@ -295,7 +318,7 @@ test('a zero-finding lane discussing arithmetic overflow stays out of the trunca
   const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe index cannot overflow; integer overflow is guarded.'
   const workflowArgs = {
     ...baseWorkflowArgs,
-    round: { number: 2, touchedFiles: ['src/file.js'], reportingBar: 'none' }
+    round: confirmRound
   }
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
