@@ -47,14 +47,18 @@ function render(spec: DesignSpec, mode: string): string {
   return lines.join("\n");
 }
 
-const { report, spec } = readSpec(process.argv[2]);
-if (!spec) {
-  process.stdout.write(`${JSON.stringify(report)}\n`);
-  process.exit(1);
+function renderSpec(specArgument: string | undefined, mode: string | undefined): number {
+  const { report, spec } = readSpec(specArgument);
+  if (!spec) {
+    process.stdout.write(`${JSON.stringify(report)}\n`);
+    return 1;
+  }
+  if (mode !== "tree" && mode !== "plan" && mode !== "goal") {
+    process.stdout.write(`${JSON.stringify({ outcome: "INVALID", errors: ["Rule 1: render mode: supply tree, plan, or goal"] })}\n`);
+    return 1;
+  }
+  process.stdout.write(`${render(spec, mode)}\n`);
+  return 0;
 }
-const mode = process.argv[3];
-if (mode !== "tree" && mode !== "plan" && mode !== "goal") {
-  process.stdout.write(`${JSON.stringify({ outcome: "INVALID", errors: ["Rule 1: render mode: supply tree, plan, or goal"] })}\n`);
-  process.exit(1);
-}
-process.stdout.write(`${render(spec, mode)}\n`);
+
+process.exitCode = renderSpec(process.argv[2], process.argv[3]);

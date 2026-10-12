@@ -235,6 +235,7 @@ function staysInside(root: string, target: string): boolean {
 }
 
 function isRelativeRepoPath(repoRoot: string, candidate: string): boolean {
+  if (candidate !== candidate.trim()) return false;
   if (path.isAbsolute(candidate) || path.win32.isAbsolute(candidate)) return false;
   const normalizedCandidate = candidate.replace(/\\/g, "/");
   return staysInside(repoRoot, path.resolve(repoRoot, normalizedCandidate));
@@ -285,14 +286,38 @@ function listedPathProblem(repoRoot: string, resolvedRoot: string | undefined, c
   return `reads path ${candidate} is missing under repoRoot; correct it, or list it under the changes of another unit that creates it`;
 }
 
-function findSharedRepoPath(rootPath: string, changedPaths: string[], otherChangedPaths: string[]): string | undefined {
-  for (const changedPath of changedPaths) {
-    for (const otherChangedPath of otherChangedPaths) {
-      if (staysInside(changedPath, otherChangedPath)) return path.relative(rootPath, otherChangedPath) || ".";
-      if (staysInside(otherChangedPath, changedPath)) return path.relative(rootPath, changedPath) || ".";
+function listPathWithAncestors(targetPath: string): string[] {
+  const parentPath = path.dirname(targetPath);
+  if (parentPath === targetPath) return [targetPath];
+  return [targetPath, ...listPathWithAncestors(parentPath)];
+}
+
+function unitPairKey(unitId: string, otherUnitId: string): string {
+  return JSON.stringify([unitId, otherUnitId].sort());
+}
+
+function findSharedRepoPathsByUnitPair(rootPath: string, changedPathsById: Map<string, string[]>): Map<string, string> {
+  const unitIdsByChangedPath = new Map<string, Set<string>>();
+  for (const [unitId, changedPaths] of changedPathsById) {
+    for (const changedPath of changedPaths) {
+      const unitIds = unitIdsByChangedPath.get(changedPath) ?? new Set<string>();
+      unitIds.add(unitId);
+      unitIdsByChangedPath.set(changedPath, unitIds);
     }
   }
-  return undefined;
+  const sharedRepoPathsByUnitPair = new Map<string, string>();
+  for (const [unitId, changedPaths] of changedPathsById) {
+    for (const changedPath of changedPaths) {
+      for (const containingPath of listPathWithAncestors(changedPath)) {
+        for (const otherUnitId of unitIdsByChangedPath.get(containingPath) ?? []) {
+          const unitPair = unitPairKey(unitId, otherUnitId);
+          if (otherUnitId === unitId || sharedRepoPathsByUnitPair.has(unitPair)) continue;
+          sharedRepoPathsByUnitPair.set(unitPair, path.relative(rootPath, changedPath) || ".");
+        }
+      }
+    }
+  }
+  return sharedRepoPathsByUnitPair;
 }
 
 type ReadingMeasurement = { totalBytes: number; unmeasurablePaths: string[] };
@@ -415,7 +440,7 @@ export function validateGraph(value: unknown): string[] {
     if (unit.checks.length === 0) addError(errors, 10, `node ${unit.id}`, "add at least one check with a run command");
     for (const [checkIndex, check] of unit.checks.entries()) {
       const normalizedCommand = check.run.replace(/[\t\r\n]/g, " ");
-      if (/[;&|<>$`'"\x00-\x1f\x7f]/.test(normalizedCommand)) {
+      if (/[;&|<>$`'"\x00-\x1f\x7f-\x9f]/.test(normalizedCommand)) {
         addError(errors, 14, `node ${unit.id}.checks[${checkIndex}].run`, "supply one command without shell operators, quotes, or control characters");
       }
     }
@@ -447,11 +472,13 @@ export function validateGraph(value: unknown): string[] {
       }
       reachableDependentsById.set(unit.id, reachableDependents);
     }
+    const resolvedSharedRepoPathsByUnitPair = findSharedRepoPathsByUnitPair(resolvedRoot, resolvedChangedPathsById);
+    const lexicalSharedRepoPathsByUnitPair = findSharedRepoPathsByUnitPair(spec.repoRoot, lexicalChangedPathsById);
     for (const [unitIndex, unit] of units.entries()) {
       for (const otherUnit of units.slice(unitIndex + 1)) {
         if (reachableDependentsById.get(unit.id)?.has(otherUnit.id) || reachableDependentsById.get(otherUnit.id)?.has(unit.id)) continue;
-        const sharedRepoPath = findSharedRepoPath(resolvedRoot, resolvedChangedPathsById.get(unit.id) ?? [], resolvedChangedPathsById.get(otherUnit.id) ?? [])
-          ?? findSharedRepoPath(spec.repoRoot, lexicalChangedPathsById.get(unit.id) ?? [], lexicalChangedPathsById.get(otherUnit.id) ?? []);
+        const unitPair = unitPairKey(unit.id, otherUnit.id);
+        const sharedRepoPath = resolvedSharedRepoPathsByUnitPair.get(unitPair) ?? lexicalSharedRepoPathsByUnitPair.get(unitPair);
         if (sharedRepoPath === undefined) continue;
         addError(errors, 16, `node ${unit.id}`, `add a direct or transitive dependsOn path in either direction with ${otherUnit.id} to order changes sharing ${sharedRepoPath}`);
       }

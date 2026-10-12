@@ -64,6 +64,11 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   const unitReason = denialReason(writeSpec(spec));
   assert.match(unitReason, /Rule 14: node U1\.checks\[0\]\.run/);
   assert.match(unitReason, /Rule 15: node U1/);
+  unit.checks = [{ run: "node --test\u0085" }];
+  unit.changes = [" ../outside"];
+  const disguisedInputReason = denialReason(writeSpec(spec));
+  assert.match(disguisedInputReason, /Rule 6: node U1: replace path {2}\.\.\/outside with a relative path inside repoRoot/);
+  assert.match(disguisedInputReason, /Rule 14: node U1\.checks\[0\]\.run/);
   unit.checks = [{ run: "node --test" }];
   unit.changes = ["shared"];
   spec.nodes.push(
