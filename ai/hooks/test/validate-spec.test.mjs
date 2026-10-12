@@ -48,11 +48,41 @@ test("valid sliced specs under HOME are allowed", () => {
   assertAllowed(writeSpec(slicedSpec()));
 });
 
+test("a sliced spec is refused until its units are ticket-ready", () => {
+  const spec = slicedSpec();
+  const goal = spec.nodes.find((node) => node.id === "G1");
+  const unit = spec.nodes.find((node) => node.id === "U1");
+  goal.risk = "urgent";
+  goal.criteria = [];
+  const goalReason = denialReason(writeSpec(spec));
+  assert.match(goalReason, /Rule 1: node G1\.risk: set risk to low, medium, high, or critical/);
+  assert.match(goalReason, /Rule 1: node G1\.criteria: supply an array of 1 to 12 non-empty strings/);
+  goal.risk = "low";
+  goal.criteria = ["The graph can be validated"];
+  unit.checks = [{ run: "node --test | tee log" }];
+  unit.changes = ["src/*"];
+  const unitReason = denialReason(writeSpec(spec));
+  assert.match(unitReason, /Rule 14: node U1\.checks\[0\]\.run/);
+  assert.match(unitReason, /Rule 15: node U1/);
+  unit.checks = [{ run: "node --test" }];
+  unit.changes = ["shared"];
+  spec.nodes.push(
+    { id: "U2", kind: "unit", title: "Extend validation", reads: [], changes: ["shared/graph.ts"], checks: [{ run: "node --test" }] },
+    { id: "U3", kind: "unit", title: "Connect validation", reads: [], changes: ["shared-sibling"], checks: [{ run: "node --test" }] },
+  );
+  spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U3", kind: "implements", to: "D1" });
+  assert.equal(denialReason(writeSpec(spec)), "Rule 16: node U1: add a direct or transitive dependsOn path in either direction with U2 to order changes sharing shared/graph.ts");
+  spec.nodes.find((node) => node.id === "U2").changes = ["shared\\graph.ts"];
+  assert.equal(denialReason(writeSpec(spec)), "Rule 16: node U1: add a direct or transitive dependsOn path in either direction with U2 to order changes sharing shared/graph.ts");
+  spec.edges.push({ from: "U1", kind: "dependsOn", to: "U3" }, { from: "U3", kind: "dependsOn", to: "U2" });
+  assertAllowed(writeSpec(spec));
+});
+
 test("units without checks are denied by id, capped with the count the next write shows", () => {
   const spec = slicedSpec();
   spec.nodes.find((node) => node.id === "U1").checks = [];
   for (let unitNumber = 2; unitNumber <= 25; unitNumber++) {
-    spec.nodes.push({ id: `U${unitNumber}`, kind: "unit", title: "Add a check", reads: [], changes: ["graph.ts"], checks: [] });
+    spec.nodes.push({ id: `U${unitNumber}`, kind: "unit", title: "Add a check", reads: [], changes: [`graph-${unitNumber}.ts`], checks: [] });
     spec.edges.push({ from: `U${unitNumber}`, kind: "implements", to: "D1" });
   }
   const reason = denialReason(writeSpec(spec));

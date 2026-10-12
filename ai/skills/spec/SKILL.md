@@ -34,7 +34,7 @@ An existing design spec resumes at the subskill after its status. A `challenged`
   "request": "let me export my deck as csv",
   "repoRoot": "/home/me/Projects/decks",
   "nodes": [
-    { "id": "G1", "kind": "goal", "text": "A deck exports to a CSV file from the deck page." },
+    { "id": "G1", "kind": "goal", "text": "A deck exports to a CSV file from the deck page.", "risk": "low", "criteria": ["The exported CSV contains the deck names, sets, and quantities."] },
     { "id": "N1", "kind": "nonGoal", "text": "Importing a CSV." },
     { "id": "D1", "kind": "decision", "question": "Which columns?", "answer": "Name, set, quantity.", "why": "Matches what trading sites import.", "source": "decided" },
     { "id": "D2", "kind": "decision", "question": "Where is the CSV built?", "answer": "In the export module.", "why": "It already streams the JSON export.", "source": "read", "evidence": "src/export/index.ts:14" },
@@ -52,7 +52,7 @@ An existing design spec resumes at the subskill after its status. A `challenged`
 }
 ```
 
-Further fields: a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
+Further fields: the goal carries `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable results); a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
 
 The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` for its status. Its denial names each rule and the fix; apply them and write again. Run the same checks, or view the graph, at any time:
 

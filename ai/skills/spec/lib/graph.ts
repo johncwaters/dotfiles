@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type Goal = { id: "G1"; kind: "goal"; text: string };
+export type Goal = {
+  id: "G1";
+  kind: "goal";
+  text: string;
+  risk?: "low" | "medium" | "high" | "critical";
+  criteria?: string[];
+};
 export type NonGoal = { id: `N${number}`; kind: "nonGoal"; text: string };
 export type Branch = { id: `B${number}`; kind: "branch"; question: string; leaning: string };
 export type Decision = {
@@ -40,7 +46,7 @@ export type DesignSpec = {
 export const READING_BUDGET_BYTES = 200000;
 
 const NODE_FIELDS = {
-  goal: ["id", "kind", "text"],
+  goal: ["id", "kind", "text", "risk", "criteria"],
   nonGoal: ["id", "kind", "text"],
   branch: ["id", "kind", "question", "leaning"],
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint"],
@@ -100,8 +106,20 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "evidence", "isConstraint", "budgetWaiver"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "evidence", "isConstraint", "budgetWaiver", "risk", "criteria"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
+  }
+  if (nodeKind === "goal") {
+    if (Object.hasOwn(value, "risk") && !["low", "medium", "high", "critical"].includes(value.risk as string)) {
+      addError(errors, 1, `${subject}.risk`, "set risk to low, medium, high, or critical, or omit it");
+    }
+    if (!Object.hasOwn(value, "criteria")) return;
+    if (!Array.isArray(value.criteria) || value.criteria.length < 1 || value.criteria.length > 12) {
+      addError(errors, 1, `${subject}.criteria`, "supply an array of 1 to 12 non-empty strings or omit it");
+      return;
+    }
+    value.criteria.forEach((criterion: unknown, criterionIndex: number) => requireString(criterion, `${subject}.criteria[${criterionIndex}]`, errors));
+    return;
   }
   if (nodeKind === "decision") {
     if (!["decided", "read", "assumed"].includes(String(value.source))) {
@@ -267,6 +285,16 @@ function listedPathProblem(repoRoot: string, resolvedRoot: string | undefined, c
   return `reads path ${candidate} is missing under repoRoot; correct it, or list it under the changes of another unit that creates it`;
 }
 
+function findSharedRepoPath(rootPath: string, changedPaths: string[], otherChangedPaths: string[]): string | undefined {
+  for (const changedPath of changedPaths) {
+    for (const otherChangedPath of otherChangedPaths) {
+      if (staysInside(changedPath, otherChangedPath)) return path.relative(rootPath, otherChangedPath) || ".";
+      if (staysInside(otherChangedPath, changedPath)) return path.relative(rootPath, changedPath) || ".";
+    }
+  }
+  return undefined;
+}
+
 type ReadingMeasurement = { totalBytes: number; unmeasurablePaths: string[] };
 
 function measureReadingBytes(resolvedRoot: string, listedPaths: string[]): ReadingMeasurement {
@@ -385,6 +413,16 @@ export function validateGraph(value: unknown): string[] {
     if (!isSliced) continue;
     if (unit.changes.length === 0) addError(errors, 10, `node ${unit.id}`, "add at least one changes path");
     if (unit.checks.length === 0) addError(errors, 10, `node ${unit.id}`, "add at least one check with a run command");
+    for (const [checkIndex, check] of unit.checks.entries()) {
+      const normalizedCommand = check.run.replace(/[\t\r\n]/g, " ");
+      if (/[;&|<>$`'"\x00-\x1f\x7f]/.test(normalizedCommand)) {
+        addError(errors, 14, `node ${unit.id}.checks[${checkIndex}].run`, "supply one command without shell operators, quotes, or control characters");
+      }
+    }
+    for (const changedPath of unit.changes) {
+      if (!/[*?\[\]]/.test(changedPath)) continue;
+      addError(errors, 15, `node ${unit.id}`, `replace changes path ${changedPath} with a literal path without wildcards`);
+    }
     if (!implementingIds.has(unit.id)) addError(errors, 11, `node ${unit.id}`, "add an implements edge to a decision");
   }
   for (const node of spec.nodes) {
@@ -393,6 +431,32 @@ export function validateGraph(value: unknown): string[] {
     addError(errors, 12, `node ${node.id}`, "add an implements edge from a unit or mark the decision isConstraint: true");
   }
   if (resolvedRoot === undefined || errors.some((error) => error.startsWith("Rule 6:"))) return errors;
+  if (isSliced) {
+    const resolvedChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => resolveExistingPath(path.resolve(spec.repoRoot, candidate)))]));
+    const lexicalChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate.trim().replace(/\\/g, "/")))]));
+    const reachableDependentsById = new Map<string, Set<string>>();
+    for (const unit of units) {
+      const reachableDependents = new Set<string>();
+      const pendingIds: string[] = [unit.id];
+      for (let index = 0; index < pendingIds.length; index++) {
+        for (const dependentId of dependentsById.get(pendingIds[index]) ?? []) {
+          if (reachableDependents.has(dependentId)) continue;
+          reachableDependents.add(dependentId);
+          pendingIds.push(dependentId);
+        }
+      }
+      reachableDependentsById.set(unit.id, reachableDependents);
+    }
+    for (const [unitIndex, unit] of units.entries()) {
+      for (const otherUnit of units.slice(unitIndex + 1)) {
+        if (reachableDependentsById.get(unit.id)?.has(otherUnit.id) || reachableDependentsById.get(otherUnit.id)?.has(unit.id)) continue;
+        const sharedRepoPath = findSharedRepoPath(resolvedRoot, resolvedChangedPathsById.get(unit.id) ?? [], resolvedChangedPathsById.get(otherUnit.id) ?? [])
+          ?? findSharedRepoPath(spec.repoRoot, lexicalChangedPathsById.get(unit.id) ?? [], lexicalChangedPathsById.get(otherUnit.id) ?? []);
+        if (sharedRepoPath === undefined) continue;
+        addError(errors, 16, `node ${unit.id}`, `add a direct or transitive dependsOn path in either direction with ${otherUnit.id} to order changes sharing ${sharedRepoPath}`);
+      }
+    }
+  }
   for (const unit of units) {
     if (!isSliced || unit.budgetWaiver !== undefined) continue;
     const listedPaths = [...unit.reads, ...unit.changes].map((candidate) => path.resolve(spec.repoRoot, candidate));
