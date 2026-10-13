@@ -78,6 +78,33 @@ runDevboxSsh() {
   CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- "$@"
 }
 
+# Under launchd SSH_AUTH_SOCK names Apple's agent, which never holds the Secretive signing key.
+devboxSecretiveSocketPath="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
+
+devboxForwardedAgentSocket() {
+  local inheritedSocket="${SSH_AUTH_SOCK:-}"
+  if [[ -n "$inheritedSocket" && "$inheritedSocket" != */com.apple.launchd.*/Listeners ]]; then
+    printf '%s\n' "$inheritedSocket"
+    return 0
+  fi
+  if [[ -S "$devboxSecretiveSocketPath" ]]; then
+    printf '%s\n' "$devboxSecretiveSocketPath"
+    return 0
+  fi
+  printf '%s\n' "$inheritedSocket"
+}
+
+holdDevboxAgentForward() {
+  local forwardedAgentSocket
+  forwardedAgentSocket="$(devboxForwardedAgentSocket)"
+  if [[ -z "$forwardedAgentSocket" ]]; then
+    printf 'devbox: no ssh agent to forward\n' >&2
+    return 1
+  fi
+  SSH_AUTH_SOCK="$forwardedAgentSocket" CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable \
+    ssh -T -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 "coder.$devboxWorkspaceName" sleep infinity
+}
+
 pushDevboxScript() {
   local remoteArguments=("$devboxGlimmervoidMinimumVersion" "${1:-provision}")
   if [[ "${1:-}" == pair ]]; then
@@ -173,7 +200,7 @@ runDevboxCommand() {
   local subcommand="${1:-status}"
   if (($# > 0)); then shift; fi
   case "$subcommand" in
-    up | status | ensure)
+    up | status | ensure | forward-agent)
       if (($# > 0)); then
         printf 'Usage: devbox %s\n' "$subcommand" >&2
         return 1
@@ -221,7 +248,7 @@ runDevboxCommand() {
         esac
       fi
       ;;
-    *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure|collect [--diff|--accept <hash>]}\n' >&2; return 1 ;;
+    *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure|forward-agent|collect [--diff|--accept <hash>]}\n' >&2; return 1 ;;
   esac
   local lookupStatus=0
   resolveDevboxWorkspace || lookupStatus=$?
@@ -269,6 +296,7 @@ runDevboxCommand() {
     return 1
   fi
   case "$subcommand" in
+    forward-agent) holdDevboxAgentForward ;;
     pair) pushDevboxScript pair "${1:-$(hostname)}" ;;
     restart-glimmervoid) pushDevboxScript restart ;;
     collect) collectDevboxSettings ;;
