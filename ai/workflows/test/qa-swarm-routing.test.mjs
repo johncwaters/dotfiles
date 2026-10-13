@@ -10,12 +10,19 @@ function runWorkflow(workflowArgs, runtimeBindings = {}) {
   return AsyncFunction('args', ...bindingNames, executableWorkflowSource)(workflowArgs, ...bindingValues)
 }
 
+const codeLaneOnlyRouterResult = { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: 'fixture' }
+
 function workflowRuntimeReturning(agentResponseFor) {
   return {
     phase: () => {},
     log: () => {},
     parallel: async (tasks) => Promise.all(tasks.map((task) => task())),
-    agent: async (prompt, options) => agentResponseFor(prompt, options)
+    agent: async (prompt, options) => {
+      if (options.phase === 'Route') {
+        return codeLaneOnlyRouterResult
+      }
+      return agentResponseFor(prompt, options)
+    }
   }
 }
 
@@ -50,6 +57,7 @@ async function emittedRoutingPrompts(workflowArgs) {
     routerRatings: 'LOW/LOW via fixture',
     droppedFindingCount: 0,
     droppedBelowMediumCount: 0,
+    droppedUnprovenCount: 0,
     droppedOutOfLaneCount: 0,
     droppedOutOfLaneTags: 'none',
     truncatedLanes: 'none'
@@ -64,10 +72,7 @@ const baseWorkflowArgs = {
   context: 'Test routing behavior.',
   changedFiles: ['src/file.js'],
   codexAllowed: true,
-  dispatchNonce: '0123456789abcdef',
-  settled: [],
-  claimedFixed: [],
-  declined: []
+  dispatchNonce: '0123456789abcdef'
 }
 
 test('each lane receives its own review checklist heading', () => {
@@ -80,6 +85,23 @@ test('each lane receives its own review checklist heading', () => {
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
     assert.ok(lanePrompt.includes(`## ${laneName} as extra checks`))
   }
+})
+
+test('a lane or the router reviewing a range executes none of its code while a working tree pin may be run in the repo', () => {
+  const rangeReviewCommand = 'git diff aaaa..bbbb'
+  const workingTreeReviewCommand = 'git diff HEAD 974f5015bf125022fe199e6fca39041a5fb7b8a4'
+  const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
+  const rangeLanePrompt = buildLanePrompt('code', null, ['code'], baseWorkflowArgs.changedFiles, rangeReviewCommand)
+  const workingTreeLanePrompt = buildLanePrompt('code', null, ['code'], baseWorkflowArgs.changedFiles, workingTreeReviewCommand)
+  const rangeRouterPrompt = workflowFunctionNamed('buildRouterAssessmentPrompt', { ...baseWorkflowArgs, reviewCmd: rangeReviewCommand })(baseWorkflowArgs.changedFiles, 'Route this review.')
+  const workingTreeRouterPrompt = workflowFunctionNamed('buildRouterAssessmentPrompt', { ...baseWorkflowArgs, reviewCmd: workingTreeReviewCommand })(baseWorkflowArgs.changedFiles, 'Route this review.')
+
+  assert.match(rangeLanePrompt, /execute none of its code and extract nothing/)
+  assert.doesNotMatch(rangeLanePrompt, /git archive/)
+  assert.doesNotMatch(rangeLanePrompt, /Run commands in the repo/)
+  assert.match(workingTreeLanePrompt, /Run commands in the repo/)
+  assert.match(rangeRouterPrompt, /execute none of its code and extract nothing/)
+  assert.match(workingTreeRouterPrompt, /Run commands in the repo/)
 })
 
 test('the workflow refuses to run when the Codex routing flag is missing', async () => {
@@ -101,8 +123,6 @@ test('disabling Codex emits no Codex execution instruction in any prompt', async
   assert.doesNotMatch(emittedPrompts.join('\n'), /codex exec/)
   assert.match(emittedPrompts.join('\n'), /Codex CLI/)
 })
-
-const confirmRound = { number: 2, touchedFiles: ['src/file.js'], fixDeltaCmd: 'git diff roundonetree roundtwotree' }
 
 const everyChangedFileClassified = baseWorkflowArgs.changedFiles.map((file) => ({ file, class: 'logic' }))
 
@@ -200,32 +220,24 @@ for (const codexWrittenRoute of ['gpt-6.1-sol', 'code', 'Run code and external r
 
 test('a zero-finding lane with verified safe and no overflow converges to a canonical empty block', async () => {
   const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe claimed defect was verified safe. No overflow.'
-  const workflowArgs = {
-    ...baseWorkflowArgs,
-    round: confirmRound
-  }
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
     agentCallCount += 1
     return laneResponse
   })
 
-  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  const workflowResponse = await runWorkflow(baseWorkflowArgs, runtimeBindings)
 
   assert.equal(agentCallCount, 1)
   assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
 })
 
 test('a judgment death returns the death string and a new retryAttemptId changes only the retry prompt', async () => {
-  const laneResponse = '- file: src/file.js | line: 1 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: Still broken.'
+  const laneResponse = '- file: src/file.js | line: 1 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: Still broken. Proof: `node guard.js` printed undefined.'
   const responsesByLabel = {
     'Code review': `STRUCTURED_FINDINGS:\n${laneResponse}\n\nOVERALL_SUMMARY:\nThe competing interpretation was verified safe.`,
     'Converge findings': 'STRUCTURED_FINDINGS:\n\nOVERALL_SUMMARY:\n0 finding(s) survived. truncated lanes: none',
     'Retry converge findings': 'STRUCTURED_FINDINGS:\n\nOVERALL_SUMMARY:\n0 finding(s) survived. truncated lanes: none'
-  }
-  const workflowArgs = {
-    ...baseWorkflowArgs,
-    round: confirmRound
   }
   const calledLabelsByRun = []
   const promptsByLabel = new Map()
@@ -239,9 +251,9 @@ test('a judgment death returns the death string and a new retryAttemptId changes
   })
 
   calledLabelsByRun.push([])
-  const firstWorkflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  const firstWorkflowResponse = await runWorkflow(baseWorkflowArgs, runtimeBindings)
   calledLabelsByRun.push([])
-  const secondWorkflowResponse = await runWorkflow({ ...workflowArgs, retryAttemptId: 'second attempt' }, runtimeBindings)
+  const secondWorkflowResponse = await runWorkflow({ ...baseWorkflowArgs, retryAttemptId: 'second attempt' }, runtimeBindings)
 
   assert.equal(firstWorkflowResponse, 'LANE_DEATH: judgment')
   assert.equal(secondWorkflowResponse, 'LANE_DEATH: judgment')
@@ -254,62 +266,43 @@ test('a judgment death returns the death string and a new retryAttemptId changes
 })
 
 test('a lane summary denying overflow converges mechanically and keeps its finding', async () => {
-  const findingLine = '- file: src/file.js | line: 12 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing.'
+  const findingLine = '- file: src/file.js | line: 12 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing. Proof: `node guard.js` printed undefined.'
   const laneResponse = `STRUCTURED_FINDINGS:\n${findingLine}\n\nOVERALL_SUMMARY:\nOne defect stands. No overflow.`
-  const workflowArgs = {
-    ...baseWorkflowArgs,
-    round: confirmRound
-  }
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
     agentCallCount += 1
     return laneResponse
   })
 
-  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  const workflowResponse = await runWorkflow(baseWorkflowArgs, runtimeBindings)
 
   assert.equal(agentCallCount, 1)
   assert.ok(workflowResponse.includes(findingLine))
   assert.match(workflowResponse, /truncated lanes: none$/)
 })
 
-test('the confirm round scopes lanes to the fix delta and keeps a HIGH finding in a fix-delta file that left the changed-file set', async () => {
-  const highFindingInRevertedFile = '- file: src/reverted.js | line: 9 | side: LEFT | severity: HIGH | reviewer: code/logic | body: The fix removed the guard.'
-  const laneResponse = `STRUCTURED_FINDINGS:\n${highFindingInRevertedFile}\n\nOVERALL_SUMMARY:\nNo overflow.`
-  const workflowArgs = {
-    ...baseWorkflowArgs,
-    changedFiles: ['src/file.js', 'src/fixed.js', 'src/untouched.js'],
-    round: { ...confirmRound, touchedFiles: ['src/fixed.js', 'src/reverted.js'] }
-  }
-  const lanePrompts = []
-  const runtimeBindings = workflowRuntimeReturning((prompt) => {
-    lanePrompts.push(prompt)
-    return laneResponse
-  })
+test('a finding whose body carries no Proof: is dropped before convergence and counted', async () => {
+  const provenFindingLine = '- file: src/file.js | line: 12 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing. **Proof**: `node guard.js` printed undefined.'
+  const theorizedFindingLine = '- file: src/file.js | line: 30 | side: RIGHT | severity: HIGH | reviewer: code/race | body: A concurrent caller could interleave here.'
+  const laneResponse = `STRUCTURED_FINDINGS:\n${theorizedFindingLine}\n${provenFindingLine}\n\nOVERALL_SUMMARY:\nNo overflow.`
+  const runtimeBindings = workflowRuntimeReturning(() => laneResponse)
 
-  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  const workflowResponse = await runWorkflow(baseWorkflowArgs, runtimeBindings)
 
-  assert.equal(lanePrompts.length, 1)
-  assert.ok(lanePrompts[0].includes('Exact REVIEW_CMD: git diff roundonetree roundtwotree\n'))
-  assert.match(lanePrompts[0], /^Scope: changed files src\/fixed\.js\nsrc\/reverted\.js under git diff roundonetree roundtwotree$/m)
-  assert.ok(workflowResponse.includes(highFindingInRevertedFile))
-  assert.equal(await runWorkflow({ ...workflowArgs, round: { ...confirmRound, touchedFiles: [''] } }, runtimeBindings), 'No fix delta for a confirm round, no run.')
-  assert.equal(lanePrompts.length, 1)
+  assert.ok(workflowResponse.includes(provenFindingLine))
+  assert.ok(!workflowResponse.includes(theorizedFindingLine))
+  assert.match(workflowResponse, /1 finding\(s\) survived\..* Dropped unproven: 1\./)
 })
 
 test('a lane summary reporting overflow lands in the truncated lane list when every finding is dropped', async () => {
-  const laneResponse = 'STRUCTURED_FINDINGS:\n- file: src/other.js | line: 3 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing.\n\nOVERALL_SUMMARY:\nOverflow dropped 3 further findings.'
-  const workflowArgs = {
-    ...baseWorkflowArgs,
-    round: confirmRound
-  }
+  const laneResponse = 'STRUCTURED_FINDINGS:\n- file: src/other.js | line: 3 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing. Proof: `node guard.js` printed undefined.\n\nOVERALL_SUMMARY:\nOverflow dropped 3 further findings.'
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
     agentCallCount += 1
     return laneResponse
   })
 
-  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  const workflowResponse = await runWorkflow(baseWorkflowArgs, runtimeBindings)
 
   assert.equal(agentCallCount, 1)
   assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
@@ -318,17 +311,13 @@ test('a lane summary reporting overflow lands in the truncated lane list when ev
 
 test('a zero-finding lane discussing arithmetic overflow stays out of the truncated lane list', async () => {
   const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe index cannot overflow; integer overflow is guarded.'
-  const workflowArgs = {
-    ...baseWorkflowArgs,
-    round: confirmRound
-  }
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
     agentCallCount += 1
     return laneResponse
   })
 
-  const workflowResponse = await runWorkflow(workflowArgs, runtimeBindings)
+  const workflowResponse = await runWorkflow(baseWorkflowArgs, runtimeBindings)
 
   assert.equal(agentCallCount, 1)
   assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)

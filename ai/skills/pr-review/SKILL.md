@@ -12,7 +12,7 @@ The pull request entry point of the review ladder. It reviews somebody's work an
 - Reviewing another carbon unit's pull request, which is the case this exists for
 - Leaving an audit record on a pull request the local flow already opened, when asked
 
-Reviewing your own uncommitted work is not this skill. That is `/commit`, which runs a review, a writer, and one confirming review. This skill has no writer and therefore no loop.
+Reviewing your own uncommitted work is not this skill. That is `/commit`, which runs one review and a writer that re-runs each finding's proof. This skill has no writer and therefore no loop.
 
 ## Step 1: Resolve the pull request
 
@@ -43,7 +43,7 @@ Invoke `/code-review` with the base and head SHAs, the repo path, and context as
 
 `VERDICT: FAILED` means the review did not complete. Re-run it once, since the usual cause is a dead lane process rather than anything about the code. Failing twice: report the failure and post nothing. Posting a partial review as though it were a complete one misrepresents how much of the pull request was actually looked at.
 
-**The `ACTIONABLE` count and disposition change nothing here.** They gate a loop, and this skill has no loop: no writer runs, nothing is fixed, and no round two happens. A disposition on somebody else's pull request is advice about what the author should do, and it becomes the tone of the comment rather than an instruction to this session.
+**The `ACTIONABLE` count and disposition change nothing here.** They gate a writer, and this skill has none: nothing is fixed. A disposition on somebody else's pull request is advice about what the author should do, and it becomes the tone of the comment rather than an instruction to this session.
 
 `AMBIGUOUS` findings still get posted, phrased as the open question they are, with both readings stated. They are frequently the most useful comment on a pull request.
 

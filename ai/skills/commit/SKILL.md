@@ -1,11 +1,11 @@
 ---
 name: commit
-description: Personal commit workflow. Reviews, fixes, and confirms the fix via /code-review, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promote the feature branch onto the resolved mainline or leave it pushed for /open-pr, per the machine's commit policy. Use for /commit, "commit this", "commit and push", or landing finished work.
+description: Personal commit workflow. Reviews once via /code-review, fixes what that review proved broken, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promote the feature branch onto the resolved mainline or leave it pushed for /open-pr, per the machine's commit policy. Use for /commit, "commit this", "commit and push", or landing finished work.
 ---
 
 # Commit
 
-Two deterministic steps own everything that touches git. You own the review loop, the
+Two deterministic steps own everything that touches git. You own the review step, the
 commit message, and the recovery procedures. Never stage, commit, push, or merge by hand
 outside the recovery sections below.
 
@@ -48,21 +48,21 @@ profile has not been applied. `main` and `master` are still guarded, so `branchA
 still answers the branch question. Do not promote: run `land.ts` without `--promote` and
 tell the carbon unit to run `~/.dotfiles/script/bootstrap --profile <name>` from the main checkout.
 
-## Step 2: review loop
+## Step 2: review
 
-Nothing rewrites the code between the last review and the commit, so the review is the
-gate.
+One review is the gate. What the writer changes after it is checked by re-running each
+finding's proof and then the suite.
 
-**Skip the loop** for a mechanical follow-up with passing tests: a pure rename, or a
+**Skip the review** for a mechanical follow-up with passing tests: a pure rename, or a
 reviewer's suggestion applied verbatim. A review there costs minutes and finds nothing. Go
-straight to **Step 3: write the message**. Any logic change, however small, runs the loop.
+straight to **Step 3: write the message**. Any logic change, however small, gets the review.
 
 **Step 0, once.** Run `ai-slop-cleaner` on preflight's `paths` as its file list, identifying `/commit` as the caller.
 
-**Then two reviews, never a third.** Round 1 sweeps the change. Round 2 confirms round 1's
-fixes and nothing else: `/code-review` scopes it to the writer's fix delta and marks every
-first-time finding below HIGH a `NIT`, because a second sweep of the same diff finds a fresh
-batch of MEDIUM findings every time and the loop never converges.
+**Then one review, one writer, and the commit.** A second sweep of the same diff finds a
+fresh batch of MEDIUM findings every time, so the review runs once and reports only what a
+lane proved: every finding carries a `Proof:`, a command with its output or quoted lines,
+and the writer re-runs that proof in place of a confirming review.
 
 1. Invoke `/code-review` with target `working`, the repo path, preflight's `paths`
    as `--paths`, and one or two sentences of what changed and the goal
@@ -70,73 +70,55 @@ batch of MEDIUM findings every time and the loop never converges.
    modification in scope plus the scoped untracked files, so a `staged` review would
    approve a subset of what gets committed.
 2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
-   - `VERDICT: FAILED`, either round: the review did not complete. Re-run it once. Failing
-     twice, stop and report; never treat a failed review as a passed one.
-   - **Round 1**, any `AMBIGUOUS` finding at MEDIUM or higher, at any verdict: stop and put
-     it to the carbon unit with both readings stated. The answer re-dispositions it on the
-     spot, written into its body: fix it makes it `ACTIONABLE` and it joins the batch
-     below, leave it makes it a `NIT`. No later sweep exists to carry an answer into.
-     Report lower severity `AMBIGUOUS` findings without interrupting.
-   - **Round 1**, `ACTIONABLE` at MEDIUM or higher: hand exactly those findings plus the
-     changed-file list to the `finding-fixer` agent in a single spawn, and state that
-     `Scope:` is that list, `Out of scope:` is pre-existing issues outside it, and
-     `Definition of done:` is its finding-fixer receipt. Then run round 2. A receipt that
-     declines every finding it was handed is a stop instead, since the tree is unchanged
-     and there is nothing to confirm. LOW findings are listed in the commit report and left
-     alone.
-   - **Round 2** never asks and never stops, FAILED excepted. Hand every `ACTIONABLE`
-     finding at MEDIUM or higher to `finding-fixer` the same way, once: after the
-     confirm-round rule those are only round 1 fixes that did not land and first-time HIGH
-     or CRITICAL findings the fix itself caused. Decide each `AMBIGUOUS` finding at MEDIUM
-     or higher yourself, from the caller context and the code: one tagged with any
-     `necessity` category is recorded as a NIT with the reading you chose, because cutting
-     work that may have been wanted is the carbon unit's call and round 2 has nobody to
-     ask; any other one with a bounded fix inside the changed-file list is re-dispositioned
-     `ACTIONABLE`, with the reading you chose written into its body, before it joins the
-     writer's batch, since a finding still marked `AMBIGUOUS` when it arrives is declined
-     on sight; a MEDIUM one without such a fix is recorded as a NIT with the reading you
-     chose; and a HIGH or CRITICAL one without such a fix is recorded with its reading in
-     the commit message body. When the receipt is back, go to **Step 3: write the
-     message**; no third review runs. Every finding that receipt marks `FIXED` goes in the
-     message's `Not-tested` trailer, because no review saw those edits, and `Confidence`
-     cannot be `high` while that trailer names one. `DECLINED` findings and the `AMBIGUOUS`
-     calls you made go in the commit report.
-   - Round 2 always commits, FAILED excepted, and what it withholds instead is promotion.
-     A HIGH or CRITICAL finding it never got verified fixed — `DECLINED` by the writer,
-     handed over but absent from the receipt, `AMBIGUOUS` and recorded rather than fixed,
-     or claimed `FIXED` with no review after it, which is every HIGH or CRITICAL finding the
-     `Not-tested` trailer names — means running `land.ts` without `--promote`, so the
-     feature branch is pushed and mainline is untouched, and naming each such finding in the
-     commit message body, so the decision is visible in history rather than only in the chat
-     report. The commit and its trailer stay as written either way. Where
-     `policy.afterCommit` is `promote`, say in the report that a later plain re-run with
-     `--promote` carries the commit onto mainline once a carbon unit has looked at those
-     findings; under any other policy **Step 4: land** already omits the flag, so the round
-     lands exactly as that step says and nothing is withheld.
-   - No `ACTIONABLE` finding at MEDIUM or higher, with a verdict of `APPROVE` or
-     `APPROVE WITH NITS`, either round: leave the loop.
+   - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
+     and report; a failed review is never a passed one.
+   - An `AMBIGUOUS` finding at MEDIUM or higher: stop and put it to the carbon unit with
+     both readings stated. Fix it makes it `ACTIONABLE`, with the answer written into its
+     body, and it joins the batch below; leave it makes it a `NIT`. Report lower severity
+     `AMBIGUOUS` findings without interrupting.
+   - `ACTIONABLE` at MEDIUM or higher: hand exactly those findings plus the changed-file
+     list to the `finding-fixer` agent in a single spawn, and state that `Scope:` is that
+     list, `Out of scope:` is pre-existing issues outside it, and `Definition of done:` is
+     its finding-fixer receipt. LOW findings and `NIT`s are listed in the commit report and
+     left alone.
+   - No `ACTIONABLE` finding at MEDIUM or higher: go to **Step 3: write the message**.
+3. Read the receipt, one line per finding, then run the test suite that covers the changed
+   files, since the writer's edits postdate the review:
+   - `FIXED`: the writer re-ran the finding's proof and the defect is gone. One line in the
+     commit report.
+   - `UNVERIFIED`: an edit whose proof the writer could not run. Run that proof yourself.
+     Gone makes it `FIXED`; still unrunnable puts the finding in the message's `Not-tested`
+     trailer, and `Confidence` stays below `high` while that trailer names one.
+   - `DECLINED`: the writer reports no edit. Run the finding's proof yourself. A proof that
+     shows no defect refutes the finding, which goes in the commit report; one that still
+     shows it leaves a live defect, named in the commit report.
+   - Snapshot the tree again the way `/code-review` pins a `working` target, then read
+     `git diff <pin> <new tree>`, with `<pin>` the tree `/code-review`'s summary reported.
+     That diff is everything the writer changed, and a hunk no `FIXED` or `UNVERIFIED` row
+     accounts for goes in the `Not-tested` trailer, since a declined finding can leave a
+     half-applied edit behind.
+   - A receipt that never arrives, does not parse, or omits a finding counts every finding
+     missing from it as `DECLINED`.
+   - A failing suite is yours to fix at the root cause before the commit. Re-run every
+     `FIXED` finding's proof after that edit, since it postdates them; the review is not
+     run again for it.
 
-The loop exits when no `ACTIONABLE` finding of MEDIUM or higher remains, not on the
-verdict: a MEDIUM finding dispositioned `ACTIONABLE` is a verified defect with a bounded
-fix and still maps to a passing verdict. LOW never triggers round 2.
+A HIGH or CRITICAL finding left live or `UNVERIFIED` withholds promotion, never the commit:
+run `land.ts` without `--promote`, so the feature branch is pushed and mainline is
+untouched, and name each such finding in the commit message body, so the decision is
+visible in history rather than only in the chat report. Where `policy.afterCommit` is
+`promote`, say in the report that a later plain re-run with `--promote` carries the commit
+onto mainline once a carbon unit has looked at those findings; under any other policy
+**Step 4: land** already omits the flag and nothing is withheld.
 
-A receipt that never arrives, does not parse, or omits a finding it was handed counts every
-finding missing from it as `DECLINED`. On round 2 it also puts every change to the tree
-since that dispatch in the `Not-tested` trailer, because a spawn that died mid-edit leaves
-work no review and no receipt accounts for.
-
-Carry into round 2: round 1's findings block, with the on-the-spot re-dispositions and
-their answers written in, since `/code-review` suppresses a carried `AMBIGUOUS` finding
-that has no answer; three separate lists, never merged, of the findings settled as `NIT` or
-`AMBIGUOUS`, the receipt's `FIXED` findings, and the receipt's `DECLINED` ones; the round
-number; and the pin round 1's `/code-review` summary reported, which is what the fix delta
-is measured from. A `TRUNCATED` line naming a lane goes in the commit report, since no later
-round sweeps for the overflow that lane dropped.
+A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
+overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review
+summary, since those rows were never triaged.
 
 **A merge you resolve by hand invalidates the review of the branch it lands on.** A clean
 merge is not a safe merge: integration can change a helper in one file while the reviewed
 change adds its caller in another. Where the recovery sections say **re-review**, they mean
-steps 1 and 2 of this loop only.
+steps 1 to 3 of this review, run fresh on the merged tree.
 
 One carve-out, and only one: merging `origin/<branch>` into the same local branch needs no
 re-review, because whatever is on the remote was reviewed by whoever landed it. Every other
@@ -298,7 +280,7 @@ only to unblock the run.
 - Feature push rejected: fetch and merge `origin/<branch>` into the same local feature
   branch, push it, then re-run. A conflict resolved by hand requires re-review first.
 - A destination branch checked out in a dirty worktree: if the uncommitted changes are this
-  session's, land them by running this whole workflow in that worktree, review loop
+  session's, land them by running this whole workflow in that worktree, review
   included. Never commit them by hand to clear the way. Changes you cannot attribute are a
   stop case.
 - Transient network or remote errors: re-run once before treating the failure as real.

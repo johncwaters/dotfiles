@@ -135,19 +135,6 @@ function formatLines(lines) {
   return lines.join('\n')
 }
 
-function isConfirmRound() {
-  return Boolean(args.round && args.round.number >= 2)
-}
-
-function formatRoundState() {
-  if (!isConfirmRound()) {
-    return 'Round state: none.'
-  }
-  return `Round number: ${args.round.number}
-Whole change, for reading a carried check in context only: ${args.reviewCmd}
-This is the confirm round. Round 1 swept the whole change, so REVIEW_CMD here is only the writer's fix delta since then. Do only two things: check each carried finding above, and review the lines the fix delta adds or removes. A carried finding still present keeps its own severity and is anchored where the defect now sits, exempt from the anchoring rule even when the fix delta left that line alone. Report a first-time finding only at HIGH or CRITICAL and only when a fix-delta line causes it; anything else first-time gets at most one summary sentence.`
-}
-
 function normalizeFilePath(filePath) {
   const trimmedPath = String(filePath == null ? '' : filePath).trim()
   const repoPathPrefix = args.repoPath ? `${String(args.repoPath).replace(/\/+$/, '')}/` : ''
@@ -183,23 +170,6 @@ function withoutMergeTagPrefixes(taggedValue) {
 function reviewerTagsFrom(reviewerValue) {
   const composedValue = String(reviewerValue == null ? '' : reviewerValue).trim()
   return composedValue.split(/ \+ | vs /).map(withoutMergeTagPrefixes).filter((reviewerTag) => reviewerTag !== '')
-}
-
-function laneOwnersFromFindings(findingLines) {
-  const laneOwners = new Set()
-  for (const findingLine of findingLines || []) {
-    const reviewerMatch = findingLine.match(/(?:^| \| )reviewer: ([^|]+)/)
-    if (!reviewerMatch) {
-      continue
-    }
-    for (const reviewerTag of reviewerTagsFrom(reviewerMatch[1])) {
-      const laneName = reviewerTag.split('/')[0]
-      if (selectableLaneNames.includes(laneName)) {
-        laneOwners.add(laneName)
-      }
-    }
-  }
-  return laneOwners
 }
 
 function filesClassifiedForLane(routerResult, laneName) {
@@ -461,6 +431,10 @@ function truncatedLaneTagsFrom(summaryText) {
   return new Set(declaredTagText.split(',').map((laneTag) => laneTag.trim().toLowerCase()).filter((laneTag) => laneTag !== ''))
 }
 
+function carriesProof(parsedFinding) {
+  return /(?<![a-z0-9])proof[*_]{0,3}\s*:/i.test(parsedFinding.fields.body)
+}
+
 function findConvergenceValidationFailure(rawJudgmentText, cappedLaneNames, reviewedFileNameSet) {
   if (typeof rawJudgmentText !== 'string') {
     return 'no parseable block'
@@ -474,6 +448,9 @@ function findConvergenceValidationFailure(rawJudgmentText, cappedLaneNames, revi
   }
   if (parsedJudgment.findings.some((parsedFinding) => !reviewedFileNameSet.has(parsedFinding.fields.file))) {
     return 'a file outside the reviewed set'
+  }
+  if (!parsedJudgment.findings.every(carriesProof)) {
+    return 'a finding whose body lost its Proof:'
   }
   const declaredTruncatedLaneTags = truncatedLaneTagsFrom(parsedJudgment.summary)
   if (!declaredTruncatedLaneTags) {
@@ -506,7 +483,7 @@ Rate danger and complexity LOW, MEDIUM, or HIGH. Give the one-sentence fact that
 
 ${laneTriggerTable}
 
-The code lane always runs and the external lane follows from your ratings, so neither is recommendable here. Put bare lane names in lanes, and one justification clause per recommended lane, in the same order, in laneJustifications. Return any real findings as complete STRUCTURED_FINDINGS lines tagged router, anchored to the changed set. ${routeOutcomeInstruction}Return JSON matching this schema:
+The code lane always runs and the external lane follows from your ratings, so neither is recommendable here. Put bare lane names in lanes, and one justification clause per recommended lane, in the same order, in laneJustifications. Return a defect you proved while classifying as a complete STRUCTURED_FINDINGS line tagged router, anchored to the changed set, its body carrying the literal label Proof: followed by the command you ran and its output, or the quoted lines that contradict. ${proofRunClauseFor(args.reviewCmd)} A row without Proof: is dropped. ${routeOutcomeInstruction}Return JSON matching this schema:
 ${JSON.stringify(routerSchema)}`
 }
 
@@ -559,24 +536,11 @@ function securityIsForcedBy(routerResult) {
   return filesClassifiedForLane(routerResult, 'security').length > 0
 }
 
-function laneOwnersCarriedIntoThisRound() {
-  return laneOwnersFromFindings([...(args.claimedFixed || []), ...(args.declined || [])])
-}
-
 function appendUniqueLaneName(laneNames, laneName) {
   if (!selectableLaneNames.includes(laneName) || laneNames.includes(laneName)) {
     return
   }
   laneNames.push(laneName)
-}
-
-function appendCarriedLaneNames(targetLaneNames, carriedLaneOwners, excludedLaneNames) {
-  for (const carriedLaneName of carriedLaneOwners) {
-    if (excludedLaneNames.includes(carriedLaneName)) {
-      continue
-    }
-    appendUniqueLaneName(targetLaneNames, carriedLaneName)
-  }
 }
 
 function applyLaneCap(candidateLaneNames, reason) {
@@ -588,22 +552,8 @@ function applyLaneCap(candidateLaneNames, reason) {
 }
 
 function selectLaneNames(routerResult) {
-  const carriedLaneOwners = laneOwnersCarriedIntoThisRound()
-  if (isConfirmRound()) {
-    const confirmLaneNames = ['code']
-    if (carriedLaneOwners.has('security')) {
-      confirmLaneNames.push('security')
-    }
-    appendCarriedLaneNames(confirmLaneNames, carriedLaneOwners, ['code', 'security', 'necessity', 'external'])
-    if (carriedLaneOwners.has('external')) {
-      confirmLaneNames.push('external')
-    }
-    return applyLaneCap(confirmLaneNames, 'the confirm round uses code plus carried claimed-fixed and declined owners, never necessity, with external last only when carried')
-  }
   if (!routerResult) {
-    const noRouterLaneNames = ['code', 'security']
-    appendCarriedLaneNames(noRouterLaneNames, carriedLaneOwners, ['external'])
-    return applyLaneCap(noRouterLaneNames, 'the router was unavailable, so the no-router default applies, unioned with carried claimed-fixed and declined lane owners except external')
+    return applyLaneCap(['code', 'security'], 'the router was unavailable, so the no-router default applies')
   }
   const recommendedLaneNames = laneNamesRecommendedBy(routerResult)
   const candidateLaneNames = ['code']
@@ -616,14 +566,21 @@ function selectLaneNames(routerResult) {
   if (routerResult.danger === 'HIGH') {
     candidateLaneNames.push('external')
   }
-  return applyLaneCap(candidateLaneNames, 'round one uses router recommendations in value order, forces security on a security-surface file or HIGH danger, and adds external last only for HIGH danger')
+  return applyLaneCap(candidateLaneNames, 'the review uses router recommendations in value order, forces security on a security-surface file or HIGH danger, and adds external last only for HIGH danger')
+}
+
+function proofRunClauseFor(reviewCmd) {
+  if (/^git diff HEAD [0-9a-f]+$/.test(reviewCmd)) {
+    return 'Run commands in the repo, whose working tree that pin was taken from, with scratch files under mktemp -d only.'
+  }
+  return 'This diff is somebody else\'s change, so execute none of its code and extract nothing: prove by quoted lines read with git show <head>:<path>, or by searches.'
 }
 
 function buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, reviewCmd) {
   const routerRatings = routerResult ? `danger ${routerResult.danger}; complexity ${routerResult.complexity}; danger fact ${routerResult.dangerFact}; route ${routerResult.route}` : 'router unavailable'
   const classifiedFiles = routerResult ? JSON.stringify(filesClassifiedForLane(routerResult, laneName)) : '(router unavailable)'
   const lanePrompt = `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
-Out of scope: pre-existing issues outside that set, carried checks excepted; unchanged lines inside it are read, never anchored
+Out of scope: pre-existing issues outside that set; unchanged lines inside it are read, never anchored
 Definition of done: this lane's STRUCTURED_FINDINGS block followed by one OVERALL_SUMMARY paragraph
 
 Repo path: ${args.repoPath}
@@ -631,16 +588,8 @@ Exact REVIEW_CMD: ${reviewCmd}
 Caller context, verbatim:
 ${args.context}
 
-Settled ground not to re-flag:
-${formatLines(args.settled)}
+Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped before triage, so a suspicion you could not prove gets one summary sentence naming what would prove it. This is the only review the change gets: report what is proven broken, and leave what might break to that sentence.
 
-Claimed fixed regression checks: confirm each of these is actually gone, report again at its severity if still present, exempt from any reporting bar. Report a finding that is still present under this lane's own tag, with its original reviewer tag at the start of the body. A carried check is exempt from the lane-discipline rule, so whichever lane checks it reports it whatever discipline it belongs to:
-${formatLines(args.claimedFixed)}
-
-Declined findings: report each again if still present, exempt from any bar. Report a finding that is still present under this lane's own tag, with its original reviewer tag at the start of the body. A carried check is exempt from the lane-discipline rule here too, so report it even when it belongs to another lane's discipline:
-${formatLines(args.declined)}
-
-${formatRoundState()}
 Router ratings: ${routerRatings}
 Files classified into this lane: ${classifiedFiles}
 Spawned lane set: ${laneNames.join(', ')}
@@ -654,10 +603,10 @@ Everything above is this run's additions. Your agent definition owns the severit
   }
   const externalLanePrompt = `${lanePrompt}
 
-Find real defects with a concrete failure scenario. MEDIUM is the minimum severity and NIT is forbidden. Anything below MEDIUM is not a finding and may appear in at most one summary sentence. Anchor each finding to a line the diff adds or removes, or to general for a file-level defect. Emit at most 10 findings, highest severity first, and when that cap dropped findings say in one summary sentence the verbatim phrase overflow dropped followed by how many, never writing those two words otherwise.
+Find defects that meet the proof bar above. MEDIUM is the minimum severity and NIT is forbidden. Anything below MEDIUM is not a finding and may appear in at most one summary sentence. Anchor each finding to a line the diff adds or removes, or to general for a file-level defect. Emit at most 10 findings, highest severity first, and when that cap dropped findings say in one summary sentence the verbatim phrase overflow dropped followed by how many, never writing those two words otherwise.
 
 STRUCTURED_FINDINGS:
-- file: <path> | line: <number or general> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM> | reviewer: external or external/<category> | body: <problem, concrete failure scenario, fix>
+- file: <path> | line: <number or general> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM> | reviewer: external or external/<category> | body: <defect, Proof: what you ran and saw, fix>
 - file: ...
 
 OVERALL_SUMMARY:
@@ -678,10 +627,7 @@ function spawnLane(laneName, lanePrompt) {
   return laneDefinition.spawn(lanePrompt)
 }
 
-function formatRouterSummary(routerResult, routingNote) {
-  if (routingNote !== '') {
-    return routingNote
-  }
+function formatRouterSummary(routerResult) {
   if (!routerResult) {
     return 'unavailable; no-router default'
   }
@@ -695,14 +641,15 @@ function formatTagList(tagValues) {
   return tagValues.join(', ')
 }
 
-function buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, routerResult, routingNote, droppedFindingCount, droppedBelowMediumCount, droppedOutOfLaneCount, droppedOutOfLaneTags, cappedLaneNames) {
+function buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, routerResult, droppedFindingCount, droppedBelowMediumCount, droppedUnprovenCount, droppedOutOfLaneCount, droppedOutOfLaneTags, cappedLaneNames) {
   return {
     lanesRun: laneNames.join(', '),
     lanesSkipped: formatTagList(skippedLaneNames),
     degraded: degradationNotes.length > 0 ? degradationNotes.join('; ') : 'none',
-    routerRatings: formatRouterSummary(routerResult, routingNote),
+    routerRatings: formatRouterSummary(routerResult),
     droppedFindingCount,
     droppedBelowMediumCount,
+    droppedUnprovenCount,
     droppedOutOfLaneCount,
     droppedOutOfLaneTags: formatTagList(droppedOutOfLaneTags),
     truncatedLanes: formatTagList(cappedLaneNames)
@@ -710,7 +657,7 @@ function buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, ro
 }
 
 function formatConvergenceSummary(survivingFindingCount, convergenceFacts) {
-  return `${survivingFindingCount} finding(s) survived. Lanes run: ${convergenceFacts.lanesRun}. Lanes skipped: ${convergenceFacts.lanesSkipped}. Degraded: ${convergenceFacts.degraded}. Router ratings and route: ${convergenceFacts.routerRatings}. Dropped ${convergenceFacts.droppedFindingCount} finding(s) outside the reviewed-file set. Dropped below MEDIUM: ${convergenceFacts.droppedBelowMediumCount}. Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}. truncated lanes: ${convergenceFacts.truncatedLanes}`
+  return `${survivingFindingCount} finding(s) survived. Lanes run: ${convergenceFacts.lanesRun}. Lanes skipped: ${convergenceFacts.lanesSkipped}. Degraded: ${convergenceFacts.degraded}. Router ratings and route: ${convergenceFacts.routerRatings}. Dropped ${convergenceFacts.droppedFindingCount} finding(s) outside the reviewed-file set. Dropped below MEDIUM: ${convergenceFacts.droppedBelowMediumCount}. Dropped unproven: ${convergenceFacts.droppedUnprovenCount}. Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}. truncated lanes: ${convergenceFacts.truncatedLanes}`
 }
 
 function buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, reviewCmd) {
@@ -733,10 +680,11 @@ Degraded: ${convergenceFacts.degraded}
 Router ratings and route: ${convergenceFacts.routerRatings}
 Dropped outside the reviewed-file set: ${convergenceFacts.droppedFindingCount}
 Dropped below MEDIUM: ${convergenceFacts.droppedBelowMediumCount}
+Dropped unproven: ${convergenceFacts.droppedUnprovenCount}
 Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}
 Truncated lane tags: ${convergenceFacts.truncatedLanes}
 
-Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. Convergence confirms confidence but does not itself raise severity. A necessity finding never merges with another lane's finding.
+Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Convergence confirms confidence but does not itself raise severity. A necessity finding never merges with another lane's finding.
 
 A contradiction is one lane asserting a defect and another explicitly verifying it safe. Isolate the two positions of each contradiction and rule from those positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
 
@@ -803,21 +751,9 @@ if (args.codexAllowed && !dispatchNoncePattern.test(String(args.dispatchNonce ??
   return 'No valid dispatchNonce for a Codex-allowed run, no run.'
 }
 
-const runsConfirmRound = isConfirmRound()
-const fixDeltaFileNames = runsConfirmRound && Array.isArray(args.round.touchedFiles) ? [...new Set(args.round.touchedFiles.map(normalizeFilePath).filter(Boolean))] : []
-if (runsConfirmRound && !(args.round.fixDeltaCmd && fixDeltaFileNames.length > 0)) {
-  return 'No fix delta for a confirm round, no run.'
-}
-
-const changedFileNames = new Set(args.changedFiles.map(normalizeFilePath))
-const reviewedFileNameSet = new Set([...changedFileNames, ...fixDeltaFileNames])
+const reviewedFileNameSet = new Set(args.changedFiles.map(normalizeFilePath))
 const reviewedFileNames = [...reviewedFileNameSet]
-const laneScopeFileNames = runsConfirmRound ? fixDeltaFileNames : reviewedFileNames
-const laneReviewCmd = runsConfirmRound ? args.round.fixDeltaCmd : args.reviewCmd
-const routingNote = runsConfirmRound ? `routing skipped because round ${args.round.number} is the confirm round` : ''
-const routeOutcome = runsConfirmRound
-  ? { routerResult: null, degradationNote: '' }
-  : await routeReview(args.changedFiles)
+const routeOutcome = await routeReview(args.changedFiles)
 const routerResult = routeOutcome.routerResult
 const laneSelection = selectLaneNames(routerResult)
 const laneNames = laneSelection.laneNames
@@ -826,7 +762,7 @@ const laneNamesCutByCapForLog = laneNamesCutByCap.length > 0 ? laneNamesCutByCap
 log(`Chosen lanes: ${laneNames.join(', ')} because ${laneSelection.reason}. Cut by the ${maxLanesPerRun}-lane cap: ${laneNamesCutByCapForLog}.`)
 
 phase('Review')
-const lanePrompts = new Map(laneNames.map((laneName) => [laneName, buildLanePrompt(laneName, routerResult, laneNames, laneScopeFileNames, laneReviewCmd)]))
+const lanePrompts = new Map(laneNames.map((laneName) => [laneName, buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, args.reviewCmd)]))
 const laneTexts = await parallel(laneNames.map((laneName) => () => spawnLane(laneName, lanePrompts.get(laneName))))
 const parsedResponses = new Map()
 const degradationNotes = routeOutcome.degradationNote === '' ? [] : [routeOutcome.degradationNote]
@@ -849,7 +785,7 @@ for (let laneIndex = 0; laneIndex < laneNames.length; laneIndex += 1) {
   parsedResponses.set(laneName, parsedResponse)
 }
 
-if (!routerResult && !runsConfirmRound) {
+if (!routerResult) {
   degradationNotes.push('router unavailable; no-router default lane set used')
 }
 
@@ -858,6 +794,7 @@ const survivingLaneFindings = []
 const parsedRouterFindings = []
 let droppedFindingCount = 0
 let droppedBelowMediumCount = 0
+let droppedUnprovenCount = 0
 let droppedOutOfLaneCount = 0
 const droppedOutOfLaneTags = new Set()
 
@@ -865,6 +802,10 @@ for (const [laneName, parsedResponse] of parsedResponses) {
   for (const parsedFinding of parsedResponse.findings) {
     if (parsedFinding.fields.severity === 'LOW') {
       droppedBelowMediumCount += 1
+      continue
+    }
+    if (!carriesProof(parsedFinding)) {
+      droppedUnprovenCount += 1
       continue
     }
     const isOwnedByLane = isFindingOwnedByLane(parsedFinding, laneName)
@@ -895,6 +836,10 @@ for (const routerFindingLine of routerResult ? routerResult.findings || [] : [])
     droppedBelowMediumCount += 1
     continue
   }
+  if (!carriesProof(parsedRouterFinding)) {
+    droppedUnprovenCount += 1
+    continue
+  }
   if (!reviewedFileNameSet.has(parsedRouterFinding.fields.file)) {
     droppedFindingCount += 1
     continue
@@ -919,7 +864,7 @@ const survivingFindings = [
 ]
 
 phase('Converge')
-const convergenceFacts = buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, routerResult, routingNote, droppedFindingCount, droppedBelowMediumCount, droppedOutOfLaneCount, [...droppedOutOfLaneTags], cappedLaneNames)
+const convergenceFacts = buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, routerResult, droppedFindingCount, droppedBelowMediumCount, droppedUnprovenCount, droppedOutOfLaneCount, [...droppedOutOfLaneTags], cappedLaneNames)
 if (canConvergeMechanically(survivingFindings, laneSummaries)) {
   const mechanicalConvergence = buildMechanicalConvergence(survivingFindings, convergenceFacts)
   if (!isConvergedBlock(mechanicalConvergence, cappedLaneNames, reviewedFileNameSet)) {
@@ -928,13 +873,13 @@ if (canConvergeMechanically(survivingFindings, laneSummaries)) {
   return mechanicalConvergence
 }
 
-const judgmentPrompt = buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, laneReviewCmd)
+const judgmentPrompt = buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, args.reviewCmd)
 const convergedFindings = await agent(judgmentPrompt, { model: 'opus', label: 'Converge findings', phase: 'Converge' })
 const firstValidationFailure = findConvergenceValidationFailure(convergedFindings, cappedLaneNames, reviewedFileNameSet)
 if (!firstValidationFailure) {
   return convergedFindings
 }
-const resumeSafeRetryId = args.retryAttemptId ?? `${args.reviewCmd} round ${args.round?.number ?? 1}`
+const resumeSafeRetryId = args.retryAttemptId ?? args.reviewCmd
 const retryJudgmentPrompt = `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
 const retriedConvergedFindings = await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' })
 if (!isConvergedBlock(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {
