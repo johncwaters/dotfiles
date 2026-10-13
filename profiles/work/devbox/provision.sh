@@ -55,16 +55,16 @@ linkDevboxTemplateRepository() {
 }
 
 syncDevboxRepositories() {
-  local snapshotDirectory="$HOME/dotfiles-snapshot"
+  local dotfilesAlias="$HOME/.dotfiles"
   local syncLog="$HOME/.local/state/dotfiles/devbox-repos.log"
-  if [[ ! -f "$snapshotDirectory/repos/install.sh" || ! -f "$snapshotDirectory/profiles/work-server/repos.txt" ]]; then
+  if [[ ! -f "$dotfilesAlias/repos/install.sh" || ! -f "$dotfilesAlias/profiles/work-server/repos.txt" ]]; then
     return 0
   fi
   linkDevboxTemplateRepository
   mkdir -p -- "${syncLog%/*}"
   touch "$syncLog"
   chmod 600 "$syncLog"
-  if DOTFILES_PROFILE=work-server bash "$snapshotDirectory/repos/install.sh" > "$syncLog" 2>&1 < /dev/null 9>&-; then
+  if DOTFILES_PROFILE=work-server bash "$dotfilesAlias/repos/install.sh" > "$syncLog" 2>&1 < /dev/null 9>&-; then
     reportDevboxItem present repos "synced"
     return 0
   fi
@@ -72,56 +72,67 @@ syncDevboxRepositories() {
   return 1
 }
 
-installDevboxSnapshot() (
-  snapshotCommit="$1"
-  snapshotDirectory="$HOME/dotfiles-snapshot"
-  stagedDirectory="$HOME/dotfiles-snapshot.new"
-  previousDirectory="$HOME/dotfiles-snapshot.old"
-  snapshotMarker="$snapshotDirectory/.snapshot-commit"
+devboxPathsResolveAlike() {
+  local firstResolvedPath secondResolvedPath
+  firstResolvedPath="$(cd -- "$1" 2>/dev/null && pwd -P)" || return 1
+  secondResolvedPath="$(cd -- "$2" 2>/dev/null && pwd -P)" || return 1
+  [[ "$firstResolvedPath" == "$secondResolvedPath" ]]
+}
+
+removeRetiredDevboxSnapshot() {
+  local retiredPath
+  for retiredPath in "$HOME/dotfiles-snapshot" "$HOME/dotfiles-snapshot.new" "$HOME/dotfiles-snapshot.old"; do
+    [[ -e "$retiredPath" || -L "$retiredPath" ]] || continue
+    rm -rf -- "$retiredPath"
+    reportDevboxItem installed "dotfiles snapshot" "removed ~/${retiredPath##*/}"
+  done
+}
+
+installDevboxDotfiles() (
+  clonePath="$HOME/Projects/dotfiles"
+  dotfilesAlias="$HOME/.dotfiles"
   bootstrapLog="$HOME/.local/state/dotfiles/devbox-bootstrap.log"
+  convergedRecord="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/converged"
   holdDevboxProvisionLock
-  reportFailedDevboxSnapshot() {
+  reportFailedDevboxDotfiles() {
     if (($? == 0)); then
       return 0
     fi
-    reportDevboxItem warned dotfiles "snapshot or bootstrap failed; retried next run; see $bootstrapLog"
+    reportDevboxItem warned dotfiles "clone or converge failed; retried next run; see $bootstrapLog"
   }
-  trap reportFailedDevboxSnapshot EXIT
+  trap reportFailedDevboxDotfiles EXIT
   umask 077
-  rm -rf -- "$stagedDirectory" "$previousDirectory"
-  if [[ "$(cat "$snapshotMarker" 2>/dev/null || true)" == "$snapshotCommit" ]]; then
-    cat > /dev/null
-    reportDevboxItem present dotfiles "$snapshotCommit"
-    return 0
-  fi
   mkdir -p -- "${bootstrapLog%/*}"
   touch "$bootstrapLog"
   chmod 600 "$bootstrapLog"
-  if [[ -L "$snapshotDirectory" || ( -e "$snapshotDirectory" && ! -d "$snapshotDirectory" ) ]]; then
-    reportDevboxItem warned dotfiles "~/dotfiles-snapshot is not a directory; left unchanged"
-    return 1
+  if [[ ! -d "$clonePath/.git" ]]; then
+    mkdir -p -- "${clonePath%/*}"
+    git clone --quiet -- https://github.com/johncwaters/dotfiles.git "$clonePath" >> "$bootstrapLog" 2>&1 < /dev/null
   fi
-  mkdir -p -- "$stagedDirectory"
-  tar -xf - -C "$stagedDirectory" >> "$bootstrapLog" 2>&1
-  if [[ -d "$snapshotDirectory" ]]; then
-    mv -- "$snapshotDirectory" "$previousDirectory"
-  fi
-  mv -- "$stagedDirectory" "$snapshotDirectory"
-  rm -rf -- "$previousDirectory"
-  linkDevboxTemplateRepository
-  local convergedRecord="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/converged"
-  rm -f -- "$convergedRecord"
-  PATH="/tmp/coder-script-data/bin:$HOME/.local/bin:$PATH" \
-    bash "$snapshotDirectory/script/bootstrap" --profile work-server >> "$bootstrapLog" 2>&1 < /dev/null 9>&-
-  local convergeOutcome
-  convergeOutcome="$(awk '{ print $4 }' "$convergedRecord" 2>/dev/null || true)"
-  if [[ "$convergeOutcome" != "clean" ]]; then
-    reportDevboxItem warned dotfiles "work-server bootstrap ${convergeOutcome:-left no converge record}; retried next run; see $bootstrapLog"
+  if devboxPathsResolveAlike "$dotfilesAlias" "$clonePath" && bash "$clonePath/bin/dot" status > /dev/null 2>&1 < /dev/null; then
+    reportDevboxItem present dotfiles "$(git -C "$clonePath" rev-parse HEAD)"
+    removeRetiredDevboxSnapshot
     return 0
   fi
-  printf '%s\n' "$snapshotCommit" > "$snapshotMarker.new"
-  mv -f -- "$snapshotMarker.new" "$snapshotMarker"
-  reportDevboxItem installed dotfiles "$snapshotCommit; work-server bootstrapped"
+  if [[ -L "$dotfilesAlias" ]] && ! devboxPathsResolveAlike "$dotfilesAlias" "$clonePath"; then
+    rm -f -- "$dotfilesAlias"
+  fi
+  linkDevboxTemplateRepository
+  local recordBeforeConverge recordAfterConverge convergeOutcome
+  recordBeforeConverge="$(cat "$convergedRecord" 2>/dev/null || true)"
+  PATH="/tmp/coder-script-data/bin:$HOME/.local/bin:$PATH" DOTFILES_REQUIRE_ORIGIN=1 \
+    bash "$clonePath/bin/dot" --profile work-server >> "$bootstrapLog" 2>&1 < /dev/null 9>&-
+  recordAfterConverge="$(cat "$convergedRecord" 2>/dev/null || true)"
+  convergeOutcome="$(awk '{ print $4 }' <<< "$recordAfterConverge")"
+  if [[ "$recordAfterConverge" == "$recordBeforeConverge" ]]; then
+    convergeOutcome=""
+  fi
+  if [[ "$convergeOutcome" != "clean" ]]; then
+    reportDevboxItem warned dotfiles "work-server converge ${convergeOutcome:-left no new converge record}; retried next run; see $bootstrapLog"
+    return 0
+  fi
+  reportDevboxItem installed dotfiles "$(git -C "$clonePath" rev-parse HEAD); work-server converged"
+  removeRetiredDevboxSnapshot
 )
 
 devboxPortListens() {
@@ -296,10 +307,6 @@ targetRepo="${targetRepo#git@github.com:}"
 targetRepo="${targetRepo#github.com/}"
 while [[ "$targetRepo" == */ ]]; do targetRepo="${targetRepo%/}"; done
 targetRepo="${targetRepo%.git}"
-if [[ "${targetRepo,,}" == johncwaters/dotfiles ]]; then
-  printf 'gh: dotfiles access is excluded on the box\n' >&2
-  exit 1
-fi
 if [[ -n "${GH_PERSONAL_TOKEN:-}" && "${targetRepo,,}" == johncwaters/* ]]; then
   export GH_TOKEN="$GH_PERSONAL_TOKEN"
 fi
@@ -338,9 +345,6 @@ while IFS='=' read -r key value; do
   esac
 done
 [[ "$protocol" == https && "$host" == github.com && "${repoPath,,}" == johncwaters/* ]] || exit 0
-case "${repoPath,,}" in
-  johncwaters/dotfiles | johncwaters/dotfiles.git | johncwaters/dotfiles/* | johncwaters/dotfiles.git/*) exit 0 ;;
-esac
 printf 'username=x-access-token\npassword=%s\n' "$GH_PERSONAL_TOKEN"
 HELPER
   chmod 700 "$stagedHelperPath"
@@ -369,8 +373,8 @@ probeDevboxPersonalTokenDotfilesAccess() {
     return 0
   fi
   case "$dotfilesStatusCode" in
-    200) reportDevboxItem warned "personal GitHub token" "can read johncwaters/dotfiles; recreate it without that repo" ;;
-    403 | 404) reportDevboxItem present "personal GitHub token" "cannot read johncwaters/dotfiles" ;;
+    200) reportDevboxItem present "personal GitHub token" "can read johncwaters/dotfiles" ;;
+    403 | 404) reportDevboxItem warned "personal GitHub token" "cannot read johncwaters/dotfiles; grant the fine-grained token Contents read and write on that repo" ;;
     *) reportDevboxItem warned "personal GitHub token" "dotfiles access check got HTTP $dotfilesStatusCode" ;;
   esac
 }
@@ -432,7 +436,7 @@ installDevboxPrerequisites() {
 mergeDevboxConfig() {
   DEVBOX_CONFIG_MODE="$1" DEVBOX_PUBLIC_HOST="$2" node --input-type=module -e '
     import { createRequire } from "node:module";
-    const require = createRequire(`${process.env.HOME}/dotfiles-snapshot/package.json`);
+    const require = createRequire(`${process.env.HOME}/.dotfiles/package.json`);
     const fs = require("node:fs");
     const path = require("node:path");
     const crypto = require("node:crypto");
@@ -464,8 +468,8 @@ mergeDevboxConfig() {
     if (!Array.isArray(ledger?.keys) || !Array.isArray(ledger?.hookIds)) throw new Error("devbox-imported-defaults.json must list keys and hookIds; left unchanged");
     const importedKeys = new Set(ledger.keys);
     const importedHookIds = new Set(ledger.hookIds);
-    const settingsPath = path.join(process.env.HOME, "dotfiles-snapshot", "profiles/work/glimmervoid.settings.json");
-    const syncPath = path.join(process.env.HOME, "dotfiles-snapshot", "glimmervoid/sync-settings.mjs");
+    const settingsPath = path.join(process.env.HOME, ".dotfiles", "profiles/work/glimmervoid.settings.json");
+    const syncPath = path.join(process.env.HOME, ".dotfiles", "glimmervoid/sync-settings.mjs");
     let settingsPlan;
     let settingsSync;
     const basePath = path.join(directory, "dotfiles-settings-base.json");
@@ -476,7 +480,7 @@ mergeDevboxConfig() {
       settingsPlan = settingsSync.planApply(config, wanted, settingsSync.readJson(basePath));
       config = settingsPlan.config;
     }
-    const defaultsPath = path.join(process.env.HOME, "dotfiles-snapshot", "glimmervoid", "config.example.json");
+    const defaultsPath = path.join(process.env.HOME, ".dotfiles", "glimmervoid", "config.example.json");
     if (!fs.existsSync(settingsPath) && !ledger.checkForUpdatesMigration && !importedKeys.has("checkForUpdates") && config.checkForUpdates === false) delete config.checkForUpdates;
     if (!fs.existsSync(settingsPath) && fs.existsSync(defaultsPath)) {
       const defaults = JSON.parse(fs.readFileSync(defaultsPath, "utf8"), (_key, value) =>
@@ -673,14 +677,7 @@ stopDevboxGlimmervoid() {
 }
 
 case "$devboxAction" in
-  snapshot-status)
-    holdDevboxProvisionLock
-    if [[ -f "$HOME/dotfiles-snapshot/.snapshot-commit" ]]; then
-      cat "$HOME/dotfiles-snapshot/.snapshot-commit"
-    fi
-    exit
-    ;;
-  snapshot) installDevboxSnapshot "${3:?missing snapshot commit}"; exit ;;
+  dotfiles) installDevboxDotfiles; exit ;;
   sync-repos) holdDevboxProvisionLock; syncDevboxRepositories; exit ;;
   config-only) requireDevboxPublicHost; holdDevboxProvisionLock; convergeDevboxConfig "$devboxPublicHostName"; exit ;;
   status)

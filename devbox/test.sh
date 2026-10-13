@@ -9,7 +9,7 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
 printf 'work\n' > "$DOTFILES_MARKER_PATH"
-linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup tar cut od date cksum
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -33,9 +33,9 @@ case "$1" in
   ssh)
     printf '%s %s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" "${CODER_SSH_USAGE_APP:-}" >> "$DOTFILES_TEST_STATE/ssh-safety"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
-    if [[ -f "$DOTFILES_TEST_STATE/execute-snapshot" && "${*:4}" == *sync-repos ]]; then
+    if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" && "${*:4}" == *sync-repos ]]; then
       cat > /dev/null
-      DOTFILES_TEST_REMOTE_SNAPSHOT=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
+      DOTFILES_TEST_REMOTE=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
         HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 sync-repos
       exit
     fi
@@ -58,18 +58,14 @@ case "$1" in
       printf '{"home":"/home/coder","live":{},"base":{},"projectPaths":[]}\n'
       exit
     fi
-    if [[ "${*:4}" == *snapshot-status ]]; then
+    if [[ "${*:4}" == *" dotfiles" ]]; then
       cat > /dev/null
-      if [[ -f "$DOTFILES_TEST_STATE/execute-snapshot" ]]; then
-        XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 snapshot-status
+      if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" ]]; then
+        DOTFILES_TEST_REMOTE=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
+          HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 dotfiles
         exit
       fi
-      cat "$DOTFILES_TEST_STATE/snapshot-commit"
-      exit
-    fi
-    if [[ "${5:-}" == -c ]]; then
-      printf 'snapshot transfer\n' >> "$DOTFILES_TEST_LOG"
-      DOTFILES_TEST_REMOTE_SNAPSHOT=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" bash -c "${*:4}"
+      printf '[present] dotfiles: fixture\n'
       exit
     fi
     cat > "$DOTFILES_TEST_STATE/pushed-script"
@@ -94,26 +90,26 @@ STUB
 
 testGitPath="$(type -P git)"
 export DOTFILES_TEST_GIT_PATH="$testGitPath"
-snapshotFixtureRepo="$stubState/snapshot-repo"
-mkdir -p "$snapshotFixtureRepo/script" "$snapshotFixtureRepo/profiles/work-server" "$snapshotFixtureRepo/snapshot-probe"
-cp -R "$repoRoot/script/." "$snapshotFixtureRepo/script/"
-printf '{"platform":"linux","topics":["snapshot-probe"]}\n' > "$snapshotFixtureRepo/profiles/work-server/profile.json"
-cat > "$snapshotFixtureRepo/snapshot-probe/install.sh" <<'TOPIC'
+dotfilesOriginRepo="$stubState/dotfiles-origin"
+commitDotfilesOrigin() {
+  "$testGitPath" -C "$dotfilesOriginRepo" add -A
+  "$testGitPath" -C "$dotfilesOriginRepo" -c user.name=fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm "$1"
+}
+mkdir -p "$dotfilesOriginRepo/profiles/work-server" "$dotfilesOriginRepo/converge-probe"
+cp -R "$repoRoot/script" "$repoRoot/bin" "$dotfilesOriginRepo/"
+printf '{"platform":"linux","topics":["converge-probe"]}\n' > "$dotfilesOriginRepo/profiles/work-server/profile.json"
+cat > "$dotfilesOriginRepo/converge-probe/install.sh" <<'TOPIC'
 #!/usr/bin/env bash
 printf 'bootstrap %s\n' "$DOTFILES_PROFILE" >> "$DOTFILES_TEST_LOG"
 printf '%s\n' "$PATH" > "$DOTFILES_TEST_STATE/bootstrap-path"
-if [[ -e "$HOME/dotfiles-snapshot/.snapshot-commit" ]]; then touch "$DOTFILES_TEST_STATE/marker-during-bootstrap"; fi
 [[ ! -f "$DOTFILES_TEST_STATE/bootstrap-failed" ]] || exit 1
 mkdir -p "$HOME/.claude/hooks"
-ln -sf "$HOME/.dotfiles/snapshot-probe/hook.mjs" "$HOME/.claude/hooks/snapshot-probe.mjs"
+ln -sf "$HOME/.dotfiles/converge-probe/hook.mjs" "$HOME/.claude/hooks/converge-probe.mjs"
 TOPIC
-printf 'committed hook\n' > "$snapshotFixtureRepo/snapshot-probe/hook.mjs"
-"$testGitPath" -C "$snapshotFixtureRepo" init -q -b main
-"$testGitPath" -C "$snapshotFixtureRepo" add .
-"$testGitPath" -C "$snapshotFixtureRepo" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm snapshot
-"$testGitPath" -C "$snapshotFixtureRepo" rev-parse HEAD > "$stubState/snapshot-commit"
-printf 'uncommitted hook\n' > "$snapshotFixtureRepo/snapshot-probe/hook.mjs"
-printf 'untracked secret\n' > "$snapshotFixtureRepo/untracked-secret"
+printf 'committed hook\n' > "$dotfilesOriginRepo/converge-probe/hook.mjs"
+"$testGitPath" -C "$dotfilesOriginRepo" init -q -b main
+commitDotfilesOrigin fixture
 writeStub git <<'STUB'
 #!/usr/bin/env bash
 printf 'git %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -124,7 +120,11 @@ fi
 if [[ "${1:-}" == config ]]; then
   exec "$DOTFILES_TEST_GIT_PATH" "$@"
 fi
-if [[ "${DOTFILES_TEST_REMOTE_SNAPSHOT:-}" == 1 ]]; then
+if [[ "${DOTFILES_TEST_REMOTE:-}" == 1 ]]; then
+  if [[ "${1:-}" == clone && "${@: -2:1}" == https://github.com/johncwaters/dotfiles.git ]]; then
+    [[ ! -f "$DOTFILES_TEST_STATE/dotfiles-clone-failed" ]] || exit 128
+    exec "$DOTFILES_TEST_GIT_PATH" clone --quiet -- "$DOTFILES_TEST_STATE/dotfiles-origin" "${@: -1}"
+  fi
   if [[ "${1:-}" == clone ]]; then
     cloneUrl="${@: -2:1}"
     cloneDestination="${@: -1}"
@@ -146,7 +146,7 @@ if [[ "${DOTFILES_TEST_REMOTE_SNAPSHOT:-}" == 1 ]]; then
   fi
   exec "$DOTFILES_TEST_GIT_PATH" "$@"
 fi
-exec "$DOTFILES_TEST_GIT_PATH" -C "$DOTFILES_TEST_STATE/snapshot-repo" "${@:3}"
+exec "$DOTFILES_TEST_GIT_PATH" "$@"
 STUB
 provideCommand git
 
@@ -158,8 +158,8 @@ runDevbox() {
   runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work bash -c 'source "$1/commands.bash"; shift; devbox "$@"' _ "$topicDirectory" "$@"
 }
 
-snapshotCheckSitsBetweenPrepareAndProvision() {
-  [[ "$(sed -nE 's/^coder ssh .* (prepare|provision|snapshot-status)$/\1/p' "$commandLog" | tr '\n' ' ')" == 'prepare snapshot-status provision ' ]]
+dotfilesConvergeSitsBetweenPrepareAndProvision() {
+  [[ "$(sed -nE 's/^coder ssh .* (prepare|dotfiles|sync-repos|provision)$/\1/p' "$commandLog" | tr '\n' ' ')" == 'prepare dotfiles sync-repos provision ' ]]
 }
 
 printf '\ndevbox topic\n'
@@ -242,9 +242,7 @@ check "running converge pushes with the pinned release" logHas "coder ssh devbox
 check "running converge pipes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "converge SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
-check "matching snapshot hash skips archive and bootstrap" logLacks 'archive --format=tar'
-check "matching snapshot hash reports dotfiles present" outputHas "$runningOutput" '[present] dotfiles'
-check "converge checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
+check "converge runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
 check "running converge does not start a workspace" logLacks 'coder start'
 check "an unchanged provision reports no laptop changes" reportsNoChanges "$runningOutput"
 check "an unchanged provision reports the devbox as present" outputMatches "$runningOutput" '\[ -- \] devbox +devbox-fixture provisioned'
@@ -270,7 +268,7 @@ check "ensure provisions a running workspace with the pinned release" \
 check "ensure pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "ensure disables SSH autostart after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "ensure SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
-check "ensure checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
+check "ensure runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
 check "ensure never starts a running workspace" logLacks 'coder start'
 
 for failureMarker in list-failed ssh-failed; do
@@ -371,7 +369,7 @@ launchAgentArguments[0]="$(type -P bash)"
 runInStubbedSandbox "$sandbox" "${launchAgentArguments[@]}" >/dev/null
 check "rendered program arguments provision through ensure" \
   logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
-check "rendered launchd ensure checks the snapshot" logHas "snapshot-status"
+check "rendered launchd ensure converges the box dotfiles" logHas "$pinnedGlimmervoidVersion dotfiles"
 check "rendered program arguments never start a workspace" logLacks 'coder start'
 
 printf 'hand edit\n' >> "$launchAgentPath"
@@ -425,7 +423,7 @@ check "up starts a stopped workspace" logHas 'coder start devbox-fixture --yes'
 check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
 check "up pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "up prints the dashboard URL" outputHas "$upOutput" 'https://fixture.invalid/'
-check "up checks the snapshot after prepare and before provision" snapshotCheckSitsBetweenPrepareAndProvision
+check "up runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
 check "up starts before it connects" outputMatches "$(grep -E 'coder start|coder ssh' "$commandLog" | head -1)" '^coder start'
 : > "$commandLog"
 runDevbox up >/dev/null
@@ -474,150 +472,141 @@ printf 'flock %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 STUB
 provideCommand flock
 
-remoteSnapshotHome="$stubState/remote-home"
-remoteSnapshotMarker="$remoteSnapshotHome/dotfiles-snapshot/.snapshot-commit"
-remoteBootstrapLog="$remoteSnapshotHome/.local/state/dotfiles/devbox-bootstrap.log"
+remoteHome="$stubState/remote-home"
+remoteClone="$remoteHome/Projects/dotfiles"
+remoteConvergedRecord="$remoteHome/.local/state/dotfiles/converged"
+remoteBootstrapLog="$remoteHome/.local/state/dotfiles/devbox-bootstrap.log"
 cp "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/remote-provision.sh"
 printf 'running\n' > "$stubState/workspace-status"
 
 startEmptyRemoteHome() {
-  rm -rf "$remoteSnapshotHome"
-  mkdir -p "$remoteSnapshotHome"
-  touch "$remoteSnapshotHome/.dotfiles-test-sandbox"
+  rm -rf "$remoteHome"
+  mkdir -p "$remoteHome"
+  touch "$remoteHome/.dotfiles-test-sandbox"
 }
 
-remoteSnapshotWasPushed() {
-  grep -qx 'snapshot transfer' "$commandLog"
+remoteAliasResolvesToClone() {
+  [[ -L "$remoteHome/.dotfiles" && "$(cd -- "$remoteHome/.dotfiles" && pwd -P)" == "$(cd -- "$remoteClone" && pwd -P)" ]]
+}
+
+remoteConvergeRecordIsCleanAt() {
+  [[ "$(awk '{ print $1, $4 }' "$remoteConvergedRecord" 2>/dev/null)" == "$1 clean" ]]
 }
 
 firstLineNumberMatching() {
   grep -nE -- "$1" "$commandLog" | head -1 | cut -d: -f1
 }
 
-snapshotTransferSitsBetweenPrepareAndProvision() {
-  local prepareLine transferLine provisionLine
-  prepareLine="$(firstLineNumberMatching "^coder ssh .* $pinnedGlimmervoidVersion prepare$")"
-  transferLine="$(firstLineNumberMatching '^snapshot transfer$')"
-  provisionLine="$(firstLineNumberMatching "^coder ssh .* $pinnedGlimmervoidVersion provision$")"
-  [[ -n "$prepareLine" && -n "$transferLine" && -n "$provisionLine" ]] \
-    && ((prepareLine < transferLine && transferLine < provisionLine))
+linesAppearInOrder() {
+  local previousLine=0 lineNumber linePattern
+  for linePattern in "$@"; do
+    lineNumber="$(firstLineNumberMatching "$linePattern")"
+    [[ -n "$lineNumber" ]] && ((lineNumber > previousLine)) || return 1
+    previousLine="$lineNumber"
+  done
+}
+
+remoteConvergeSitsBetweenPrepareAndProvision() {
+  linesAppearInOrder "^coder ssh .* $pinnedGlimmervoidVersion prepare$" "^coder ssh .* $pinnedGlimmervoidVersion dotfiles$" \
+    "^coder ssh .* $pinnedGlimmervoidVersion provision$"
 }
 
 startEmptyRemoteHome
-touch "$stubState/execute-snapshot" "$stubState/bootstrap-failed"
+touch "$stubState/execute-dotfiles" "$stubState/bootstrap-failed"
 : > "$commandLog"
-firstFailedSnapshotStatus=0
-firstFailedSnapshotOutput="$(runDevbox ensure 2>&1)" || firstFailedSnapshotStatus=$?
-check "a failed first bootstrap leaves ensure succeeding on its provision" test "$firstFailedSnapshotStatus" -eq 0
-check "a failed first bootstrap reports dotfiles warned" outputHas "$firstFailedSnapshotOutput" '[warned] dotfiles'
-check "a failed first bootstrap still provisions after the snapshot" snapshotTransferSitsBetweenPrepareAndProvision
-check "a failed first bootstrap places the committed tree" \
-  grep -qx 'committed hook' "$remoteSnapshotHome/dotfiles-snapshot/snapshot-probe/hook.mjs"
-check "a failed first bootstrap records no snapshot commit" test ! -e "$remoteSnapshotMarker"
+firstFailedConvergeStatus=0
+firstFailedConvergeOutput="$(runDevbox ensure 2>&1)" || firstFailedConvergeStatus=$?
+check "a failed first converge leaves ensure succeeding on its provision" test "$firstFailedConvergeStatus" -eq 0
+check "a failed first converge reports dotfiles warned" outputHas "$firstFailedConvergeOutput" '[warned] dotfiles'
+check "a failed first converge still provisions after it" remoteConvergeSitsBetweenPrepareAndProvision
+check "a fresh box clones the dotfiles repository into Projects" \
+  logHas "git clone --quiet -- https://github.com/johncwaters/dotfiles.git $remoteClone"
+check "a fresh box points the dotfiles alias at the clone" remoteAliasResolvesToClone
+check "a failed converge skips the repository sync" logLacks 'sync-repos'
 : > "$commandLog"
 runDevbox ensure >/dev/null 2>&1
-check "the ensure after a failed first bootstrap pushes the snapshot again" remoteSnapshotWasPushed
-check "the ensure after a failed first bootstrap still records no snapshot commit" test ! -e "$remoteSnapshotMarker"
+check "the ensure after a failed first converge bootstraps again" logHas 'bootstrap work-server'
+check "the ensure after a failed first converge reuses the clone" logLacks 'git clone --quiet -- https://github.com/johncwaters/dotfiles.git'
 
 startEmptyRemoteHome
-mkdir -p "$remoteSnapshotHome/dotfiles-snapshot" "$remoteSnapshotHome/dotfiles-snapshot.old" "$remoteSnapshotHome/dotfiles-snapshot.new"
-printf 'old-commit\n' > "$remoteSnapshotMarker"
-printf 'old snapshot\n' > "$remoteSnapshotHome/dotfiles-snapshot/old-content"
-printf 'stale previous\n' > "$remoteSnapshotHome/dotfiles-snapshot.old/stale-previous"
-printf 'stale staged\n' > "$remoteSnapshotHome/dotfiles-snapshot.new/stale-staged"
-ln -s "$remoteSnapshotHome/dotfiles-snapshot" "$remoteSnapshotHome/.dotfiles"
-printf 'Coder PATH setup\n' > "$remoteSnapshotHome/.bashrc"
-rm -f "$stubState/marker-during-bootstrap"
+mkdir -p "$remoteHome/dotfiles-snapshot/script" "$remoteHome/dotfiles-snapshot.old" "$remoteHome/dotfiles-snapshot.new" "${remoteConvergedRecord%/*}"
+touch "$remoteHome/dotfiles-snapshot/script/bootstrap"
+ln -s "$remoteHome/dotfiles-snapshot" "$remoteHome/.dotfiles"
+printf 'unknown work-server 2026-10-08T00:00:00Z clean\n' > "$remoteConvergedRecord"
+printf 'Coder PATH setup\n' > "$remoteHome/.bashrc"
 : > "$commandLog"
-failedSnapshotStatus=0
-failedSnapshotOutput="$(runDevbox ensure 2>&1)" || failedSnapshotStatus=$?
-check "a failed bootstrap leaves ensure succeeding on its provision" test "$failedSnapshotStatus" -eq 0
-check "a failed bootstrap reports dotfiles warned" outputHas "$failedSnapshotOutput" '[warned] dotfiles'
-check "a failed bootstrap still provisions after the snapshot" snapshotTransferSitsBetweenPrepareAndProvision
-check "stale previous and staged snapshots never block a run" remoteSnapshotWasPushed
-check "a stale previous snapshot is cleared" test ! -e "$remoteSnapshotHome/dotfiles-snapshot.old"
-check "a stale staged snapshot is cleared rather than shipped" \
-  bash -c '[[ ! -e "$1/dotfiles-snapshot.new" && ! -e "$1/dotfiles-snapshot/stale-staged" ]]' _ "$remoteSnapshotHome"
-check "a failed bootstrap keeps the new tree instead of rolling back" \
-  grep -qx 'committed hook' "$remoteSnapshotHome/dotfiles-snapshot/snapshot-probe/hook.mjs"
-check "a failed bootstrap drops the previous tree" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/old-content"
-check "a failed bootstrap records no snapshot commit" test ! -e "$remoteSnapshotMarker"
-check "bootstrap never sees a snapshot commit recorded ahead of it" test ! -e "$stubState/marker-during-bootstrap"
-check "a failed bootstrap leaves the dotfiles alias usable" test -d "$remoteSnapshotHome/.dotfiles"
-check "snapshot bootstrap holds the provision lock" logHas 'flock -w 120 9'
-check "bootstrap failure evidence is in the private log" \
-  grep -q 'snapshot-probe.*install.sh exited 1' "$remoteBootstrapLog"
+failedSnapshotBoxStatus=0
+failedSnapshotBoxOutput="$(runDevbox ensure 2>&1)" || failedSnapshotBoxStatus=$?
+check "a failed converge over a snapshot box leaves ensure succeeding" test "$failedSnapshotBoxStatus" -eq 0
+check "a failed converge over a snapshot box reports dotfiles warned" outputHas "$failedSnapshotBoxOutput" '[warned] dotfiles'
+check "a snapshot box repoints the dotfiles alias at the clone" remoteAliasResolvesToClone
+check "a failed converge keeps every retired snapshot directory" \
+  bash -c '[[ -d "$1/dotfiles-snapshot" && -d "$1/dotfiles-snapshot.new" && -d "$1/dotfiles-snapshot.old" ]]' _ "$remoteHome"
+check "the box converge holds the provision lock" logHas 'flock -w 120 9'
+check "bootstrap failure evidence is in the private log" grep -q 'converge-probe.*install.sh exited 1' "$remoteBootstrapLog"
+check "bootstrap log has mode 0600" test "$(fileModeOf "$remoteBootstrapLog")" = 600
 : > "$commandLog"
-failedSnapshotConvergeStatus=0
-failedSnapshotConvergeOutput="$(runInstall 2>&1)" || failedSnapshotConvergeStatus=$?
-check "snapshot failure maps to a laptop converge warning" outputHas "$failedSnapshotConvergeOutput" '[warn] devbox'
-check "snapshot failure fails laptop converge" test "$failedSnapshotConvergeStatus" -eq 1
-check "the converge after a failed bootstrap retries it against a fresh push" remoteSnapshotWasPushed
+failedBoxConvergeStatus=0
+failedBoxConvergeOutput="$(runInstall 2>&1)" || failedBoxConvergeStatus=$?
+check "a failed box converge maps to a laptop converge warning" outputHas "$failedBoxConvergeOutput" '[warn] devbox'
+check "a failed box converge fails laptop converge" test "$failedBoxConvergeStatus" -eq 1
 touch "$stubState/provision-lock-held"
 : > "$commandLog"
-heldSnapshotOutput="$(runDevbox ensure 2>&1)"
-check "a held provision lock reports dotfiles warned" outputHas "$heldSnapshotOutput" '[warned] dotfiles: cannot read remote snapshot commit'
-check "a held provision lock transfers no snapshot" logLacks 'snapshot transfer'
-check "a held provision lock records no snapshot commit" test ! -e "$remoteSnapshotMarker"
-rm -f "$stubState/provision-lock-held"
-rm -f "$stubState/bootstrap-failed" "$stubState/marker-during-bootstrap"
+heldLockOutput="$(runDevbox ensure 2>&1)"
+check "a held provision lock reports dotfiles warned" outputHas "$heldLockOutput" '[warned] dotfiles: box converge did not finish'
+check "a held provision lock runs no bootstrap" logLacks 'bootstrap work-server'
+rm -f "$stubState/provision-lock-held" "$stubState/bootstrap-failed"
+rm -rf "$remoteClone"
 : > "$commandLog"
-snapshotOutput="$(runDevbox ensure)"
-check "a retried bootstrap that succeeds reports dotfiles installed" outputHas "$snapshotOutput" '[installed] dotfiles'
-check "pushed snapshot records committed HEAD" \
-  cmp -s "$stubState/snapshot-commit" "$remoteSnapshotMarker"
-check "the snapshot commit is recorded only after bootstrap exits" test ! -e "$stubState/marker-during-bootstrap"
-check "the snapshot commit is private" test "$(fileModeOf "$remoteSnapshotMarker")" = 600
-check "the snapshot commit leaves no staged copy behind" test ! -e "$remoteSnapshotMarker.new"
-check "archive pins the recorded HEAD hash" logHas "archive --format=tar $(cat "$stubState/snapshot-commit")"
-check "pushed snapshot contains only committed content" \
-  grep -qx 'committed hook' "$remoteSnapshotHome/dotfiles-snapshot/snapshot-probe/hook.mjs"
-check "pushed snapshot excludes untracked secrets" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/untracked-secret"
-check "pushed snapshot has no git directory or repo credentials" test ! -e "$remoteSnapshotHome/dotfiles-snapshot/.git"
-check "plain snapshot convergence records no git revision" \
-  grep -q '^unknown work-server ' "$remoteSnapshotHome/.local/state/dotfiles/converged"
-check "snapshot runs work-server bootstrap" logHas 'bootstrap work-server'
-check "snapshot bootstrap makes lasting links through the alias" \
-  test -f "$remoteSnapshotHome/.claude/hooks/snapshot-probe.mjs"
-check "snapshot bootstrap preserves Coder shell setup" grep -qx 'Coder PATH setup' "$remoteSnapshotHome/.bashrc"
-check "snapshot bootstrap includes Coder and local commands on PATH" \
-  grep -qF "/tmp/coder-script-data/bin:$remoteSnapshotHome/.local/bin:" "$stubState/bootstrap-path"
-check "bootstrap log has mode 0600" test "$(fileModeOf "$remoteBootstrapLog")" = 600
-check "successful snapshot removes the old directory" test ! -e "$remoteSnapshotHome/dotfiles-snapshot.old"
-check "snapshot bootstrap finishes before provision" \
-  test "$(firstLineNumberMatching '^bootstrap work-server$')" -lt \
-       "$(firstLineNumberMatching "^coder ssh .* $pinnedGlimmervoidVersion provision$")"
-mv "$remoteSnapshotHome/dotfiles-snapshot" "$remoteSnapshotHome/dotfiles-snapshot.old"
+convergedOutput="$(runDevbox ensure)"
+check "a clean converge reports dotfiles installed" outputHas "$convergedOutput" '[installed] dotfiles'
+check "a snapshot box clones, bootstraps, then syncs repositories before provision" \
+  linesAppearInOrder '^git clone .*johncwaters/dotfiles\.git' '^bootstrap work-server$' \
+    "^coder ssh .* $pinnedGlimmervoidVersion sync-repos$" "^coder ssh .* $pinnedGlimmervoidVersion provision$"
+check "a clean converge removes every retired snapshot directory" \
+  bash -c '[[ ! -e "$1/dotfiles-snapshot" && ! -e "$1/dotfiles-snapshot.new" && ! -e "$1/dotfiles-snapshot.old" ]]' _ "$remoteHome"
+check "a clean converge reports the retired snapshot removed" outputHas "$convergedOutput" '[installed] dotfiles snapshot: removed ~/dotfiles-snapshot'
+check "the converge records the clone HEAD as clean" \
+  remoteConvergeRecordIsCleanAt "$("$testGitPath" -C "$dotfilesOriginRepo" rev-parse HEAD)"
+check "the converge makes lasting links through the alias" grep -qx 'committed hook' "$remoteHome/.claude/hooks/converge-probe.mjs"
+check "the converge preserves Coder shell setup" grep -qx 'Coder PATH setup' "$remoteHome/.bashrc"
+check "the converge includes Coder and local commands on PATH" \
+  grep -qF "/tmp/coder-script-data/bin:$remoteHome/.local/bin:" "$stubState/bootstrap-path"
 : > "$commandLog"
-runDevbox ensure >/dev/null
-check "a swap interrupted between its renames is repaired by a fresh push" remoteSnapshotWasPushed
-check "the repaired swap records committed HEAD" cmp -s "$stubState/snapshot-commit" "$remoteSnapshotMarker"
-check "the repaired swap clears the stranded previous tree" test ! -e "$remoteSnapshotHome/dotfiles-snapshot.old"
-check "the repaired swap leaves the dotfiles alias resolving" \
-  grep -qx 'committed hook' "$remoteSnapshotHome/.dotfiles/snapshot-probe/hook.mjs"
+currentOutput="$(runDevbox ensure)"
+check "the next ensure reports converged dotfiles present" outputHas "$currentOutput" '[present] dotfiles'
+check "the next ensure does not bootstrap" logLacks 'bootstrap work-server'
+printf 'updated hook\n' > "$dotfilesOriginRepo/converge-probe/hook.mjs"
+commitDotfilesOrigin update
 : > "$commandLog"
-matchingSnapshotOutput="$(runDevbox ensure)"
-check "next ensure skips a matching snapshot" outputHas "$matchingSnapshotOutput" '[present] dotfiles'
-check "next ensure transfers no archive" logLacks 'archive --format=tar'
-check "next ensure does not bootstrap" logLacks 'bootstrap work-server'
+updatedOutput="$(runDevbox ensure)"
+check "a new mainline commit is pulled and converged" outputHas "$updatedOutput" '[installed] dotfiles'
+check "the pulled commit is live through the alias" grep -qx 'updated hook' "$remoteHome/.claude/hooks/converge-probe.mjs"
+"$testGitPath" -C "$remoteClone" checkout -q -b box-feature
+: > "$commandLog"
+featureBranchOutput="$(runDevbox ensure 2>&1)"
+check "a clone off mainline reports dotfiles warned" outputHas "$featureBranchOutput" '[warned] dotfiles'
+check "a clone off mainline is never bootstrapped" logLacks 'bootstrap work-server'
+check "the mainline guard names the branch in the bootstrap log" grep -qF 'is on box-feature, not main' "$remoteBootstrapLog"
+check "a refused converge keeps the last converge record" \
+  remoteConvergeRecordIsCleanAt "$("$testGitPath" -C "$dotfilesOriginRepo" rev-parse HEAD)"
+"$testGitPath" -C "$remoteClone" checkout -q main
 check "every automated SSH disables autostart and activity reporting" \
   bash -c '! grep -vx "true disable" "$1"' _ "$stubState/ssh-safety"
 
-rm -rf "$snapshotFixtureRepo"
-mkdir -p "$snapshotFixtureRepo"
-cp -R "$repoRoot/." "$snapshotFixtureRepo"
-rm -rf "$snapshotFixtureRepo/.git"
-"$testGitPath" -C "$snapshotFixtureRepo" init -q -b main
-"$testGitPath" -C "$snapshotFixtureRepo" add -A
-"$testGitPath" -C "$snapshotFixtureRepo" -c user.name=fixture -c user.email=fixture@example.invalid \
-  -c commit.gpgsign=false commit -qm work-server
-"$testGitPath" -C "$snapshotFixtureRepo" rev-parse HEAD > "$stubState/work-server-commit"
+rm -rf "$dotfilesOriginRepo"
+mkdir -p "$dotfilesOriginRepo"
+cp -R "$repoRoot/." "$dotfilesOriginRepo"
+rm -rf "$dotfilesOriginRepo/.git"
+"$testGitPath" -C "$dotfilesOriginRepo" init -q -b main
+commitDotfilesOrigin work-server
+"$testGitPath" -C "$dotfilesOriginRepo" rev-parse HEAD > "$stubState/work-server-commit"
 startEmptyRemoteHome
-remoteLocalBin="$remoteSnapshotHome/.local/bin"
-mkdir -p "$remoteSnapshotHome/posthog"
-"$testGitPath" -C "$remoteSnapshotHome/posthog" init -q -b main
-"$testGitPath" -C "$remoteSnapshotHome/posthog" remote add origin https://github.com/PostHog/posthog
-printf 'template checkout\n' > "$remoteSnapshotHome/posthog/template-owned"
+remoteLocalBin="$remoteHome/.local/bin"
+mkdir -p "$remoteHome/posthog"
+"$testGitPath" -C "$remoteHome/posthog" init -q -b main
+"$testGitPath" -C "$remoteHome/posthog" remote add origin https://github.com/PostHog/posthog
+printf 'template checkout\n' > "$remoteHome/posthog/template-owned"
 touch "$stubState/execute-config"
 mkdir -p "$remoteLocalBin"
 ln -s "$BASH" "$remoteLocalBin/bash"
@@ -637,21 +626,21 @@ printf '#!/usr/bin/env bash\nprintf "playwright-core %%s\\n" "$*" >> "$DOTFILES_
 chmod +x node_modules/.bin/playwright-core
 STUB
 chmod +x "$remoteLocalBin/claude" "$remoteLocalBin/npm"
-cat > "$remoteSnapshotHome/.gitconfig" <<'GITCONFIG'
+cat > "$remoteHome/.gitconfig" <<'GITCONFIG'
 [user]
 	name = Devbox Author
 	email = devbox@example.invalid
 GITCONFIG
 : > "$commandLog"
-workServerSnapshotStatus=0
-workServerSnapshotOutput="$(runDevbox ensure 2>&1)" || workServerSnapshotStatus=$?
-check "the real work-server profile bootstraps a fresh box through ensure" test "$workServerSnapshotStatus" -eq 0
-check "the fresh work-server snapshot waits for Codex hook trust" \
+workServerConvergeStatus=0
+workServerConvergeOutput="$(runDevbox ensure 2>&1)" || workServerConvergeStatus=$?
+check "the real work-server profile bootstraps a fresh box through ensure" test "$workServerConvergeStatus" -eq 0
+check "the fresh work-server converge waits for Codex hook trust" \
   grep -qF 'open codex, review hooks with /hooks' "$remoteBootstrapLog"
-check "untrusted confinement leaves the snapshot marker absent" test ! -e "$remoteSnapshotMarker"
+check "untrusted confinement reports dotfiles warned" outputHas "$workServerConvergeOutput" '[warned] dotfiles: work-server converge warned'
 check "fresh work-server keeps Codex backchannels disabled" \
-  grep -qF 'enabled = false' "$remoteSnapshotHome/.codex/config.toml"
-node - "$remoteSnapshotHome" <<'NODE'
+  grep -qF 'enabled = false' "$remoteHome/.codex/config.toml"
+node - "$remoteHome" <<'NODE'
 const fs = require('node:fs');
 const home = process.argv[2];
 const baseline = fs.readFileSync(`${home}/.local/state/dotfiles/ai-codex-hook-trust-baseline`, 'utf8').trimEnd().split('\n');
@@ -661,64 +650,61 @@ for (const entry of baseline.slice(1)) {
 }
 NODE
 : > "$remoteBootstrapLog"
-workServerSnapshotOutput="$(runDevbox ensure 2>&1)"
+workServerConvergeOutput="$(runDevbox ensure 2>&1)"
 check "trusted work-server confinement converges with zero warnings" \
-  bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$workServerSnapshotOutput" "$remoteBootstrapLog"
+  bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$workServerConvergeOutput" "$remoteBootstrapLog"
 check "the real work-server bootstrap resolves npm on the box rather than the test host" logHas 'npm ci --omit=dev in '
-check "the real work-server profile records its snapshot commit" \
-  cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+check "the real work-server converge records the clone HEAD as clean" \
+  remoteConvergeRecordIsCleanAt "$(cat "$stubState/work-server-commit")"
 while IFS= read -r declaredRepoEntry; do
   declaredRepoPath="${declaredRepoEntry%%=*}"
   declaredRepoUrl="${declaredRepoEntry#*=}"
   declaredRepoUrl="${declaredRepoUrl%% *}"
-  check "work-server has $declaredRepoPath under the remote home" test -d "$remoteSnapshotHome/$declaredRepoPath/.git"
+  check "work-server has $declaredRepoPath under the remote home" test -d "$remoteHome/$declaredRepoPath/.git"
   check "work-server $declaredRepoPath has the declared HTTPS origin" \
-    test "$("$testGitPath" -C "$remoteSnapshotHome/$declaredRepoPath" remote get-url origin)" = "$declaredRepoUrl"
+    test "$("$testGitPath" -C "$remoteHome/$declaredRepoPath" remote get-url origin)" = "$declaredRepoUrl"
 done < "$repoRoot/profiles/work-server/repos.txt"
 check "work-server links the template checkout into Projects" \
-  test "$(readlink "$remoteSnapshotHome/Projects/posthog")" = "$remoteSnapshotHome/posthog"
+  test "$(readlink "$remoteHome/Projects/posthog")" = "$remoteHome/posthog"
 check "work-server preserves the template-owned checkout" \
-  grep -qx 'template checkout' "$remoteSnapshotHome/posthog/template-owned"
+  grep -qx 'template checkout' "$remoteHome/posthog/template-owned"
 check "work-server never re-clones the template checkout" logLacks 'git clone -q -- https://github.com/PostHog/posthog '
 check "work-server never syncs the template checkout through its link" \
-  logLacks "git -C $remoteSnapshotHome/Projects/posthog "
-check "work-server never syncs the template checkout" logLacks "git -C $remoteSnapshotHome/posthog "
-check "work-server never clones the private dotfiles repository" \
-  bash -c '! grep -E "^git clone .*johncwaters/dotfiles" "$1"' _ "$commandLog"
+  logLacks "git -C $remoteHome/Projects/posthog "
+check "work-server never syncs the template checkout" logLacks "git -C $remoteHome/posthog "
 check "work-server nodeps entries never install repository dependencies" \
-  bash -c '! grep -E "^npm .* in $1/Projects/" "$2"' _ "$remoteSnapshotHome" "$commandLog"
+  bash -c '! grep -E "^npm .* in $1/Projects/" "$2"' _ "$remoteHome" "$commandLog"
 check "work-server needs no gh authentication" logLacks 'gh api '
 : > "$commandLog"
 matchingWorkServerOutput="$(runDevbox ensure 2>&1)"
-check "a matching work-server snapshot still syncs its repositories" \
-  logHas "git -C $remoteSnapshotHome/Projects/glimmervoid pull --ff-only -q"
-check "a matching work-server snapshot never repeats AI bootstrap" logLacks 'npm ci '
-check "a matching work-server snapshot sends no archive" logLacks 'snapshot transfer'
-check "a matching work-server snapshot reports repository sync" outputHas "$matchingWorkServerOutput" '[present] repos: synced'
-check "a matching work-server snapshot never syncs the template checkout" \
-  bash -c '! grep -qE "^git -C $1/(Projects/)?posthog " "$2"' _ "$remoteSnapshotHome" "$commandLog"
-check "the repository sync log is private" test "$(fileModeOf "$remoteSnapshotHome/.local/state/dotfiles/devbox-repos.log")" = 600
+check "a converged work-server box still syncs its repositories" \
+  logHas "git -C $remoteHome/Projects/glimmervoid pull --ff-only -q"
+check "a converged work-server box never repeats AI bootstrap" logLacks 'npm ci '
+check "a converged work-server box reports repository sync" outputHas "$matchingWorkServerOutput" '[present] repos: synced'
+check "a converged work-server box never syncs the template checkout" \
+  bash -c '! grep -qE "^git -C $1/(Projects/)?posthog " "$2"' _ "$remoteHome" "$commandLog"
+check "the repository sync log is private" test "$(fileModeOf "$remoteHome/.local/state/dotfiles/devbox-repos.log")" = 600
 : > "$commandLog"
 legacyEntryDirectoryKinds=(agents commands workflows)
 for entryKind in "${legacyEntryDirectoryKinds[@]}"; do
-  rm -rf "$remoteSnapshotHome/.claude/$entryKind"
-  ln -s "$remoteSnapshotHome/.dotfiles/ai/$entryKind" "$remoteSnapshotHome/.claude/$entryKind"
+  rm -rf "$remoteHome/.claude/$entryKind"
+  ln -s "$remoteHome/.dotfiles/ai/$entryKind" "$remoteHome/.claude/$entryKind"
 done
-rm -f "$remoteSnapshotMarker"
+rm -f "$remoteConvergedRecord"
 : > "$remoteBootstrapLog"
 legacyEntryLinksStatus=0
 legacyEntryLinksOutput="$(runDevbox ensure 2>&1)" || legacyEntryLinksStatus=$?
-check "a snapshot bootstrap over whole-directory entry links exits cleanly" test "$legacyEntryLinksStatus" -eq 0
-check "a snapshot bootstrap over whole-directory entry links converges with zero warnings" \
+check "a converge over whole-directory entry links exits cleanly" test "$legacyEntryLinksStatus" -eq 0
+check "a converge over whole-directory entry links converges with zero warnings" \
   bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$legacyEntryLinksOutput" "$remoteBootstrapLog"
 for entryKind in "${legacyEntryDirectoryKinds[@]}"; do
   firstRepoEntryName="$(basename -- "$(find "$repoRoot/ai/$entryKind" -mindepth 1 -maxdepth 1 | sort | head -1)")"
-  check "a snapshot bootstrap cuts ~/.claude/$entryKind over to per-entry links" \
+  check "a converge cuts ~/.claude/$entryKind over to per-entry links" \
     bash -c '[[ -d "$1" && ! -L "$1" && "$(readlink "$1/$2")" == "$3/$2" ]]' _ \
-    "$remoteSnapshotHome/.claude/$entryKind" "$firstRepoEntryName" "$remoteSnapshotHome/.dotfiles/ai/$entryKind"
+    "$remoteHome/.claude/$entryKind" "$firstRepoEntryName" "$remoteHome/.dotfiles/ai/$entryKind"
 done
-check "a snapshot bootstrap over whole-directory entry links records its snapshot commit" \
-  cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+check "a converge over whole-directory entry links records the clone HEAD as clean" \
+  remoteConvergeRecordIsCleanAt "$(cat "$stubState/work-server-commit")"
 check "every hook script the real work-server settings run exists on the box" \
   node -e '
 const settings = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
@@ -726,61 +712,65 @@ const hookScriptPaths = Object.values(settings.hooks).flat().flatMap(entry => en
   .map(hook => hook.command.match(/^node (\S+\.mjs)/)?.[1]).filter(Boolean);
 const missingScriptPaths = hookScriptPaths.filter(scriptPath => !require("fs").existsSync(scriptPath));
 if (hookScriptPaths.length === 0 || missingScriptPaths.length > 0) { console.error(missingScriptPaths); process.exit(1); }
-' "$remoteSnapshotHome/.claude/settings.json"
+' "$remoteHome/.claude/settings.json"
 check "work-server provisioning converges the Projects repository root" \
   "$testNodePath" -e 'require("node:assert/strict").deepEqual(require(process.argv[1]).repoRoots, [require("node:path").join(process.argv[2], "Projects")])' \
-  "$remoteSnapshotHome/.glimmervoid/config.json" "$remoteSnapshotHome"
-check "the real work-server bootstrap runs between prepare and provision" snapshotTransferSitsBetweenPrepareAndProvision
-rm -f "$remoteSnapshotMarker"
-rm -rf "$remoteSnapshotHome/Projects/glimmervoid"
+  "$remoteHome/.glimmervoid/config.json" "$remoteHome"
+check "the real work-server converge runs between prepare and provision" remoteConvergeSitsBetweenPrepareAndProvision
+rm -f "$remoteConvergedRecord"
+rm -rf "$remoteHome/Projects/glimmervoid"
 touch "$stubState/clone-failed"
 : > "$remoteBootstrapLog"
 failedCloneOutput="$(runDevbox ensure 2>&1)"
-check "a clone failure after a fresh snapshot warns in the repository sync" \
+check "a repository clone failure after a fresh converge warns in the repository sync" \
   outputHas "$failedCloneOutput" '[warned] repos: sync failed'
-check "a clone failure never blocks the snapshot marker" cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
+check "a repository clone failure never blocks the dotfiles converge" remoteConvergeRecordIsCleanAt "$(cat "$stubState/work-server-commit")"
 check "a clone failure stays out of the bootstrap log" bash -c '! grep -q "clone failed" "$1"' _ "$remoteBootstrapLog"
 check "a clone failure still reaches provisioning" outputHas "$failedCloneOutput" '[present] config'
 rm -f "$stubState/clone-failed"
-"$testGitPath" -C "$remoteSnapshotHome/Projects/wizard" checkout -q -b local-work
-rm -f "$remoteSnapshotMarker"
+"$testGitPath" -C "$remoteHome/Projects/wizard" checkout -q -b local-work
+rm -f "$remoteConvergedRecord"
 : > "$remoteBootstrapLog"
 : > "$commandLog"
 localBranchOutput="$(runDevbox ensure 2>&1)"
 check "a local branch without upstream warns in the repository sync" \
   outputHas "$localBranchOutput" '[warned] repos: sync failed'
 check "a local branch without upstream is named in the sync log" \
-  grep -qF 'pull failed' "$remoteSnapshotHome/.local/state/dotfiles/devbox-repos.log"
-check "a local branch without upstream still records the snapshot" \
-  cmp -s "$stubState/work-server-commit" "$remoteSnapshotMarker"
-check "the sync after a fresh snapshot retries the failed clone" test -d "$remoteSnapshotHome/Projects/glimmervoid/.git"
+  grep -qF 'pull failed' "$remoteHome/.local/state/dotfiles/devbox-repos.log"
+check "a local branch without upstream still records the converge" \
+  remoteConvergeRecordIsCleanAt "$(cat "$stubState/work-server-commit")"
+check "the sync after a fresh converge retries the failed clone" test -d "$remoteHome/Projects/glimmervoid/.git"
 : > "$commandLog"
 afterLocalBranchOutput="$(runDevbox ensure 2>&1)"
-check "the ensure after a repository warning does not re-bootstrap" logLacks 'snapshot transfer'
-check "the ensure after a repository warning keeps the snapshot present" \
+check "the ensure after a repository warning does not re-bootstrap" logLacks 'npm ci '
+check "the ensure after a repository warning keeps dotfiles present" \
   outputHas "$afterLocalBranchOutput" '[present] dotfiles'
-"$testGitPath" -C "$remoteSnapshotHome/Projects/wizard" checkout -q main
-rm -rf "$remoteSnapshotHome/Projects/glimmervoid"
+"$testGitPath" -C "$remoteHome/Projects/wizard" checkout -q main
+rm -rf "$remoteHome/Projects/glimmervoid"
 touch "$stubState/clone-failed"
 failedMatchingSyncOutput="$(runDevbox ensure 2>&1)"
-check "a matching snapshot warns when a new repository clone fails" outputHas "$failedMatchingSyncOutput" '[warned] repos: sync failed'
+check "a converged box warns when a new repository clone fails" outputHas "$failedMatchingSyncOutput" '[warned] repos: sync failed'
 rm -f "$stubState/clone-failed"
 retriedMatchingSyncOutput="$(runDevbox ensure 2>&1)"
-check "the next matching snapshot ensure retries the missing clone" test -d "$remoteSnapshotHome/Projects/glimmervoid/.git"
-check "the matching snapshot retry reports a successful sync" outputHas "$retriedMatchingSyncOutput" '[present] repos: synced'
-rm "$remoteSnapshotHome/Projects/posthog"
-mkdir "$remoteSnapshotHome/Projects/posthog"
-printf 'keep this directory\n' > "$remoteSnapshotHome/Projects/posthog/owner-edit"
-rm -f "$remoteSnapshotMarker"
+check "the next converged ensure retries the missing clone" test -d "$remoteHome/Projects/glimmervoid/.git"
+check "the converged retry reports a successful sync" outputHas "$retriedMatchingSyncOutput" '[present] repos: synced'
+rm "$remoteHome/Projects/posthog"
+mkdir "$remoteHome/Projects/posthog"
+printf 'keep this directory\n' > "$remoteHome/Projects/posthog/owner-edit"
+rm -f "$remoteConvergedRecord"
 runDevbox ensure >/dev/null 2>&1
 check "an occupied PostHog project path is never replaced by a link" \
-  grep -qx 'keep this directory' "$remoteSnapshotHome/Projects/posthog/owner-edit"
-rm -rf "$remoteSnapshotHome/Projects/posthog"
-ln -s "$remoteSnapshotHome/missing-template" "$remoteSnapshotHome/Projects/posthog"
+  grep -qx 'keep this directory' "$remoteHome/Projects/posthog/owner-edit"
+rm -rf "$remoteHome/Projects/posthog"
+ln -s "$remoteHome/missing-template" "$remoteHome/Projects/posthog"
 runDevbox ensure >/dev/null 2>&1
 check "an existing broken PostHog project link is never replaced" \
-  test "$(readlink "$remoteSnapshotHome/Projects/posthog")" = "$remoteSnapshotHome/missing-template"
-rm -f "$stubState/execute-snapshot" "$stubState/execute-config"
+  test "$(readlink "$remoteHome/Projects/posthog")" = "$remoteHome/missing-template"
+rm -f "$stubState/execute-dotfiles" "$stubState/execute-config"
+
+rm "$sandbox/.dotfiles"
+mkdir -p "$stubState/box-dotfiles"
+ln -s "$stubState/box-dotfiles" "$sandbox/.dotfiles"
 
 mergeConfig() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
@@ -864,10 +854,10 @@ mergeConfig >/dev/null 2>&1 || invalidConfigStatus=$?
 check "invalid runtime config fails instead of being replaced" test "$invalidConfigStatus" -ne 0
 check "invalid runtime config preserves its bytes" grep -qx 'invalid JSON' "$sandbox/.glimmervoid/config.json"
 
-mkdir -p "$sandbox/dotfiles-snapshot/glimmervoid"
-cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json"
+mkdir -p "$sandbox/.dotfiles/glimmervoid"
+cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/.dotfiles/glimmervoid/config.example.json"
 cp "$stubState/server-saved-config" "$sandbox/.glimmervoid/config.json"
-"$testNodePath" - "$sandbox/.glimmervoid/config.json" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json" <<'JS'
+"$testNodePath" - "$sandbox/.glimmervoid/config.json" "$sandbox/.dotfiles/glimmervoid/config.example.json" <<'JS'
 const fs = require("node:fs");
 const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const defaults = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
@@ -908,7 +898,7 @@ check "operator defaults are idempotent" outputHas "$secondDefaultsOutput" '[pre
 importedDefaultsLedger="$sandbox/.glimmervoid/devbox-imported-defaults.json"
 check "imported defaults are recorded with mode 0600" test "$(fileModeOf "$importedDefaultsLedger")" = 600
 check "imported defaults record every default key and hook id once" \
-  "$testNodePath" - "$importedDefaultsLedger" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json" <<'JS'
+  "$testNodePath" - "$importedDefaultsLedger" "$sandbox/.dotfiles/glimmervoid/config.example.json" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const ledger = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -933,7 +923,7 @@ check "operator-removed defaults and hooks are never imported again" \
   cmp -s "$stubState/config-after-operator-removal" "$sandbox/.glimmervoid/config.json"
 rm -f "$importedDefaultsLedger"
 mergeConfig >/dev/null
-check "defaults never recorded as imported fill only missing settings and hooks from the snapshot" \
+check "defaults never recorded as imported fill only missing settings and hooks from the dotfiles checkout" \
   "$testNodePath" - "$sandbox/.glimmervoid/config.json" "$repoRoot/glimmervoid/config.example.json" <<'JS'
 const assert = require("node:assert/strict");
 const config = require(process.argv[2]);
@@ -943,7 +933,7 @@ for (const settingName of ["skipPermissionsByDefault", "postTurnChecks", "branch
 }
 assert.equal(config.hooks.filter(hook => hook.id === "new-hook").length, 1);
 JS
-cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/dotfiles-snapshot/glimmervoid/config.example.json"
+cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/.dotfiles/glimmervoid/config.example.json"
 
 rm -f "$sandbox/.glimmervoid/config.json" "$importedDefaultsLedger"
 export DOTFILES_TEST_NODE_PATH="$testNodePath"
@@ -1417,30 +1407,27 @@ check "provision with a failed install still prints the forwarding URL" \
   outputHas "$failedInstallProvisionOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
 rm -f "$stubState/npm-install-failed"
 
-rm -rf "$snapshotFixtureRepo"
-mkdir -p "$snapshotFixtureRepo/script" "$snapshotFixtureRepo/profiles/work-server" \
-  "$snapshotFixtureRepo/fresh-box-probe" "$snapshotFixtureRepo/glimmervoid"
-cp -R "$repoRoot/script/." "$snapshotFixtureRepo/script/"
-printf '{"platform":"linux","topics":["fresh-box-probe"]}\n' > "$snapshotFixtureRepo/profiles/work-server/profile.json"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$snapshotFixtureRepo/fresh-box-probe/install.sh"
-cp "$repoRoot/glimmervoid/config.example.json" "$snapshotFixtureRepo/glimmervoid/config.example.json"
-"$testGitPath" -C "$snapshotFixtureRepo" init -q -b main
-"$testGitPath" -C "$snapshotFixtureRepo" add .
-"$testGitPath" -C "$snapshotFixtureRepo" -c user.name=fixture -c user.email=fixture@example.invalid \
-  -c commit.gpgsign=false commit -qm fresh-box
+rm -rf "$dotfilesOriginRepo"
+mkdir -p "$dotfilesOriginRepo/profiles/work-server" "$dotfilesOriginRepo/fresh-box-probe" "$dotfilesOriginRepo/glimmervoid"
+cp -R "$repoRoot/script" "$repoRoot/bin" "$dotfilesOriginRepo/"
+printf '{"platform":"linux","topics":["fresh-box-probe"]}\n' > "$dotfilesOriginRepo/profiles/work-server/profile.json"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$dotfilesOriginRepo/fresh-box-probe/install.sh"
+cp "$repoRoot/glimmervoid/config.example.json" "$dotfilesOriginRepo/glimmervoid/config.example.json"
+"$testGitPath" -C "$dotfilesOriginRepo" init -q -b main
+commitDotfilesOrigin fresh-box
 startEmptyRemoteHome
 rm -f "$stubState/listening-3456" "$stubState/listening-3457" "$stubState/config-at-start"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
-touch "$stubState/execute-snapshot" "$stubState/execute-provision"
+touch "$stubState/execute-dotfiles" "$stubState/execute-provision"
 : > "$commandLog"
 freshBoxStatus=0
 freshBoxOutput="$(runDevbox ensure 2>&1)" || freshBoxStatus=$?
 check "a fresh box ensure through the real provision phases succeeds" test "$freshBoxStatus" -eq 0
-check "a fresh box bootstraps the snapshot between prepare and provision" snapshotTransferSitsBetweenPrepareAndProvision
+check "a fresh box converges its dotfiles between prepare and provision" remoteConvergeSitsBetweenPrepareAndProvision
 check "a fresh box starts its server exactly once" test "$(countLogLines '^setsid nohup ')" -eq 1
 check "a fresh box reports no pending config" outputLacks "$freshBoxOutput" 'changes pending'
 check "a fresh box starts its server with the imported operator defaults" \
-  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" "$remoteSnapshotHome" <<'JS'
+  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" "$remoteHome" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -1456,7 +1443,7 @@ freshBoxSecondEnsureOutput="$(runDevbox ensure 2>&1)"
 check "the ensure after a fresh box prints no pending config warning" outputLacks "$freshBoxSecondEnsureOutput" 'changes pending'
 check "the ensure after a fresh box finds the config current" outputHas "$freshBoxSecondEnsureOutput" '[present] config: current'
 check "the ensure after a fresh box leaves its server running" logLacks 'setsid'
-rm -f "$stubState/execute-snapshot" "$stubState/execute-provision"
+rm -f "$stubState/execute-dotfiles" "$stubState/execute-provision"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 
 writeStub sleep <<'STUB'
@@ -1513,8 +1500,8 @@ const answer = (repoPath, token, operation = 'get', host = 'github.com', protoco
   assert.equal(execution.status, 0, execution.stderr);
   return execution.stdout;
 };
-assert.equal(answer('johncwaters/glimmervoid.git', 'fixture'), 'username=x-access-token\npassword=fixture\n');
-for (const repoPath of ['PostHog/posthog.git', 'johncwaters/dotfiles', 'johncwaters/dotfiles.git', 'johncwaters/dotfiles.git/', 'other/repo']) assert.equal(answer(repoPath, 'fixture'), '');
+for (const repoPath of ['johncwaters/glimmervoid.git', 'johncwaters/dotfiles.git']) assert.equal(answer(repoPath, 'fixture'), 'username=x-access-token\npassword=fixture\n');
+for (const repoPath of ['PostHog/posthog.git', 'other/repo']) assert.equal(answer(repoPath, 'fixture'), '');
 assert.equal(answer('johncwaters/glimmervoid.git'), '');
 assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'store'), '');
 assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'get', 'evil.invalid'), '');
@@ -1545,15 +1532,6 @@ check "gh selects personal auth from an SSH origin" test "$(runGhWrapper fixture
 check "gh retains Coder auth for PostHog even with a personal token" test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git pr list)" = fixture-coder
 check "gh explicit repo overrides a personal origin" test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git pr list -R PostHog/posthog)" = fixture-coder
 check "gh without a personal token uses Coder auth" test "$(runGhWrapper '' git@github.com:johncwaters/glimmervoid.git pr list)" = fixture-coder
-check "gh refuses dotfiles even with a personal token" \
-  bash -c '! env HOME="$1" PATH="$2:$3" GH_PERSONAL_TOKEN=fixture "$4" "$5" pr list -R johncwaters/dotfiles >/dev/null 2>&1' _ "$sandbox" "$wrapperStubDirectory" "$coreBin" "$BASH" "$wrapperTestPath"
-wrapperRefuses() {
-  ! runGhWrapper fixture-personal "$@" >/dev/null 2>&1
-}
-check "gh api refuses a dotfiles path from a personal cwd" wrapperRefuses https://github.com/johncwaters/glimmervoid.git api repos/johncwaters/dotfiles/contents/README.md
-check "gh api refuses a leading-slash dotfiles path" wrapperRefuses git@github.com:PostHog/posthog.git api /repos/johncwaters/dotfiles
-check "gh repo clone refuses dotfiles" wrapperRefuses https://github.com/johncwaters/glimmervoid.git repo clone johncwaters/dotfiles
-check "gh repo view refuses a dotfiles URL" wrapperRefuses git@github.com:PostHog/posthog.git repo view https://github.com/johncwaters/dotfiles
 check "gh api for a PostHog path from a personal cwd uses Coder auth" \
   test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git api repos/PostHog/posthog/pulls)" = fixture-coder
 check "gh api for a personal path from a PostHog cwd uses personal auth" \
@@ -1580,15 +1558,16 @@ runPersonalTokenProbe() {
     bash -c 'source "$1" 0.29.1 provision; shift; "$@"' _ "$definitionsPath" "${@:2}"
 }
 dotfilesReadableOutput="$(runPersonalTokenProbe 200 installDevboxPersonalGitAuth)"
-check "a personal token that can read dotfiles warns" \
-  outputHas "$dotfilesReadableOutput" '[warned] personal GitHub token: can read johncwaters/dotfiles; recreate it without that repo'
+check "a personal token that can read dotfiles is present" \
+  outputHas "$dotfilesReadableOutput" '[present] personal GitHub token: can read johncwaters/dotfiles'
 check "the dotfiles probe asks GitHub for the dotfiles repo" grep -qF 'https://api.github.com/repos/johncwaters/dotfiles' "$stubState/curl-arguments"
 check "the dotfiles probe sends the token as a header on stdin" grep -qxF 'Authorization: Bearer fixture-personal-secret' "$stubState/curl-headers"
 check "the dotfiles probe never puts the token in curl arguments" bash -c '! grep -qF fixture-personal-secret "$1"' _ "$stubState/curl-arguments"
 check "the dotfiles probe never prints the token" outputLacks "$dotfilesReadableOutput" fixture-personal-secret
 for refusedStatus in 404 403; do
-  check "a personal token refused dotfiles with $refusedStatus is present" \
-    outputHas "$(runPersonalTokenProbe "$refusedStatus" probeDevboxPersonalTokenDotfilesAccess)" '[present] personal GitHub token: cannot read johncwaters/dotfiles'
+  check "a personal token refused dotfiles with $refusedStatus warns with the grant to add" \
+    outputHas "$(runPersonalTokenProbe "$refusedStatus" probeDevboxPersonalTokenDotfilesAccess)" \
+    '[warned] personal GitHub token: cannot read johncwaters/dotfiles; grant the fine-grained token Contents read and write on that repo'
 done
 unreachableProbeStatus=0
 unreachableProbeOutput="$(runPersonalTokenProbe unreachable probeDevboxPersonalTokenDotfilesAccess)" || unreachableProbeStatus=$?
@@ -1610,9 +1589,9 @@ mergeConfig >/dev/null
 check "migration respects an operator false already recorded in the ledger" \
   "$testNodePath" -e 'if (require(process.argv[1]).checkForUpdates !== false) process.exit(1)' "$sandbox/.glimmervoid/config.json"
 
-mkdir -p "$sandbox/dotfiles-snapshot/profiles/work"
-cp "$repoRoot/glimmervoid/sync-settings.mjs" "$sandbox/dotfiles-snapshot/glimmervoid/sync-settings.mjs"
-printf '{"scrollback":100,"checkForUpdates":true}\n' > "$sandbox/dotfiles-snapshot/profiles/work/glimmervoid.settings.json"
+mkdir -p "$sandbox/.dotfiles/profiles/work"
+cp "$repoRoot/glimmervoid/sync-settings.mjs" "$sandbox/.dotfiles/glimmervoid/sync-settings.mjs"
+printf '{"scrollback":100,"checkForUpdates":true}\n' > "$sandbox/.dotfiles/profiles/work/glimmervoid.settings.json"
 printf '{"scrollback":100,"checkForUpdates":false}\n' > "$sandbox/.glimmervoid/dotfiles-settings-base.json"
 "$testNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.scrollback=100;fs.writeFileSync(process.argv[1], JSON.stringify(config))' "$sandbox/.glimmervoid/config.json"
 cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-shared-settings"
@@ -1656,7 +1635,7 @@ printf '{"home":"/home/coder","live":{"scrollback":100,"hooks":[{"id":"injected"
 ensureCollectOutput="$(runCollectionDevbox ensure)"
 check "ensure never writes box hooks into the repo settings file" cmp -s "$stubState/settings-before-collect" "$collectionSettingsPath"
 check "ensure stages box hooks for operator review" outputHas "$ensureCollectOutput" 'box changes staged'
-check "ensure still checks the snapshot and provisions after staging" snapshotCheckSitsBetweenPrepareAndProvision
+check "ensure still converges the box dotfiles and provisions after staging" dotfilesConvergeSitsBetweenPrepareAndProvision
 
 rm -f "$stagedSettingsPath"
 printf '{"home":"/home/coder","live":{"scrollback":100,"projects":[{"id":"bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7","name":"posthog","path":"/home/coder/posthog"}]},"base":{"scrollback":100},"projectPaths":["/home/coder/posthog"]}\n' > "$stubState/collect-packet"
@@ -1669,7 +1648,7 @@ for malformedPacket in 'not json' '{"home":"/home/coder","live":{},"base":{}}'; 
   : > "$commandLog"
   malformedCollectOutput="$(runCollectionDevbox ensure 2>&1)" || true
   check "a malformed box packet ($malformedPacket) warns" outputHas "$malformedCollectOutput" '[warned] glimmervoid settings: box config could not be merged; nothing staged'
-  check "a malformed box packet ($malformedPacket) still snapshots and provisions" snapshotCheckSitsBetweenPrepareAndProvision
+  check "a malformed box packet ($malformedPacket) still converges the box dotfiles and provisions" dotfilesConvergeSitsBetweenPrepareAndProvision
   check "a malformed box packet ($malformedPacket) leaves the repo file alone" cmp -s "$stubState/settings-before-collect" "$collectionSettingsPath"
 done
 

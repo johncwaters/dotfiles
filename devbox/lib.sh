@@ -90,39 +90,18 @@ pushDevboxScript() {
     "${remoteArguments[@]}" < "$devboxProfileDirectory/devbox/provision.sh"
 }
 
-pushDevboxSnapshot() (
-  set -o pipefail
-  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
-  local snapshotCommit remoteCommit
-  if ! snapshotCommit="$(git -C "$snapshotRepo" rev-parse HEAD)"; then
-    printf '[warned] dotfiles: cannot read committed HEAD\n'
+convergeDevboxDotfiles() {
+  if ! pushDevboxScript dotfiles; then
+    printf '[warned] dotfiles: box converge did not finish\n'
     return 1
   fi
-  if ! remoteCommit="$(pushDevboxScript snapshot-status)"; then
-    printf '[warned] dotfiles: cannot read remote snapshot commit\n'
-    return 1
-  fi
-  if [[ "$remoteCommit" == "$snapshotCommit" ]]; then
-    printf '[present] dotfiles: %s\n' "$snapshotCommit"
-    pushDevboxScript sync-repos
-    return
-  fi
-  local remoteScript apostropheReplacement="'\"'\"'"
-  remoteScript="$(cat "$devboxProfileDirectory/devbox/provision.sh")"
-  remoteScript="${remoteScript//\'/$apostropheReplacement}"
-  if git -C "$snapshotRepo" archive --format=tar "$snapshotCommit" \
-    | runDevboxSsh bash -c "'$remoteScript'" -- "$devboxGlimmervoidMinimumVersion" snapshot "$snapshotCommit"; then
-    pushDevboxScript sync-repos
-    return
-  fi
-  printf '[warned] dotfiles: snapshot or bootstrap failed\n'
-  return 1
-)
+  pushDevboxScript sync-repos
+}
 
 provisionDevbox() {
   pushDevboxScript prepare || return
   collectDevboxSettings || true
-  pushDevboxSnapshot || true
+  convergeDevboxDotfiles || true
   pushDevboxScript provision
 }
 
@@ -131,12 +110,12 @@ devboxCollectedSettingsPath() {
 }
 
 devboxSharedSettingsPath() {
-  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
-  printf '%s/profiles/%s/glimmervoid.settings.json\n' "$snapshotRepo" "$devboxProfileName"
+  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  printf '%s/profiles/%s/glimmervoid.settings.json\n' "$dotfilesCheckout" "$devboxProfileName"
 }
 
 showCollectedDevboxSettings() (
-  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
   local stagedPath reviewedCopyPath diffStatus=0
   stagedPath="$(devboxCollectedSettingsPath)"
   if [[ ! -f "$stagedPath" ]]; then
@@ -149,16 +128,16 @@ showCollectedDevboxSettings() (
   cp -- "$stagedPath" "$reviewedCopyPath" || return 1
   diff -u "$(devboxSharedSettingsPath)" "$reviewedCopyPath" || diffStatus=$?
   ((diffStatus <= 1)) || return 1
-  node "$snapshotRepo/glimmervoid/sync-settings.mjs" staged-hash "$reviewedCopyPath"
+  node "$dotfilesCheckout/glimmervoid/sync-settings.mjs" staged-hash "$reviewedCopyPath"
 )
 
 acceptCollectedDevboxSettings() {
-  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
-  node "$snapshotRepo/glimmervoid/sync-settings.mjs" accept "$(devboxCollectedSettingsPath)" "$(devboxSharedSettingsPath)" "${1:-}"
+  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  node "$dotfilesCheckout/glimmervoid/sync-settings.mjs" accept "$(devboxCollectedSettingsPath)" "$(devboxSharedSettingsPath)" "${1:-}"
 }
 
 collectDevboxSettings() (
-  local snapshotRepo="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
+  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
   local packetPath scriptPath
   if ! packetPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-devbox-settings.XXXXXX")" || ! scriptPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-devbox-collect.XXXXXX")"; then
     rm -f -- "${packetPath:-}"
@@ -168,8 +147,8 @@ collectDevboxSettings() (
   trap 'rm -f -- "$packetPath" "$scriptPath"' EXIT
   chmod 600 "$packetPath" "$scriptPath"
   printf '%s\n' "node --input-type=module <<'SETTINGS_MODULE'" > "$scriptPath"
-  cat "$snapshotRepo/glimmervoid/sync-settings.mjs" >> "$scriptPath"
-  printf 'const trackedProjectPaths = %s;\n' "$(node -e 'const fs=require("node:fs");console.log(JSON.stringify((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).projects ?? []).map(project=>project.path)))' "$snapshotRepo/profiles/$devboxProfileName/glimmervoid.settings.json")" >> "$scriptPath"
+  cat "$dotfilesCheckout/glimmervoid/sync-settings.mjs" >> "$scriptPath"
+  printf 'const trackedProjectPaths = %s;\n' "$(node -e 'const fs=require("node:fs");console.log(JSON.stringify((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).projects ?? []).map(project=>project.path)))' "$dotfilesCheckout/profiles/$devboxProfileName/glimmervoid.settings.json")" >> "$scriptPath"
   cat >> "$scriptPath" <<'REMOTE'
 const home = process.env.HOME;
 const ledger = readJson(`${home}/.glimmervoid/devbox-imported-defaults.json`);
@@ -183,7 +162,7 @@ REMOTE
     printf '[warned] glimmervoid settings: cannot collect box config; nothing staged\n'
     return 1
   fi
-  if ! node "$snapshotRepo/glimmervoid/sync-settings.mjs" collect-remote "$(devboxCollectedSettingsPath)" \
+  if ! node "$dotfilesCheckout/glimmervoid/sync-settings.mjs" collect-remote "$(devboxCollectedSettingsPath)" \
     "$(devboxSharedSettingsPath)" < "$packetPath" 2>/dev/null; then
     printf '[warned] glimmervoid settings: box config could not be merged; nothing staged\n'
     return 1
