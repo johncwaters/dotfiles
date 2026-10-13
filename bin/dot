@@ -149,17 +149,16 @@ noteDrift() {
 
 pendingStateNames() {
   local pendingPath
-  dotfilesStateDirectory >/dev/null 2>&1 || return 0
+  readableDotfilesStateDirectory || return 0
   for pendingPath in "$dotfilesStateDirectoryPath"/*-pending; do
     [[ -e "$pendingPath" ]] || continue
     basename -- "$pendingPath"
   done
 }
 
-# A refused state directory warns on stdout, so a failed read is dropped rather than rendered as the record.
 convergedRecord() {
   local record
-  record="$(readDotfilesState converged 2>/dev/null)" || record=""
+  record="$(readDotfilesState converged)" || record=""
   if [[ -z "$record" ]]; then
     printf 'never\n'
     return 0
@@ -170,7 +169,7 @@ convergedRecord() {
 reportHeldUpgrades() {
   local heldPath
   local heldLine
-  dotfilesStateDirectory >/dev/null 2>&1 || return 0
+  readableDotfilesStateDirectory || return 0
   for heldPath in "$dotfilesStateDirectoryPath"/upgrades-held-*; do
     [[ -s "$heldPath" && -f "$heldPath" && ! -L "$heldPath" ]] || continue
     while IFS= read -r heldLine; do
@@ -178,6 +177,15 @@ reportHeldUpgrades() {
       reportStatusLine held "$heldLine"
     done < "$heldPath"
   done
+}
+
+reportUnwritableStateDirectory() {
+  local stateDirectory
+  stateDirectory="$(dotfilesStateDirectoryLocation)"
+  if [[ ! -d "$stateDirectory" || -w "$stateDirectory" ]]; then
+    return 0
+  fi
+  reportStatusLine "state" "$stateDirectory is not writable here; converges run from this context cannot update these records"
 }
 
 reportStatus() {
@@ -238,6 +246,7 @@ reportStatus() {
     reportStatusLine "pending" "$pending"
     noteDrift "a converge still owes work"
   fi
+  reportUnwritableStateDirectory
 
   if ((${#driftReasons[@]} == 0)); then
     reportStatusLine "drift" "none"

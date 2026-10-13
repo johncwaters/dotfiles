@@ -268,6 +268,15 @@ dotStatusDrift=0
 dotStatusOutput="$(runDot "$dotHome" status 2>&1)" || dotStatusDrift=$?
 check "status lists owed work" outputHas "$dotStatusOutput" 'pending      quiet-pending'
 check "owed work counts as drift" test "$dotStatusDrift" -eq 1
+chmod a-w "$dotHome/.local/state/dotfiles"
+readOnlyStateOutput="$(runDot "$dotHome" status 2>&1)" || true
+chmod u+w "$dotHome/.local/state/dotfiles"
+check "status reads the converge record from a state directory it cannot write" \
+  outputMatches "$readOnlyStateOutput" "converged    $publishedHead personal [0-9T:-]+Z clean"
+check "status lists owed work from a state directory it cannot write" \
+  outputHas "$readOnlyStateOutput" 'pending      quiet-pending'
+check "status says converges cannot update a state directory it cannot write" \
+  outputHas "$readOnlyStateOutput" 'converges run from this context cannot update these records'
 rm -f "$dotHome/.local/state/dotfiles/quiet-pending"
 
 convergedRecordPath="$convergeLockDirectory/converged"

@@ -3,9 +3,27 @@
 # directory instead of beside each file it tracks: some of those sit in root owned trees.
 # The repo dependency key is shared with glimmervoid so its service waits for repos to finish.
 
+dotfilesStateDirectoryLocation() {
+  printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+}
+
+readableDotfilesStateDirectory() {
+  local stateDirectory
+  stateDirectory="$(dotfilesStateDirectoryLocation)"
+  dotfilesStateDirectoryPath=""
+  if [[ -L "$stateDirectory" || ! -d "$stateDirectory" ]]; then
+    return 1
+  fi
+  if [[ ! -r "$stateDirectory" || ! -x "$stateDirectory" ]]; then
+    return 1
+  fi
+  dotfilesStateDirectoryPath="$stateDirectory"
+}
+
 dotfilesStateDirectory() {
-  local stateDirectory="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+  local stateDirectory
   local writabilityProbePath
+  stateDirectory="$(dotfilesStateDirectoryLocation)"
   dotfilesStateDirectoryPath=""
   if [[ -L "$stateDirectory" || ( -e "$stateDirectory" && ! -d "$stateDirectory" ) ]]; then
     noteWarned "dotfiles state" "$stateDirectory is not a plain directory, leaving it alone"
@@ -61,11 +79,13 @@ repoDepsPendingStateNameForPath() {
 
 readDotfilesState() {
   local stateValue
-  dotfilesStatePath "$1" || return 1
-  if [[ -L "$dotfilesStatePathValue" || ! -f "$dotfilesStatePathValue" ]]; then
+  local statePath
+  readableDotfilesStateDirectory || return 1
+  statePath="$dotfilesStateDirectoryPath/$1"
+  if [[ -L "$statePath" || ! -f "$statePath" ]]; then
     return 1
   fi
-  stateValue="$(cat -- "$dotfilesStatePathValue" 2>/dev/null)" || return 1
+  stateValue="$(cat -- "$statePath" 2>/dev/null)" || return 1
   printf '%s' "$stateValue"
 }
 
