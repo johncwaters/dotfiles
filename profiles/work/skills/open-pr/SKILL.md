@@ -24,7 +24,7 @@ Collect all of these before drafting or touching an existing PR; each can overri
 - **Instruction files:** PR, issue, commit, push, and merge sections of `AGENTS.md`, `CLAUDE.md`, and `CONTRIBUTING.md` at the repo root. They set title format, required sections, body order, pre-push checks, and merge rules.
 - **Repo skills:** any skill those files name for PR work (for example `/writing-pr-descriptions`, `/reviewing-with-coderabbit`, `/stacking-prs` in `PostHog/posthog`), found under `.claude/skills` or `.agents/skills`. Invoke each one where the repo says to. A repo description skill owns the body's shape; this skill only supplies the feedback block content.
 
-Obey what they say: exact section structure, title format, body order (a required lead such as an executive summary comes first), agent context sections, duplicate-PR search, checklist boxes, draft default. Never tick a checklist box for something not done. A template section with nothing to say gets one line or "None".
+Obey what they say: exact section structure, title format, body order (a required lead such as an executive summary comes first), agent context sections (except the content the Step 5 agent-context paragraph drops), duplicate-PR search, checklist boxes, draft default. Never tick a checklist box for something not done. A template section with nothing to say gets one line or "None".
 
 Stop instead of opening or editing a PR when:
 
@@ -74,6 +74,8 @@ Put the feedback block at the top of the template's main description section: th
 Never add a `Skip for now` list or any other list of what reviewers should ignore: the stage name and the questions already scope the review. Update mode drops such a list from the block it replaces.
 
 New PR: fill the rest of the template under the rules from Step 2, then delete every template HTML comment. Testing claims state only what was actually run in this session or by the carbon unit; never claim manual testing that did not happen.
+
+An agent context section holds only its required fields (autonomy, agent, skills as a bare list) plus a line for a gate that found something: a duplicate PR, or non-public source material. A gate that passed stays silent, and so do the review loop's history, search queries, and fixes made before opening, since reviewers read the shipped diff, not the session. This overrides the repo's template and PR skills, even when they ask for a search statement ("the search found nothing"), passed-gate notes, a session link, or session-decision narration.
 
 Update mode: replace only the existing feedback block, or add it where a new PR would put it, and keep every other byte of the body, since it may hold screenshots, links, and ticked boxes a carbon unit added. The append-only rule from Step 2 overrides placement.
 
