@@ -53,6 +53,7 @@ sandboxArguments+=(
   --tmpfs "$HOME"
   --ro-bind "$repoRoot" "$repoRoot"
   --setenv DOTFILES_SANDBOX 1
+  --setenv TMPDIR /tmp
   --setenv DOTFILES_REPO_UNDER_TEST "$repoRoot"
 )
 

@@ -375,6 +375,16 @@ serversWithoutConfinementIn() {
   printf '%s\n' "${confinedServerNames[@]}"
 }
 
+mcpPlanNeedsClaude() {
+  local serverAction
+  while IFS=$'\t' read -r _ serverAction _; do
+    case "$serverAction" in
+      add | replace | remove) return 0 ;;
+    esac
+  done <<< "$1"
+  return 1
+}
+
 convergeMcpServers() {
   local convergencePlan
   local managedNames
@@ -383,10 +393,6 @@ convergeMcpServers() {
   local serverName
   local serverAction
   local serverConfig
-  if ! command -v claude > /dev/null 2>&1; then
-    noteWarned "MCP servers" "claude not found, convergence skipped"
-    return 0
-  fi
   if ! command -v node > /dev/null 2>&1; then
     noteWarned "MCP servers" "node not found, convergence skipped"
     return 0
@@ -436,6 +442,11 @@ process.stdout.write(plan.map(entry => entry.join('\t')).join('\n'));
 NODE
 )"; then
     noteWarned "MCP servers" "could not read profile declarations, convergence skipped"
+    return 0
+  fi
+  if ! command -v claude > /dev/null 2>&1; then
+    mcpPlanNeedsClaude "$convergencePlan" || return 0
+    noteWarned "MCP servers" "claude not found, convergence skipped"
     return 0
   fi
   while IFS=$'\t' read -r serverName serverAction serverConfig; do

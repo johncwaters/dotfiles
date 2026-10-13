@@ -208,7 +208,7 @@ reportStatus() {
   record="$(convergedRecord)"
   recordedCommit="${record%% *}"
   read -r _ _ _ recordedOutcome <<< "$record"
-  pending="$(pendingStateNames | tr '\n' ' ')"
+  pending="$(pendingStateNames | paste -sd ' ' -)"
 
   reportStatusLine "profile" "${profileName:-none}"
   reportStatusLine "checkout" "$(cd -- "$dotfilesRepo" && pwd -P) on $branch at $head"

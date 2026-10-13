@@ -674,11 +674,12 @@ check "an unparseable runtime file is treated as an absent server" \
   node -e 'const runtimeSettings = require(process.argv[1]); process.exit(runtimeSettings.mcpServers.posthog.url === "https://mcp.posthog.com/mcp" ? 0 : 1)' "$sandbox/.claude.json"
 cp "$sandbox/runtime-settings-backup.json" "$sandbox/.claude.json"
 mv "$sandbox/.codex/config.toml" "$sandbox/codex-config-aside.toml"
+node -e 'const fs = require("node:fs"); const runtimeSettings = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); runtimeSettings.mcpServers.posthog.url = "https://drifted.invalid/mcp"; fs.writeFileSync(process.argv[1], JSON.stringify(runtimeSettings));' "$sandbox/.claude.json"
 missingClaudeStatus=0
 missingClaudeOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$gitlessBin" \
   bash "$stagedTopicDir/install.sh")" || missingClaudeStatus=$?
 mv "$sandbox/codex-config-aside.toml" "$sandbox/.codex/config.toml"
-check "an absent claude CLI warns" outputHas "$missingClaudeOutput" "claude not found"
+check "an absent claude CLI warns when a server needs replacing" outputHas "$missingClaudeOutput" "claude not found"
 check "an absent Codex CLI with no Codex config is skipped quietly because there is no Codex to confine" \
   bash -c '! grep -qE "\[warn\] +Codex (hooks|MCP)" <<< "$1"' _ "$missingClaudeOutput"
 absentCodexWithConfigOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$gitlessBin" \
@@ -690,7 +691,13 @@ check "an absent Codex CLI never asks for a hook review it cannot act on" \
 check "an absent claude CLI marks the topic warned" test "$missingClaudeStatus" -eq 1
 check "an absent claude CLI still renders work settings" \
   cmp -s "$sandbox/.claude/CLAUDE.md" "$stagedRepo/profiles/work/CLAUDE.md"
-check "an absent claude CLI preserves managed and unmanaged servers" mcpRuntimeMatches https://mcp.posthog.com/mcp
+check "an absent claude CLI preserves managed and unmanaged servers" mcpRuntimeMatches https://drifted.invalid/mcp
+mv "$sandbox/.claude.json" "$sandbox/runtime-settings-aside.json"
+env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
+  bash "$stagedTopicDir/install.sh" > /dev/null || true
+mv "$sandbox/runtime-settings-aside.json" "$sandbox/.claude.json"
+check "an absent claude CLI keeps managed ownership when the runtime file is missing" \
+  grep -qx posthog "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
 absentCodexRetiredServerOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
   bash "$stagedTopicDir/install.sh")" || true
 check "an absent Codex CLI warns when config.toml still declares a retired server" \

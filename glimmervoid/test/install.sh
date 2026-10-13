@@ -158,8 +158,10 @@ ln -sf "$stubBin/node" "$homebrewNodePrefix/bin/node"
 makeGlimmervoidApp "$homebrewNodeHome"
 : > "$commandLog"
 # The homebrew prefix seam refuses an account the passwd database cannot answer for, so this case runs under the real one.
+writeDarwinDirectoryServiceStub "$stubBin"
 DOTFILES_TEST_HOMEBREW_PREFIX="$homebrewNodePrefix" \
   runInstall "$homebrewNodeHome" work "" /dev/null darwin "$(id -un)" > /dev/null || true
+rm -f "$stubBin/dscl" "$stubBin/.dscl-account-home" "$stubBin/.dscl-login-shell"
 check "node reachable only at the homebrew prefix still applies shared settings" \
   test "$(configValue "$homebrewNodeHome" 'require(process.argv[1]).rtk')" = true
 check "node reachable only at the homebrew prefix still installs the CLI shim" \

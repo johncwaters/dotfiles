@@ -317,10 +317,14 @@ logHas() {
 }
 
 # A stub naming a path under the real home is the only proof a sandboxed run reached out of its home.
+# A session whose TMPDIR sits inside the real home puts every sandbox under a guarded path, so the suite's own temp root is dropped before matching.
 commandLogNamesNoPathUnder() {
   local realHomePath
+  local loggedCommands
+  loggedCommands="$(< "$commandLog")"
+  loggedCommands="${loggedCommands//"${TMPDIR:-/tmp}"/}"
   for realHomePath in "$@"; do
-    if grep -qF -- "$realHomePath" "$commandLog"; then
+    if [[ "$loggedCommands" == *"$realHomePath"* ]]; then
       printf '  command log names %s\n' "$realHomePath"
       return 1
     fi
