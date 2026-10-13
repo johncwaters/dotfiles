@@ -26,16 +26,11 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAll
 Lane definitions and selection belong to `~/.claude/workflows/qa-swarm.js`.
 `security` stays on fable because security judgment outranks cost.
 
-**CLI routing flag.** Read the profile `<routing>` rule in context yourself: a rule forbidding Codex sets `codexAllowed` false, and no such rule means true. Never leave detection to a spawned agent, which is told routing does not bind it. Sending a work diff to a forbidden CLI is a confidentiality breach, not a routing preference. A false flag emits no Codex instruction and uses the substitute below:
-
-| Lane | CLI route | False-flag substitute |
-|---|---|---|
-| router | Codex `gpt-6.1-sol` | `opus`, same prompt, when `codexAllowed` is false |
-| `external` | Codex `gpt-6.1-sol` | `opus`, adversarially refuting the other lanes, when `codexAllowed` is false |
+**CLI routing flag.** Read the profile `<routing>` rule in context yourself: a rule forbidding Codex sets `codexAllowed` false, and no such rule means true. Never leave detection to a spawned agent, which is told routing does not bind it. Sending a work diff to a forbidden CLI is a confidentiality breach, not a routing preference. The router is the only step that reaches Codex (`gpt-6.1-sol`), so a run has a read on a different model only when Codex routes; either way it returns the defects it proved while classifying. A false flag emits no Codex instruction and routes on `opus` with the same prompt.
 
 ## Reviewer output format
 
-Relay the workflow output verbatim; manual lanes use `~/.claude/agents/*-reviewer.md` for their formats and `~/.claude/workflows/qa-swarm.js` for the external lane and converged output.
+Relay the workflow output verbatim; manual lanes use `~/.claude/agents/*-reviewer.md` for their formats and `~/.claude/workflows/qa-swarm.js` for the converged output.
 
 ## Step 1: Run the workflow
 

@@ -9,6 +9,8 @@ Mined from the wizard maintainer's reviews (edwinyjlim, PostHog/wizard #1012–#
 - A rule that exists in two places must agree in both, including a sibling repo (context-mill skills, workbench). A change that fixes one conflict and opens another against the other copy is a finding.
 - Reuse an existing name, env var, or type before adding one (#1163 "can't we use `MCP_URL`?", #1148 use `ErrorCode` not `string`). Names read clean (#1148 `PhwError` renamed).
 - A new import edge must pass the arch fence (`pnpm test:arch`); a local type beats a cross-layer import (#1323).
+- Cross-repo changes state merge order (#1235 "merge this first before context-mill#390").
+- Prompt text has structure: sections, headers, or tags, not one long run-on rule.
 
 ## code
 
@@ -19,18 +21,10 @@ Mined from the wizard maintainer's reviews (edwinyjlim, PostHog/wizard #1012–#
 - On a fatal task, cancel siblings and pending user asks before waiting on them (#1293).
 - Changed return shapes are updated at every caller (#1303 `failure` replaced `error`).
 - Downstream consumers of a moved endpoint or renamed thing are updated: health checks, CI, smoke tests (#1224).
-
-## scale
-
 - User-input waits bound the run. A prompt-only limit ("a couple of attempts") on something that can block 20 minutes per call is unbounded in practice; enforce it in code or state the cap exactly (#1077, #1293).
+- Was it run on the other harnesses and models, not just the default (#1037, #1210)? A prompt or agent change with only unit tests and snapshots has no evidence it changes agent behavior; ask for a real run or a telemetry query that would show it.
 
 ## necessity
 
 - Tests do not pin copy. A regex on prose, or a snapshot plus a regex on the same text, breaks on every wording edit (#1349 "let's not pin the copy in the test").
 - Test comments are one line; the test name carries intent.
-
-## external
-
-- Was it run on the other harnesses and models, not just the default (#1037, #1210)? A prompt or agent change with only unit tests and snapshots has no evidence it changes agent behavior; ask for a real run or a telemetry query that would show it.
-- Cross-repo changes state merge order (#1235 "merge this first before context-mill#390").
-- Prompt text has structure: sections, headers, or tags, not one long run-on rule.

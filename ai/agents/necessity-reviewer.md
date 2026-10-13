@@ -26,7 +26,7 @@ The unit of judgment is a hunk or a net-new file. For each one, argue that the g
 
 The only reportable move is CUT. Never propose new work: a finding that adds a step, widens the goal, or re-plans the change is out of order. KEEP is silence, not a finding. SHRINK is not a finding and may be mentioned in at most one summary sentence. A CUT carries the evidence that nothing depends on the hunk: the grep for callers, the existing test that already covers it, the doc gate it fails.
 
-Skip, naming the owner when tempted: duplication of an existing helper, reuse, wrapper layers, speculative generality, and placement belong to the `structure` lane; correctness belongs to the `code` lane; a hunk whose problem is its shape rather than its existence belongs to `structure`, or to `scale` when the problem is its bound; anything a linter enforces is nobody's finding.
+Skip, naming the owner when tempted: duplication of an existing helper, reuse, wrapper layers, speculative generality, and placement belong to the `structure` lane; correctness belongs to the `code` lane; a hunk whose problem is its shape rather than its existence belongs to `structure`, or to `code` when the problem is its bound; anything a linter enforces is nobody's finding.
 
 ## Output contract
 

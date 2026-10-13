@@ -48,10 +48,10 @@ async function emittedRoutingPrompts(workflowArgs) {
   const routeReview = workflowFunctionNamed('routeReview', workflowArgs, runtimeBindings)
   await routeReview(workflowArgs.changedFiles)
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', workflowArgs)
-  emittedPrompts.push(buildLanePrompt('external', routerResult, ['code', 'external'], workflowArgs.changedFiles, workflowArgs.reviewCmd))
+  emittedPrompts.push(buildLanePrompt('code', routerResult, ['code'], workflowArgs.changedFiles, workflowArgs.reviewCmd))
   const buildJudgmentPrompt = workflowFunctionNamed('buildJudgmentPrompt', workflowArgs)
   const convergenceFacts = {
-    lanesRun: 'code, external',
+    lanesRun: 'code',
     lanesSkipped: 'none',
     degraded: 'none',
     routerRatings: 'LOW/LOW via fixture',
@@ -77,9 +77,9 @@ const baseWorkflowArgs = {
 
 test('each lane receives its own review checklist heading', () => {
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
-  const laneNames = ['code', 'structure', 'external']
+  const laneNames = ['code', 'structure']
 
-  for (const laneName of ['code', 'redteam', 'structure', 'scale', 'necessity', 'external']) {
+  for (const laneName of ['code', 'security', 'redteam', 'structure', 'necessity']) {
     const lanePrompt = buildLanePrompt(laneName, null, laneNames, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd)
 
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
@@ -150,7 +150,7 @@ for (const placeholderRoute of ['OPUS_REQUIRED', 'opus_required']) {
 
     assert.deepEqual(routed.spawnedModels, ['haiku', 'opus'])
     assert.equal(routed.routerResult.route, 'opus')
-    assert.match(routed.degradationNote, /external router failed with fixture/)
+    assert.match(routed.degradationNote, /Codex router failed with fixture/)
   })
 }
 
@@ -176,15 +176,12 @@ test('Codex dispatch goes through the codex-dispatcher agent under the read-only
   }
   const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
   await routeReview(baseWorkflowArgs.changedFiles)
-  const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
-  const externalPrompt = buildLanePrompt('external', null, ['code', 'external'], baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd)
+  const dispatchedRouterPrompt = dispatchSpawns[0].prompt
 
   assert.equal(dispatchSpawns[0].options.agentType, 'codex-dispatcher')
-  for (const prompt of [dispatchSpawns[0].prompt, externalPrompt]) {
-    assert.match(prompt, /codex exec -c 'permissions\.qa_review=\{extends=":read-only"/)
-    assert.match(prompt, /"~\/\.ssh"="deny".* -c 'default_permissions="qa_review"' -C \/repo -m gpt-6\.1-sol/)
-    assert.doesNotMatch(prompt, /dangerously/)
-  }
+  assert.match(dispatchedRouterPrompt, /codex exec -c 'permissions\.qa_review=\{extends=":read-only"/)
+  assert.match(dispatchedRouterPrompt, /"~\/\.ssh"="deny".* -c 'default_permissions="qa_review"' -C \/repo -m gpt-6\.1-sol/)
+  assert.doesNotMatch(dispatchedRouterPrompt, /dangerously/)
 })
 
 test('a session without the codex-dispatcher agent type routes on opus instead of crashing', async () => {
@@ -208,7 +205,7 @@ test('a session without the codex-dispatcher agent type routes on opus instead o
   assert.match(routed.degradationNote, /router agent death/)
 })
 
-for (const codexWrittenRoute of ['gpt-6.1-sol', 'code', 'Run code and external review with security, scale, and necessity lanes.']) {
+for (const codexWrittenRoute of ['gpt-6.1-sol', 'code', 'Run code review with security and necessity lanes.']) {
   test(`a Codex router answer with route ${JSON.stringify(codexWrittenRoute)} is accepted and stamped with the dispatched model`, async () => {
     const routed = await routedAfterDispatcherReturns(codexWrittenRoute, everyChangedFileClassified)
 

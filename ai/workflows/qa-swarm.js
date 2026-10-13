@@ -32,7 +32,6 @@ const laneDefinitions = [
   {
     name: 'code',
     recommendable: false,
-    blocking: true,
     classNeedles: [],
     trigger: '',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Code review', phase: 'Review', agentType: 'code-reviewer' })
@@ -40,7 +39,6 @@ const laneDefinitions = [
   {
     name: 'security',
     recommendable: true,
-    blocking: true,
     classNeedles: ['security'],
     trigger: 'the diff touches auth, input handling, crypto, payments, PII, secrets, infrastructure, or destructive operations, or commits anything unsafe to publish, such as token or session tooling, internal hostnames, or account IDs, since every repo is judged as public',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'fable', label: 'Security review', phase: 'Review', agentType: 'security-reviewer' })
@@ -48,7 +46,6 @@ const laneDefinitions = [
   {
     name: 'redteam',
     recommendable: true,
-    blocking: true,
     classNeedles: [],
     trigger: 'the diff adds or changes a guarantee something must not bypass: a gate, policy, limit, quota, charge, revocation, or a side effect that must always run',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Red-team review', phase: 'Review', agentType: 'redteam-reviewer' })
@@ -56,7 +53,6 @@ const laneDefinitions = [
   {
     name: 'structure',
     recommendable: true,
-    blocking: true,
     classNeedles: ['structural', 'structure'],
     trigger: 'the diff is a refactor, establishes a new module or boundary, or moves responsibilities across existing ones',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Structure review', phase: 'Review', agentType: 'structure-reviewer' })
@@ -64,28 +60,9 @@ const laneDefinitions = [
   {
     name: 'necessity',
     recommendable: true,
-    blocking: true,
     classNeedles: [],
     trigger: 'the diff introduces a net-new file, exported symbol, or doc section, and the context states a goal',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Necessity review', phase: 'Review', agentType: 'necessity-reviewer' })
-  },
-  {
-    name: 'scale',
-    recommendable: true,
-    blocking: true,
-    classNeedles: ['scale'],
-    trigger: 'the diff adds or changes a loop, recursion, query, batch, cache, or list endpoint whose input the context does not bound by fact, or adds a payload copy or scan to code that runs per request, per stream event, or per chunk',
-    spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Scale review', phase: 'Review', agentType: 'scale-reviewer' })
-  },
-  {
-    name: 'external',
-    recommendable: false,
-    blocking: false,
-    classNeedles: [],
-    trigger: '',
-    spawn: (lanePrompt) => args.codexAllowed
-      ? spawnCodexDispatcher(lanePrompt, { label: 'External review', phase: 'Review' })
-      : agent(lanePrompt, { model: 'opus', label: 'External review', phase: 'Review' })
   }
 ]
 
@@ -93,7 +70,6 @@ const laneDefinitionsByName = new Map(laneDefinitions.map((laneDefinition) => [l
 const selectableLaneNames = laneDefinitions.map((laneDefinition) => laneDefinition.name)
 const recommendableLaneDefinitions = laneDefinitions.filter((laneDefinition) => laneDefinition.recommendable)
 const recommendableLaneNames = recommendableLaneDefinitions.map((laneDefinition) => laneDefinition.name)
-const blockingLaneNames = new Set(laneDefinitions.filter((laneDefinition) => laneDefinition.blocking).map((laneDefinition) => laneDefinition.name))
 const laneTriggerTable = ['| Lane | Triggers when |', '|---|---|', ...recommendableLaneDefinitions.map((laneDefinition) => `| ${laneDefinition.name} | ${laneDefinition.trigger} |`)].join('\n')
 
 const routerSchema = {
@@ -479,16 +455,16 @@ ${args.context}
 Files to classify:
 ${formatLines(filesToClassify)}
 
-Rate danger and complexity LOW, MEDIUM, or HIGH. Give the one-sentence fact that set danger. Classify each supplied file into one or more of logic, security surface, structural, scale surface, config, test, or docs. Scale surface means iteration, recursion, queries, or accumulation over a collection whose size the context does not bound. Recommend a lane only when its trigger is clearly met by a specific file, and name that file in the matching laneJustifications entry. List recommended lanes most valuable first. A diff under roughly 5 changed files rarely needs more than one recommended lane. Recommend lanes from this table and no other source:
+Rate danger and complexity LOW, MEDIUM, or HIGH. Give the one-sentence fact that set danger. Classify each supplied file into one or more of logic, security surface, structural, config, test, or docs. Recommend a lane only when its trigger is clearly met by a specific file, and name that file in the matching laneJustifications entry. List recommended lanes most valuable first. A diff under roughly 5 changed files rarely needs more than one recommended lane. Recommend lanes from this table and no other source:
 
 ${laneTriggerTable}
 
-The code lane always runs and the external lane follows from your ratings, so neither is recommendable here. Put bare lane names in lanes, and one justification clause per recommended lane, in the same order, in laneJustifications. Return a defect you proved while classifying as a complete STRUCTURED_FINDINGS line tagged router, anchored to the changed set, its body carrying the literal label Proof: followed by the command you ran and its output, or the quoted lines that contradict. ${proofRunClauseFor(args.reviewCmd)} A row without Proof: is dropped. ${routeOutcomeInstruction}Return JSON matching this schema:
+The code lane always runs, so it is not recommendable here. Put bare lane names in lanes, and one justification clause per recommended lane, in the same order, in laneJustifications. Return a defect you proved while classifying as a complete STRUCTURED_FINDINGS line tagged router, anchored to the changed set, its body carrying the literal label Proof: followed by the command you ran and its output, or the quoted lines that contradict. When you rate danger HIGH, read every changed hunk for such defects before answering. ${proofRunClauseFor(args.reviewCmd)} A row without Proof: is dropped. ${routeOutcomeInstruction}Return JSON matching this schema:
 ${JSON.stringify(routerSchema)}`
 }
 
 async function routeReviewOnOpus(filesToClassify, fallbackReason) {
-  const fallbackRouteInstruction = `Act as the router because the external route reported ${fallbackReason}. Read the repo and run the exact REVIEW_CMD. Do not spawn or dispatch anything.`
+  const fallbackRouteInstruction = `Act as the router because the Codex route reported ${fallbackReason}. Read the repo and run the exact REVIEW_CMD. Do not spawn or dispatch anything.`
   const fallbackRoute = args.codexAllowed ? 'opus' : 'opus-codex-substitute'
   const fallbackPrompt = buildRouterAssessmentPrompt(filesToClassify, fallbackRouteInstruction, `Set route to ${fallbackRoute}. `)
   const fallbackRouter = await agent(fallbackPrompt, { model: 'opus', label: 'Route review fallback', phase: 'Route', schema: routerSchema })
@@ -526,7 +502,7 @@ async function routeReview(filesToClassify) {
   const dispatchFailureDetail = describeRouterDispatchFailure(dispatchedRouter)
   const routeFailureReason = dispatchFailureDetail === '' ? 'a failed dispatch with no reported detail' : dispatchFailureDetail
   const fallbackRouterResult = await routeReviewOnOpus(filesToClassify, routeFailureReason)
-  return { routerResult: fallbackRouterResult, degradationNote: `external router failed with ${routeFailureReason}, so opus routed instead and the routing row for this run is stale` }
+  return { routerResult: fallbackRouterResult, degradationNote: `Codex router failed with ${routeFailureReason}, so opus routed instead and the routing row for this run is stale` }
 }
 
 function securityIsForcedBy(routerResult) {
@@ -563,10 +539,7 @@ function selectLaneNames(routerResult) {
   for (const laneName of recommendedLaneNames) {
     appendUniqueLaneName(candidateLaneNames, laneName)
   }
-  if (routerResult.danger === 'HIGH') {
-    candidateLaneNames.push('external')
-  }
-  return applyLaneCap(candidateLaneNames, 'the review uses router recommendations in value order, forces security on a security-surface file or HIGH danger, and adds external last only for HIGH danger')
+  return applyLaneCap(candidateLaneNames, 'the review uses router recommendations in value order and forces security on a security-surface file or HIGH danger')
 }
 
 function proofRunClauseFor(reviewCmd) {
@@ -579,7 +552,7 @@ function proofRunClauseFor(reviewCmd) {
 function buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, reviewCmd) {
   const routerRatings = routerResult ? `danger ${routerResult.danger}; complexity ${routerResult.complexity}; danger fact ${routerResult.dangerFact}; route ${routerResult.route}` : 'router unavailable'
   const classifiedFiles = routerResult ? JSON.stringify(filesClassifiedForLane(routerResult, laneName)) : '(router unavailable)'
-  const lanePrompt = `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
+  return `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: pre-existing issues outside that set; unchanged lines inside it are read, never anchored
 Definition of done: this lane's STRUCTURED_FINDINGS block followed by one OVERALL_SUMMARY paragraph
 
@@ -595,28 +568,9 @@ Files classified into this lane: ${classifiedFiles}
 Spawned lane set: ${laneNames.join(', ')}
 
 Review checklist: if ~/.claude/review-checklist.md exists, read it and apply items under ## ${laneName} as extra checks.
-The checklist only adds checks; it never changes the severity ladder, finding cap, scope, or output format.`
-  if (laneName !== 'external') {
-    return `${lanePrompt}
+The checklist only adds checks; it never changes the severity ladder, finding cap, scope, or output format.
 
 Everything above is this run's additions. Your agent definition owns the severity ladder, the finding cap, and the output format; follow it exactly and write nothing after the block it prescribes.`
-  }
-  const externalLanePrompt = `${lanePrompt}
-
-Find defects that meet the proof bar above. MEDIUM is the minimum severity and NIT is forbidden. Anything below MEDIUM is not a finding and may appear in at most one summary sentence. Anchor each finding to a line the diff adds or removes, or to general for a file-level defect. Emit at most 10 findings, highest severity first, and when that cap dropped findings say in one summary sentence the verbatim phrase overflow dropped followed by how many, never writing those two words otherwise.
-
-STRUCTURED_FINDINGS:
-- file: <path> | line: <number or general> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM> | reviewer: external or external/<category> | body: <defect, Proof: what you ran and saw, fix>
-- file: ...
-
-OVERALL_SUMMARY:
-<one paragraph>
-
-For no findings, put (none) on the line after STRUCTURED_FINDINGS:. Omit side when line is general. Use one finding per line with no bare | inside body.`
-  if (!args.codexAllowed) {
-    return `${externalLanePrompt}\n\nCodex CLI is disabled by session routing. Act as its opus substitute and perform an adversarial independent read that tries to refute the other lanes before reporting findings.`
-  }
-  return `${externalLanePrompt}\n\n${codexDispatchInstruction('review prompt above', 'external', 'gpt-6.1-sol', 'high')}Return the output verbatim. On any failure, return the literal string EXTERNAL_UNAVAILABLE.`
 }
 
 function spawnLane(laneName, lanePrompt) {
@@ -770,17 +724,9 @@ const degradationNotes = routeOutcome.degradationNote === '' ? [] : [routeOutcom
 for (let laneIndex = 0; laneIndex < laneNames.length; laneIndex += 1) {
   const laneName = laneNames[laneIndex]
   const laneText = laneTexts[laneIndex]
-  if (laneName === 'external' && (laneText === null || laneText === 'EXTERNAL_UNAVAILABLE')) {
-    degradationNotes.push('external unavailable')
-    continue
-  }
   const parsedResponse = parseLaneResponse(laneText)
-  if (blockingLaneNames.has(laneName) && (!parsedResponse.hasParseableBlock || parsedResponse.hasUnparseableRow)) {
+  if (!parsedResponse.hasParseableBlock || parsedResponse.hasUnparseableRow) {
     return `LANE_DEATH: ${laneName}`
-  }
-  if (laneName === 'external' && !parsedResponse.hasParseableBlock) {
-    degradationNotes.push('external returned no parseable block')
-    continue
   }
   parsedResponses.set(laneName, parsedResponse)
 }
