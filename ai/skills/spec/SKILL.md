@@ -39,7 +39,7 @@ An existing design spec resumes at the subskill after its status. A `challenged`
     { "id": "D1", "kind": "decision", "question": "Which columns?", "answer": "Name, set, quantity.", "why": "Matches what trading sites import.", "source": "decided" },
     { "id": "D2", "kind": "decision", "question": "Where is the CSV built?", "answer": "In the export module.", "why": "It already streams the JSON export.", "source": "read", "evidence": "src/export/index.ts:14" },
     { "id": "Q1", "kind": "openQuestion", "question": "Is price a column?", "settledBy": "The pricing provider's license terms." },
-    { "id": "U1", "kind": "unit", "title": "Add the CSV writer", "reads": ["src/export/"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }] },
+    { "id": "U1", "kind": "unit", "title": "Add the CSV writer", "reads": ["src/export/"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }], "serves": [1] },
     { "id": "U2", "kind": "unit", "title": "Add the price column", "reads": ["src/export/csv.ts"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }] }
   ],
   "edges": [
@@ -52,7 +52,7 @@ An existing design spec resumes at the subskill after its status. A `challenged`
 }
 ```
 
-Further fields: the goal carries `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable results); a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
+Further fields: the goal carries `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable results); a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a unit carries `"serves"`, the 1-based numbers of the goal criteria it makes true; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
 
 The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` for its status. Its denial names each rule and the fix; apply them and write again. Run the same checks, or view the graph, at any time:
 

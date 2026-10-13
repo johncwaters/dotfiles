@@ -59,6 +59,7 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   assert.match(goalReason, /Rule 1: node G1\.criteria: supply an array of 1 to 12 non-empty strings/);
   goal.risk = "low";
   goal.criteria = ["The graph can be validated"];
+  unit.serves = [1];
   unit.checks = [{ run: "node --test | tee log" }];
   unit.changes = ["src/*"];
   const unitReason = denialReason(writeSpec(spec));

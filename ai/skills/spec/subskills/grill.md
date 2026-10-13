@@ -15,5 +15,5 @@ Close every branch.
    - Reach: other callers, profiles, and platforms.
    - Removal: how the feature is retired.
    - Proof: the observable result that shows it works.
-7. Settle `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable success criteria) with the carbon unit and write them on the goal.
+7. Settle `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable success criteria) with the carbon unit and write them on the goal. Word each criterion from the seat of whoever observes it: when an agent gains a capability, the criterion says that agent exercises it from its own lane, not only that the mechanism works when called directly.
 8. Repeat until zero branches remain, then set status `grilled`. A branch whose options all lead to the same units closes on its recommendation as `assumed`. When the carbon unit ends early, each remaining branch closes the same way, or becomes an open question where the recommendation is weak.

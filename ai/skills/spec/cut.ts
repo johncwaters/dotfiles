@@ -1,12 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { oneLine, TICKET_CRITERION_LIMIT, unitTicketCriteria } from "./lib/graph.ts";
 import type { DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
 import { unitsInDependencyOrder } from "./lib/unit-order.ts";
-
-function oneLine(text: string): string {
-  return text.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim();
-}
 
 const intentWriteScopeLimit = 32;
 
@@ -71,7 +68,7 @@ function renderIntent(spec: DesignSpec, specPath: string) {
     return {
       id: unit.id,
       objective: oneLine(objective),
-      criteria: [...new Set([title, ...unit.checks.map((check) => oneLine(`The command ${check.run} exits 0.`))])],
+      criteria: unitTicketCriteria(unit, goal.criteria ?? []),
       dependsOn: outgoingEdges.filter((edge) => edge.kind === "dependsOn").map((edge) => edge.to),
       writeScopes: [...new Set(unit.changes.map(normalizeScope))],
     };
@@ -133,7 +130,7 @@ function collectRefusalErrors(spec: DesignSpec, intent: ReturnType<typeof render
   }
   for (const ticket of tickets) {
     if (ticket.id.length > 64) errors.push(`${ticket.id}: shorten ticket id to the 64 character limit (has ${ticket.id.length})`);
-    if (ticket.criteria.length > 12) errors.push(`${ticket.id}: reduce criteria to the 12 criterion limit (has ${ticket.criteria.length})`);
+    if (ticket.criteria.length > TICKET_CRITERION_LIMIT) errors.push(`${ticket.id}: reduce criteria to the ${TICKET_CRITERION_LIMIT} criterion limit (has ${ticket.criteria.length})`);
     if (ticket.writeScopes.length > 32) errors.push(`${ticket.id}: reduce write scopes to the 32 scope limit (has ${ticket.writeScopes.length})`);
     collectTextErrors(ticket, ticket.id, errors);
     collectScopeErrors(ticket.writeScopes, ticket.id, errors);

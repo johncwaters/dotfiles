@@ -28,6 +28,7 @@ export type Unit = {
   reads: string[];
   changes: string[];
   checks: { run: string }[];
+  serves?: number[];
   budgetWaiver?: string;
 };
 export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit;
@@ -44,6 +45,19 @@ export type DesignSpec = {
 };
 
 export const READING_BUDGET_BYTES = 200000;
+export const TICKET_CRITERION_LIMIT = 12;
+
+export function oneLine(text: string): string {
+  return text.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim();
+}
+
+export function unitTicketCriteria(unit: Unit, goalCriteria: string[]): string[] {
+  return [...new Set([
+    oneLine(unit.title),
+    ...(unit.serves ?? []).map((criterionNumber) => oneLine(goalCriteria[criterionNumber - 1] ?? "")),
+    ...unit.checks.map((check) => oneLine(`The command ${check.run} exits 0.`)),
+  ])];
+}
 
 const NODE_FIELDS = {
   goal: ["id", "kind", "text", "risk", "criteria"],
@@ -51,7 +65,7 @@ const NODE_FIELDS = {
   branch: ["id", "kind", "question", "leaning"],
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint"],
   openQuestion: ["id", "kind", "question", "settledBy"],
-  unit: ["id", "kind", "title", "reads", "changes", "checks", "budgetWaiver"],
+  unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver"],
 } satisfies Record<Node["kind"], string[]>;
 const NODE_ID_PATTERNS = {
   goal: /^G1$/,
@@ -106,7 +120,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "evidence", "isConstraint", "budgetWaiver", "risk", "criteria"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "risk", "criteria"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -147,6 +161,9 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     paths.forEach((entry: unknown, pathIndex: number) => requireString(entry, `${subject}.${field}[${pathIndex}]`, errors));
   }
   if (Object.hasOwn(value, "budgetWaiver")) requireString(value.budgetWaiver, `${subject}.budgetWaiver`, errors);
+  if (Object.hasOwn(value, "serves") && (!Array.isArray(value.serves) || !value.serves.every((criterionNumber: unknown) => Number.isInteger(criterionNumber) && Number(criterionNumber) >= 1))) {
+    addError(errors, 1, `${subject}.serves`, "supply serves as an array of goal criterion numbers starting at 1, or omit it");
+  }
   if (!Array.isArray(value.checks)) {
     addError(errors, 1, subject, "supply checks as an array of { run: string } objects");
     return;
@@ -449,6 +466,21 @@ export function validateGraph(value: unknown): string[] {
       addError(errors, 15, `node ${unit.id}`, `replace changes path ${changedPath} with a literal path without wildcards`);
     }
     if (!implementingIds.has(unit.id)) addError(errors, 11, `node ${unit.id}`, "add an implements edge to a decision");
+  }
+  const goalCriteria = spec.nodes.find((node): node is Goal => node.kind === "goal")?.criteria ?? [];
+  const servedCriterionNumbers = new Set(units.flatMap((unit) => unit.serves ?? []));
+  for (const unit of units) {
+    for (const criterionNumber of unit.serves ?? []) {
+      if (criterionNumber <= goalCriteria.length) continue;
+      addError(errors, 17, `node ${unit.id}`, `remove serves ${criterionNumber}; the goal has ${goalCriteria.length} criteria`);
+    }
+    const ticketCriterionCount = unitTicketCriteria(unit, goalCriteria).length;
+    if (!isSliced || ticketCriterionCount <= TICKET_CRITERION_LIMIT) continue;
+    addError(errors, 17, `node ${unit.id}`, `split the unit or drop serves or checks; its ticket would carry ${ticketCriterionCount} criteria (title, served criteria, one per check) over the ${TICKET_CRITERION_LIMIT} criterion limit`);
+  }
+  for (const [criterionIndex, criterion] of goalCriteria.entries()) {
+    if (!isSliced || servedCriterionNumbers.has(criterionIndex + 1)) continue;
+    addError(errors, 17, "node G1", `add ${criterionIndex + 1} to the serves of each unit that makes criterion ${criterionIndex + 1} true: ${criterion}`);
   }
   for (const node of spec.nodes) {
     if (!isSliced) continue;
