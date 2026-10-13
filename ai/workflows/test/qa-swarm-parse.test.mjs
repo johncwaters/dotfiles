@@ -3,6 +3,8 @@ import { test } from 'node:test'
 import { workflowFunctionNamed } from './qa-swarm-source.mjs'
 
 const parseLaneResponse = workflowFunctionNamed('parseLaneResponse')
+const findConvergenceValidationFailure = workflowFunctionNamed('findConvergenceValidationFailure')
+const withJudgmentRowsFolded = workflowFunctionNamed('withJudgmentRowsFolded')
 
 const firstFindingRow = '- file: src/first.js | line: 8 | side: RIGHT | severity: HIGH | reviewer: code/logic | body: First finding.'
 const secondFindingRow = '- file: src/second.js | line: general | severity: MEDIUM | reviewer: security/auth | body: Second finding.'
@@ -264,4 +266,22 @@ test('a block one finding below the cap is not capped', () => {
 
   assert.equal(parsedResponse.findings.length, 9)
   assert.equal(parsedResponse.hitFindingCap, false)
+})
+
+test('a converged finding whose merged body wraps onto continuation lines validates as one finding after folding', () => {
+  const wrappedJudgment = [
+    'STRUCTURED_FINDINGS:',
+    '- file: src/first.js | line: 86 | side: RIGHT | severity: MEDIUM | reviewer: convergent: code/migration + redteam/signal | body: Two upgrade cases break:',
+    '- Released builds verified children through an old id.',
+    '',
+    'code/migration Proof: a scratch script printed verifierIntentIds: [].',
+    '',
+    'OVERALL_SUMMARY:',
+    '1 finding(s) survived. truncated lanes: none'
+  ].join('\n')
+  const reviewedFiles = new Set(['src/first.js'])
+
+  assert.equal(findConvergenceValidationFailure(wrappedJudgment, [], reviewedFiles), 'an unparseable row')
+  assert.equal(findConvergenceValidationFailure(withJudgmentRowsFolded(wrappedJudgment), [], reviewedFiles), null)
+  assert.match(parseLaneResponse(withJudgmentRowsFolded(wrappedJudgment)).findings[0].fields.body, /^Two upgrade cases break: - Released builds verified children through an old id\. code\/migration Proof: a scratch script printed verifierIntentIds: \[\]\.$/)
 })

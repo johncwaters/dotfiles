@@ -411,6 +411,29 @@ function carriesProof(parsedFinding) {
   return /(?<![a-z0-9])proof[*_]{0,3}\s*:/i.test(parsedFinding.fields.body)
 }
 
+function startsFindingRow(blockLine) {
+  return blockLine.replace(/^- /, '').startsWith('file: ')
+}
+
+function withJudgmentRowsFolded(judgmentText) {
+  if (typeof judgmentText !== 'string') {
+    return judgmentText
+  }
+  const splitJudgment = blockAndSummaryFrom(withHeaderColons(judgmentText))
+  if (!splitJudgment || splitJudgment.blockText === '(none)') {
+    return judgmentText
+  }
+  const foldedRows = []
+  for (const blockLine of splitJudgment.blockText.split('\n').map((line) => line.trim()).filter((line) => line !== '' && !isStrayHeaderLine(line))) {
+    if (foldedRows.length === 0 || startsFindingRow(blockLine)) {
+      foldedRows.push(blockLine)
+      continue
+    }
+    foldedRows[foldedRows.length - 1] = `${foldedRows[foldedRows.length - 1]} ${blockLine}`
+  }
+  return `STRUCTURED_FINDINGS:\n${foldedRows.join('\n')}\n\nOVERALL_SUMMARY:\n${splitJudgment.summaryText}`
+}
+
 function findConvergenceValidationFailure(rawJudgmentText, cappedLaneNames, reviewedFileNameSet) {
   if (typeof rawJudgmentText !== 'string') {
     return 'no parseable block'
@@ -638,7 +661,7 @@ Dropped unproven: ${convergenceFacts.droppedUnprovenCount}
 Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}
 Truncated lane tags: ${convergenceFacts.truncatedLanes}
 
-Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Convergence confirms confidence but does not itself raise severity. A necessity finding never merges with another lane's finding.
+Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Each finding is exactly one line: join a merged body's parts on that line, never with a line break. Convergence confirms confidence but does not itself raise severity. A necessity finding never merges with another lane's finding.
 
 A contradiction is one lane asserting a defect and another explicitly verifying it safe. Isolate the two positions of each contradiction and rule from those positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
 
@@ -820,14 +843,14 @@ if (canConvergeMechanically(survivingFindings, laneSummaries)) {
 }
 
 const judgmentPrompt = buildJudgmentPrompt(convergenceFacts, groupedFindings, routerFindings, laneSummaries, reviewedFileNames, args.reviewCmd)
-const convergedFindings = await agent(judgmentPrompt, { model: 'opus', label: 'Converge findings', phase: 'Converge' })
+const convergedFindings = withJudgmentRowsFolded(await agent(judgmentPrompt, { model: 'opus', label: 'Converge findings', phase: 'Converge' }))
 const firstValidationFailure = findConvergenceValidationFailure(convergedFindings, cappedLaneNames, reviewedFileNameSet)
 if (!firstValidationFailure) {
   return convergedFindings
 }
 const resumeSafeRetryId = args.retryAttemptId ?? args.reviewCmd
 const retryJudgmentPrompt = `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
-const retriedConvergedFindings = await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' })
+const retriedConvergedFindings = withJudgmentRowsFolded(await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' }))
 if (!isConvergedBlock(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {
   return 'LANE_DEATH: judgment'
 }
