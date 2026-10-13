@@ -2,7 +2,7 @@
 set -euo pipefail
 
 topicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-pinnedGlimmervoidVersion="$(sed -n 's/^devboxGlimmervoidMinimumVersion="\(.*\)"$/\1/p' "$topicDirectory/lib.sh")"
+requestedGlimmervoidVersion="$(sed -n 's/^devboxGlimmervoidVersion="\(.*\)"$/\1/p' "$topicDirectory/lib.sh")"
 repoRoot="$(cd -- "$topicDirectory/.." && pwd)"
 export DOTFILES_PLATFORM=linux
 source "$repoRoot/test/harness.sh"
@@ -238,7 +238,7 @@ printf 'running\n' > "$stubState/workspace-status"
 : > "$commandLog"
 rm -f "$stubState/ssh-usage-app"
 runningOutput="$(runInstall)"
-check "running converge pushes with the pinned release" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+check "running converge pushes with the pinned release" logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
 check "running converge pipes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "converge SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
@@ -264,7 +264,7 @@ rm -f "$stubState/provision-output"
 rm -f "$stubState/ssh-usage-app"
 runDevbox ensure >/dev/null
 check "ensure provisions a running workspace with the pinned release" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
 check "ensure pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "ensure disables SSH autostart after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "ensure SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
@@ -368,8 +368,8 @@ launchAgentArguments[0]="$(type -P bash)"
 : > "$commandLog"
 runInStubbedSandbox "$sandbox" "${launchAgentArguments[@]}" >/dev/null
 check "rendered program arguments provision through ensure" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
-check "rendered launchd ensure converges the box dotfiles" logHas "$pinnedGlimmervoidVersion dotfiles"
+  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
+check "rendered launchd ensure converges the box dotfiles" logHas "$requestedGlimmervoidVersion dotfiles"
 check "rendered program arguments never start a workspace" logLacks 'coder start'
 
 printf 'hand edit\n' >> "$launchAgentPath"
@@ -387,7 +387,7 @@ failedAgentOutput="$(runDarwinInstall)" || failedAgentStatus=$?
 check "failed poller load fails install" test "$failedAgentStatus" -ne 0
 check "failed poller load remains owed" test -f "$launchAgentPending"
 check "failed poller load still provisions the box" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
 check "failed poller load is reported as a launch agent warning" outputHas "$failedAgentOutput" '[warn] devbox launch agent'
 check "darwin provisions the box before it loads the poller" \
   outputMatches "$(grep -E 'coder ssh|launchctl bootstrap' "$commandLog" | head -1)" '^coder ssh'
@@ -402,7 +402,7 @@ reloadOwedOutput="$(DOTFILES_CONVERGE_AGENT=1 runDarwinInstall)" || reloadOwedSt
 check "an owed reload under the converge agent fails install" test "$reloadOwedStatus" -ne 0
 check "an owed reload under the converge agent is reported" outputHas "$reloadOwedOutput" 'reload owed'
 check "an owed reload under the converge agent still provisions the box" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
 check "an owed reload under the converge agent never boots out its poller" logLacks 'launchctl bootout'
 runDarwinInstall >/dev/null
 check "a later install pays the owed reload" test ! -e "$launchAgentPending"
@@ -420,7 +420,7 @@ printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
 upOutput="$(runDevbox up)"
 check "up starts a stopped workspace" logHas 'coder start devbox-fixture --yes'
-check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- $pinnedGlimmervoidVersion provision"
+check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
 check "up pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "up prints the dashboard URL" outputHas "$upOutput" 'https://fixture.invalid/'
 check "up runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
@@ -440,10 +440,10 @@ printf 'n\n' | runDevbox restart-glimmervoid >/dev/null 2>&1 || restartStatus=$?
 check "restart refuses a negative confirmation" test "$restartStatus" -ne 0
 check "negative confirmation makes no connection" logLacks 'coder ssh'
 printf 'y\n' | runDevbox restart-glimmervoid >/dev/null 2>&1
-check "affirmative confirmation requests the shared restart" logHas "$pinnedGlimmervoidVersion restart"
+check "affirmative confirmation requests the shared restart" logHas "$requestedGlimmervoidVersion restart"
 : > "$commandLog"
 runDevbox restart-glimmervoid --yes >/dev/null
-check "explicit yes requests the shared restart" logHas "$pinnedGlimmervoidVersion restart"
+check "explicit yes requests the shared restart" logHas "$requestedGlimmervoidVersion restart"
 
 : > "$commandLog"
 runDevbox pair "laptop's label; literal" >/dev/null
@@ -457,7 +457,7 @@ rm -f "$stubState/ssh-usage-app"
 statusOutput="$(runDevbox status)"
 check "status reports the workspace" outputHas "$statusOutput" 'workspace devbox-fixture: running'
 check "status SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
-check "status uses the shared remote status action" logHas "$pinnedGlimmervoidVersion status"
+check "status uses the shared remote status action" logHas "$requestedGlimmervoidVersion status"
 check "status never starts a workspace" logLacks 'coder start'
 printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
@@ -507,8 +507,8 @@ linesAppearInOrder() {
 }
 
 remoteConvergeSitsBetweenPrepareAndProvision() {
-  linesAppearInOrder "^coder ssh .* $pinnedGlimmervoidVersion prepare$" "^coder ssh .* $pinnedGlimmervoidVersion dotfiles$" \
-    "^coder ssh .* $pinnedGlimmervoidVersion provision$"
+  linesAppearInOrder "^coder ssh .* $requestedGlimmervoidVersion prepare$" "^coder ssh .* $requestedGlimmervoidVersion dotfiles$" \
+    "^coder ssh .* $requestedGlimmervoidVersion provision$"
 }
 
 startEmptyRemoteHome
@@ -562,7 +562,7 @@ convergedOutput="$(runDevbox ensure)"
 check "a clean converge reports dotfiles installed" outputHas "$convergedOutput" '[installed] dotfiles'
 check "a snapshot box clones, bootstraps, then syncs repositories before provision" \
   linesAppearInOrder '^git clone .*johncwaters/dotfiles\.git' '^bootstrap work-server$' \
-    "^coder ssh .* $pinnedGlimmervoidVersion sync-repos$" "^coder ssh .* $pinnedGlimmervoidVersion provision$"
+    "^coder ssh .* $requestedGlimmervoidVersion sync-repos$" "^coder ssh .* $requestedGlimmervoidVersion provision$"
 check "a clean converge removes every retired snapshot directory" \
   bash -c '[[ ! -e "$1/dotfiles-snapshot" && ! -e "$1/dotfiles-snapshot.new" && ! -e "$1/dotfiles-snapshot.old" ]]' _ "$remoteHome"
 check "a clean converge reports the retired snapshot removed" outputHas "$convergedOutput" '[installed] dotfiles snapshot: removed ~/dotfiles-snapshot'
@@ -981,6 +981,7 @@ writeStub npm <<'STUB'
 printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 if [[ "$1" == view ]]; then
   [[ ! -f "$DOTFILES_TEST_STATE/npm-view-failed" ]] || exit 1
+  [[ "$2" != glimmervoid@latest ]] || { printf '0.29.1\n'; exit 0; }
   printf '%s\n' "${2#glimmervoid@}"
   exit 0
 fi
@@ -1478,6 +1479,9 @@ rm -f "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 olderVersionOutput="$(runProvisionFunction installDevboxGlimmervoid)"
 check "an older release upgrades to the minimum" outputHas "$olderVersionOutput" '[installed] glimmervoid: 0.29.1'
+printf '0.28.0\n' > "$stubState/glimmervoid-version"
+latestVersionOutput="$(runInStubbedSandbox "$sandbox" bash -c 'source "$1" latest; installDevboxGlimmervoid' _ "$definitionsPath")"
+check "latest resolves to the newest published release" outputHas "$latestVersionOutput" '[installed] glimmervoid: 0.29.1'
 check "a prerelease below the release floor needs an upgrade" \
   bash -c '! HOME="$1" PATH="$2:$3" source "$4" 0.29.1; ! devboxGlimmervoidMeetsMinimum 0.29.1-beta.1' _ "$sandbox" "$stubBin" "$coreBin" "$definitionsPath"
 

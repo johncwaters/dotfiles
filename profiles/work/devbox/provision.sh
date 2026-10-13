@@ -165,7 +165,7 @@ installDevboxNode() {
 }
 
 requireDevboxReleaseVersion() {
-  if [[ "$glimmervoidVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [[ "$glimmervoidVersion" == latest || "$glimmervoidVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     return 0
   fi
   printf 'devbox: a release version is required\n' >&2
@@ -192,7 +192,19 @@ devboxGlimmervoidMeetsMinimum() {
   ' "$1" "$glimmervoidVersion"
 }
 
+resolveDevboxLatestGlimmervoid() {
+  [[ "$glimmervoidVersion" == latest ]] || return 0
+  local latestVersion
+  latestVersion="$(npm view glimmervoid@latest version 2>> "$glimmervoidDirectory/provision.log")" || latestVersion=""
+  [[ "$latestVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  glimmervoidVersion="$latestVersion"
+}
+
 requireDevboxReleaseOnRegistry() {
+  if ! resolveDevboxLatestGlimmervoid; then
+    reportDevboxItem warned glimmervoid "cannot read the latest release from the npm registry; server left running; see ~/.glimmervoid/provision.log"
+    exit 1
+  fi
   if devboxGlimmervoidMeetsMinimum "$(installedDevboxGlimmervoidVersion)"; then
     return 0
   fi
@@ -208,6 +220,14 @@ requireDevboxReleaseOnRegistry() {
 installDevboxGlimmervoid() {
   local installedVersion
   installedVersion="$(installedDevboxGlimmervoidVersion)"
+  if ! resolveDevboxLatestGlimmervoid; then
+    if [[ -z "$installedVersion" ]]; then
+      reportDevboxItem warned glimmervoid "cannot read the latest release from the npm registry; nothing installed; see ~/.glimmervoid/provision.log"
+      exit 1
+    fi
+    reportDevboxItem warned glimmervoid "cannot read the latest release from the npm registry; keeping $installedVersion"
+    return 0
+  fi
   if devboxGlimmervoidMeetsMinimum "$installedVersion"; then
     reportDevboxItem present glimmervoid "$installedVersion"
     return 0

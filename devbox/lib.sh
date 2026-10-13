@@ -1,5 +1,5 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-devboxGlimmervoidMinimumVersion="0.33.0"
+devboxGlimmervoidVersion="latest"
 devboxLookupUnauthenticated=3
 source "$devboxTopicDirectory/../script/lib/profile.sh"
 
@@ -106,7 +106,7 @@ holdDevboxAgentForward() {
 }
 
 pushDevboxScript() {
-  local remoteArguments=("$devboxGlimmervoidMinimumVersion" "${1:-provision}")
+  local remoteArguments=("$devboxGlimmervoidVersion" "${1:-provision}")
   if [[ "${1:-}" == pair ]]; then
     local pairingLabel="${2:-}"
     local apostropheReplacement="'\"'\"'"
