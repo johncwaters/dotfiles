@@ -36,6 +36,7 @@ case "$1" in
     if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" && "${*:4}" == *sync-repos ]]; then
       cat > /dev/null
       DOTFILES_TEST_REMOTE=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
+        WIZARD_WORKBENCH_POSTHOG_API_KEY=phx_fixture WIZARD_WORKBENCH_GATEWAY_TOKEN=phs_fixture \
         HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 sync-repos
       exit
     fi
@@ -87,6 +88,13 @@ case "$1" in
   *) exit 1 ;;
 esac
 STUB
+for workbenchToolName in pnpm phrocs; do
+  writeStub "$workbenchToolName" <<'STUB'
+#!/usr/bin/env bash
+printf '%s %s\n' "${0##*/}" "$*" >> "$DOTFILES_TEST_LOG"
+STUB
+  provideCommand "$workbenchToolName"
+done
 
 testGitPath="$(type -P git)"
 export DOTFILES_TEST_GIT_PATH="$testGitPath"
@@ -1484,6 +1492,26 @@ latestVersionOutput="$(runInStubbedSandbox "$sandbox" bash -c 'source "$1" lates
 check "latest resolves to the newest published release" outputHas "$latestVersionOutput" '[installed] glimmervoid: 0.29.1'
 check "a prerelease below the release floor needs an upgrade" \
   bash -c '! HOME="$1" PATH="$2:$3" source "$4" 0.29.1; ! devboxGlimmervoidMeetsMinimum 0.29.1-beta.1' _ "$sandbox" "$stubBin" "$coreBin" "$definitionsPath"
+
+workbenchEnvironmentPath="$sandbox/Projects/wizard-workbench/.env"
+workbenchTokenPath="$sandbox/.config/posthog/wizard-gateway-token"
+mkdir -p "$sandbox/Projects/wizard-workbench" "$sandbox/.local/state/dotfiles/devbox-workbench"
+runWorkbenchSecrets() {
+  runInStubbedSandbox "$sandbox" "$@" bash -c 'source "$1" 0.29.1; writeDevboxWorkbenchSecrets' _ "$definitionsPath"
+}
+missingSecretOutput="$(runWorkbenchSecrets WIZARD_WORKBENCH_POSTHOG_API_KEY=phx_fixture)"
+check "a missing workbench secret warns once with the fix and writes neither file" bash -c '
+  test "$(grep -cF "[warned] workbench secrets: WIZARD_WORKBENCH_GATEWAY_TOKEN not set; nothing written; on the laptop run hogli devbox:secret:set" <<< "$1")" -eq 1 \
+    && [[ ! -e "$2" && ! -e "$3" ]]' _ "$missingSecretOutput" "$workbenchEnvironmentPath" "$workbenchTokenPath"
+printf 'operator edits\n' > "$workbenchEnvironmentPath"
+runWorkbenchSecrets WIZARD_WORKBENCH_POSTHOG_API_KEY=phx_fixture WIZARD_WORKBENCH_GATEWAY_TOKEN=phs_fixture >/dev/null
+check "an existing workbench .env is never overwritten" bash -c '[[ "$(cat "$1")" == "operator edits" ]]' _ "$workbenchEnvironmentPath"
+rm -f "$workbenchEnvironmentPath"
+runWorkbenchSecrets WIZARD_WORKBENCH_POSTHOG_API_KEY=phx_fixture WIZARD_WORKBENCH_GATEWAY_TOKEN=phs_fixture >/dev/null
+workbenchRerunOutput="$(runWorkbenchSecrets WIZARD_WORKBENCH_POSTHOG_API_KEY=phx_fixture WIZARD_WORKBENCH_GATEWAY_TOKEN=phs_fixture)"
+check "a workbench rerun reports both files present and writes nothing" bash -c '
+  [[ "$1" == *"[present] wizard gateway token"* && "$1" == *"[present] workbench .env"* && "$1" != *"[installed]"* ]] \
+    && grep -qx "WIZARD_CI_GATEWAY_TOKEN_FILE=$2" "$3"' _ "$workbenchRerunOutput" "$workbenchTokenPath" "$workbenchEnvironmentPath"
 
 personalAuthOutput="$(runProvisionFunction installDevboxPersonalGitAuth)"
 check "missing personal auth warns once without printing credentials" \

@@ -72,6 +72,130 @@ syncDevboxRepositories() {
   return 1
 }
 
+devboxWorkbenchStateDirectory="$HOME/.local/state/dotfiles/devbox-workbench"
+devboxWorkbenchLog="$HOME/.local/state/dotfiles/devbox-workbench.log"
+
+installDevboxPhrocs() {
+  if command -v phrocs >/dev/null 2>&1; then
+    reportDevboxItem present phrocs "on PATH"
+    return 0
+  fi
+  local checksumVerifyingInstallerFromTemplateCheckout="$HOME/posthog/tools/phrocs/install.sh"
+  if [[ -f "$checksumVerifyingInstallerFromTemplateCheckout" ]] \
+    && bash "$checksumVerifyingInstallerFromTemplateCheckout" >> "$devboxWorkbenchLog" 2>&1 < /dev/null 9>&- \
+    && command -v phrocs >/dev/null 2>&1; then
+    reportDevboxItem installed phrocs "checksum-verified release"
+    return 0
+  fi
+  reportDevboxItem warned phrocs "install from ~/posthog/tools/phrocs/install.sh failed; see ~/.local/state/dotfiles/devbox-workbench.log"
+}
+
+installDevboxPnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    reportDevboxItem present pnpm "on PATH"
+    return 0
+  fi
+  if npm install -g --prefix "$HOME/.local" pnpm@10 >> "$devboxWorkbenchLog" 2>&1 < /dev/null 9>&-; then
+    reportDevboxItem installed pnpm "on PATH"
+    return 0
+  fi
+  reportDevboxItem warned pnpm "install failed; workbench builds skipped; see ~/.local/state/dotfiles/devbox-workbench.log"
+  return 1
+}
+
+writeDevboxWorkbenchGatewayToken() {
+  local tokenPath="$HOME/.config/posthog/wizard-gateway-token"
+  local stagedTokenPath
+  mkdir -p -m 700 -- "${tokenPath%/*}"
+  stagedTokenPath="$(mktemp "${tokenPath%/*}/.wizard-gateway-token.XXXXXX")"
+  printf '%s' "$WIZARD_WORKBENCH_GATEWAY_TOKEN" > "$stagedTokenPath"
+  if cmp -s "$stagedTokenPath" "$tokenPath"; then
+    rm -f -- "$stagedTokenPath"
+    chmod 600 "$tokenPath"
+    reportDevboxItem present "wizard gateway token" "current"
+    return 0
+  fi
+  chmod 600 "$stagedTokenPath"
+  mv -f -- "$stagedTokenPath" "$tokenPath"
+  reportDevboxItem installed "wizard gateway token" "written from WIZARD_WORKBENCH_GATEWAY_TOKEN"
+}
+
+writeDevboxWorkbenchEnvironmentFile() {
+  local environmentPath="$HOME/Projects/wizard-workbench/.env"
+  if [[ -e "$environmentPath" || -L "$environmentPath" ]]; then
+    reportDevboxItem present "workbench .env" "kept as is"
+    return 0
+  fi
+  local stagedEnvironmentPath
+  stagedEnvironmentPath="$(mktemp "$devboxWorkbenchStateDirectory/.env.XXXXXX")"
+  cat > "$stagedEnvironmentPath" <<ENVIRONMENT
+CONTEXT_MILL_PATH=$HOME/Projects/context-mill
+COMMANDMENTS_PATH=$HOME/Projects/context-mill/context/commandments.yaml
+WIZARD_PATH=$HOME/Projects/wizard
+MCP_PATH=$HOME/posthog/services/mcp
+POSTHOG_PERSONAL_API_KEY=$WIZARD_WORKBENCH_POSTHOG_API_KEY
+POSTHOG_REGION=us
+POSTHOG_WIZARD_PROJECT_ID=483112
+POSTHOG_WIZARD_LOCAL_CONTEXT_MILL=true
+WIZARD_CI_GATEWAY_TOKEN_FILE=$HOME/.config/posthog/wizard-gateway-token
+ENVIRONMENT
+  chmod 600 "$stagedEnvironmentPath"
+  mv -f -- "$stagedEnvironmentPath" "$environmentPath"
+  reportDevboxItem installed "workbench .env" "written from WIZARD_WORKBENCH_POSTHOG_API_KEY"
+}
+
+writeDevboxWorkbenchSecrets() {
+  local missingSecretNames=()
+  if [[ -z "${WIZARD_WORKBENCH_POSTHOG_API_KEY:-}" ]]; then missingSecretNames+=(WIZARD_WORKBENCH_POSTHOG_API_KEY); fi
+  if [[ -z "${WIZARD_WORKBENCH_GATEWAY_TOKEN:-}" ]]; then missingSecretNames+=(WIZARD_WORKBENCH_GATEWAY_TOKEN); fi
+  if ((${#missingSecretNames[@]} > 0)); then
+    reportDevboxItem warned "workbench secrets" "${missingSecretNames[*]} not set; nothing written; on the laptop run hogli devbox:secret:set NAME --file PATH for each, restart the workspace, then rerun"
+    return 0
+  fi
+  writeDevboxWorkbenchGatewayToken
+  writeDevboxWorkbenchEnvironmentFile
+}
+
+buildDevboxWorkbenchRepository() {
+  local repositoryName="$1"
+  local buildCommand="$2"
+  local repositoryPath="$HOME/Projects/$repositoryName"
+  local builtCommitPath="$devboxWorkbenchStateDirectory/$repositoryName.built"
+  local headCommit
+  headCommit="$(git -C "$repositoryPath" rev-parse HEAD 2>/dev/null)" || headCommit=""
+  if [[ -z "$headCommit" ]]; then
+    reportDevboxItem warned "$repositoryName build" "~/Projects/$repositoryName is not cloned; retried next run"
+    return 0
+  fi
+  if [[ -d "$repositoryPath/node_modules" && "$(cat "$builtCommitPath" 2>/dev/null)" == "$headCommit" ]]; then
+    reportDevboxItem present "$repositoryName build" "${headCommit:0:12}"
+    return 0
+  fi
+  if (cd -- "$repositoryPath" && bash -c "$buildCommand") >> "$devboxWorkbenchLog" 2>&1 < /dev/null 9>&-; then
+    printf '%s\n' "$headCommit" > "$builtCommitPath"
+    reportDevboxItem installed "$repositoryName build" "${headCommit:0:12}"
+    return 0
+  fi
+  rm -f -- "$builtCommitPath"
+  reportDevboxItem warned "$repositoryName build" "$buildCommand failed; retried next run; see ~/.local/state/dotfiles/devbox-workbench.log"
+}
+
+installDevboxWizardWorkbench() {
+  if [[ ! -d "$HOME/Projects/wizard-workbench/.git" ]]; then
+    return 0
+  fi
+  mkdir -p -m 700 -- "$devboxWorkbenchStateDirectory"
+  touch "$devboxWorkbenchLog"
+  chmod 600 "$devboxWorkbenchLog"
+  installDevboxPhrocs
+  writeDevboxWorkbenchSecrets
+  installDevboxPnpm || return 0
+  local wizardCiBuildThatAcceptsRunnerLocalFlags='pnpm install --frozen-lockfile && pnpm build:ci'
+  buildDevboxWorkbenchRepository wizard-workbench 'pnpm install --frozen-lockfile'
+  buildDevboxWorkbenchRepository wizard "$wizardCiBuildThatAcceptsRunnerLocalFlags"
+  buildDevboxWorkbenchRepository context-mill 'pnpm install --frozen-lockfile && pnpm run build'
+}
+
 devboxPathsResolveAlike() {
   local firstResolvedPath secondResolvedPath
   firstResolvedPath="$(cd -- "$1" 2>/dev/null && pwd -P)" || return 1
@@ -698,7 +822,13 @@ stopDevboxGlimmervoid() {
 
 case "$devboxAction" in
   dotfiles) installDevboxDotfiles; exit ;;
-  sync-repos) holdDevboxProvisionLock; syncDevboxRepositories; exit ;;
+  sync-repos)
+    holdDevboxProvisionLock
+    repositorySyncStatus=0
+    syncDevboxRepositories || repositorySyncStatus=$?
+    installDevboxWizardWorkbench
+    exit "$repositorySyncStatus"
+    ;;
   config-only) requireDevboxPublicHost; holdDevboxProvisionLock; convergeDevboxConfig "$devboxPublicHostName"; exit ;;
   status)
     if devboxPortListens 3456; then
