@@ -118,6 +118,9 @@ check "the unit PATH carries the npm global bin unconditionally" \
   grep -qF "$serverHome/.npm-global/bin" "$serverUnitPath"
 check "the unit PATH carries the account bin unconditionally" \
   grep -qF "$serverHome/.local/bin" "$serverUnitPath"
+check "the account bins outrank a node that lives in a system directory" \
+  bash -c 'HOME=/home/operator; source "$1"; [[ "$(glimmervoidUnitSearchPath /usr/bin)" == "/home/operator/.npm-global/bin:/home/operator/.local/bin:/usr/bin:/usr/local/bin:/bin" ]]' \
+  _ "$topicDir/service.sh"
 check "the unit PATH never chases wherever claude happens to live" \
   bash -c '! grep -qF "$1/stub-bin" "$2"' _ "$toolingHome" "$serverUnitPath"
 

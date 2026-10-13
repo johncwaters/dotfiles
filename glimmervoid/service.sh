@@ -9,7 +9,7 @@ glimmervoidUnitSearchPath() {
   local nodeDirectory="$1"
   local candidateDirectory
   local searchPath=""
-  for candidateDirectory in "$nodeDirectory" "$HOME/.npm-global/bin" "$HOME/.local/bin" \
+  for candidateDirectory in "$HOME/.npm-global/bin" "$HOME/.local/bin" "$nodeDirectory" \
     /usr/local/bin /usr/bin /bin; do
     if [[ ":$searchPath:" == *":$candidateDirectory:"* ]]; then
       continue
