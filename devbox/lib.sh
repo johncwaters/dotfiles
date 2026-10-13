@@ -1,5 +1,5 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-devboxGlimmervoidMinimumVersion="0.30.0"
+devboxGlimmervoidMinimumVersion="0.32.0"
 devboxLookupUnauthenticated=3
 source "$devboxTopicDirectory/../script/lib/profile.sh"
 
