@@ -13,7 +13,7 @@ xdgGitconfigPath="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
 gitconfigStubMarker='# Shared settings come from ~/.config/git/config, linked by dotfiles.'
 retiredGitconfigStubMarker=$'\tpath = ~/.dotfiles/git/gitconfig'
 
-# git reads the XDG config only while ~/.gitconfig is absent, so the seed follows that order.
+# git reads both files but ~/.gitconfig outranks the XDG config, so the seed prefers it.
 previousGitconfigPath() {
   local candidate
   for candidate in "$gitconfigPath" "$xdgGitconfigPath"; do
