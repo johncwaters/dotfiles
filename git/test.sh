@@ -42,7 +42,10 @@ installStatus=0
 runInstall > /dev/null || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check ".gitconfig is a real file" bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$sandbox/.gitconfig"
-check ".gitconfig includes the repo config through the alias" grep -qF 'path = ~/.dotfiles/git/gitconfig' "$sandbox/.gitconfig"
+check "the xdg config links the repo config through the alias" \
+  test "$(readlink "$sandbox/.config/git/config")" = "$sandbox/.dotfiles/git/gitconfig"
+check ".gitconfig includes nothing outside the paths sandboxes allow" \
+  bash -c '! grep -qF ".dotfiles" "$1"' _ "$sandbox/.gitconfig"
 check ".gitconfig.local was seeded from the previous config" grep -q 'Sandbox Author' "$sandbox/.gitconfig.local"
 check ".gitconfig.local is not world readable" test "$(modeOf "$sandbox/.gitconfig.local")" = "600"
 check "the seed dropped the include of itself" \
@@ -145,13 +148,13 @@ check "git reads the identity the xdg config carried" test "$(gitConfigValue use
 check "the xdg machine setting outranks the shared default" test "$(gitConfigValue pull.rebase)" = "false"
 check "the seeded xdg config was moved aside" test -f "$sandbox/.config/git/config.pre-dotfiles.bak"
 check "a multi valued key the xdg config carried is applied once" \
-  test "$(env HOME="$sandbox" git -C "$sandbox" config --get-all safe.directory | wc -l)" = "1"
+  test "$(env HOME="$sandbox" git -C "$sandbox" config --get-all safe.directory | grep -c .)" = "1"
 
 startGitSandbox "git-multi-valued-local"
 printf '[user]\n\tname = Multi Author\n[safe]\n\tdirectory = /srv/one\n' > "$sandbox/.gitconfig.local"
 runInstall > /dev/null || true
 check "a multi valued local key is applied once" \
-  test "$(env HOME="$sandbox" git -C "$sandbox" config --get-all safe.directory | wc -l)" = "1"
+  test "$(env HOME="$sandbox" git -C "$sandbox" config --get-all safe.directory | grep -c .)" = "1"
 
 startGitSandbox "git-odd-include-syntax"
 cat > "$sandbox/.gitconfig" <<PREVIOUS
@@ -190,5 +193,20 @@ check "an XDG config with a relative include installs clean" test "$relativeXdgS
 check "the relative include was rebased onto the XDG dir" \
   grep -qF "path = $sandbox/.config/git/identity" "$sandbox/.gitconfig.local"
 check "the sibling include still applies after retirement" test "$(gitConfigValue user.name)" = "Sibling Author"
+
+startGitSandbox "git-retired-stub"
+printf '[user]\n\tname = Stub Author\n' > "$sandbox/.gitconfig.local"
+printf '[include]\n\tpath = ~/.dotfiles/git/gitconfig\n\tpath = ~/.gitconfig.local\n[commit]\n\tgpgsign = true\n' \
+  > "$sandbox/.gitconfig"
+retiredStubStatus=0
+runInstall > /dev/null || retiredStubStatus=$?
+check "a retired stub migrates clean" test "$retiredStubStatus" -eq 0
+check "the retired stub lost its include of the repo config" \
+  bash -c '! grep -qF ".dotfiles" "$1"' _ "$sandbox/.gitconfig"
+check "what was appended to the retired stub survives" test "$(gitConfigValue commit.gpgsign)" = "true"
+check "the retired stub still reaches the local config" test "$(gitConfigValue user.name)" = "Stub Author"
+check "the retired stub machine still sees the shared defaults" test "$(gitConfigValue pull.rebase)" = "true"
+check "the retired stub was not backed up as foreign" bash -c '! test -e "$1"' _ "$sandbox/.gitconfig.pre-dotfiles.bak"
+checkRerunIsQuiet "a migrated stub reruns quiet" "$(runInstall)"
 
 reportTopicResults "git"

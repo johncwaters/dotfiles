@@ -8,13 +8,15 @@ fi
 
 gitconfigPath="$HOME/.gitconfig"
 localGitconfigPath="$HOME/.gitconfig.local"
+xdgGitconfigPath="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
 
-gitconfigStubMarker=$'\tpath = ~/.dotfiles/git/gitconfig'
+gitconfigStubMarker='# Shared settings come from ~/.config/git/config, linked by dotfiles.'
+retiredGitconfigStubMarker=$'\tpath = ~/.dotfiles/git/gitconfig'
 
 # git reads the XDG config only while ~/.gitconfig is absent, so the seed follows that order.
 previousGitconfigPath() {
   local candidate
-  for candidate in "$gitconfigPath" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"; do
+  for candidate in "$gitconfigPath" "$xdgGitconfigPath"; do
     [[ -f "$candidate" ]] || continue
     destinationIsOurs "$candidate" "$gitconfigStubMarker" && continue
     printf '%s\n' "$candidate"
@@ -66,22 +68,13 @@ retireSeedSourceIfXdg() {
   moveExistingAside ".config/git/config" "$1"
 }
 
-# A local file that exists already is never merged into, so what the displaced config held
-# only reaches the owner through the warning.
-warnUnmergedPrevious() {
-  local previousPath="$1"
-  if [[ "$previousPath" != "$gitconfigPath" ]]; then
-    noteWarned ".gitconfig.local" "exists, so ${previousPath/#$HOME/\~} was not merged; it still applies beside it"
-    return 0
-  fi
-  noteWarned ".gitconfig.local" "exists, so ~/.gitconfig was not merged; its backup keeps what it held"
-}
-
 seedLocalGitconfigFromPrevious() {
   local previousPath
   previousPath="$(previousGitconfigPath)" || return 0
   if [[ -e "$localGitconfigPath" || -L "$localGitconfigPath" ]]; then
-    warnUnmergedPrevious "$previousPath"
+    # A local file that exists already is never merged into, so what the displaced config held
+    # only reaches the owner through the warning.
+    noteWarned ".gitconfig.local" "exists, so ${previousPath/#$HOME/\~} was not merged; its backup keeps what it held"
     return 0
   fi
   local seedInProgress
@@ -97,12 +90,26 @@ seedLocalGitconfigFromPrevious() {
   retireSeedSourceIfXdg "$previousPath"
 }
 
+# Sandboxes that allow reading ~/.gitconfig deny an include outside it, which broke PostHog's dev-sandbox uv sync.
+migrateRetiredGitconfigStub() {
+  fileHoldsLine "$gitconfigPath" "$retiredGitconfigStubMarker" || return 0
+  local keptLines
+  keptLines="$(grep -vxF -- "$retiredGitconfigStubMarker" "$gitconfigPath" || true)"
+  printf '%s\n%s\n' "$gitconfigStubMarker" "$keptLines" > "$gitconfigPath"
+  noteApplied ".gitconfig" "shared include moved to ${xdgGitconfigPath/#$HOME/\~}"
+}
+
+migrateRetiredGitconfigStub
 seedLocalGitconfigFromPrevious
 ensureStubFile ".gitconfig" "$gitconfigPath" "$gitconfigStubMarker" <<STUB
-[include]
 $gitconfigStubMarker
+[include]
 	path = ~/.gitconfig.local
 STUB
+linkEntry "git config" "git/gitconfig" "$xdgGitconfigPath"
+if [[ -n "$lastBackupPath" ]]; then
+  noteWarned "git config" "the previous one no longer applies; merge ${lastBackupPath/#$HOME/\~} into ~/.gitconfig.local"
+fi
 
 if [[ ! -f "$localGitconfigPath" ]]; then
   noteWarned ".gitconfig.local" "missing; copy git/gitconfig.local.example there and fill it in"

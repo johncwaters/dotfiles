@@ -10,7 +10,9 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   someone reruns the installer; a link cannot drift. Render only what a profile varies.
   Files that tools append to in place (`~/.gitconfig`, `~/.bashrc`, `~/.bash_profile`) are
   small stubs including the repo copy, since a link there makes `git config --global` and
-  installer hooks write into the tracked file. `~/.claude/CLAUDE.md` is copied verbatim
+  installer hooks write into the tracked file. Git's repo copy is the exception: it is linked
+  at `~/.config/git/config`, since sandboxes that allow the standard git config paths deny
+  an include outside them. `~/.claude/CLAUDE.md` is copied verbatim
   instead: Claude Code drops every `@import` in a memory file that is itself a symlink, and
   a stub cannot serve because the nested `@AGENTS.md` must resolve in `~/.claude`, beside
   the AGENTS.md link, not beside the profile file; the copy converges by rerunning the
