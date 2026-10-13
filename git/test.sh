@@ -42,8 +42,8 @@ installStatus=0
 runInstall > /dev/null || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
 check ".gitconfig is a real file" bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$sandbox/.gitconfig"
-check "the xdg config links the repo config through the alias" \
-  test "$(readlink "$sandbox/.config/git/config")" = "$sandbox/.dotfiles/git/gitconfig"
+check "the xdg config links the checkout itself, not through the alias" \
+  test "$(readlink "$sandbox/.config/git/config")" = "$(readlink -f -- "$topicDir/gitconfig")"
 check ".gitconfig includes nothing outside the paths sandboxes allow" \
   bash -c '! grep -qF ".dotfiles" "$1"' _ "$sandbox/.gitconfig"
 check ".gitconfig.local was seeded from the previous config" grep -q 'Sandbox Author' "$sandbox/.gitconfig.local"
@@ -208,5 +208,20 @@ check "the retired stub still reaches the local config" test "$(gitConfigValue u
 check "the retired stub machine still sees the shared defaults" test "$(gitConfigValue pull.rebase)" = "true"
 check "the retired stub was not backed up as foreign" bash -c '! test -e "$1"' _ "$sandbox/.gitconfig.pre-dotfiles.bak"
 checkRerunIsQuiet "a migrated stub reruns quiet" "$(runInstall)"
+
+startGitSandbox "git-moved-clone"
+mkdir -p "$sandbox/before-move"
+cp -R "$repoRoot/script" "$repoRoot/profiles" "$topicDir" "$sandbox/before-move/"
+ln -sfn "$sandbox/before-move" "$sandbox/.dotfiles"
+printf '[user]\n\tname = Moved Author\n' > "$sandbox/.gitconfig.local"
+runTopicInstall "$sandbox/before-move/git" > /dev/null || true
+mv "$sandbox/before-move" "$sandbox/after-move"
+ln -sfn "$sandbox/after-move" "$sandbox/.dotfiles"
+movedStatus=0
+runTopicInstall "$sandbox/after-move/git" > /dev/null || movedStatus=$?
+check "a moved clone relinks clean" test "$movedStatus" -eq 0
+check "a moved clone's dangling link is not backed up as foreign" \
+  bash -c '! test -L "$1"' _ "$sandbox/.config/git/config.pre-dotfiles.bak"
+check "git sees the shared defaults after the clone moved" test "$(gitConfigValue pull.rebase)" = "true"
 
 reportTopicResults "git"

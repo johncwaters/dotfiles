@@ -46,8 +46,9 @@ symlinkPointsIntoThisRepo() {
 linkIsCurrent() {
   local repoRelativeSource="$1"
   local destination="$2"
+  local wantedTarget="${3:-$(aliasTargetFor "$repoRelativeSource")}"
   [[ -L "$destination" ]] || return 1
-  [[ "$(symlinkTargetOf "$destination")" == "$(aliasTargetFor "$repoRelativeSource")" ]]
+  [[ "$(symlinkTargetOf "$destination")" == "$wantedTarget" ]]
 }
 
 # The outcome goes to a variable the caller names, so two links in one process cannot read each other's result.
@@ -64,7 +65,11 @@ pathIsLinkIntoThisRepo() {
   local path="$1"
   [[ -L "$path" ]] || return 1
   symlinkPointsIntoThisRepo "$(symlinkTargetOf "$path")" && return 0
-  symlinkPointsIntoThisRepo "$(readlink -f -- "$path" 2>/dev/null || true)"
+  local resolvedPath physicalRepo
+  resolvedPath="$(readlink -f -- "$path" 2>/dev/null || true)"
+  symlinkPointsIntoThisRepo "$resolvedPath" && return 0
+  physicalRepo="$(readlink -f -- "$dotfilesRepo" 2>/dev/null || true)"
+  [[ -n "$physicalRepo" && "$resolvedPath" == "$physicalRepo"/* ]]
 }
 
 fileHoldsLine() {
@@ -109,6 +114,7 @@ linkEntry() {
   local repoRelativeSource="$2"
   local destination="$3"
   local outcomeVariableName="${4:-}"
+  local wantedTarget="${5:-$(aliasTargetFor "$repoRelativeSource")}"
   local sourcePath="$dotfilesRepo/$repoRelativeSource"
   recordLinkOutcome "$outcomeVariableName" current
   lastBackupPath=""
@@ -116,9 +122,7 @@ linkEntry() {
     noteWarned "$label" "not in repo: $repoRelativeSource"
     return 0
   fi
-  local wantedTarget
-  wantedTarget="$(aliasTargetFor "$repoRelativeSource")"
-  if linkIsCurrent "$repoRelativeSource" "$destination"; then
+  if linkIsCurrent "$repoRelativeSource" "$destination" "$wantedTarget"; then
     notePresent "$label" "linked"
     return 0
   fi

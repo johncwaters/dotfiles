@@ -99,6 +99,12 @@ migrateRetiredGitconfigStub() {
   noteApplied ".gitconfig" "shared include moved to ${xdgGitconfigPath/#$HOME/\~}"
 }
 
+removeDanglingGitconfigLinkFromMovedClone() {
+  [[ -L "$xdgGitconfigPath" && ! -e "$xdgGitconfigPath" ]] || return 0
+  [[ "$(symlinkTargetOf "$xdgGitconfigPath")" == */git/gitconfig ]] || return 0
+  rm -f -- "$xdgGitconfigPath"
+}
+
 migrateRetiredGitconfigStub
 seedLocalGitconfigFromPrevious
 ensureStubFile ".gitconfig" "$gitconfigPath" "$gitconfigStubMarker" <<STUB
@@ -106,7 +112,9 @@ $gitconfigStubMarker
 [include]
 	path = ~/.gitconfig.local
 STUB
-linkEntry "git config" "git/gitconfig" "$xdgGitconfigPath"
+removeDanglingGitconfigLinkFromMovedClone
+# PostHog's dev-sandbox allows the link's resolved target but denies traversing the ~/.dotfiles alias on the way.
+linkEntry "git config" "git/gitconfig" "$xdgGitconfigPath" "" "$(readlink -f -- "$dotfilesRepo/git/gitconfig")"
 if [[ -n "$lastBackupPath" ]]; then
   noteWarned "git config" "the previous one no longer applies; merge ${lastBackupPath/#$HOME/\~} into ~/.gitconfig.local"
 fi

@@ -10,9 +10,9 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   someone reruns the installer; a link cannot drift. Render only what a profile varies.
   Files that tools append to in place (`~/.gitconfig`, `~/.bashrc`, `~/.bash_profile`) are
   small stubs including the repo copy, since a link there makes `git config --global` and
-  installer hooks write into the tracked file. Git's repo copy is the exception: it is linked
-  at `~/.config/git/config`, since sandboxes that allow the standard git config paths deny
-  an include outside them. `~/.claude/CLAUDE.md` is copied verbatim
+  installer hooks write into the tracked file. Git's repo copy is instead linked
+  at `~/.config/git/config` by its physical checkout path, since sandboxes that allow the
+  standard git config paths deny an include outside them and the `~/.dotfiles` hop. `~/.claude/CLAUDE.md` is copied verbatim
   instead: Claude Code drops every `@import` in a memory file that is itself a symlink, and
   a stub cannot serve because the nested `@AGENTS.md` must resolve in `~/.claude`, beside
   the AGENTS.md link, not beside the profile file; the copy converges by rerunning the
@@ -32,7 +32,8 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
 - Platform branches go through `script/lib/platform.sh`, so tests can pin both systems without replacing `uname`.
 - A profile may pin its platform because a converge on the wrong OS would half-apply before the first Darwin-only step failed.
 - Bash 4 is the floor; bootstrap re-execs through Homebrew bash on macOS so topic code keeps one shell dialect.
-- Link targets are written as `~/.dotfiles/...`, never as the clone path. The alias is
+- Link targets are written as `~/.dotfiles/...`, never as the clone path, except git's
+  XDG link above, which a rerun relinks after a move. The alias is
   what makes the checkout relocatable and lets a machine keep the repo wherever its owner
   works; `bootstrap` creates it and repoints it if the clone moved.
 - What a converge still owes is state, not config: it is recorded under
