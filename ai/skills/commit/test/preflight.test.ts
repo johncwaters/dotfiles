@@ -114,12 +114,43 @@ test("two mainline commits ahead report freshness and one warning", () => {
       const { result } = preflight(local);
 
       assert.deepEqual(result.mainlineFreshness, { checked: true, mainline: "main", behind: 2 });
-      assert.match((result.warnings as string[]).join("\n"), /2 commits behind origin\/main/);
+      assert.match((result.warnings as string[]).join("\n"), /2 commits behind origin\/main; rebase onto origin\/main/);
     } finally {
       cleanup(local);
     }
   } finally {
     cleanup(origin, seed);
+  }
+});
+
+test("a pushed branch under a pull-request policy is told to merge mainline, not rebase", () => {
+  const origin = makeBareOrigin();
+  const seed = makeRepo();
+  const policyRoot = makePolicyRoot("work", {
+    profile: "work",
+    commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
+    mainline: "auto",
+    afterCommit: "pull-request",
+  });
+  try {
+    commitFile(seed, "a.txt", "one\n");
+    runGit(seed, ["remote", "add", "origin", origin]);
+    runGit(seed, ["push", "-q", "-u", "origin", "main"]);
+    const local = cloneRepo(origin);
+    try {
+      runGit(local, ["switch", "-q", "-c", "feature"]);
+      runGit(local, ["push", "-q", "-u", "origin", "feature"]);
+      commitFile(seed, "b.txt", "two\n", "second");
+      runGit(seed, ["push", "-q", "origin", "main"]);
+
+      const { result } = preflight(local, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+      assert.match((result.warnings as string[]).join("\n"), /1 commits behind origin\/main; merge origin\/main/);
+    } finally {
+      cleanup(local);
+    }
+  } finally {
+    cleanup(origin, seed, policyRoot);
   }
 });
 

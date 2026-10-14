@@ -143,8 +143,10 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
     ? undefined
     : checkMainlineFreshness(git, mainline);
   if (mainlineFreshness?.checked && mainlineFreshness.behind > 0) {
+    const shouldMergeMainline = policy?.afterCommit === "pull-request" && git.hasUpstream();
+    const integrationVerb = shouldMergeMainline ? "merge" : "rebase onto";
     warnings.push(
-      `branch is ${mainlineFreshness.behind} commits behind origin/${mainlineFreshness.mainline}; rebase before review`,
+      `branch is ${mainlineFreshness.behind} commits behind origin/${mainlineFreshness.mainline}; ${integrationVerb} origin/${mainlineFreshness.mainline} before review`,
     );
   }
   if (policy && mainline === null) {

@@ -16,8 +16,7 @@ node "$HOME/.claude/skills/commit/land.ts" [--paths ...] [--promote] [--no-push]
 MSG
 ```
 
-Both print one JSON object on stdout and set the exit code from the outcome table. `node`
-must be 22.18 or newer; it runs the TypeScript directly, with no build step.
+Both print one JSON object on stdout and set the exit code from the outcome table.
 
 ## Step 1: preflight
 
@@ -26,19 +25,29 @@ changed.
 Use preflight's `paths` output as the scoped file list for `ai-slop-cleaner`, `/code-review`,
 and `land.ts`.
 
-It answers six things: the outcome (`READY` or a refusal), the current `branch` and
-whether `branchAllowed` permits committing on it, the `changed` and `untracked` files that
-will be staged, the machine's `policy`, `mainlineFreshness`, and `remoteVisibility`, which
-**Step 3.5: disclosure check** reads.
-
 **Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
 committing on this branch. `policy.commitBranches.onForbidden` permits only
 `create-feature-branch`: create
 a branch named for the work item, switch to it, and proceed.
 
-**Mainline freshness.** A `mainlineFreshness.behind` above zero means rebase onto
-`origin/<mainline>` now, before Step 2, then re-run preflight. A conflict there uses the
-Conflict resolution section and needs no re-review, since nothing has been reviewed yet.
+**Mainline freshness.** A `mainlineFreshness.behind` above zero means integrate
+`origin/<mainline>` with the verb the warning names before Step 2, then re-run preflight.
+Merge only under `afterCommit: pull-request` on a branch with an upstream, since rebasing a
+pushed branch needs a force-push; a landing that passes `--promote` rebases, because
+promotion's rebase drops a merge commit. Set uncommitted work aside in a WIP commit, never
+the stash, which is shared across worktrees and sessions; the `Bash(git *stash)` deny rule
+matches any command ending in `stash`. On a dirty tree, first `git add -A` and
+`git commit -m "WIP set-aside"`, then:
+
+- rebase: `git rebase origin/<mainline>`, then, since rebase drops a WIP already upstream,
+  `test "$(git log -1 --format=%s)" = "WIP set-aside" && git reset --soft HEAD~1`
+- merge: `git switch --detach HEAD~1`, `git merge --no-edit origin/<mainline>`,
+  `git cherry-pick --no-commit <branch>`, `git switch -C <branch>`; the branch holds the
+  WIP commit, so the merge never contains it
+
+On a conflict, resolve by step 2 of Conflict resolution, `git add` each resolved file, then
+`git rebase --continue`, `git merge --continue`, or `git cherry-pick --quit`. No re-review,
+since nothing has been reviewed yet.
 `checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
 
 An unresolved mainline warns; landing pushes the feature branch without promotion.
@@ -201,19 +210,15 @@ Flags:
 - `--paths <file-or-dir> ...`: pass preflight's `paths`, as used for `/code-review`.
   Omit it only when the carbon unit asked to commit everything or you cannot enumerate what
   changed. Report `excluded staged files outside --paths: ...` warnings to the carbon unit;
-  those files were unstaged and remain in the working tree. A denylisted addition still in
-  the index after exclusion stops the run with `DENYLISTED_FILE_STAGED`.
+  those files were unstaged and remain in the working tree.
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
-  mainline, and pushing mainline. When origin has the mainline but no local branch, it
-  materializes a local tracking branch from `origin/<mainline>` first. Omit it when the
+  mainline, and pushing mainline. Omit it when the
   disclosure check held the change back, when the user asked for commit-only ("commit
   only", "don't merge"), when `policy.afterCommit` is `pull-request`, or when there is no
   policy.
 - `--no-push`: only when the user asks for local-only work or the disclosure check held
-  the change back. It suppresses every push, including feature, mainline, safety, and
-  remote branch deletion pushes. Promotion may
-  still update local mainline; `warnings` names a locally promoted mainline left unpushed.
+  the change back.
 
 ## Outcomes
 
@@ -245,7 +250,6 @@ from `warnings`; they do not change the outcome.
 ## Conflict resolution
 
 `PROMOTE_CONFLICT` with files in `conflicts` is yours to resolve; do not dead-end on it.
-The rebase is already aborted, so the tree is clean.
 
 1. On the feature branch, fetch origin and rebase onto `policy.resolved.mainline`.
 2. Resolve each conflicted file on its merits: read both sides, keep both intents where
@@ -293,11 +297,9 @@ changes you cannot attribute.
 
 Read `policy.afterCommit`:
 
-- `promote`: promotion already ran inside `land.ts`. Mainline receives the rebased feature
-  branch by fast-forward. Never merge branches
+- `promote`: promotion already ran inside `land.ts`. Never merge branches
   yourself (sole exception: the recovery above), even when asked to "just merge it
-  quickly"; re-run `land.ts` instead. A clean tree with `--promote` still promotes an
-  unlanded feature tip.
+  quickly"; re-run `land.ts` instead.
 - `pull-request`: never merge the feature branch anywhere. When the disclosure check held
   the change back, stop after reporting; a public pull request discloses it too. Otherwise
   offer to open a pull request against the repository's mainline with `/open-pr`. If the
