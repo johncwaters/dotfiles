@@ -142,6 +142,21 @@
           {
             "type": "command",
             "command": "node {{HOME}}/.claude/hooks/report-parked-branches.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/retro-reminder.mjs"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/retro-reminder.mjs",
+            "timeout": 10
           }
         ]
       }
