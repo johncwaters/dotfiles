@@ -1540,10 +1540,16 @@ assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'get', 'evil.inval
 assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'get', 'github.com', 'http'), '');
 JS
 
-wrapperTestPath="$stubState/gh-wrapper-test"
-sed 's|exec /usr/bin/gh "\$@"|printf "%s\\n" "$GH_TOKEN"|' "$sandbox/.local/bin/gh" > "$wrapperTestPath"
 wrapperStubDirectory="$stubState/wrapper-bin"
 mkdir -p "$wrapperStubDirectory"
+wrapperTestPath="$stubState/gh-wrapper-test"
+sed -e 's|exec /usr/bin/gh "\$@"|printf "%s\\n" "$GH_TOKEN"; exit 0|' -e "s|/usr/bin/gh|$wrapperStubDirectory/gh-stored-login|g" \
+  "$sandbox/.local/bin/gh" > "$wrapperTestPath"
+cat > "$wrapperStubDirectory/gh-stored-login" <<'STUB'
+#!/usr/bin/env bash
+[[ -z "${GH_TOKEN:-}" && -n "${FIXTURE_STORED_LOGIN:-}" ]] || exit 1
+printf '%s\n' "$FIXTURE_STORED_LOGIN"
+STUB
 cat > "$wrapperStubDirectory/coder" <<'STUB'
 #!/usr/bin/env bash
 printf 'fixture-coder\n'
@@ -1552,10 +1558,10 @@ cat > "$wrapperStubDirectory/git" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$FIXTURE_ORIGIN"
 STUB
-chmod +x "$wrapperStubDirectory/coder" "$wrapperStubDirectory/git"
+chmod +x "$wrapperStubDirectory/coder" "$wrapperStubDirectory/git" "$wrapperStubDirectory/gh-stored-login"
 runGhWrapper() {
   env HOME="$sandbox" PATH="$wrapperStubDirectory:$coreBin" \
-    GH_PERSONAL_TOKEN="${1:-}" FIXTURE_ORIGIN="$2" "$BASH" "$wrapperTestPath" "${@:3}"
+    GH_PERSONAL_TOKEN="${1:-}" FIXTURE_ORIGIN="$2" FIXTURE_STORED_LOGIN= "$BASH" "$wrapperTestPath" "${@:3}"
 }
 check "gh selects personal auth for -R" test "$(runGhWrapper fixture-personal '' pr list -R johncwaters/glimmervoid)" = fixture-personal
 check "gh selects personal auth for --repo" test "$(runGhWrapper fixture-personal '' pr list --repo=johncwaters/glimmervoid)" = fixture-personal
@@ -1573,22 +1579,16 @@ check "gh repo view of a PostHog repo from a personal cwd uses Coder auth" \
 check "gh repo clone of a personal repo from a PostHog cwd uses personal auth" \
   test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git repo clone johncwaters/glimmervoid -- --depth 1)" = fixture-personal
 
-storedLoginWrapperPath="$stubState/gh-wrapper-stored-login"
-sed "s|/usr/bin/gh|$wrapperStubDirectory/gh-stored-login|g" "$wrapperTestPath" > "$storedLoginWrapperPath"
-cat > "$wrapperStubDirectory/gh-stored-login" <<'STUB'
-#!/usr/bin/env bash
-[[ -z "${GH_TOKEN:-}" && -n "${FIXTURE_STORED_LOGIN:-}" ]] || exit 1
-printf '%s\n' "$FIXTURE_STORED_LOGIN"
-STUB
-chmod +x "$wrapperStubDirectory/gh-stored-login"
 runStoredLoginGhWrapper() {
   env HOME="$sandbox" PATH="$wrapperStubDirectory:$coreBin" GH_TOKEN=fixture-inherited \
-    FIXTURE_STORED_LOGIN="$1" FIXTURE_ORIGIN='' "$BASH" "$storedLoginWrapperPath" auth token
+    FIXTURE_STORED_LOGIN="$1" FIXTURE_ORIGIN="$2" "$BASH" "$wrapperTestPath" "${@:3}"
 }
 check "gh auth token hands sessions the stored login, so git pushes keep its repo scope" \
-  test "$(runStoredLoginGhWrapper fixture-stored)" = fixture-stored
+  test "$(runStoredLoginGhWrapper fixture-stored '' auth token)" = fixture-stored
 check "gh auth token without a stored login falls back to Coder auth" \
-  test "$(runStoredLoginGhWrapper '')" = fixture-coder
+  test "$(runStoredLoginGhWrapper '' '' auth token)" = fixture-coder
+check "gh pr create on a PostHog repo the Coder app does not cover uses the stored login" \
+  test "$(runStoredLoginGhWrapper fixture-stored https://github.com/PostHog/posthog.com.git pr create --draft)" = fixture-stored
 
 curlStubDirectory="$stubState/curl-bin"
 mkdir -p "$curlStubDirectory"

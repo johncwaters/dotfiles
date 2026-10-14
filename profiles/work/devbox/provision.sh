@@ -456,11 +456,11 @@ while [[ "$targetRepo" == */ ]]; do targetRepo="${targetRepo%/}"; done
 targetRepo="${targetRepo%.git}"
 if [[ -n "${GH_PERSONAL_TOKEN:-}" && "${targetRepo,,}" == johncwaters/* ]]; then
   export GH_TOKEN="$GH_PERSONAL_TOKEN"
+  exec /usr/bin/gh "$@"
 fi
-if [[ -z "${GH_PERSONAL_TOKEN:-}" || "${targetRepo,,}" != johncwaters/* ]]; then
-  GH_TOKEN="$(coder external-auth access-token primary-github)"
-  export GH_TOKEN
-fi
+storedLoginToken="$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh auth token 2> /dev/null || true)"
+GH_TOKEN="${storedLoginToken:-$(coder external-auth access-token primary-github)}"
+export GH_TOKEN
 exec /usr/bin/gh "$@"
 WRAPPER
   if cmp -s "$stagedWrapperPath" "$wrapperPath"; then
