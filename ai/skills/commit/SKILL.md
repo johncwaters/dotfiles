@@ -32,8 +32,8 @@ a branch named for the work item, switch to it, and proceed.
 
 **Mainline freshness.** A `mainlineFreshness.behind` above zero means integrate
 `origin/<mainline>` with the verb the warning names before Step 2, then re-run preflight.
-Merge only under `afterCommit: pull-request` on a branch with an upstream, since rebasing a
-pushed branch needs a force-push; a landing that passes `--promote` rebases, because
+Merge only for `afterCommit: pull-request` with an upstream, since rebasing a pushed
+branch needs a force-push; a landing that passes `--promote` rebases, because
 promotion's rebase drops a merge commit. Set uncommitted work aside in a WIP commit, never
 the stash, which is shared across worktrees and sessions; the `Bash(git *stash)` deny rule
 matches any command ending in `stash`. On a dirty tree, first `git add -A` and
@@ -41,7 +41,8 @@ matches any command ending in `stash`. On a dirty tree, first `git add -A` and
 
 - rebase: `git rebase origin/<mainline>`, then, since rebase drops a WIP already upstream,
   `test "$(git log -1 --format=%s)" = "WIP set-aside" && git reset --soft HEAD~1`
-- merge: `git switch --detach HEAD~1`, `git merge --no-edit origin/<mainline>`,
+- merge: `git switch --detach HEAD~1`,
+  `git merge -m "Merge <mainline> into <branch>" origin/<mainline>`,
   `git cherry-pick --no-commit <branch>`, `git switch -C <branch>`; the branch holds the
   WIP commit, so the merge never contains it
 
