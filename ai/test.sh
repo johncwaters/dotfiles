@@ -1384,6 +1384,7 @@ shopt -s nullglob
 hookTestFiles=("$topicDir"/hooks/test/*.test.mjs "$repoRoot"/profiles/work/hooks/test/*.test.mjs)
 workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
+retroTestFiles=("$topicDir"/skills/retro/test/*.test.ts)
 specTestFiles=("$topicDir"/skills/spec/test/*.test.ts)
 openPrTestFiles=("$repoRoot"/profiles/work/skills/open-pr/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
@@ -1392,12 +1393,13 @@ shopt -u nullglob
 check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
 check "workflow behavior tests are present" test "${#workflowTestFiles[@]}" -gt 0
 check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
+check "retro digest tests are present" test "${#retroTestFiles[@]}" -gt 0
 check "design spec contract tests are present" test "${#specTestFiles[@]}" -gt 0
 check "open-pr evidence tests are present" test "${#openPrTestFiles[@]}" -gt 0
 check "social-images render tests are present" test "${#socialImagesTestFiles[@]}" -gt 0
 check "hud tests are present" test "${#hudTestFiles[@]}" -gt 0
-if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
-  check "hook, workflow, commit, open-pr, social-images, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}" "${hudTestFiles[@]}"
+if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
+  check "hook, workflow, commit, retro, open-pr, social-images, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}" "${hudTestFiles[@]}"
 fi
 
 if ((${#specTestFiles[@]} > 0)); then
