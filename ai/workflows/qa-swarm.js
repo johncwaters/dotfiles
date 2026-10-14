@@ -34,7 +34,7 @@ const laneDefinitions = [
     recommendable: false,
     classNeedles: [],
     trigger: '',
-    spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Code review', phase: 'Review', agentType: 'code-reviewer' })
+    spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Code review', phase: 'Review', agentType: 'qa-code-reviewer' })
   },
   {
     name: 'security',

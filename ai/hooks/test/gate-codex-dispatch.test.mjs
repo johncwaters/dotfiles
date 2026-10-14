@@ -57,7 +57,7 @@ test("an ordinary subagent is denied codex invocations in command position", () 
     "watch codex exec x",
     "command -v codex && codex exec x",
   ]) {
-    assert.equal(decisionFor(subagentBash("code-reviewer", command)), "deny", command);
+    assert.equal(decisionFor(subagentBash("qa-code-reviewer", command)), "deny", command);
   }
 });
 
@@ -70,7 +70,7 @@ test("an ordinary subagent may mention codex as an argument", () => {
     "echo codex",
     "command -v codex",
   ]) {
-    assert.equal(decisionFor(subagentBash("code-reviewer", command)), "allow", command);
+    assert.equal(decisionFor(subagentBash("qa-code-reviewer", command)), "allow", command);
   }
 });
 

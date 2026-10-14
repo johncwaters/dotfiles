@@ -123,7 +123,7 @@ check "the git identity moved into .gitconfig.local" grep -q 'Sandbox Author' "$
 check "git reads the identity through the linked config" \
   bash -c '[[ "$(git -C "$HOME" config --get user.name)" == "Sandbox Author" ]]'
 check "skills resolve through the link" test -f "$claudeHome/skills/commit/SKILL.md"
-check "agents resolve through the link" test -f "$claudeHome/agents/code-reviewer.md"
+check "agents resolve through the link" test -f "$claudeHome/agents/qa-code-reviewer.md"
 check "the codex mirror resolves" test -f "$HOME/.codex/AGENTS.md"
 check "the codex mirror renders the shared AGENTS.md" \
   cmp -s "$claudeHome/AGENTS.md" "$HOME/.codex/AGENTS.md"

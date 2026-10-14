@@ -26,15 +26,15 @@ Pin to an immutable object, never a live tree. `qa-swarm` runs lanes concurrentl
 - **working**: snapshot through a throwaway index so the live one is never mutated. Never `git add -A` against the real index to set up a review; that stages whatever the carbon unit deliberately left unstaged, and the next commit quietly carries it
 
 ```
-TMP_DIR=$(mktemp -d)
-cp "$(git rev-parse --git-dir)/index" "$TMP_DIR/index"
-GIT_INDEX_FILE="$TMP_DIR/index" git add -A
-TREE=$(GIT_INDEX_FILE="$TMP_DIR/index" git write-tree)
-rm -rf "$TMP_DIR"
+REVIEW_INDEX=$(mktemp)
+cp "$(git rev-parse --git-dir)/index" "$REVIEW_INDEX"
+GIT_INDEX_FILE="$REVIEW_INDEX" git add -A
+TREE=$(GIT_INDEX_FILE="$REVIEW_INDEX" git write-tree)
+rm -f "$REVIEW_INDEX"
 REVIEW_CMD="git diff HEAD $TREE"
 ```
 
-`mktemp -d` and not `mktemp -u`: the `-u` form only reserves a name, so another local process can land a symlink there first and have the `cp` overwrite its target.
+`mktemp` and not `mktemp -u`: the `-u` form only reserves a name, so another local process can land a symlink there first and have the `cp` overwrite its target. A file, not a directory, because the Safety Net denies `rm -rf` on a variable.
 
 - **branch or pull request**: resolve `BASE_SHA` and `HEAD_SHA`, then `REVIEW_CMD="git diff <BASE_SHA>..<HEAD_SHA>"`. Both are already immutable
 
