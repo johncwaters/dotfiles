@@ -157,6 +157,7 @@ if isDarwin; then
   installDarwinLinearMouse
   applyKinesisModifierSwap
   applyAltTabShortcuts
+  linkEntry "Hammerspoon config" "peripherals/hammerspoon/init.lua" "$HOME/.hammerspoon/init.lua"
   finishTopic
 fi
 
