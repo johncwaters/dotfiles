@@ -416,6 +416,9 @@ installDevboxGhWrapper() {
 set -euo pipefail
 targetRepo=""
 arguments=("$@")
+if [[ "${arguments[0]:-}" == auth && "${arguments[1]:-}" == token ]] && env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh auth token > /dev/null 2>&1; then
+  exec env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh "$@"
+fi
 for ((index = 0; index < ${#arguments[@]}; index++)); do
   case "${arguments[index]}" in
     -R | --repo) targetRepo="${arguments[index + 1]:-}"; break ;;
