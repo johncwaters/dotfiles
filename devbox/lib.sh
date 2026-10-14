@@ -102,7 +102,8 @@ holdDevboxAgentForward() {
     return 1
   fi
   SSH_AUTH_SOCK="$forwardedAgentSocket" CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable \
-    ssh -T -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 "coder.$devboxWorkspaceName" sleep infinity
+    ssh -T -o BatchMode=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "coder.$devboxWorkspaceName" \
+    'while ssh-add -l >/dev/null 2>&1; do sleep 15; done'
 }
 
 pushDevboxScript() {
