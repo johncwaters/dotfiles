@@ -6,6 +6,7 @@ const SLASH_BLOCK = {
   blockClose: "*/",
   stringTracker: makeTemplateLiteralTracker,
 };
+const JS_TS = { ...SLASH_BLOCK, allowsToolPragmas: true };
 const BLOCK_ONLY = { line: null, blockOpen: "/*", blockClose: "*/" };
 const HASH = { line: "#", blockOpen: null, blockClose: null };
 const PYTHON = { ...HASH, stringTracker: makeTripleQuoteTracker };
@@ -13,8 +14,8 @@ const SHELL = { ...HASH, stringTracker: makeHeredocTracker };
 const DASH = { line: "--", blockOpen: null, blockClose: null };
 
 const SYNTAX_BY_EXT = new Map([
-  ...[".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts",
-    ".java", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".go", ".rs",
+  ...[".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts"].map((ext) => [ext, JS_TS]),
+  ...[".java", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".go", ".rs",
     ".swift", ".kt", ".kts", ".scala", ".dart", ".php", ".proto",
     ".groovy", ".sol"].map((ext) => [ext, SLASH_BLOCK]),
   ...[".css", ".scss", ".less"].map((ext) => [ext, BLOCK_ONLY]),
@@ -28,6 +29,22 @@ const SYNTAX_BY_EXT = new Map([
 
 const JSDOC_TAG_RE =
   /^[ \t]*(?:\/\*\*[ \t]*)?(?:\*[ \t]*)?@(param|returns?|type|typedef|template|property|prop|callback|this|typeParam|satisfies|import|deprecated|override|internal|public|private|protected|readonly)\b/m;
+const TOOL_PRAGMA_RE =
+  /^(?<opener>\/\/|\/\*\*?|\*)[ \t]*@(?<name>[\w-]+)[ \t]+(?<value>[^\s*]+)[ \t]*(?:\*\/)?$/;
+const MAX_TOOL_PRAGMA_VALUE_LENGTH = 64;
+const PRAGMA_WORDS = "[a-z0-9][a-z0-9_]*(?:[.-][a-z0-9_]+){0,2}";
+const ENVIRONMENT_VALUE_RE =
+  /^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+){0,2}|(?:\.{1,2}\/)+\w+(?:[.-]\w+){0,3}(?:\/\w+(?:[.-]\w+){0,3})*)$/;
+const JSX_FACTORY_VALUE_RE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/;
+const PACKAGE_SPECIFIER_RE = new RegExp(`^(?:@${PRAGMA_WORDS}\\/)?${PRAGMA_WORDS}(?:\\/${PRAGMA_WORDS})?$`);
+const TOOL_PRAGMA_VALUE_RE_BY_NAME = new Map([
+  ["vitest-environment", ENVIRONMENT_VALUE_RE],
+  ["jest-environment", ENVIRONMENT_VALUE_RE],
+  ["jsx", JSX_FACTORY_VALUE_RE],
+  ["jsxFrag", JSX_FACTORY_VALUE_RE],
+  ["jsxImportSource", PACKAGE_SPECIFIER_RE],
+  ["jsxRuntime", /^(?:classic|automatic)$/],
+]);
 const HEREDOC_OPEN_RE = /^<<-?(?!<)[ \t]*(['"]?)\\?([A-Za-z_][A-Za-z0-9_]*)\1/;
 const TRIPLE_QUOTES = ['"""', "'''"];
 
@@ -219,7 +236,17 @@ function makeHeredocTracker() {
   };
 }
 
-function isExemptDocLine(trimmed, insideDocBlock) {
+function isToolPragma(trimmed, insideDocBlock) {
+  const pragma = TOOL_PRAGMA_RE.exec(trimmed);
+  if (!pragma) return false;
+  if (pragma.groups.opener === "*" && !insideDocBlock) return false;
+  const valueGrammar = TOOL_PRAGMA_VALUE_RE_BY_NAME.get(pragma.groups.name);
+  if (!valueGrammar) return false;
+  return pragma.groups.value.length <= MAX_TOOL_PRAGMA_VALUE_LENGTH && valueGrammar.test(pragma.groups.value);
+}
+
+function isExemptDocLine(trimmed, insideDocBlock, syntax) {
+  if (syntax.allowsToolPragmas && isToolPragma(trimmed, insideDocBlock)) return true;
   if (!insideDocBlock) return false;
   if (trimmed === "/**" || trimmed === "*/") return true;
   return JSDOC_TAG_RE.test(trimmed);
@@ -239,14 +266,14 @@ function scanCommentLines(content, syntax) {
       continue;
     }
     if (inBlock) {
-      if (!isExemptDocLine(trimmed, insideDocBlock)) found.push(trimmed);
+      if (!isExemptDocLine(trimmed, insideDocBlock, syntax)) found.push(trimmed);
       if (syntax.blockClose && trimmed.includes(syntax.blockClose)) inBlock = false;
       continue;
     }
     if (i === 0 && trimmed.startsWith("#!")) continue;
     if (syntax.blockOpen && trimmed.startsWith(syntax.blockOpen)) {
       const opensDocBlock = trimmed.startsWith("/**");
-      if (!isExemptDocLine(trimmed, opensDocBlock)) found.push(trimmed);
+      if (!isExemptDocLine(trimmed, opensDocBlock, syntax)) found.push(trimmed);
       if (!trimmed.includes(syntax.blockClose)) {
         inBlock = true;
         insideDocBlock = opensDocBlock;
@@ -254,7 +281,7 @@ function scanCommentLines(content, syntax) {
       continue;
     }
     if (syntax.line && trimmed.startsWith(syntax.line)) {
-      found.push(trimmed);
+      if (!isExemptDocLine(trimmed, false, syntax)) found.push(trimmed);
       continue;
     }
     strings.advance(line);

@@ -542,6 +542,50 @@ test("a single-line jsdoc type cast is allowed", () => {
   assert.equal(processResult.stdout, "");
 });
 
+test("tool pragma lines are allowed", () => {
+  const processResult = runHook("block-comments.mjs", {
+    tool_name: "Write",
+    tool_input: {
+      file_path: "/nonexistent/pragma.test.tsx",
+      content:
+        "// @vitest-environment happy-dom\n/** @jsxImportSource preact */\n/**\n * @jest-environment jsdom\n */\nconst a = 1;\n",
+    },
+  });
+
+  assert.equal(processResult.status, 0);
+  assert.equal(processResult.stdout, "");
+});
+
+test("prose after a tool pragma and silencing directives are denied", () => {
+  const processResult = runHook("block-comments.mjs", {
+    tool_name: "Write",
+    tool_input: {
+      file_path: "/nonexistent/smuggle.ts",
+      content: "// @vitest-environment happy-dom because the dom is needed\n// @ts-ignore\nconst a = 1;\n",
+    },
+  });
+
+  assert.equal(processResult.status, 0);
+  const output = JSON.parse(processResult.stdout);
+  assert.equal(output.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(output.hookSpecificOutput.permissionDecisionReason, /2 net-new comment line/);
+
+  const joinedProsePragmas = [
+    ["retry.go", "// @jsx retries-three-times-because-the-upstream-api-flakes-under-load-see-INC-4521"],
+    ["cache.ts", "// @jsxImportSource do-not-remove:this-cache-must-be-cleared-before-every-request"],
+    ["ledger.rs", "// @jsxFrag keep.this.loop.sequential.or.the.ledger.double-charges"],
+  ];
+  for (const [fileName, pragmaLine] of joinedProsePragmas) {
+    const joinedProseResult = runHook("block-comments.mjs", {
+      tool_name: "Write",
+      tool_input: { file_path: `/nonexistent/${fileName}`, content: `${pragmaLine}\nconst a = 1;\n` },
+    });
+
+    assert.equal(joinedProseResult.status, 0);
+    assert.equal(JSON.parse(joinedProseResult.stdout).hookSpecificOutput.permissionDecision, "deny", fileName);
+  }
+});
+
 test("prose lines in a tagged jsdoc block are denied", () => {
   const processResult = runHook("block-comments.mjs", {
     tool_name: "Write",

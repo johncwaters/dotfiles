@@ -97,6 +97,7 @@ Do not assume. Research. Do not bandaid. Fix upstream when it is inside the assi
 - Unknown project behavior: read the file, run the command, check the schema. Do not infer from filename or memory.
 - Tool/lint/type/test failure: find root cause. Never silence with `@ts-ignore`, `eslint-disable`, `--no-verify`, swallowed `try/catch`, skip flags, or "temporary" workarounds. Real upstream blocker forcing a workaround: leave a one-line comment naming the issue and the removal trigger.
 - Symptom in caller: fix the source when it is inside the assigned surface; otherwise report it instead of widening the task.
+- Third-party dependency defect: "upstream" means the root cause in code you own. Fix how your code uses the dependency; never patch, wrap, fork, or clone the dependency unless asked.
 - Flaky test: find the race or shared state. Do not retry-loop or skip.
 State the assumption in one line before acting so the user can redirect early.
 </research_not_assume>
