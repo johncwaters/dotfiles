@@ -502,8 +502,9 @@ check "personal profile removes the work AGENTS.profile.md link" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$profileAgentsPath"
 check "personal Codex AGENTS.md holds only the shared rules" \
   cmp -s "$codexAgentsPath" "$stagedRepo/ai/AGENTS.md"
+lockedSkillCount="$(find "$stagedTopicDir/skills" "$stagedRepo/profiles/work/skills" -mindepth 2 -maxdepth 2 -name package-lock.json | wc -l)"
 check "converge skips npm ci while a skill's installed lock is current" \
-  test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq 2
+  test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq "$lockedSkillCount"
 
 linkedDestinations=(
   ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"

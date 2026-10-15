@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { arch, homedir } from 'node:os'
+import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../lib/headless-chrome.mjs'
+
+export { parseFlags }
 
 const colorModes = ['light', 'dark']
 const viewportWidths = { narrow: 640, wide: 1440 }
@@ -83,31 +84,6 @@ export function renderGridMarkdown(area, urlsByStem, heading = area) {
     return [`#### ${heading}`, '', '| State | Before | After |', '|---|---|---|', ...rows].join('\n')
 }
 
-export function parseFlags(argumentList) {
-    const flags = {}
-    for (let index = 0; index < argumentList.length; index++) {
-        const argument = argumentList[index]
-        if (!argument.startsWith('--')) {
-            throw new Error(`unexpected argument: ${argument}`)
-        }
-        const next = argumentList[index + 1]
-        if (next === undefined || next.startsWith('--')) {
-            flags[argument.slice(2)] = true
-            continue
-        }
-        flags[argument.slice(2)] = next
-        index++
-    }
-    return flags
-}
-
-function requireFlags(flags, names) {
-    const missing = names.filter((name) => flags[name] === undefined)
-    if (missing.length) {
-        throw new Error(`missing --${missing.join(', --')}`)
-    }
-}
-
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 async function openPage(browser, { url, width, mode, localStorageTemplate, hydrationMs }) {
@@ -160,89 +136,9 @@ async function clipAround(page, selector, padding) {
     }
 }
 
-const googleChromeLinuxPath = '/opt/google/chrome/chrome'
-const playwrightCacheDirectory = join(homedir(), '.cache', 'ms-playwright')
-const headlessShellLibraryDirectory = join(homedir(), '.cache', 'evidence-chrome-libs')
-
-const headlessShellDirectoryNameByArchitecture = {
-    arm64: 'chrome-headless-shell-linux-arm64',
-    x64: 'chrome-headless-shell-linux64',
-}
-
-function newestHeadlessShellPath(cacheDirectory, architecture) {
-    if (!existsSync(cacheDirectory)) {
-        return null
-    }
-    const revisions = readdirSync(cacheDirectory)
-        .filter((entry) => entry.startsWith('chromium_headless_shell-'))
-        .sort((left, right) => Number(right.split('-')[1]) - Number(left.split('-')[1]))
-    const candidatePaths = revisions.map((revision) =>
-        join(cacheDirectory, revision, headlessShellDirectoryNameByArchitecture[architecture], 'chrome-headless-shell')
-    )
-    return candidatePaths.find((candidatePath) => existsSync(candidatePath)) ?? null
-}
-
-function listMissingSharedLibraries(executablePath) {
-    const lddOutput = execFileSync('ldd', [executablePath], {
-        encoding: 'utf8',
-        env: { ...process.env, LD_LIBRARY_PATH: headlessShellLibraryDirectory },
-    })
-    return [...lddOutput.matchAll(/^\s*(\S+) => not found$/gm)].map((match) => match[1])
-}
-
-function findNixLibrary(libraryName) {
-    const matchPaths = execFileSync('find', ['/nix/store', '-maxdepth', '3', '-name', libraryName], { encoding: 'utf8' })
-        .split('\n')
-        .filter((matchPath) => matchPath && !matchPath.includes('-dev/'))
-    return matchPaths[0] ?? null
-}
-
-function buildGbmStub(executablePath) {
-    const gbmSymbols = execFileSync('nm', ['-D', '--undefined-only', executablePath], { encoding: 'utf8' })
-        .split('\n')
-        .map((line) => line.trim().split(/\s+/).pop()?.split('@')[0])
-        .filter((symbol) => symbol?.startsWith('gbm_'))
-    const stubSourcePath = join(headlessShellLibraryDirectory, 'gbm-stub.c')
-    const stubSource = [...new Set(gbmSymbols)].map((symbol) => `void *${symbol}(void){return 0;}`).join('\n')
-    writeFileSync(stubSourcePath, stubSource)
-    execFileSync('gcc', ['-shared', '-fPIC', '-o', join(headlessShellLibraryDirectory, 'libgbm.so.1'), stubSourcePath])
-}
-
-function prepareHeadlessShellLibraries(executablePath) {
-    mkdirSync(headlessShellLibraryDirectory, { recursive: true })
-    for (const libraryName of listMissingSharedLibraries(executablePath)) {
-        if (libraryName === 'libgbm.so.1') {
-            buildGbmStub(executablePath)
-            continue
-        }
-        const nixLibraryPath = findNixLibrary(libraryName)
-        if (!nixLibraryPath) {
-            continue
-        }
-        const linkPath = join(headlessShellLibraryDirectory, libraryName)
-        rmSync(linkPath, { force: true })
-        symlinkSync(nixLibraryPath, linkPath)
-    }
-    const stillMissing = listMissingSharedLibraries(executablePath)
-    if (stillMissing.length) {
-        throw new Error(`chrome-headless-shell still lacks: ${stillMissing.join(', ')}`)
-    }
-}
-
 async function launchChrome() {
     const { chromium } = await import('playwright-core')
-    if (process.platform !== 'linux' || existsSync(googleChromeLinuxPath)) {
-        return chromium.launch({ channel: 'chrome' })
-    }
-    const headlessShellPath = newestHeadlessShellPath(playwrightCacheDirectory, arch() === 'arm64' ? 'arm64' : 'x64')
-    if (!headlessShellPath) {
-        throw new Error('no Google Chrome or chrome-headless-shell: run `npx playwright-core install --only-shell chromium`')
-    }
-    prepareHeadlessShellLibraries(headlessShellPath)
-    return chromium.launch({
-        executablePath: headlessShellPath,
-        env: { ...process.env, LD_LIBRARY_PATH: headlessShellLibraryDirectory },
-    })
+    return chromium.launch(chromeLaunchOptions())
 }
 
 async function captureGrid(flags) {
@@ -338,7 +234,7 @@ function printGridMarkdown(flags) {
 
 const commands = { grid: captureGrid, gif: recordGif, sheet: writeContactSheet, markdown: printGridMarkdown }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
     const [commandName, ...rest] = process.argv.slice(2)
     const command = commands[commandName]
     if (!command) {
