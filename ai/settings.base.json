@@ -48,6 +48,7 @@
       "Bash(git *stash)",
       "Bash(git *stash -*)",
       "Bash(git *stash save*)",
+      "Bash(git *stash push*)",
       "Bash(git *stash pop*)",
       "Bash(git *stash drop*)",
       "Bash(git *stash clear*)",
