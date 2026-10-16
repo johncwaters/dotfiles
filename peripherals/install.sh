@@ -8,64 +8,71 @@ fi
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
 
-installLinearMouseCask() {
+installOptionsPlusCask() {
   local brewCommand
-  if [[ -d "$(applicationsDirectory)/LinearMouse.app" ]]; then
-    notePresent "LinearMouse" "already installed"
-    upgradeBrewPackage cask linearmouse
+  if [[ -d "$(applicationsDirectory)/logioptionsplus.app" ]]; then
+    notePresent "Logi Options+" "already installed"
+    upgradeBrewPackage cask logi-options+
     return 0
   fi
   brewCommand="$(brewCommandPath || true)"
   if [[ -z "$brewCommand" ]]; then
-    noteWarned "LinearMouse" "Homebrew not on PATH, install manually"
+    noteWarned "Logi Options+" "Homebrew not on PATH, install manually"
     return 0
   fi
-  if "$brewCommand" list --cask linearmouse >/dev/null 2>&1; then
-    notePresent "LinearMouse" "already installed"
-    upgradeBrewPackage cask linearmouse
+  if "$brewCommand" list --cask logi-options+ >/dev/null 2>&1; then
+    notePresent "Logi Options+" "already installed"
+    upgradeBrewPackage cask logi-options+
     return 0
   fi
-  noteStarting "LinearMouse" "installing via Homebrew"
-  if installSystemPackages brew --cask linearmouse; then
-    noteInstalled "LinearMouse" "installed"
+  noteStarting "Logi Options+" "installing via Homebrew"
+  if installSystemPackages brew --cask logi-options+; then
+    noteInstalled "Logi Options+" "installed"
     return 0
   fi
-  noteWarned "LinearMouse" "Homebrew install failed"
+  noteWarned "Logi Options+" "Homebrew install failed"
 }
 
-renderLinearMouseLaunchAgent() {
-  local destination="$HOME/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
-  local stagedPath
-  mkdir -p -- "$(dirname -- "$destination")"
-  clearDestinationIfNotPlainFile "LinearMouse launch agent" "$destination" || return 2
-  stagedPath="$(mktemp "$(dirname -- "$destination")/.dotfiles-launch-agent.XXXXXX")"
-  cat -- "$dotfilesRepo/peripherals/dev.dotfiles.linearmouse.plist" > "$stagedPath"
-  if commitRenderedFile "LinearMouse launch agent" "$stagedPath" "$destination"; then
-    chmod 600 "$destination"
-    noteApplied "LinearMouse launch agent" "rendered"
-    return 0
-  fi
-  chmod 600 "$destination"
-  notePresent "LinearMouse launch agent" "rendered"
-  return 1
-}
-
-installDarwinLinearMouse() {
-  local plistPath="$HOME/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
-  local renderStatus=0
-  local plistChanged=0
-  installLinearMouseCask
-  linkEntry "LinearMouse config" "peripherals/linearmouse.json" \
-    "$HOME/.config/linearmouse/linearmouse.json"
-  renderLinearMouseLaunchAgent || renderStatus=$?
-  if ((renderStatus == 2)); then
+retireLinearMouseLaunchAgent() {
+  local agentLabel="dev.dotfiles.linearmouse"
+  local plistPath="$HOME/Library/LaunchAgents/$agentLabel.plist"
+  local domain
+  domain="gui/$(id -u)"
+  if launchAgentIsLoaded "$domain" "$agentLabel" \
+    && ! launchctl bootout "$domain" "$plistPath" >/dev/null 2>&1; then
+    noteWarned "LinearMouse launch agent" "launchctl bootout failed"
     return 1
   fi
-  if ((renderStatus == 0)); then
-    plistChanged=1
+  [[ -f "$plistPath" ]] || return 0
+  rm -f -- "$plistPath"
+  noteApplied "LinearMouse launch agent" "retired"
+}
+
+retireLinearMouseConfigLink() {
+  local configPath="$HOME/.config/linearmouse/linearmouse.json"
+  pathIsLinkIntoThisRepo "$configPath" || return 0
+  rm -f -- "$configPath"
+  noteApplied "LinearMouse config" "retired link removed"
+}
+
+retireLinearMouseCask() {
+  local brewCommand
+  brewCommand="$(brewCommandPath || true)"
+  [[ -n "$brewCommand" ]] || return 0
+  "$brewCommand" list --cask linearmouse >/dev/null 2>&1 || return 0
+  osascript -e 'quit app "LinearMouse"' >/dev/null 2>&1 || true
+  if ! "$brewCommand" uninstall --cask linearmouse >/dev/null 2>&1; then
+    noteWarned "LinearMouse" "Homebrew uninstall failed"
+    return 1
   fi
-  installLaunchAgent "LinearMouse launch agent" "dev.dotfiles.linearmouse" \
-    "$plistPath" "$plistChanged"
+  noteApplied "LinearMouse" "uninstalled (retired)"
+}
+
+installDarwinMouseSupport() {
+  installOptionsPlusCask
+  retireLinearMouseLaunchAgent
+  retireLinearMouseConfigLink
+  retireLinearMouseCask
 }
 
 applyKinesisModifierSwap() {
@@ -154,7 +161,7 @@ if isDarwin; then
   source "$dotfilesRepo/script/lib/launchd.sh"
   # shellcheck source=./keyboard.sh
   source "$dotfilesRepo/peripherals/keyboard.sh"
-  installDarwinLinearMouse
+  installDarwinMouseSupport
   applyKinesisModifierSwap
   applyAltTabShortcuts
   linkEntry "Hammerspoon config" "peripherals/hammerspoon/init.lua" "$HOME/.hammerspoon/init.lua"

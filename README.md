@@ -96,7 +96,7 @@ pins the shared boundary. Shared npm entries apply everywhere; profile lists con
 | `tailscale` | the tailnet client |
 | `coder` | the Coder CLI |
 | `devbox` | glimmervoid on the Coder devbox, which converges its own `~/Projects/dotfiles` clone through `dot --profile work-server` |
-| `peripherals` | Logitech tooling and the headset udev rule; LinearMouse on macOS |
+| `peripherals` | Logitech tooling and the headset udev rule; Logi Options+ on macOS |
 
 Vendored third-party skills are listed in [NOTICE.md](NOTICE.md).
 

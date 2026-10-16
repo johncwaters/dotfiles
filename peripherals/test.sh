@@ -295,20 +295,17 @@ check "a moved tag makes the topic exit non-zero" test "$unpinnedStatus" -eq 1
 writeStub brew <<'STUB'
 #!/usr/bin/env bash
 printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+caskMarker="$DOTFILES_TEST_STATE/cask-${3:-}-installed"
 if [[ "${1:-}" == outdated ]]; then
   cat "$DOTFILES_TEST_STATE/brew-outdated.json" 2>/dev/null || printf '{"formulae":[],"casks":[]}\n'
   exit 0
 fi
-if [[ "${1:-}" == upgrade ]]; then
-  exit 0
-fi
-if [[ "${1:-} ${2:-}" == "list --cask" ]]; then
-  [[ -f "$DOTFILES_TEST_STATE/linearmouse-cask-installed" ]]
-  exit $?
-fi
-if [[ "${1:-} ${2:-} ${3:-}" == "install --cask linearmouse" ]]; then
-  touch "$DOTFILES_TEST_STATE/linearmouse-cask-installed"
-fi
+case "${1:-} ${2:-}" in
+  "upgrade --cask") exit 0 ;;
+  "list --cask") [[ -f "$caskMarker" ]] ;;
+  "install --cask") touch "$caskMarker" ;;
+  "uninstall --cask") rm -f "$caskMarker" ;;
+esac
 STUB
 writeStub id <<'STUB'
 #!/usr/bin/env bash
@@ -355,7 +352,9 @@ STUB
 writeStub osascript <<'STUB'
 #!/usr/bin/env bash
 printf 'osascript %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-rm -f "$DOTFILES_TEST_STATE/alt-tab-running"
+if [[ "$*" == *com.lwouis.alt-tab-macos* ]]; then
+  rm -f "$DOTFILES_TEST_STATE/alt-tab-running"
+fi
 STUB
 writeStub open <<'STUB'
 #!/usr/bin/env bash
@@ -375,8 +374,11 @@ darwinApplicationsDirectory="$sandbox/Applications"
 darwinHomebrewPrefix="$sandbox/homebrew"
 linearmouseConfigPath="$sandbox/.config/linearmouse/linearmouse.json"
 linearmouseAgentPath="$sandbox/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
-mkdir -p "$darwinApplicationsDirectory" "$(dirname -- "$linearmouseConfigPath")"
-printf 'earlier local settings\n' > "$linearmouseConfigPath"
+mkdir -p "$darwinApplicationsDirectory" "$(dirname -- "$linearmouseConfigPath")" \
+  "$(dirname -- "$linearmouseAgentPath")"
+ln -s "$sandbox/.dotfiles/peripherals/linearmouse.json" "$linearmouseConfigPath"
+printf 'rendered agent\n' > "$linearmouseAgentPath"
+touch "$stubState/linearmouse-agent-loaded" "$stubState/cask-linearmouse-installed"
 
 runDarwinInstall() {
   runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_PROFILE=work \
@@ -392,21 +394,13 @@ printf '\nperipherals topic on darwin\n'
 darwinFirstStatus=0
 darwinFirstOutput="$(runDarwinInstall)" || darwinFirstStatus=$?
 check "darwin install exits clean" test "$darwinFirstStatus" -eq 0
-check "darwin installs the LinearMouse cask when absent" logHas 'brew install --cask linearmouse'
-check "darwin links LinearMouse config through the alias" \
-  test "$(readlink -- "$linearmouseConfigPath")" = "$sandbox/.dotfiles/peripherals/linearmouse.json"
-check "darwin backs up prior regular config" \
-  grep -qx 'earlier local settings' "$linearmouseConfigPath.pre-dotfiles.bak"
-check "the linked config matches the tracked config" \
-  cmp -s "$linearmouseConfigPath" "$topicDir/linearmouse.json"
-check "the tracked device matcher has no machine-specific fields" \
-  bash -c '! grep -qE '\''serialNumber|productName'\'' "$1"' _ "$topicDir/linearmouse.json"
-check "darwin writes a regular launch agent" test -f "$linearmouseAgentPath"
-check "darwin does not symlink the launch agent" test ! -L "$linearmouseAgentPath"
-check "the launch agent matches its tracked source" \
-  cmp -s "$linearmouseAgentPath" "$topicDir/dev.dotfiles.linearmouse.plist"
-check "darwin bootstraps the launch agent" \
-  logHas "launchctl bootstrap gui/501 $linearmouseAgentPath"
+check "darwin installs the Options+ cask when absent" logHas 'brew install --cask logi-options+'
+check "darwin boots out the retired LinearMouse agent" \
+  logHas "launchctl bootout gui/501 $linearmouseAgentPath"
+check "darwin deletes the retired LinearMouse agent" test ! -e "$linearmouseAgentPath"
+check "darwin removes the retired LinearMouse config link" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$linearmouseConfigPath"
+check "darwin uninstalls the retired LinearMouse cask" logHas 'brew uninstall --cask linearmouse'
 check "darwin skips Solaar" outputLacks "$darwinFirstOutput" 'Solaar'
 check "darwin skips ratbagd" outputLacks "$darwinFirstOutput" 'ratbagd'
 check "darwin skips Piper" outputLacks "$darwinFirstOutput" 'Piper'
@@ -424,7 +418,7 @@ done
 altTabQuitBeforeWrites() {
   local quitLine
   local firstWriteLine
-  quitLine="$(grep -nF -m1 -- 'osascript ' "$commandLog" | cut -d: -f1)"
+  quitLine="$(grep -nF -m1 -- 'com.lwouis.alt-tab-macos" to quit' "$commandLog" | cut -d: -f1)"
   firstWriteLine="$(grep -nF -m1 -- 'defaults write com.lwouis.alt-tab-macos' "$commandLog" | cut -d: -f1)"
   [[ -n "$quitLine" && -n "$firstWriteLine" ]] && ((quitLine < firstWriteLine))
 }
@@ -436,42 +430,40 @@ darwinSecondStatus=0
 darwinSecondOutput="$(runDarwinInstall)" || darwinSecondStatus=$?
 check "darwin second run exits clean" test "$darwinSecondStatus" -eq 0
 check "darwin second run reports no changes" reportsNoChanges "$darwinSecondOutput"
-check "darwin second run does not reinstall the cask" logLacks 'brew install --cask linearmouse'
-check "darwin second run does not bootstrap again" logLacks 'launchctl bootstrap'
-check "darwin second run does not boot out the agent" logLacks 'launchctl bootout'
+check "darwin second run does not reinstall the cask" logLacks 'brew install --cask'
+check "darwin second run uninstalls nothing" logLacks 'brew uninstall'
+check "darwin second run does not boot out an agent" logLacks 'launchctl bootout'
 check "darwin second run writes no defaults" logLacks ' write '
 check "darwin second run leaves AltTab running" logLacks 'osascript '
 
-rm -f "$stubState/linearmouse-cask-installed"
-mkdir -p "$darwinApplicationsDirectory/LinearMouse.app"
+rm -f "$stubState/cask-logi-options+-installed"
+mkdir -p "$darwinApplicationsDirectory/logioptionsplus.app"
+printf 'local settings\n' > "$linearmouseConfigPath"
 : > "$commandLog"
 darwinBundleStatus=0
 darwinBundleOutput="$(runDarwinInstall)" || darwinBundleStatus=$?
 check "darwin accepts an existing app bundle" test "$darwinBundleStatus" -eq 0
 check "darwin does not install over an existing app bundle" \
-  logLacks 'brew install --cask linearmouse'
+  logLacks 'brew install --cask logi-options+'
 check "darwin reports an existing app bundle" \
-  outputHas "$darwinBundleOutput" 'LinearMouse'
-
+  outputHas "$darwinBundleOutput" 'Logi Options+'
+check "darwin leaves a LinearMouse config it did not link" \
+  grep -qx 'local settings' "$linearmouseConfigPath"
 
 ln -s "$(type -P node)" "$coreBin/node"
-printf '{"formulae":[],"casks":[{"name":"linearmouse","installed_versions":["0.9.0"],"current_version":"0.9.1"}]}\n' > "$stubState/brew-outdated.json"
+printf '{"formulae":[],"casks":[{"name":"logi-options+","installed_versions":["1.0.0"],"current_version":"1.0.1"}]}\n' > "$stubState/brew-outdated.json"
 : > "$commandLog"
 DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
-check "LinearMouse applies a 0.x patch update with an existing bundle" logHas 'brew upgrade --cask linearmouse'
-printf '{"formulae":[],"casks":[{"name":"linearmouse","installed_versions":["0.9.0"],"current_version":"0.10.0"}]}\n' > "$stubState/brew-outdated.json"
+check "Options+ applies a patch update with an existing bundle" logHas 'brew upgrade --cask logi-options+'
+printf '{"formulae":[],"casks":[{"name":"logi-options+","installed_versions":["1.0.0"],"current_version":"2.0.0"}]}\n' > "$stubState/brew-outdated.json"
 : > "$commandLog"
 DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
-check "LinearMouse holds a 0.x minor update" logLacks 'brew upgrade --cask linearmouse'
-printf '{"formulae":[],"casks":[{"name":"linearmouse","installed_versions":["0.9.0"],"current_version":"1.0.0"}]}\n' > "$stubState/brew-outdated.json"
-: > "$commandLog"
-DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
-check "LinearMouse holds a major update" logLacks 'brew upgrade --cask linearmouse'
-check "LinearMouse writes its own topic record" \
-  grep -qx 'cask linearmouse 0.9.0 1.0.0' "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
+check "Options+ holds a major update" logLacks 'brew upgrade --cask logi-options+'
+check "Options+ writes its own topic record" \
+  grep -qx 'cask logi-options+ 1.0.0 2.0.0' "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
 : > "$commandLog"
 DOTFILES_UPGRADE=all runDarwinInstall > /dev/null
-check "LinearMouse applies an approved major update" logHas 'brew upgrade --cask linearmouse'
-check "LinearMouse clears its topic holds after approval" test ! -e "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
+check "Options+ applies an approved major update" logHas 'brew upgrade --cask logi-options+'
+check "Options+ clears its topic holds after approval" test ! -e "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
 
 reportTopicResults "peripherals"
