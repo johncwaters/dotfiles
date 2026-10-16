@@ -34,7 +34,7 @@
       "if" : {
         "device" : {
           "category" : "mouse",
-          "productID" : "0xb023",
+          "productID" : "0xb042",
           "vendorID" : "0x46d"
         }
       },
