@@ -187,20 +187,46 @@ export class Git {
     return this.run(["worktree", "list", "--porcelain"]);
   }
 
-  rebase(ref: string): GitResult {
-    return this.run(["rebase", ref]);
+  addDetachedWorktree(worktreePath: string, commit: string): GitResult {
+    return this.run(["worktree", "add", "--detach", worktreePath, commit]);
   }
 
-  rebaseAbort(): GitResult {
-    return this.run(["rebase", "--abort"]);
+  removeWorktree(worktreePath: string): GitResult {
+    return this.run(["worktree", "remove", "--force", worktreePath]);
+  }
+
+  pruneWorktrees(): GitResult {
+    return this.run(["worktree", "prune"]);
+  }
+
+  rebaseIn(worktreePath: string, ref: string): GitResult {
+    return this.run(["rebase", ref], { cwd: worktreePath });
+  }
+
+  rebaseAbortIn(worktreePath: string): GitResult {
+    return this.run(["rebase", "--abort"], { cwd: worktreePath });
+  }
+
+  revParseHeadIn(worktreePath: string): string | null {
+    const proc = this.run(["rev-parse", "-q", "--verify", "HEAD"], { cwd: worktreePath });
+    if (proc.code !== 0) {
+      return null;
+    }
+    return proc.stdout.trim();
+  }
+
+  resetKeep(commit: string): GitResult {
+    return this.run(["reset", "--keep", commit]);
   }
 
   mergeFfOnlyIn(worktreePath: string, ref: string): GitResult {
     return this.run(["merge", "--ff-only", ref], { cwd: worktreePath });
   }
 
-  conflictingFiles(): string[] {
-    return nonEmptyLines(this.run(["diff", "--name-only", "--diff-filter=U"]).stdout);
+  conflictingFilesIn(worktreePath: string): string[] {
+    return nonEmptyLines(
+      this.run(["diff", "--name-only", "--diff-filter=U"], { cwd: worktreePath }).stdout,
+    );
   }
 
   stagedAdditions(): string[] {

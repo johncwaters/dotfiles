@@ -20,6 +20,7 @@ import {
   seedOrigin,
   tryGit,
   VALID_MESSAGE,
+  writeExecutable,
   writeFile,
   writeOriginHook,
 } from "./helpers.ts";
@@ -543,6 +544,83 @@ test("a mainline checked out in a dirty worktree stops promotion", () => {
     assert.match((result.warnings as string[]).join("\n"), /has uncommitted changes/);
   } finally {
     cleanup(origin, seed, path.dirname(holder));
+  }
+});
+
+function advanceOriginMain(seed: string, filePath: string): void {
+  runGit(seed, ["checkout", "-q", "main"]);
+  commitFile(seed, filePath, "mainline change\n", "mainline moves");
+  runGit(seed, ["push", "-q", "origin", "main"]);
+}
+
+test("promotion rebases past another ticket's uncommitted files left outside --paths", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    commitFile(local, "other-ticket.txt", "committed\n", "other ticket base");
+    advanceOriginMain(seed, "mainline.txt");
+    writeFile(local, "other-ticket.txt", "committed\nin progress\n");
+    writeFile(local, "other-ticket-new.txt", "untracked\n");
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--paths", "base.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
+    assert.equal(fs.readFileSync(path.join(local, "other-ticket.txt"), "utf8"), "committed\nin progress\n");
+    assert.equal(fs.readFileSync(path.join(local, "other-ticket-new.txt"), "utf8"), "untracked\n");
+    assert.equal(gitOutput(local, ["stash", "list"]), "");
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("promotion leaves the branch unmoved when an uncommitted file is one mainline changed", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "shared.txt", "committed\n", "shared base");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["pull", "-q", "--ff-only", "origin", "main"]);
+    advanceOriginMain(seed, "shared.txt");
+    writeFile(local, "shared.txt", "committed\nin progress\n");
+    writeFile(local, "base.txt", "base\nfeature change\n");
+    const featureTipBefore = gitOutput(local, ["rev-parse", "HEAD"]);
+
+    const { result } = land(local, ["--promote", "--paths", "base.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "PROMOTE_FAILED");
+    assert.equal(gitOutput(local, ["rev-parse", "HEAD~1"]), featureTipBefore);
+    assert.equal(fs.readFileSync(path.join(local, "shared.txt"), "utf8"), "committed\nin progress\n");
+    assert.match((result.warnings as string[]).join("\n"), /shared\.txt/);
+    assert.equal(gitOutput(local, ["stash", "list"]), "");
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a refusing pre-rebase hook stops promotion without touching uncommitted files or leaking a worktree", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    commitFile(local, "other-ticket.txt", "committed\n", "other ticket base");
+    advanceOriginMain(seed, "mainline.txt");
+    writeExecutable(path.join(local, ".git", "hooks", "pre-rebase"), "#!/bin/sh\nexit 1\n");
+    writeFile(local, "other-ticket.txt", "committed\nin progress\n");
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--paths", "base.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "PROMOTE_FAILED");
+    assert.match((result.warnings as string[]).join("\n"), /pre-rebase hook refused/);
+    assert.equal(fs.readFileSync(path.join(local, "other-ticket.txt"), "utf8"), "committed\nin progress\n");
+    assert.equal(fs.existsSync(path.join(local, ".git", "rebase-merge")), false);
+    assert.equal(gitOutput(local, ["stash", "list"]), "");
+    const registeredWorktrees = gitOutput(local, ["worktree", "list", "--porcelain"])
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "));
+    assert.equal(registeredWorktrees.length, 1);
+  } finally {
+    cleanup(origin, seed, local);
   }
 });
 

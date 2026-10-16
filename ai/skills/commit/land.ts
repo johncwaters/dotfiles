@@ -1,4 +1,6 @@
+import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { Git } from "./lib/git.ts";
 import { repositoryGuard } from "./lib/guard.ts";
 import {
@@ -60,6 +62,10 @@ type FailureOutcome =
   | "PROMOTE_FAILED"
   | "MAINLINE_AHEAD"
   | "MAINLINE_UNVERIFIED";
+
+type DetachedRebase =
+  | { rebasedTip: string; failure: null }
+  | { rebasedTip: null; failure: FailureOutcome };
 
 const SAFETY_PUSH_OUTCOMES = new Set<FailureOutcome>([
   "PROMOTE_FAILED",
@@ -624,33 +630,91 @@ class Landing {
   }
 
   private promoteHop(source: string, destination: string): FailureOutcome | null {
-    const rebase = this.git.rebase(destination);
+    const featureTipBeforeRebase = this.git.revParseHead();
+    if (featureTipBeforeRebase === null) {
+      this.warnings.push(
+        `could not resolve HEAD before rebasing ${source} onto ${destination}; promotion stopped`,
+      );
+      return "PROMOTE_FAILED";
+    }
+    const rebase = this.rebaseInTemporaryWorktree(source, destination, featureTipBeforeRebase);
+    if (rebase.failure !== null) {
+      return rebase.failure;
+    }
+    const moveBranch = this.git.resetKeep(rebase.rebasedTip);
+    if (moveBranch.code !== 0) {
+      const failureText = (moveBranch.stderr || moveBranch.stdout || "unknown error").trim();
+      this.warnings.push(
+        `could not move ${source} onto its rebase over ${destination} without overwriting uncommitted changes; promotion stopped: ${failureText}`,
+      );
+      return "PROMOTE_FAILED";
+    }
+    if (this.commitHash !== null) {
+      this.commitHash = rebase.rebasedTip;
+    }
+    return this.fastForwardDestination(source, destination);
+  }
+
+  private rebaseInTemporaryWorktree(
+    source: string,
+    destination: string,
+    featureTip: string,
+  ): DetachedRebase {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-rebase-"));
+    const temporaryWorktree = path.join(temporaryDirectory, "worktree");
+    try {
+      return this.rebaseInWorktree(source, destination, featureTip, temporaryWorktree);
+    } finally {
+      this.discardTemporaryWorktree(temporaryDirectory, temporaryWorktree);
+    }
+  }
+
+  private rebaseInWorktree(
+    source: string,
+    destination: string,
+    featureTip: string,
+    worktreePath: string,
+  ): DetachedRebase {
+    const addWorktree = this.git.addDetachedWorktree(worktreePath, featureTip);
+    if (addWorktree.code !== 0) {
+      this.warnings.push(
+        `could not create a temporary worktree to rebase ${source} onto ${destination}; promotion stopped: ${addWorktree.stderr.trim()}`,
+      );
+      return { rebasedTip: null, failure: "PROMOTE_FAILED" };
+    }
+    const rebase = this.git.rebaseIn(worktreePath, destination);
     if (rebase.code !== 0) {
-      const conflicts = this.git.conflictingFiles();
-      this.git.rebaseAbort();
+      const conflicts = this.git.conflictingFilesIn(worktreePath);
+      this.git.rebaseAbortIn(worktreePath);
       if (conflicts.length > 0) {
         this.conflicts = conflicts;
         this.warnings.push(
           `rebase conflict promoting ${source} into ${destination}: ${conflicts.join(", ")}`,
         );
-        return "PROMOTE_CONFLICT";
+        return { rebasedTip: null, failure: "PROMOTE_CONFLICT" };
       }
       this.warnings.push(
         `could not rebase ${source} onto ${destination}; promotion stopped: ${rebase.stderr.trim()}`,
       );
-      return "PROMOTE_FAILED";
+      return { rebasedTip: null, failure: "PROMOTE_FAILED" };
     }
-    if (this.commitHash !== null) {
-      const rebasedHash = this.git.revParseHead();
-      if (rebasedHash === null) {
-        this.warnings.push(
-          `could not resolve HEAD after rebasing ${source} onto ${destination}; promotion stopped`,
-        );
-        return "PROMOTE_FAILED";
-      }
-      this.commitHash = rebasedHash;
+    const rebasedTip = this.git.revParseHeadIn(worktreePath);
+    if (rebasedTip === null) {
+      this.warnings.push(
+        `could not resolve HEAD after rebasing ${source} onto ${destination}; promotion stopped`,
+      );
+      return { rebasedTip: null, failure: "PROMOTE_FAILED" };
     }
-    return this.fastForwardDestination(source, destination);
+    return { rebasedTip, failure: null };
+  }
+
+  private discardTemporaryWorktree(temporaryDirectory: string, temporaryWorktree: string): void {
+    const removal = this.git.removeWorktree(temporaryWorktree);
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    if (removal.code === 0) {
+      return;
+    }
+    this.git.pruneWorktrees();
   }
 
   private warnAboutMissingOrigin(): void {
