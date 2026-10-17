@@ -25,13 +25,6 @@ const stagedHashKey = 'stagedAgainstSettingsSha256';
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const hasIds = value => Array.isArray(value) && value.every(entry => isObject(entry) && typeof entry.id === 'string');
 
-export function withoutProvisionerUpdateDefault(config, ledger) {
-  if (ledger.checkForUpdatesMigration || ledger.keys?.includes('checkForUpdates') || config.checkForUpdates !== false) return config;
-  const migrated = { ...config };
-  delete migrated.checkForUpdates;
-  return migrated;
-}
-
 function filterValue(value) {
   if (Array.isArray(value)) return value.map(filterValue);
   if (!isObject(value)) return value;

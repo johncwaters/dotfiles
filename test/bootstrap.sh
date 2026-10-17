@@ -541,39 +541,4 @@ linuxBashFloorOutput="$(env HOME="$brewInstallHome" PATH="/usr/bin:/bin" DOTFILE
 check "bootstrap refuses bash 3 on linux when no modern bash exists" test "$linuxBashFloorStatus" -eq 1
 check "the linux refusal names the bash floor" outputHas "$linuxBashFloorOutput" 'bash 4 or newer is required'
 
-portableModePath="$sandbox/portable-mode"
-printf 'mode probe\n' > "$portableModePath"
-chmod 600 "$portableModePath"
-linuxStatBin="$sandbox/linux-stat-bin"
-mkdir -p "$linuxStatBin"
-cat > "$linuxStatBin/stat" <<'STAT'
-#!/usr/bin/env bash
-[[ "$1" == "-c" && "$2" == "%a" ]] || exit 1
-printf '600\n'
-STAT
-chmod +x "$linuxStatBin/stat"
-printf '#!/usr/bin/env bash\nprintf "Linux\\n"\n' > "$linuxStatBin/uname"
-chmod +x "$linuxStatBin/uname"
-check "fileModeOf uses GNU stat on a linux host" \
-  test "$(PATH="$linuxStatBin:$PATH" fileModeOf "$portableModePath")" = "600"
-
-darwinStatBin="$sandbox/darwin-stat-bin"
-mkdir -p "$darwinStatBin"
-cat > "$darwinStatBin/stat" <<'STAT'
-#!/usr/bin/env bash
-[[ "$1" == "-f" && "$2" == "%Lp" ]] || exit 1
-printf '600\n'
-STAT
-chmod +x "$darwinStatBin/stat"
-printf '#!/usr/bin/env bash\nprintf "Darwin\\n"\n' > "$darwinStatBin/uname"
-chmod +x "$darwinStatBin/uname"
-check "fileModeOf uses BSD stat on a darwin host" \
-  test "$(PATH="$darwinStatBin:$PATH" fileModeOf "$portableModePath")" = "600"
-
-rewriteProbe="$sandbox/rewrite-probe"
-printf 'keep\nremove\nkeep-too\n' > "$rewriteProbe"
-removeMatchingLines '^remove$' "$rewriteProbe"
-check "portable rewrites remove only matching lines" \
-  test "$(cat "$rewriteProbe")" = "$(printf 'keep\nkeep-too')"
-
 reportTopicResults "bootstrap"

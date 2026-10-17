@@ -4,7 +4,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { settingsFrom, translateHome, mergeSettings, planApply, readJson, writeJson, withoutProvisionerUpdateDefault, provisionerManagedProjectId } from '../sync-settings.mjs';
+import { settingsFrom, translateHome, mergeSettings, planApply, readJson, writeJson, provisionerManagedProjectId } from '../sync-settings.mjs';
 
 const sandbox = process.argv[2];
 const bashPath = process.argv[3] ?? ['/opt/homebrew/bin/bash', '/bin/bash'].find(candidate => fs.existsSync(candidate));
@@ -28,14 +28,6 @@ function runSync(command, input) {
   assert.equal(execution.status, 0, execution.stderr);
   return execution.stdout;
 }
-
-check('read-only collection ignores unrecorded provisioner false before the first migration', () => {
-  const config = { checkForUpdates: false, scrollback: 1 };
-  assert.deepEqual(withoutProvisionerUpdateDefault(config, { keys: [], hookIds: [] }), { scrollback: 1 });
-  assert.equal(config.checkForUpdates, false);
-  assert.deepEqual(withoutProvisionerUpdateDefault(config, { checkForUpdatesMigration: true }), config);
-  assert.deepEqual(withoutProvisionerUpdateDefault(config, { keys: ['checkForUpdates'] }), config);
-});
 
 check('settings exclude machine, runtime, loader secrets and credential-like keys recursively', () => {
   const config = {

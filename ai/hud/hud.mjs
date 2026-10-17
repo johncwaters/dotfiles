@@ -3,11 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Statusline HUD, OMC-style formatting. Claude Code pipes a JSON payload on
-// stdin; print one line. Payload fields used: model.{id,display_name},
-// context_window.{used_percentage,current_usage,context_window_size}, cost.total_cost_usd,
-// rate_limits.{five_hour,seven_day}.{used_percentage,resets_at}.
-// Fail open: any error renders whatever is known, never crashes the statusline.
+// Fail open because a malformed Claude Code payload must not break the statusline.
 
 const RESET = "\x1b[0m";
 const DIM = "\x1b[2m";
@@ -17,8 +13,6 @@ const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
 const ORANGE = "\x1b[38;5;172m";
 
-// OMC thresholds: rate limits warn at 70, critical at 90;
-// context (as a share of the auto-compact window) warns at 70, suggests compaction at 80, critical at 85.
 function limitColor(pct) {
   if (pct >= 90) return RED;
   if (pct >= 70) return YELLOW;

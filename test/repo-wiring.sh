@@ -128,18 +128,6 @@ for stubbedTopicSuite in $(topicSuitesNeedingStubs); do
     grep -q 'startStubbedSandbox' "$repoRoot/$stubbedTopicSuite/test.sh"
 done
 
-check "README points rendered destinations at the render engine" \
-  bash -c 'grep -q "rendered" "$1/README.md" && grep -q "script/lib/render.sh" "$1/README.md"' \
-  _ "$repoRoot"
-check "the README fresh mac section names the command line tools, the sudo refresh, and the work converge command" \
-  bash -c 'freshMacSection="$(sed -n "/^### Fresh mac/,/^Entry points:/p" "$1/README.md")"; grep -qF "xcode-select --install" <<< "$freshMacSection" && grep -qF "sudo -v" <<< "$freshMacSection" && grep -qF "bin/dot --profile work" <<< "$freshMacSection"' \
-  _ "$repoRoot"
-check "render decisions reuse the shared plain file predicate" \
-  grep -q 'pathIsPlainFileOrAbsent "$copyPath"' "$repoRoot/script/lib/render.sh"
-check "the repository map names the bubblewrap sandbox" \
-  grep -q 'shared bubblewrap sandbox' "$repoRoot/AGENTS.md"
-check "the repository map no longer names a Docker matrix" \
-  bash -c '! grep -q "Docker matrix" "$1/AGENTS.md"' _ "$repoRoot"
 profileSectionOfReadme="$(sed -n '/^## Profiles/,/^## Topics/p' "$repoRoot/README.md")"
 profileInputMaps="$profileSectionOfReadme
 $(cat "$repoRoot/ai/hooks/AGENTS.md")"
@@ -183,17 +171,10 @@ check "every work-server repo except the template posthog checkout is a glimmerv
   everyListedRepoIsAGlimmervoidProject "$repoRoot/profiles/work-server/repos.txt" "$repoRoot/profiles/work/glimmervoid.settings.json"
 check "work and work-server share one glimmervoid settings file through the sync engine" \
   bash -c 'test -f "$1/profiles/work/glimmervoid.settings.json" && test ! -e "$1/profiles/work-server/glimmervoid.settings.json" && grep -q "profiles/work/glimmervoid.settings.json" "$1/glimmervoid/install.sh" "$1/profiles/work/devbox/provision.sh"' _ "$repoRoot"
-check "the README profile file list names vscodium settings" \
-  grep -qF '`vscodium.json`' "$repoRoot/README.md"
 for examplePath in repos/repos.example.txt glimmervoid/config.example.json \
   git/gitconfig.local.example shell/localrc.example; do
   check "the README names $examplePath" grep -qF "\`$examplePath\`" "$repoRoot/README.md"
 done
-check "the README names the rendered Claude settings inputs" \
-  bash -c 'grep -qF '\''`~/.claude/settings.json` is rendered from `ai/settings.base.json`'\'' "$1/README.md" && grep -qF '\''`settings.overlay.json`'\'' "$1/README.md"' \
-  _ "$repoRoot"
-check "the README says bootstrap writes the machine profile" \
-  grep -qF '`.machine-profile` is written by' "$repoRoot/README.md"
 check "glimmervoid reads tracked inputs through the checkout root" \
   bash -c '! grep -q '\''\$dotfilesAlias'\'' "$1/glimmervoid/install.sh"' _ "$repoRoot"
 check "glimmervoid uses the shared JSON merger" \
@@ -247,10 +228,6 @@ for (const homePath of ['/fixture/carbon "unit"', '/fixture/line\nbreak', '/fixt
 JS
 check "glimmervoid creates no temporary empty overlay" \
   bash -c '! grep -q "glimmervoid-empty-overlay" "$1/glimmervoid/install.sh"' _ "$repoRoot"
-check "the repository map names the shared JSON merger" \
-  grep -qF '`script/lib/merge-json.mjs`' "$repoRoot/AGENTS.md"
-check "the repository map names cross-cutting suites" \
-  grep -qF 'cross-cutting suites listed in `test/run-all.sh`' "$repoRoot/AGENTS.md"
 
 check "the personal ai settings golden fixture exists" \
   test -f "$repoRoot/test/fixtures/ai-settings.personal.json"

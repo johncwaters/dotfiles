@@ -296,14 +296,8 @@ writeStub brew <<'STUB'
 #!/usr/bin/env bash
 printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 caskMarker="$DOTFILES_TEST_STATE/cask-${3:-}-installed"
-if [[ "${1:-}" == outdated ]]; then
-  cat "$DOTFILES_TEST_STATE/brew-outdated.json" 2>/dev/null || printf '{"formulae":[],"casks":[]}\n'
-  exit 0
-fi
 case "${1:-} ${2:-}" in
-  "upgrade --cask") exit 0 ;;
   "list --cask") [[ -f "$caskMarker" ]] ;;
-  "install --cask") touch "$caskMarker" ;;
   "uninstall --cask") rm -f "$caskMarker" ;;
 esac
 STUB
@@ -370,11 +364,10 @@ done
 touch "$stubState/alt-tab-running"
 writeDarwinDirectoryServiceStub "$stubBin"
 
-darwinApplicationsDirectory="$sandbox/Applications"
 darwinHomebrewPrefix="$sandbox/homebrew"
 linearmouseConfigPath="$sandbox/.config/linearmouse/linearmouse.json"
 linearmouseAgentPath="$sandbox/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
-mkdir -p "$darwinApplicationsDirectory" "$(dirname -- "$linearmouseConfigPath")" \
+mkdir -p "$(dirname -- "$linearmouseConfigPath")" \
   "$(dirname -- "$linearmouseAgentPath")"
 ln -s "$sandbox/.dotfiles/peripherals/linearmouse.json" "$linearmouseConfigPath"
 printf 'rendered agent\n' > "$linearmouseAgentPath"
@@ -383,7 +376,6 @@ touch "$stubState/linearmouse-agent-loaded" "$stubState/cask-linearmouse-install
 runDarwinInstall() {
   runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_PROFILE=work \
     DOTFILES_TEST_HOMEBREW_PREFIX="$darwinHomebrewPrefix" \
-    DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
     DOTFILES_TEST_PLISTBUDDY="$stubState/available/PlistBuddy" \
     NO_COLOR=1 bash "$topicDir/install.sh"
 }
@@ -394,7 +386,6 @@ printf '\nperipherals topic on darwin\n'
 darwinFirstStatus=0
 darwinFirstOutput="$(runDarwinInstall)" || darwinFirstStatus=$?
 check "darwin install exits clean" test "$darwinFirstStatus" -eq 0
-check "darwin installs the Options+ cask when absent" logHas 'brew install --cask logi-options+'
 check "darwin boots out the retired LinearMouse agent" \
   logHas "launchctl bootout gui/501 $linearmouseAgentPath"
 check "darwin deletes the retired LinearMouse agent" test ! -e "$linearmouseAgentPath"
@@ -436,34 +427,10 @@ check "darwin second run does not boot out an agent" logLacks 'launchctl bootout
 check "darwin second run writes no defaults" logLacks ' write '
 check "darwin second run leaves AltTab running" logLacks 'osascript '
 
-rm -f "$stubState/cask-logi-options+-installed"
-mkdir -p "$darwinApplicationsDirectory/logioptionsplus.app"
 printf 'local settings\n' > "$linearmouseConfigPath"
 : > "$commandLog"
-darwinBundleStatus=0
-darwinBundleOutput="$(runDarwinInstall)" || darwinBundleStatus=$?
-check "darwin accepts an existing app bundle" test "$darwinBundleStatus" -eq 0
-check "darwin does not install over an existing app bundle" \
-  logLacks 'brew install --cask logi-options+'
-check "darwin reports an existing app bundle" \
-  outputHas "$darwinBundleOutput" 'Logi Options+'
+runDarwinInstall >/dev/null
 check "darwin leaves a LinearMouse config it did not link" \
   grep -qx 'local settings' "$linearmouseConfigPath"
-
-ln -s "$(type -P node)" "$coreBin/node"
-printf '{"formulae":[],"casks":[{"name":"logi-options+","installed_versions":["1.0.0"],"current_version":"1.0.1"}]}\n' > "$stubState/brew-outdated.json"
-: > "$commandLog"
-DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
-check "Options+ applies a patch update with an existing bundle" logHas 'brew upgrade --cask logi-options+'
-printf '{"formulae":[],"casks":[{"name":"logi-options+","installed_versions":["1.0.0"],"current_version":"2.0.0"}]}\n' > "$stubState/brew-outdated.json"
-: > "$commandLog"
-DOTFILES_UPGRADE=1 runDarwinInstall > /dev/null
-check "Options+ holds a major update" logLacks 'brew upgrade --cask logi-options+'
-check "Options+ writes its own topic record" \
-  grep -qx 'cask logi-options+ 1.0.0 2.0.0' "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
-: > "$commandLog"
-DOTFILES_UPGRADE=all runDarwinInstall > /dev/null
-check "Options+ applies an approved major update" logHas 'brew upgrade --cask logi-options+'
-check "Options+ clears its topic holds after approval" test ! -e "$sandbox/.local/state/dotfiles/upgrades-held-peripherals"
 
 reportTopicResults "peripherals"

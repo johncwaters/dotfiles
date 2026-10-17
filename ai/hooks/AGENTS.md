@@ -23,6 +23,7 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `retro-reminder.mjs` | SessionEnd incident count and nudge; SessionStart unreviewed-retro report | `test/retro-reminder.test.mjs` |
 | `block-comments.mjs`, `comment-scanner.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
+| `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
@@ -32,42 +33,16 @@ to Glimmervoid sessions. Profile-only hooks and their evidence belong in
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.
 `ai/test.sh` pins the installed paths; shared event wiring lives in `ai/settings.base.json`.
 
-## Validator constraints
+## Validator invariants
 
-- Keep the decision in PreToolUse: PostToolUse cannot undo bytes already written.
-- Keep the source ASCII and control-character detection numeric. Previous edits
-  introduced literal NUL/control bytes while attempting regex escapes.
-- Keep the validator synchronous and dependency-free with Node built-ins and
-  `hook-io.mjs`; it runs on every write.
-- Use `biome format` and `ruff format` for decisions, never lint/type checks:
-  valid code must not be blocked for style or type errors.
-- Biome suppresses located diagnostics on stdin. Harvest with
-  `biome check --reporter=json` only after denial; accept only `category === "parse"`
-  to exclude lint messages. Harvest failure must preserve denial with a generic
-  reason, never allow the write.
-- A `.js` file under a `workflows` directory that opens with `export const meta =` runs
-  as an async function body, so top-level `return` is legal there. Only after the plain
-  parse fails, compile that body with the AsyncFunction constructor without calling it: a
-  textual wrapper can be closed early by the body's own brackets. The retry can turn a
-  denial into an allow and never the reverse.
-- Preserve real basenames for stdin and harvest files so Biome recognizes JSONC
-  names such as `tsconfig.json`. A synthetic `f.json` rejects valid config.
-- Preserve both explicit Edit `content` and old/new-string replay; both payload
-  shapes are supported. `test/validate-file.test.mjs` pins them.
-- Deny instruction-file growth, never size alone, so oversized files can shrink.
-  Cap repo roots, `~/.claude`, and its linked instruction source; nested copies
-  load on demand and must remain uncapped.
-- Discover Biome through deterministic native-package paths with the Node shim
-  fallback; never spawn npm or glob on every write. `BIOME_BIN` overrides discovery.
-- Prefer `python3` on PATH before bare `python`; distributions without `python`
-  would silently lose the Ruff gate. `PYTHON_BIN` overrides discovery.
-- Preserve Flutter's `cache/dart-sdk/bin/dart` lookup and `DART_BIN` override.
-  Only Dart exit 65 is a parse denial; other engine failures must allow.
+- Keep decisions in PreToolUse because PostToolUse cannot undo written bytes.
+- Keep source ASCII and character detection numeric; earlier edits introduced literal NUL/control bytes.
+- Keep validation synchronous and limited to Node built-ins and shared hook helpers because it runs on every write.
+- Gate syntax with formatters, never lint or type checks, so valid code remains writable; diagnostic harvesting must never overturn a denial.
+- Compile workflow bodies without calling them: top-level returns are legal there, and textual wrappers can be escaped by the body's brackets.
+- Preserve real basenames for parser input because names such as `tsconfig.json` select JSONC parsing.
+- Deny instruction-file growth rather than size so oversized files can shrink; nested instructions load on demand and stay uncapped.
 
-## Verification
-
-`bash ai/test.sh` runs the hook and commit suites. After validator changes, also
-exercise available real parsers with valid and invalid JSON, TypeScript, and
-Python, plus a commented `tsconfig.json`. Denials must include a specific cause
-and location (`line N, column M`); type errors must pass. For
-`const x: number = ;`, verify line 1, column 19 and `Expected an expression`.
+`test/validate-file.test.mjs` pins parser discovery and payload contracts. After validator changes,
+exercise available real parsers with valid and invalid JSON, TypeScript, Python, and commented
+`tsconfig.json` so unavailable engines cannot hide a broken gate.

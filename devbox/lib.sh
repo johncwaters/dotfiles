@@ -1,10 +1,11 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-devboxGlimmervoidVersion="latest"
+dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
 devboxLookupUnauthenticated=3
+devboxFallbackReleaseStatus=75
 source "$devboxTopicDirectory/../script/lib/profile.sh"
 
 readDevboxProfile() {
-  local dotfilesRepo="$(cd -- "$devboxTopicDirectory/.." && pwd)"
+  local dotfilesRepo="$dotfilesCheckout"
   local activeProfile="${profileName:-$(resolveProfileName || true)}"
   [[ -n "$activeProfile" ]] || return 1
   devboxProfileName="$activeProfile"
@@ -107,7 +108,7 @@ holdDevboxAgentForward() {
 }
 
 pushDevboxScript() {
-  local remoteArguments=("$devboxGlimmervoidVersion" "${1:-provision}")
+  local remoteArguments=("${1:-provision}" "$devboxWorkspaceDomain")
   if [[ "${1:-}" == pair ]]; then
     local pairingLabel="${2:-}"
     local apostropheReplacement="'\"'\"'"
@@ -127,10 +128,15 @@ convergeDevboxDotfiles() {
 }
 
 provisionDevbox() {
-  pushDevboxScript prepare || return
+  local prepareStatus=0
+  pushDevboxScript prepare || prepareStatus=$?
+  if ((prepareStatus != 0 && prepareStatus != devboxFallbackReleaseStatus)); then
+    return "$prepareStatus"
+  fi
   collectDevboxSettings || true
   convergeDevboxDotfiles || true
-  pushDevboxScript provision
+  pushDevboxScript provision || return
+  return "$prepareStatus"
 }
 
 devboxCollectedSettingsPath() {
@@ -138,12 +144,10 @@ devboxCollectedSettingsPath() {
 }
 
 devboxSharedSettingsPath() {
-  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
   printf '%s/profiles/%s/glimmervoid.settings.json\n' "$dotfilesCheckout" "$devboxProfileName"
 }
 
 showCollectedDevboxSettings() (
-  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
   local stagedPath reviewedCopyPath diffStatus=0
   stagedPath="$(devboxCollectedSettingsPath)"
   if [[ ! -f "$stagedPath" ]]; then
@@ -160,12 +164,10 @@ showCollectedDevboxSettings() (
 )
 
 acceptCollectedDevboxSettings() {
-  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
   node "$dotfilesCheckout/glimmervoid/sync-settings.mjs" accept "$(devboxCollectedSettingsPath)" "$(devboxSharedSettingsPath)" "${1:-}"
 }
 
 collectDevboxSettings() (
-  local dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
   local packetPath scriptPath
   if ! packetPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-devbox-settings.XXXXXX")" || ! scriptPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-devbox-collect.XXXXXX")"; then
     rm -f -- "${packetPath:-}"
@@ -179,8 +181,7 @@ collectDevboxSettings() (
   printf 'const trackedProjectPaths = %s;\n' "$(node -e 'const fs=require("node:fs");console.log(JSON.stringify((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).projects ?? []).map(project=>project.path)))' "$dotfilesCheckout/profiles/$devboxProfileName/glimmervoid.settings.json")" >> "$scriptPath"
   cat >> "$scriptPath" <<'REMOTE'
 const home = process.env.HOME;
-const ledger = readJson(`${home}/.glimmervoid/devbox-imported-defaults.json`);
-const live = settingsFrom(withoutProvisionerUpdateDefault(readJson(`${home}/.glimmervoid/config.json`), ledger));
+const live = settingsFrom(readJson(`${home}/.glimmervoid/config.json`));
 const base = settingsFrom(readJson(`${home}/.glimmervoid/dotfiles-settings-base.json`));
 const projectPaths = [...(live.projects ?? []).map(project => project.path), ...translateHome(trackedProjectPaths, home, 'render')].filter(projectPath => fs.existsSync(projectPath));
 console.log(JSON.stringify({ home, live, base, projectPaths }));

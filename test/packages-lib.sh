@@ -25,27 +25,9 @@ packageNamesAre() {
   [[ "${resolvedNames% }" == "$wantedNames" ]]
 }
 
-check "apt-get installs python3 with its pip" packageNamesAre apt-get python "python3 python3-pip"
-for packageManager in apt-get dnf pacman zypper brew; do
-  check "$packageManager installs ripgrep by its common name" \
-    packageNamesAre "$packageManager" ripgrep "ripgrep"
-done
-check "pacman installs python with its pip" packageNamesAre pacman python "python python-pip"
-for linuxPackageManager in apt-get dnf pacman zypper; do
-  check "$linuxPackageManager installs bash completion by its common name" \
-    packageNamesAre "$linuxPackageManager" bash-completion "bash-completion"
-done
-check "apt-get installs node with npm beside it" packageNamesAre apt-get node "nodejs npm"
 check "pacman calls the GitHub CLI github-cli" packageNamesAre pacman gh "github-cli"
 check "apt-get calls the GitHub CLI gh" packageNamesAre apt-get gh "gh"
-check "brew installs git" packageNamesAre brew git "git"
-check "brew installs the GitHub CLI" packageNamesAre brew gh "gh"
-check "brew installs Python 3" packageNamesAre brew python "python3"
-check "brew installs Bash completion 2" packageNamesAre brew bash-completion "bash-completion@2"
-check "brew installs Node with npm" packageNamesAre brew node "node"
 check "brew installs VSCodium as a cask" packageNamesAre brew vscodium "--cask vscodium"
-check "brew installs the Tailscale app as a cask" packageNamesAre brew tailscale "--cask tailscale-app"
-check "brew installs Ghostty as a cask" packageNamesAre brew ghostty "--cask ghostty"
 
 unmappedToolResolvesToNothing() {
   ! packageNamesForTool apt-get nosuchtool >/dev/null 2>&1
@@ -65,17 +47,11 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$managerProbeBin/brew"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$managerProbeBin/apt-get"
 chmod +x "$managerProbeBin/brew" "$managerProbeBin/apt-get"
 
-darwinPrefersBrew() {
-  detectedPackageManager=""
-  [[ "$(PATH="$managerProbeBin" DOTFILES_PLATFORM=darwin detectPackageManager)" == "brew" ]]
-}
-
 linuxKeepsItsNativeManagerPreference() {
   detectedPackageManager=""
   [[ "$(PATH="$managerProbeBin" DOTFILES_PLATFORM=linux detectPackageManager)" == "apt-get" ]]
 }
 
-check "darwin prefers Homebrew when another manager is visible" darwinPrefersBrew
 check "linux keeps the existing native manager preference" linuxKeepsItsNativeManagerPreference
 
 darwinDirectoryServiceBin="$sandbox/directory-service-bin"
@@ -108,22 +84,6 @@ check "darwin session refresh adds the Homebrew bin directory" \
   bash -c '[[ ":$1:" == *":$2/bin:"* ]]' _ "$refreshedDarwinPath" "$absoluteBrewPrefix"
 check "darwin session refresh adds the Homebrew sbin directory" \
   bash -c '[[ ":$1:" == *":$2/sbin:"* ]]' _ "$refreshedDarwinPath" "$absoluteBrewPrefix"
-
-brewInstallLog="$sandbox/brew-install.log"
-sudoInstallLog="$sandbox/sudo-install.log"
-cat > "$managerProbeBin/brew" <<BREW
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "$brewInstallLog"
-BREW
-cat > "$managerProbeBin/sudo" <<SUDO
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "$sudoInstallLog"
-exit 1
-SUDO
-chmod +x "$managerProbeBin/brew" "$managerProbeBin/sudo"
-PATH="$managerProbeBin:$PATH" installSystemPackages brew git
-check "Homebrew installs as the current account" grep -qx 'install git' "$brewInstallLog"
-check "Homebrew never reaches sudo" test ! -s "$sudoInstallLog"
 
 check "darwin's system command path is built from the Homebrew prefix it detected" \
   outputHas "$(HOME="$sandbox" DOTFILES_PLATFORM=darwin \

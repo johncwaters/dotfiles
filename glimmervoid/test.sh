@@ -304,59 +304,6 @@ configValue() {
   "$realNodePath" -p "String($2)" "$1/.glimmervoid/config.json" 2>/dev/null
 }
 
-serverSeedMatchesPreviousExample() {
-  "$realNodePath" - "$1/.glimmervoid/config.json" "$1" <<'NODE'
-const fs = require("fs");
-
-const [configPath, home] = process.argv.slice(2);
-const actual = JSON.parse(fs.readFileSync(configPath, "utf8"));
-const expected = {
-  port: 3000,
-  autoRecoverSeconds: 3,
-  inputGraceSeconds: 5,
-  promptDetectionMs: 1500,
-  notifyDebounceMs: 3000,
-  repoRoots: [`${home}/Projects`],
-  projects: [{
-    id: "00000000-0000-4000-8000-000000000001",
-    name: "glimmervoid",
-    path: `${home}/Projects/glimmervoid`
-  }],
-  replayBufferKB: 512,
-  scrollback: 50000,
-  cursorBlink: false,
-  debugMode: false,
-  teams: [],
-  hooks: [{
-    id: "a2ef51b3-f8f3-4d9a-ac4b-785965a85560",
-    name: "Block new code comments",
-    event: "PreToolUse",
-    type: "command",
-    enabled: true,
-    matcher: "Write|Edit|MultiEdit",
-    command: `node ${home}/.claude/hooks/block-comments.mjs`
-  }],
-  skipPermissionsByDefault: true,
-  branchGc: { deleteUnmerged: true },
-  postTurnChecks: { mode: "fix" },
-  remote: {
-    enabled: true,
-    port: 3001,
-    publicHost: "CHANGEME.your-tailnet.ts.net",
-    allowedOrigins: ["https://CHANGEME.your-tailnet.ts.net"]
-  }
-};
-const canonical = (value) => {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
-  }
-  return value;
-};
-if (JSON.stringify(canonical(actual)) !== JSON.stringify(canonical(expected))) process.exit(1);
-NODE
-}
-
 printf '\nglimmervoid topic\n'
 [[ -s "$topicDir/test/install.sh" ]] || exit 1
 # shellcheck source=./test/install.sh

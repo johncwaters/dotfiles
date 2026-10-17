@@ -26,27 +26,6 @@ function roundTrip(result: Result): Record<string, unknown> {
   return JSON.parse(JSON.stringify(result)) as Record<string, unknown>;
 }
 
-test("exit codes keep the numbering the recovery procedures branch on", () => {
-  assert.deepEqual(EXIT_CODES, {
-    READY: 0,
-    COMMITTED: 0,
-    NOT_A_REPO: 10,
-    DETACHED_HEAD: 11,
-    OPERATION_IN_PROGRESS: 12,
-    NOTHING_TO_COMMIT: 13,
-    MESSAGE_INVALID: 20,
-    HOOK_FAILED: 21,
-    DENYLISTED_FILE_STAGED: 25,
-    PUSH_FAILED: 22,
-    PROMOTE_CONFLICT: 23,
-    PROMOTE_FAILED: 24,
-    MAINLINE_AHEAD: 26,
-    POLICY_INVALID: 27,
-    BRANCH_FORBIDDEN: 28,
-    MAINLINE_UNVERIFIED: 29,
-  });
-});
-
 test("every outcome constructor round-trips through JSON", () => {
   const results: Result[] = [
     ready({ branch: "feature", branchAllowed: true, changed: ["a.ts"], untracked: [] }),

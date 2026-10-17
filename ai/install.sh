@@ -34,85 +34,6 @@ convergeAiProfileLink() {
   convergeProfileLink "$label" "$relativePath" "$destination" "${sourcePath#"$dotfilesRepo/"}"
 }
 
-resolvedDirectoryPath() {
-  cd -- "$1" 2> /dev/null && pwd -P
-}
-
-checkoutIsGitArchiveSnapshot() {
-  [[ ! -e "$dotfilesRepo/.git" ]]
-}
-
-repoEntriesIndexIsReadable() {
-  local trackedEntryPaths
-  checkoutIsGitArchiveSnapshot && return 0
-  command -v git > /dev/null 2>&1 || return 1
-  trackedEntryPaths="$(git -C "$dotfilesRepo" ls-files -- "ai/$entryKind" 2> /dev/null)" || return 1
-  [[ -n "$trackedEntryPaths" ]]
-}
-
-repoEntryIsTracked() {
-  local trackedEntryPaths
-  checkoutIsGitArchiveSnapshot && return 0
-  trackedEntryPaths="$(git -C "$dotfilesRepo" ls-files -- "ai/$entryKind/$1" 2> /dev/null)" || return 1
-  [[ -n "$trackedEntryPaths" ]]
-}
-
-entryDirectoryLinkPointsOutsideRepo() {
-  local linkedDirectory
-  local repoEntriesPath
-  pathIsLinkIntoThisRepo "$installedEntriesDirectory" || return 1
-  linkedDirectory="$(resolvedDirectoryPath "$installedEntriesDirectory" || true)"
-  repoEntriesPath="$(resolvedDirectoryPath "$repoEntriesDirectory" || true)"
-  [[ -z "$repoEntriesPath" || "$linkedDirectory" != "$repoEntriesPath" ]]
-}
-
-stageForeignEntriesOutOfTheRepo() {
-  local repoEntries=()
-  local repoEntry
-  local entryName
-  shopt -s dotglob nullglob
-  repoEntries=("$repoEntriesDirectory"/*)
-  shopt -u dotglob nullglob
-  for repoEntry in "${repoEntries[@]}"; do
-    entryName="$(basename -- "$repoEntry")"
-    if repoEntryIsTracked "$entryName"; then
-      continue
-    fi
-    mkdir -p -- "$entriesStagingDirectory"
-    mv -- "$repoEntry" "$entriesStagingDirectory/$entryName"
-  done
-}
-
-cutOverLegacyEntryDirectoryLink() {
-  pathIsLinkIntoThisRepo "$installedEntriesDirectory" || return 0
-  if ! repoEntriesIndexIsReadable; then
-    noteWarned "$entryKind directory" "git cannot name the tracked $entryKind, cutover skipped"
-    return 1
-  fi
-  stageForeignEntriesOutOfTheRepo
-  rm -f -- "$installedEntriesDirectory"
-}
-
-adoptStagedEntries() {
-  local stagedEntries=()
-  local stagedEntry
-  local entryName
-  [[ -d "$entriesStagingDirectory" ]] || return 0
-  shopt -s dotglob nullglob
-  stagedEntries=("$entriesStagingDirectory"/*)
-  shopt -u dotglob nullglob
-  for stagedEntry in "${stagedEntries[@]}"; do
-    entryName="$(basename -- "$stagedEntry")"
-    if [[ -e "$installedEntriesDirectory/$entryName" || -L "$installedEntriesDirectory/$entryName" ]]; then
-      noteWarned "$entryLabel $entryName" "already in ~/.claude/$entryKind, left in $entriesStagingDirectory"
-      continue
-    fi
-    mv -- "$stagedEntry" "$installedEntriesDirectory/$entryName"
-    noteApplied "$entryLabel $entryName" "moved out of repo"
-  done
-  rmdir -- "$entriesStagingDirectory" 2> /dev/null || true
-}
-
 sharedEntryExists() {
   [[ -e "$repoEntriesDirectory/$1" || -L "$repoEntriesDirectory/$1" ]]
 }
@@ -129,10 +50,13 @@ linkTargetsCurrentProfileEntry() {
 }
 
 removeRetiredEntryLinks() {
-  local retiredLinkScope="$1"
+  local retiredLinkScope="$1" entryKind="$2" entryLabel="$3"
+  local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
+  local installedEntriesDirectory="$claudeHome/$entryKind"
   local installedEntryPath
   local entryName
   local linkedEntryTarget
+  [[ -d "$installedEntriesDirectory" && ! -L "$installedEntriesDirectory" ]] || return 0
   shopt -s dotglob nullglob
   for installedEntryPath in "$installedEntriesDirectory"/*; do
     [[ -L "$installedEntryPath" ]] || continue
@@ -203,16 +127,9 @@ convergeSharedEntryDirectory() {
   local entryLabel="$2"
   local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
   local installedEntriesDirectory="$claudeHome/$entryKind"
-  local entriesStagingDirectory="$claudeHome/.$entryKind-cutover"
-  if entryDirectoryLinkPointsOutsideRepo; then
-    noteWarned "$entryKind directory" "links into the repo outside ai/$entryKind, move it aside by hand"
-    return 0
-  fi
-  cutOverLegacyEntryDirectoryLink || return 0
   moveEntryDirectoryAsideUnlessPlain
   mkdir -p -- "$installedEntriesDirectory"
-  adoptStagedEntries
-  removeRetiredEntryLinks shared
+  removeRetiredEntryLinks shared "$entryKind" "$entryLabel"
   linkSharedEntries
 }
 
@@ -222,7 +139,7 @@ convergeProfileEntryDirectory() {
   local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
   local installedEntriesDirectory="$claudeHome/$entryKind"
   [[ -d "$installedEntriesDirectory" && ! -L "$installedEntriesDirectory" ]] || return 0
-  removeRetiredEntryLinks profile
+  removeRetiredEntryLinks profile "$entryKind" "$entryLabel"
   linkProfileEntries
 }
 
@@ -289,7 +206,7 @@ installProfileSkillDependencies() {
 
 convergeSharedEntryDirectory skills skill
 convergeSharedEntryDirectory agents agent
-convergeSharedEntryDirectory commands command
+removeRetiredEntryLinks shared commands command
 convergeSharedEntryDirectory workflows workflow
 installSharedSkillDependencies
 
@@ -315,9 +232,6 @@ profileCodexHooksSource="$(profilePlanNames source-codex-hooks.json)"
 profileMcpServersSource="$(profilePlanNames source-mcp-servers.json)"
 
 convergeProfileEntryDirectory skills skill
-convergeProfileEntryDirectory agents agent
-convergeProfileEntryDirectory commands command
-convergeProfileEntryDirectory workflows workflow
 installProfileSkillDependencies
 
 # Codex reads one global AGENTS.md with no imports, so the profile rules are rendered into it.

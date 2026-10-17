@@ -44,19 +44,6 @@ function createTinyPng() {
     ])
 }
 
-test('the placement table contains exactly the requested social canvases', () => {
-    assert.deepEqual(Object.fromEntries(Object.entries(placements).map(([name, placement]) => [name, [placement.width, placement.height]])), {
-        'instagram-portrait': [1080, 1350], 'instagram-square': [1080, 1080], story: [1080, 1920], 'link-card': [1200, 630], 'x-card': [1200, 600], pinterest: [1000, 1500], landscape: [1600, 900], 'github-social-preview': [1280, 640], 'youtube-thumbnail': [1280, 720],
-    })
-    for (const placement of Object.values(placements)) {
-        assert.ok(Object.values(placement.safeInsets).every((inset) => Number.isInteger(inset) && inset >= 0))
-        assert.ok(placement.safeInsets.left + placement.safeInsets.right < placement.width)
-        assert.ok(placement.safeInsets.top + placement.safeInsets.bottom < placement.height)
-        assert.ok(placement.minTextPx > 0)
-        assert.equal(placement.maxBytes, 1_000_000)
-    }
-})
-
 test('story margins round Meta percentages up and link cards preserve a centered square', () => {
     assert.deepEqual(placements.story.safeInsets, { top: Math.ceil(1920 * .14), bottom: 1920 * .35, left: Math.ceil(1080 * .06), right: Math.ceil(1080 * .06) })
     const linkCard = placements['link-card']

@@ -7,7 +7,7 @@ description: Personal commit workflow. Reviews once via /code-review, fixes what
 
 Two deterministic steps own everything that touches git. You own the review step, the
 commit message, and the recovery procedures. Never stage, commit, push, or merge by hand
-outside the recovery sections below.
+outside [recovery](subskills/recovery.md).
 
 ```
 node "$HOME/.claude/skills/commit/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]
@@ -46,7 +46,7 @@ matches any command ending in `stash`. On a dirty tree, first `git add -A` and
   `git cherry-pick --no-commit <branch>`, `git switch -C <branch>`; the branch holds the
   WIP commit, so the merge never contains it
 
-On a conflict, resolve by step 2 of Conflict resolution, `git add` each resolved file, then
+On a conflict, resolve by step 2 of [Conflict resolution](subskills/recovery.md#conflict-resolution), `git add` each resolved file, then
 `git rebase --continue`, `git merge --continue`, or `git cherry-pick --quit`. No re-review,
 since nothing has been reviewed yet.
 `checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
@@ -127,7 +127,7 @@ summary, since those rows were never triaged.
 
 **A merge you resolve by hand invalidates the review of the branch it lands on.** A clean
 merge is not a safe merge: integration can change a helper in one file while the reviewed
-change adds its caller in another. Where the recovery sections say **re-review**, they mean
+change adds its caller in another. Where [recovery](subskills/recovery.md) says **re-review**, it means
 steps 1 to 3 of this review, run fresh on the merged tree.
 
 One carve-out, and only one: merging `origin/<branch>` into the same local branch needs no
@@ -230,76 +230,30 @@ failures.
 | Outcome | Exit | What to do |
 |---|---|---|
 | `COMMITTED` | 0 | Report the commit and any branches listed in `promoted` |
-| `NOTHING_TO_COMMIT` | 13 | With `--promote`, promotion still ran: report what `promoted` says. Without it, stop and relay |
-| `MESSAGE_INVALID` | 20 | `errors` names each violation. Fix the message and re-run `land.ts` |
-| `HOOK_FAILED` | 21 | A commit hook rejected the commit, or git could not stage a scoped file or unstage an out-of-scope one; git's stderr is in `warnings` and nothing was committed. Fix the cause, then re-run |
-| `DENYLISTED_FILE_STAGED` | 25 | The index would add a file the denylist names (`.env*`, `*.log`, `node_modules/`, `dist/`, `__pycache__/`); `files` lists them and nothing was committed. Unstage each one (`git restore --staged <file>`) and re-run, or put it to the user when it genuinely belongs in the commit |
-| `PUSH_FAILED` | 22 | The commit exists, the push did not land. Recover below |
-| `PROMOTE_CONFLICT` | 23 | The commit exists. A conflicted feature rebase was aborted and `conflicts` names the files, or an empty list means mainline diverged from origin. Resolve below |
-| `PROMOTE_FAILED` | 24 | The commit exists; promotion stopped for a non-conflict reason named in `warnings`, and `promoted` says which branches did update. Recover below |
-| `MAINLINE_AHEAD` | 26 | Local mainline has commits absent from origin. `localOnlyCommits` lists their SHAs. Push or drop them by hand, then re-run; the skill never publishes them implicitly |
-| `POLICY_INVALID` | 27 | The applied profile uses unsupported commit policy vocabulary. Update the profile file named in `errors`, then re-run preflight |
-| `BRANCH_FORBIDDEN` | 28 | `land.ts` was invoked on the guarded `branch` and wrote nothing. Create and switch to a feature branch, then re-run preflight |
-| `MAINLINE_UNVERIFIED` | 29 | Origin exists, but fetch failed or `origin/<mainline>` is missing, so promotion refused. `warnings` carries the verification detail. Restore remote verification, then re-run |
-| `NOT_A_REPO` | 10 | Stop and relay |
-| `DETACHED_HEAD` | 11 | Stop and relay |
-| `OPERATION_IN_PROGRESS` | 12 | A merge, rebase, or cherry-pick is in flight (`operation`). Stop and relay |
+| `NOTHING_TO_COMMIT` | 13 | [Recovery](subskills/recovery.md#nothing_to_commit) |
+| `MESSAGE_INVALID` | 20 | [Recovery](subskills/recovery.md#message_invalid) |
+| `HOOK_FAILED` | 21 | [Recovery](subskills/recovery.md#hook_failed) |
+| `DENYLISTED_FILE_STAGED` | 25 | [Recovery](subskills/recovery.md#denylisted_file_staged) |
+| `PUSH_FAILED` | 22 | [Recovery](subskills/recovery.md#push_failed) |
+| `PROMOTE_CONFLICT` | 23 | [Recovery](subskills/recovery.md#promote_conflict) |
+| `PROMOTE_FAILED` | 24 | [Recovery](subskills/recovery.md#promote_failed) |
+| `MAINLINE_AHEAD` | 26 | [Recovery](subskills/recovery.md#mainline_ahead) |
+| `POLICY_INVALID` | 27 | [Recovery](subskills/recovery.md#policy_invalid) |
+| `BRANCH_FORBIDDEN` | 28 | [Recovery](subskills/recovery.md#branch_forbidden) |
+| `MAINLINE_UNVERIFIED` | 29 | [Recovery](subskills/recovery.md#mainline_unverified) |
+| `NOT_A_REPO` | 10 | [Recovery](subskills/recovery.md#not_a_repo) |
+| `DETACHED_HEAD` | 11 | [Recovery](subskills/recovery.md#detached_head) |
+| `OPERATION_IN_PROGRESS` | 12 | [Recovery](subskills/recovery.md#operation_in_progress) |
 
 `pushed: false` after successful mainline promotion is normal. Report safety-push failures
 from `warnings`; they do not change the outcome.
-
-## Conflict resolution
-
-`PROMOTE_CONFLICT` with files in `conflicts` is yours to resolve; do not dead-end on it.
-
-1. On the feature branch, fetch origin and rebase onto `policy.resolved.mainline`.
-2. Resolve each conflicted file on its merits: read both sides, keep both intents where
-   they are independent, and pick the semantically correct result where they collide. Never
-   resolve by blanket `--ours`/`--theirs`, and never drop changes you cannot account for.
-3. Stage the resolutions and continue the rebase.
-4. Re-review the rewritten feature range before it reaches mainline.
-5. Re-run `land.ts` with the same flags so it finishes the fast-forward and push.
-   `NOTHING_TO_COMMIT` there is expected.
-
-An empty `conflicts` list means local mainline diverged from origin. Stop and put the
-listed branch relationship to the carbon unit; the skill never merges, resets, rebases,
-or force-pushes a diverged mainline.
-
-Stop and report instead when the same hop conflicts again after two attempts, a conflict
-involves changes you cannot attribute, or resolving would mean discarding one side
-wholesale.
-
-## Push and promote recovery
-
-A SessionStart `Parked branches:` entry is an unfinished landing from `~/.claude/commit-ledger.jsonl` (or the absolute `CLAUDE_COMMIT_LEDGER` override).
-Return to the listed branch, rerun preflight, follow the outcome's recovery instructions, then rerun `land.ts` with the original flags, which retries a failed push.
-
-`PUSH_FAILED` and `PROMOTE_FAILED` are yours to resolve the same way. `warnings` names the
-root cause. Fix it, then re-run `land.ts` with the original flags, which retries the push; a
-`NOTHING_TO_COMMIT` outcome on the re-run is expected. These git commands are sanctioned
-only to unblock the run.
-
-- Mainline push rejected (non-fast-forward, "stale info", "fetch first"): the remote moved
-  after preflight. The feature branch safety push preserves the work. Resolve local
-  mainline against origin by hand without force, then re-run from the feature branch.
-- Feature push rejected: fetch and merge `origin/<branch>` into the same local feature
-  branch, push it, then re-run. A conflict resolved by hand requires re-review first.
-- A destination branch checked out in a dirty worktree: if the uncommitted changes are this
-  session's, land them by running this whole workflow in that worktree, review
-  included. Never commit them by hand to clear the way. Changes you cannot attribute are a
-  stop case.
-- Transient network or remote errors: re-run once before treating the failure as real.
-
-Stop and report only when the failure is authentication, permissions, or branch protection;
-when the same failure survives two recovery passes; or when fixing would mean touching
-changes you cannot attribute.
 
 ## After the commit
 
 Read `policy.afterCommit`:
 
 - `promote`: promotion already ran inside `land.ts`. Never merge branches
-  yourself (sole exception: the recovery above), even when asked to "just merge it
+  yourself (sole exception: [recovery](subskills/recovery.md)), even when asked to "just merge it
   quickly"; re-run `land.ts` instead.
 - `pull-request`: never merge the feature branch anywhere. When the disclosure check held
   the change back, stop after reporting; a public pull request discloses it too. Otherwise

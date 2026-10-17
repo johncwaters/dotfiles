@@ -18,10 +18,7 @@ node_modules/
 # Session tooling state, not repo content
 .glimmervoid/
 
-# A ~/.claude backup carries a live OAuth token; nothing here may ever stage one
 .credentials.json
-claude-backup*
-.claude-backup*
 repos/repos.txt
 glimmervoid/config.json
 # Retired name: a machine that converged before the rename still holds these untracked

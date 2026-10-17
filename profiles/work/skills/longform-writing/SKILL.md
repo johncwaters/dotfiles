@@ -11,58 +11,17 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 
 1. **Pitch before prose.** Get a one-sentence pitch containing "but", "except", or "and then". No turn in the sentence means no tension and no piece yet. If the carbon unit hasn't supplied the substance (the claim, the numbers, what happened), ask for it rather than inventing it: "having something interesting to say matters more than the title."
 2. **Title first.** Specific beats clever: a number, a concrete claim, a real dollar figure. Generic test: if a bland B2B SaaS blog would publish this title, rewrite it.
-3. **Draft with the template** that fits (below).
+3. **Draft with the template** that fits under [Templates](#templates).
 4. **Revise** against the checklist. Rewriting is easier than writing because now there is a problem to solve.
 5. **Deliver** the piece, then at most three lines on the choices made and any open questions (missing numbers, unverified claims).
 
-## Blog or post template
+## Templates
 
-1. **Open mid-motion.** First line is the problem already happening. No throat-clearing ("In today's world…", "Have you ever wondered…").
-2. **Intention.** What you or the reader wanted. Show it rather than announce it.
-3. **Obstacle.** What made it hard. Press on it: if a reader could shrug "that's not that hard of a problem", raise the stakes or cut the piece.
-4. **Tactics.** What was tried, in order, with numbers, failures included. Tactics reveal character better than feelings do.
-5. **Opinion.** Take a side and give the reasoning. Answer the strongest counter-argument instead of strawmanning it.
-6. **Button.** End on a callback to the opening line or the sharpest sentence in the piece. Never a recap.
+Read the template that fits the piece:
 
-Short social posts compress this to hook (mid-motion), turn ("but"), payoff (opinion or number), button.
-
-Social post formatting, from the author's own edits to a drafted LinkedIn post:
-
-- One or two sentences per paragraph with a blank line between, because the feed is skimmed on a phone and a four-sentence block reads as a wall.
-- Spend the one allowed aside as a casual parenthetical in the author's voice ("only two eyes, duh"), placed right after the claim it deflates; the author adds this when the draft has none.
-
-Playful posts, from the author's rewrite of a drafted post that carried a clip of merge celebration animations. The draft opened "My pull requests now end in a bowling strike", listed all five animations, named the product, and conceded that the feature "does nothing for the code". The author posted this instead, 168 characters:
-
-> Software is soooo boring and lifeless. Rounded corners, no sense of satisfaction, and lame colors. I introduce to you: celebrations! Next, loot boxes. (Sold separately)
-
-- A fun post commits to the bit and never explains, justifies, or concedes it, because the apology is what kills the joke. The author's ran exaggerated complaint, petty specifics, mock-ceremonial reveal, absurd escalation; borrow the commitment and not that skeleton, because a second post on the same skeleton reads as a formula.
-- Attached media is the payoff, so the copy never describes what the clip or image shows; listing the animations spent the reveal before the reader pressed play.
-- No announcement frame ("So I built X", "I added X to Y, my Z for W"), which the author called incredibly generic, and no product name, feature count, or link unless the author supplies one.
-- Here voice-style's banter outranks this skill's restraint: stretched vowels, `!`, mock-grand phrasing, and a deadpan closing parenthetical all stay, while typos, chat abbreviations, and emoticons still go.
-- One joke long, in one short paragraph. The author's own posts run under 200 characters, so a fun post that needs a second paragraph is a different post.
-
-## Teaching guide template
-
-For pocket guides, tutorials, and docs pages that teach a product concept.
-
-1. **Teach the mental model, not the setup tool.** Explain the concept so a reader who never ran the wizard, CLI, or template follows every page. Artifacts a setup tool created appear only as an optional, conditional example ("If you ran the wizard, …"), never as the frame or the running story.
-2. **Follow the concept's lifecycle** (for example, create, roll out, kill, measure, retire) rather than the steps one tool performed.
-3. **Open each page on the concept and the decision it serves.** The first sentence says plainly what the thing is or does, because the reader came looking for exactly that; a counterfactual ("Without a flag, …"), an aphorism, or a scene makes them wait for it. Headings and page titles say what the section is about ("Choose where a flag is evaluated"; "Server and client-side flags", not "Server and client").
-4. **Structure around the reusable decision.** At each step, answer the questions the reader will face again: who is eligible, what signal to watch, when to raise the rollout and when to roll back. Decision criteria are concrete checks (error rate against the control group, new error issues, the target metric, how many people were exposed), never only advice to write criteria down. A table of shapes or options also needs the rule for choosing among them: a decision tree or clear defaults.
-5. **Give the full model before the shortcut.** Name every part a correct result needs (an experiment is hypothesis, eligible population, primary metric, and exposure moment, not only a flag with variants) so a partial setup does not read as the whole thing.
-6. **Earn each heading.** A heading over one sentence either merges into its neighbor or grows a concrete example, a table, or an annotated visual.
-7. **Open without overclaiming.** The opening never promises what a later section qualifies ("off is instant" followed by propagation delays).
-8. **Stay consistent across pages.** A categorical claim ("every flag is debt") must agree with exceptions made elsewhere (permanent operational flags); separate the categories where they first appear.
-9. **Captions stand alone.** A caption or code intro plainly says what the reader is looking at, with no assumed prior context.
-10. **Native formatting first.** Code samples and tables use the platform's native Markdown. Custom figure components are only for visuals Markdown cannot render: annotated mock UI or diagrams. Size screenshots to the page, and prefer an annotated mock UI when it explains more than a raw screenshot.
-
-## Work doc template
-
-1. **The answer.** One sentence: decision, recommendation, or status, with its number or date.
-2. **Why now.** Intention and obstacle in two or three sentences.
-3. **Reasoning.** Candid and specific, including the best counter-argument and the reply to it.
-4. **The ask.** What is needed, from whom, by when.
-5. **Optional button.** One memorable line at most.
+- [Blog or post](subskills/blog-or-post.md), including short and playful social posts.
+- [Teaching guide](subskills/teaching-guide.md) for pocket guides, tutorials, and docs pages.
+- [Work doc](subskills/work-doc.md) for proposals, decisions, and updates.
 
 ## Sentence rules
 

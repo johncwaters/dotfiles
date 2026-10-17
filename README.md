@@ -62,7 +62,7 @@ The [repository invariants and map](AGENTS.md) cover checkout safety and link ow
 ## Profiles
 
 Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `repos.txt`, `npm-globals.txt`, `AGENTS.md`, `CLAUDE.md`,
-`skills/`, `agents/`, `commands/`, `workflows/`, `hooks/`, `ai.json`, `codex-hooks.json`, `review-checklist.md`, `mcp-servers.json`,
+`skills/`, `hooks/`, `lib/`, `ai.json`, `codex-hooks.json`, `review-checklist.md`, `mcp-servers.json`,
 `commit-policy.json`, `settings.overlay.json`, `npm-globals-remove.txt`, `coder.json`, `devbox/`, `vscodium-mcp.json`,
 `glimmervoid.json`, `glimmervoid.overlay.json`, `glimmervoid.settings.json`, `vscodium.json`.
 
@@ -73,7 +73,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `repo
 
 `ai.json` keeps exclusive tool ownership beside its profile so another profile can retire
 those tools without shared code knowing their names. AI inheritance uses `extends` in `ai.json`;
-`ai/test.sh` pins inherited additions, file fallback, confinement, and profile isolation. `ai/test.sh` pins confinement,
+`ai/test.sh` pins inherited additions, file fallback, confinement, profile isolation,
 foreign-entry preservation, quiet reruns, and no-profile preservation; `test/repo-wiring.sh`
 pins the shared boundary. Shared npm entries apply everywhere; profile lists contain only additions.
 
@@ -83,7 +83,7 @@ pins the shared boundary. Shared npm entries apply everywhere; profile lists con
 | --- | --- |
 | `shell` | `~/.bashrc` and `~/.bash_profile` stubs; `~/.localrc` first, then the profile's topics' `*.bash`; a `c` completion over `$PROJECTS` |
 | `git` | global gitconfig, with identity and credentials in `~/.gitconfig.local` |
-| `ai` | Claude Code and Codex: agents, commands, hooks, hud, shared skills, workflows; profile skills in `profiles/<name>/skills/` |
+| `ai` | Claude Code and Codex: agents, hooks, hud, shared skills, workflows; profile skills in `profiles/<name>/skills/` |
 | `vscodium` | settings, keybindings, mcp.json, extensions |
 | `glimmervoid` | dashboard config, plus the user service on profiles that serve Glimmervoid |
 | `converge` | a nightly user timer running `dot`, the one converge outside Glimmervoid's cgroup that can pay a restart a hosted run left owed |

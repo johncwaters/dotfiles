@@ -68,7 +68,7 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   first, `completion.bash` last; `shell/test.sh` pins the order
 - `bin/dot`: clones on a fresh machine, pulls mainline and reruns bootstrap; `dot status`
   reports drift against `origin/main` and owed work
-- `test/`: shared bubblewrap sandbox and cross-cutting suites listed in `test/run-all.sh`;
+- `test/`: cross-cutting suites listed in `test/run-all.sh`;
   per-topic tests live next to their installer
 - `test/harness.sh`: shared assertions, sandbox home, command stubs
 - `GLOSSARY.md`: one meaning per workflow term (design spec, unit of work, ticket); docs cite it as

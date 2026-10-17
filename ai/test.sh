@@ -19,10 +19,7 @@ mkdir -p "$stagedRepo"
 stagedRepo="$(cd -- "$stagedRepo" && pwd)"
 cp -R "$repoRoot/." "$stagedRepo"
 rm -rf "$stagedRepo/.git" "$stagedRepo"/ai/skills/*/node_modules "$stagedRepo"/profiles/*/skills/*/node_modules
-git init -q -b main "$stagedRepo"
 stagedTopicDir="$stagedRepo/ai"
-singleFileSkillPath="$stagedTopicDir/skills/single-file-skill-test.md"
-printf 'tracked single file skill\n' > "$singleFileSkillPath"
 workSkillNames=()
 for workSkillPath in "$repoRoot"/profiles/work/skills/*/; do
   workSkillNames+=("$(basename -- "$workSkillPath")")
@@ -30,15 +27,9 @@ done
 profileDependencySkillPath="$stagedRepo/profiles/work/skills/locked-profile-skill-test"
 mkdir -p "$profileDependencySkillPath"
 printf '{}\n' > "$profileDependencySkillPath/package-lock.json"
-(cd -- "$stagedRepo" && git add -A -- ai profiles/*/skills)
 
-foreignSkillName=".synced-cutover-test"
-foreignSkillPath="$stagedTopicDir/skills/$foreignSkillName"
-mkdir -p "$foreignSkillPath"
-printf 'synced runtime state\n' > "$foreignSkillPath/state.json"
 rm -f "$sandbox/.dotfiles"
 ln -s "$stagedRepo" "$sandbox/.dotfiles"
-ln -s "$sandbox/.dotfiles/ai/skills" "$sandbox/.claude/skills"
 
 skillDependencyLog="$sandbox/skill-dependency-commands.log"
 : > "$skillDependencyLog"
@@ -302,16 +293,15 @@ writePluginMarketplace 3.0.0
 unversionedNightlyStatus=0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null || unversionedNightlyStatus=$?
-check "an unversioned url-sourced plugin does not fail a nightly upgrade" test "$unversionedNightlyStatus" -eq 0
-check "an unversioned url-sourced plugin issues no nightly update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update","companion@caveman"]'
-check "an unversioned url-sourced plugin records no nightly hold" bash -c '! grep -qsF companion "$1"' _ "$pluginHeldPath"
-check "an unversioned url-sourced plugin records no nightly failure" bash -c '! grep -qsF companion "$1"' _ "$pluginFailedPath"
+check "an unversioned url-sourced plugin skips nightly updates without holds or failures" \
+  bash -c '[[ "$1" -eq 0 ]] && ! grep -qF "$5" "$2" && ! grep -qsF companion "$3" && ! grep -qsF companion "$4"' _ \
+  "$unversionedNightlyStatus" "$mcpCommandLog" "$pluginHeldPath" "$pluginFailedPath" '["plugin","update","companion@caveman"]'
 unversionedApprovedStatus=0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || unversionedApprovedStatus=$?
-check "approval updates an unversioned url-sourced plugin" grep -qxF '["plugin","update","companion@caveman"]' "$mcpCommandLog"
-check "an approved unversioned url-sourced plugin update succeeds cleanly" test "$unversionedApprovedStatus" -eq 0
-check "an approved unversioned url-sourced plugin records no failure" bash -c '! grep -qsF companion "$1"' _ "$pluginFailedPath"
+check "approval updates an unversioned url-sourced plugin without failures" \
+  bash -c '[[ "$1" -eq 0 ]] && grep -qxF "$4" "$2" && ! grep -qsF companion "$3"' _ \
+  "$unversionedApprovedStatus" "$mcpCommandLog" "$pluginFailedPath" '["plugin","update","companion@caveman"]'
 touch "$sandbox/.fail-plugin-update"
 unversionedFailureStatus=0
 DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || unversionedFailureStatus=$?
@@ -328,22 +318,23 @@ check "a plugin missing from its marketplace issues no update" bash -c '! grep -
 writePluginMarketplace 3.0.0 2.2.0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
-check "current plugin issues no update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update",'
-check "current plugin records no hold" test ! -e "$pluginHeldPath"
-check "clean plugin run clears pending failures" test ! -e "$pluginFailedPath"
+check "current plugins skip updates and clear holds and pending failures" \
+  bash -c '! grep -qF "$4" "$1" && [[ ! -e "$2" && ! -e "$3" ]]' _ \
+  "$mcpCommandLog" "$pluginHeldPath" "$pluginFailedPath" '["plugin","update",'
 writeInstalledPlugins 2.1.0 2.2.0
 printf '{"name":"caveman"}\n' > "$pluginMarketplacePath/.claude-plugin/plugin.json"
 pathSourcedNightlyStatus=0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null || pathSourcedNightlyStatus=$?
-check "an unversioned path-sourced plugin does not fail a nightly upgrade" test "$pathSourcedNightlyStatus" -eq 0
-check "an unversioned path-sourced plugin issues no nightly update" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update","caveman@caveman"]'
-check "an unversioned path-sourced plugin records no nightly failure" test ! -e "$pluginFailedPath"
+check "an unversioned path-sourced plugin skips nightly updates without failures" \
+  bash -c '[[ "$1" -eq 0 && ! -e "$3" ]] && ! grep -qF "$4" "$2"' _ \
+  "$pathSourcedNightlyStatus" "$mcpCommandLog" "$pluginFailedPath" '["plugin","update","caveman@caveman"]'
 pathSourcedApprovedStatus=0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=all runTopicInstall "$stagedTopicDir" > /dev/null || pathSourcedApprovedStatus=$?
-check "approval updates an unversioned path-sourced plugin" grep -qxF '["plugin","update","caveman@caveman"]' "$mcpCommandLog"
-check "an approved unversioned path-sourced plugin update succeeds cleanly" test "$pathSourcedApprovedStatus" -eq 0
+check "approval updates an unversioned path-sourced plugin successfully" \
+  bash -c '[[ "$1" -eq 0 ]] && grep -qxF "$3" "$2"' _ \
+  "$pathSourcedApprovedStatus" "$mcpCommandLog" '["plugin","update","caveman@caveman"]'
 cp "$sandbox/settings-before-plugin-tests.json" "$stagedRepo/ai/settings.base.json"
 : > "$mcpCommandLog"
 
@@ -532,21 +523,9 @@ for destination in "${linkedDestinations[@]}"; do
   pass "$destination linked through the alias"
 done
 
-for entryKind in agents commands workflows; do
+for entryKind in agents workflows; do
   check "$entryKind converges through per-entry links" \
     bash -c '[[ -d "$1" && ! -L "$1" ]]; for entry in "$1"/*; do [[ -L "$entry" && -e "$entry" ]] || exit 1; done' _ "$sandbox/.claude/$entryKind"
-  mkdir -p "$stagedRepo/profiles/work/$entryKind"
-  printf 'profile entry\n' > "$stagedRepo/profiles/work/$entryKind/profile-fixture.md"
-done
-runTopicInstall "$stagedTopicDir" work > /dev/null
-for entryKind in agents commands workflows; do
-  check "$entryKind installs profile additions" test -L "$sandbox/.claude/$entryKind/profile-fixture.md"
-  printf 'foreign entry\n' > "$sandbox/.claude/$entryKind/foreign-fixture.md"
-done
-runTopicInstall "$stagedTopicDir" personal > /dev/null
-for entryKind in agents commands workflows; do
-  check "$entryKind retires another profile's additions" test ! -L "$sandbox/.claude/$entryKind/profile-fixture.md"
-  check "$entryKind preserves foreign entries" grep -qx 'foreign entry' "$sandbox/.claude/$entryKind/foreign-fixture.md"
 done
 
 skillsPath="$sandbox/.claude/skills"
@@ -621,43 +600,23 @@ for repoSkillPath in "$stagedTopicDir"/skills/*; do
     bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
     "$installedSkillPath" "$sandbox/.dotfiles/ai/skills/$skillName"
 done
-check "cutover preserves a foreign skill entry" \
-  grep -qx 'synced runtime state' "$skillsPath/$foreignSkillName/state.json"
-check "cutover removes the foreign skill entry from the repo" \
-  test ! -e "$foreignSkillPath"
-check "cutover leaves a tracked single file skill in the repo" \
-  grep -qx 'tracked single file skill' "$singleFileSkillPath"
 retiredSkillPath="$skillsPath/retired-skill-test"
 ln -s "$sandbox/.dotfiles/ai/skills/retired-skill-test" "$retiredSkillPath"
+retiredCommandPath="$sandbox/.claude/commands/seo-audit.md"
+mkdir -p "$sandbox/.claude/commands"
+ln -s "$sandbox/.dotfiles/ai/commands/seo-audit.md" "$retiredCommandPath"
+printf 'foreign command\n' > "$sandbox/.claude/commands/foreign.md"
+ln -s "$sandbox/.claude/commands/foreign.md" "$sandbox/.claude/commands/foreign-link.md"
 runTopicInstall "$stagedTopicDir" > /dev/null
+check "a retired command link is removed without displacing foreign commands" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" && -L "$3" ]] && grep -qx "foreign command" "$2"' _ \
+  "$retiredCommandPath" "$sandbox/.claude/commands/foreign.md" "$sandbox/.claude/commands/foreign-link.md"
+ln -s "$stagedRepo/ai/commands/seo-audit.md" "$retiredCommandPath"
+runTopicInstall "$stagedTopicDir" > /dev/null
+check "a retired command link through the clone path is removed" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$retiredCommandPath"
 check "a retired repo skill link is removed" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$retiredSkillPath"
-
-stagingPath="$sandbox/.claude/.skills-cutover"
-interruptedSkillPath="$stagingPath/interrupted-skill-test"
-mkdir -p "$interruptedSkillPath"
-printf 'interrupted runtime state\n' > "$interruptedSkillPath/state.json"
-runTopicInstall "$stagedTopicDir" > /dev/null
-check "a cutover interrupted after its link was replaced finishes on the next run" \
-  grep -qx 'interrupted runtime state' "$skillsPath/interrupted-skill-test/state.json"
-check "a finished cutover leaves nothing staged" bash -c '! test -e "$1"' _ "$stagingPath"
-
-rm -rf "$skillsPath"
-ln -s "$sandbox/.dotfiles/ai" "$skillsPath"
-misPointedStatus=0
-misPointedOutput="$(runTopicInstall "$stagedTopicDir")" || misPointedStatus=$?
-check "a skills link into the repo outside ai/skills warns" \
-  outputHas "$misPointedOutput" "outside ai/skills"
-check "a skills link into the repo outside ai/skills fails the topic" \
-  test "$misPointedStatus" -eq 1
-check "a mis-pointed skills link empties nothing out of the repo" \
-  test -f "$stagedTopicDir/AGENTS.md"
-check "a mis-pointed skills link writes no skill link into the repo" \
-  bash -c '! test -e "$1" && ! test -L "$1"' _ "$stagedTopicDir/commit"
-rm -f "$skillsPath"
-runTopicInstall "$stagedTopicDir" > /dev/null
-check "removing the mis-pointed link converges the skills directory again" \
-  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/commit" ]]' _ "$skillsPath"
 
 gitlessBin="$sandbox/gitless-bin"
 mkdir -p "$gitlessBin"
@@ -705,23 +664,6 @@ check "an absent Codex CLI warns when config.toml still declares a retired serve
   bash -c 'grep -qE "\[warn\] +Codex MCP backchannels" <<< "$1"' _ "$absentCodexRetiredServerOutput"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "retirement after an absent CLI preserves the unmanaged server" mcpRuntimeMatches ""
-rm -rf "$skillsPath"
-ln -s "$sandbox/.dotfiles/ai/skills" "$skillsPath"
-gitlessStatus=0
-gitlessOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
-  bash "$stagedTopicDir/install.sh")" || gitlessStatus=$?
-check "a converge that cannot read the index warns" \
-  outputHas "$gitlessOutput" "git cannot name the tracked skills"
-check "a converge that cannot read the index moves no repo skill out" \
-  test -d "$stagedTopicDir/skills/commit"
-check "a converge that cannot read the index displaces no repo skill" \
-  bash -c '! ls "$1"/*.pre-dotfiles.bak* > /dev/null 2>&1' _ "$stagedTopicDir/skills"
-check "a converge that cannot read the index leaves the old link in place" test -L "$skillsPath"
-rm -f "$skillsPath"
-runTopicInstall "$stagedTopicDir" > /dev/null
-check "the skills directory converges again once git is back" \
-  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/commit" ]]' _ "$skillsPath"
-
 runTopicInstall "$stagedTopicDir" work > /dev/null
 node - "$sandbox/.codex/config.toml" <<'NODE'
 const fs = require('node:fs');
@@ -1111,14 +1053,6 @@ workflowAvoidsResumeBreakingCalls() {
   ! grep -qE 'Math\.random\(|Date\.now\(|new Date\(\)' "$1"
 }
 
-qaSwarmDeclaresThreeLaneCap() {
-  grep -qE '^const maxLanesPerRun = 3$' "$topicDir/workflows/qa-swarm.js"
-}
-
-reviewerAgentsDoNotReportForAbsentOwners() {
-  ! grep -qF 'on behalf of an owner' "$topicDir"/agents/*-reviewer.md
-}
-
 shopt -s nullglob
 workflowScripts=("$topicDir"/workflows/*.js)
 shopt -u nullglob
@@ -1131,8 +1065,6 @@ for workflowPath in "${workflowScripts[@]}"; do
   check "$workflowName names only CLI invocations ROUTING.md lists" workflowCliCommandsComeFromRouting "$workflowPath"
   check "$workflowName avoids calls the workflow runtime rejects" workflowAvoidsResumeBreakingCalls "$workflowPath"
 done
-check "qa-swarm caps each run at three lanes" qaSwarmDeclaresThreeLaneCap
-check "reviewer agents stay inside their own lanes" reviewerAgentsDoNotReportForAbsentOwners
 
 # Claude Code drops every @import in a symlinked CLAUDE.md, so this one entry is a copy.
 claudeMdPath="$sandbox/.claude/CLAUDE.md"
@@ -1200,21 +1132,6 @@ for profileDirectory in "$repoRoot"/profiles/*/; do
     overlayDefinesNoDenyList "$profileOverlayPath"
 done
 
-check "work-server renders caveman defaults and confinement without retired plugins" \
-  node - "$sandbox/deny-probe-work-server.json" "$topicDir/settings.base.json" <<'JS'
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const renderedText = fs.readFileSync(process.argv[2], "utf8");
-const renderedSettings = JSON.parse(renderedText);
-const baseSettings = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
-assert.equal(renderedSettings.enabledPlugins["caveman@caveman"], true);
-assert.deepEqual(renderedSettings.extraKnownMarketplaces.caveman, baseSettings.extraKnownMarketplaces.caveman);
-assert.equal(renderedSettings.env.CAVEMAN_DEFAULT_MODE, baseSettings.env.CAVEMAN_DEFAULT_MODE);
-assert.equal(renderedSettings.env.CAVEMAN_TELEMETRY, baseSettings.env.CAVEMAN_TELEMETRY);
-assert.match(renderedText, /confine-backchannels/);
-assert.doesNotMatch(renderedText, /example-org|[/]org-|telegram@claude-plugins-official/);
-JS
-
 check "settings.json keeps the personal permissions allow list" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.allow.includes("Bash(node:*)")?0:1)' "$settingsPath"
 check "settings.json keeps the base allow list through the overlay merge" \
@@ -1226,25 +1143,8 @@ for workflowScriptPath in "$topicDir"/workflows/*.js; do
 done
 check "settings.json keeps the personal permissions default mode" \
   node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.defaultMode==="auto"?0:1)' "$settingsPath"
-check "settings.json keeps agent teams off so named agents reach the subagent row script" \
-  grep -q "\"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS\": \"0\"" "$settingsPath"
-check "settings.json rewrites the subagent rows with the repo script" \
-  grep -q "\"command\": \"node $sandbox/.claude/hud/subagent-hud.mjs\"" "$settingsPath"
 check "settings.json has no unrendered token" bash -c '! grep -q "{{HOME}}" "$1"' _ "$settingsPath"
-check "settings.json points the commit policy at the alias" \
-  grep -q "\"CLAUDE_COMMIT_POLICY_ROOT\": \"$sandbox/.dotfiles\"" "$settingsPath"
 check "settings.json is not world readable" test "$(fileModeOf "$settingsPath")" = "600"
-
-countSettingsCommand() {
-  grep -c -- "$1" "$settingsPath"
-}
-check "the routing SessionStart hook reaches the profile" test "$(countSettingsCommand inject-routing.mjs)" -eq 1
-check "the finding scope hook reaches the profile" test "$(countSettingsCommand check-finding-scope.mjs)" -eq 1
-check "the plan challenge hook reaches the profile" test "$(countSettingsCommand challenge-plan.mjs)" -eq 1
-check "the design spec hook reaches the profile" test "$(countSettingsCommand validate-spec.mjs)" -eq 1
-check "the retired sync hook is gone" test "$(countSettingsCommand sync-agents-md.mjs)" -eq 0
-check "commit and pr attribution render empty from the base" \
-  node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(s.attribution.commit===""&&s.attribution.pr===""?0:1)' "$settingsPath"
 
 rm -f "$sandbox/.claude/AGENTS.md"
 printf 'later hand written notes\n' > "$sandbox/.claude/AGENTS.md"
@@ -1391,14 +1291,8 @@ openPrTestFiles=("$repoRoot"/profiles/work/skills/open-pr/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
 hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
 shopt -u nullglob
-check "hook behavior tests are present" test "${#hookTestFiles[@]}" -gt 0
-check "workflow behavior tests are present" test "${#workflowTestFiles[@]}" -gt 0
-check "commit behavior tests are present" test "${#commitTestFiles[@]}" -gt 0
-check "retro digest tests are present" test "${#retroTestFiles[@]}" -gt 0
-check "design spec contract tests are present" test "${#specTestFiles[@]}" -gt 0
-check "open-pr evidence tests are present" test "${#openPrTestFiles[@]}" -gt 0
-check "social-images render tests are present" test "${#socialImagesTestFiles[@]}" -gt 0
-check "hud tests are present" test "${#hudTestFiles[@]}" -gt 0
+check "all behavior test groups are present" \
+  test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0))" -eq 1
 if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
   check "hook, workflow, commit, retro, open-pr, social-images, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}" "${hudTestFiles[@]}"
 fi

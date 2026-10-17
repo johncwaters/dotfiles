@@ -18,79 +18,9 @@
         "when": "editorTextFocus && !editorReadonly"
     },
     {
-        "key": "ctrl+shift+g",
-        "command": "-workbench.view.scm",
-        "when": "config.gitlens.keymap == chorded && !gitlens:disabled"
-    },
-    {
-        "key": "cmd+alt+g shift+,",
-        "command": "-gitlens.diffLineWithPrevious",
-        "when": "config.gitlens.keymap == chorded && editorTextFocus && resource in gitlens:tabs:tracked"
-    },
-    {
-        "key": "cmd+alt+g .",
-        "command": "-gitlens.diffWithNext:key",
-        "when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
-    },
-    {
-        "key": "cmd+alt+g ,",
-        "command": "-gitlens.diffWithPrevious:key",
-        "when": "config.gitlens.keymap == chorded && editorTextFocus && resource in gitlens:tabs:tracked"
-    },
-    {
-        "key": "cmd+alt+g shift+.",
-        "command": "-gitlens.diffWithWorking:key",
-        "when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
-    },
-    {
-        "key": "cmd+alt+g /",
-        "command": "-gitlens.gitCommands",
-        "when": "config.gitlens.keymap == chorded && !gitlens:disabled"
-    },
-    {
-        "key": "cmd+alt+g c",
-        "command": "-gitlens.showQuickCommitFileDetails",
-        "when": "config.gitlens.keymap == chorded && editorTextFocus && !gitlens:disabled"
-    },
-    {
-        "key": "cmd+alt+g h",
-        "command": "-gitlens.showQuickFileHistory",
-        "when": "config.gitlens.keymap == chorded && !gitlens:disabled"
-    },
-    {
-        "key": "cmd+alt+g shift+h",
-        "command": "-gitlens.showQuickRepoHistory",
-        "when": "config.gitlens.keymap == chorded && !gitlens:disabled"
-    },
-    {
-        "key": "cmd+alt+g s",
-        "command": "-gitlens.showQuickRepoStatus",
-        "when": "config.gitlens.keymap == chorded && !gitlens:disabled"
-    },
-    {
-        "key": "cmd+alt+g shift+b",
-        "command": "-gitlens.toggleCodeLens",
-        "when": "config.gitlens.keymap == chorded && editorTextFocus && !gitlens:disabled && !gitlens:disabledToggleCodeLens"
-    },
-    {
-        "key": "cmd+alt+g b",
-        "command": "-gitlens.toggleFileBlame:key",
-        "when": "config.gitlens.keymap == chorded && editorTextFocus && resource in gitlens:tabs:blameable"
-    },
-    {
         "key": "shift+cmd+g",
         "command": "-workbench.action.terminal.openDetectedLink",
         "when": "accessibleViewIsShown && terminalHasBeenCreated && accessibleViewCurrentProviderId == 'terminal'"
-    },
-    {
-        "key": "ctrl+enter",
-        "command": "-github.copilot.generate",
-        "when": "editorTextFocus && github.copilot.activated && !inInteractiveInput && !interactiveEditorFocused"
-    },
-    {
-        "key": "ctrl+enter",
-        "command": "-github.copilot.generate",
-        "when": "editorTextFocus && github.copilot.activated && !inInteractiveInput && !interactiveEditorFocused && !commentEditorFocused"
     },
     {
         "key": "shift+enter",

@@ -1,7 +1,6 @@
 # shellcheck shell=bash
 systemdUserDirectory="$HOME/.config/systemd/user"
 glimmervoidUnitPath="$systemdUserDirectory/glimmervoid.service"
-glimmervoidLegacyUnitPath="$systemdUserDirectory/glissa.service"
 glimmervoidServiceInputsStateName="glimmervoid-service-inputs-record"
 
 # Splicing the ambient PATH in makes the unit differ between converging shells, and every difference restarts the live service.
@@ -133,12 +132,6 @@ startGlimmervoidService() {
       "dependencies or build are pending for $glimmervoidAppDisplayPath, run the repos topic before starting it"
     return 1
   fi
-  # A pre-migration checkout builds only dist/client, so npm install there can never produce this file.
-  if [[ ! -f "$glimmervoidAppDirectory/dist/server/index.js" && ! -f "$glimmervoidAppDirectory/server/main.ts" ]]; then
-    noteWarned "$label" \
-      "$glimmervoidAppDisplayPath predates the TypeScript migration, update the checkout (git pull) before starting it"
-    return 1
-  fi
   if [[ ! -f "$glimmervoidAppDirectory/dist/server/index.js" ]]; then
     noteWarned "$label" \
       "no built dist/server/index.js in $glimmervoidAppDisplayPath, run npm install there before starting it"
@@ -157,36 +150,6 @@ startGlimmervoidService() {
     return 1
   fi
   recordGlimmervoidServiceInputs "$inputsToken"
-}
-
-# The retired unit still holds the configured port on a machine that served under the old name, so the new unit crash-loops on bind and the health probe answers from the old process.
-# The Glissa assistant now owns the glissa.service name as a linked unit, so only a rendered file carrying the dashboard's old description is ours to retire.
-legacyUnitIsRetiredDashboard() {
-  [[ -f "$glimmervoidLegacyUnitPath" && ! -L "$glimmervoidLegacyUnitPath" ]] &&
-    grep -qx 'Description=Glissa dashboard' "$glimmervoidLegacyUnitPath"
-}
-
-removeStaleGlimmervoidUnit() {
-  local label="glimmervoid service"
-  if ! legacyUnitIsRetiredDashboard; then
-    return 0
-  fi
-  # Stopping glissa from inside its own cgroup kills this converge (KillMode=control-group), and moving ~/.glissa out from under a still-live old process is worse, so the whole cutover waits for a run from outside it.
-  if runningInsideUserService "glissa"; then
-    noteApplied "$label" "cutover owed, this run is hosted by glissa; the next run from outside it retires the old unit"
-    return 1
-  fi
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user disable --now glissa >/dev/null 2>&1 || true
-  fi
-  if ! rm -f -- "$glimmervoidLegacyUnitPath" "$(renderedCopyPath "$glimmervoidLegacyUnitPath")"; then
-    noteWarned "$label" "remove ~/.config/systemd/user/glissa.service by hand"
-    return 0
-  fi
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user daemon-reload >/dev/null 2>&1 || true
-  fi
-  noteApplied "$label" "removed the retired glissa.service"
 }
 
 installGlimmervoidService() {

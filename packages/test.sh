@@ -398,7 +398,6 @@ mkdir -p "$stubState/pip-modules"
 printf 'ruff\n' > "$stubState/pip-modules/ruff"
 printf 'yaml\n' > "$stubState/pip-modules/pyyaml"
 
-printf 'oh-my-claude-sisyphus\n' > "$stubState/npm-installed/oh-my-claude-sisyphus"
 printf '@xai-official/grok\n' > "$stubState/npm-installed/@xai-official%grok"
 mkdir -p "$sandbox/.grok"
 printf 'token\n' > "$sandbox/.grok/auth.json"
@@ -608,10 +607,9 @@ for wantedNpmPackage in @ast-grep/napi @biomejs/biome @earendil-works/pi-coding-
   @openai/codex mcp-remote postiz typescript typescript-language-server; do
   check "$wantedNpmPackage is installed globally" logHas "npm install -g $wantedNpmPackage"
 done
-check "a retired package that is present is uninstalled" logHas "npm uninstall -g oh-my-claude-sisyphus"
 check "the retired Grok CLI is uninstalled" logHas "npm uninstall -g @xai-official/grok"
 check "the retired Grok CLI login state is removed" test ! -e "$sandbox/.grok"
-check "a retired package that is absent is left alone" logLacks "uninstall -g @vibe-kit/grok-cli"
+check "a retired package that is absent is left alone" logLacks "uninstall -g glissa"
 
 check "ruff is installed with noninteractive pip" logHas "pip install --quiet --no-input ruff"
 check "pyyaml first uses noninteractive pip" logHas "pip install --quiet --no-input pyyaml"

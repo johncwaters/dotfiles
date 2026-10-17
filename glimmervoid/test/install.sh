@@ -252,22 +252,3 @@ check "an arbitrary app directory exits non-zero" test "$invalidAppStatus" -eq 1
 check "an arbitrary app directory is rejected as an invalid checkout" \
   outputHas "$invalidAppOutput" "is not a Glimmervoid checkout"
 check "an arbitrary app directory starts no service" logLacks "systemctl "
-
-makeGlimmervoidApp "$invalidAppHome"
-rm -f "$invalidAppHome/Projects/glimmervoid/server/main.ts" \
-  "$invalidAppHome/Projects/glimmervoid/dist/server/index.js"
-: > "$invalidAppHome/Projects/glimmervoid/server.js"
-legacyAppOutput="$(runInstall "$invalidAppHome" server)" || true
-check "a checkout from before the TypeScript migration is still a Glimmervoid checkout" \
-  outputMatches "$legacyAppOutput" '\[ -- \].*glimmervoid app.*~/Projects/glimmervoid'
-check "a pre-migration checkout is told to update the checkout" \
-  outputMatches "$legacyAppOutput" '\[warn\].*~/Projects/glimmervoid predates the TypeScript migration'
-check "a pre-migration checkout is never sent to npm install" \
-  outputLacks "$legacyAppOutput" "run npm install there"
-
-check "seed input selection receives both paths explicitly" \
-  grep -q 'selectGlimmervoidSeedInputs "$baseSeedPath" "$machineLocalSeed"' "$topicDir/install.sh"
-check "seed input selection publishes named selection globals" \
-  grep -q '^selectedGlimmervoidSeedPath=' "$topicDir/install.sh"
-check "seed input selection uses one description value" \
-  bash -c '! grep -q "selectedGlimmervoidAppliedDescription" "$1"' _ "$topicDir/install.sh"

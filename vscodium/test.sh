@@ -9,6 +9,14 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "vscodium"
 stageTopicWithLinuxAccountLookup
+if [[ "$repoRoot" != "$sandbox/"* ]]; then
+  mkdir -p "$sandbox/repo"
+  cp -R "$repoRoot/script" "$repoRoot/packages" "$repoRoot/profiles" "$repoRoot/README.md" "$topicDir" "$sandbox/repo/"
+  repoRoot="$sandbox/repo"
+  topicDir="$repoRoot/vscodium"
+  rm "$sandbox/.dotfiles"
+  ln -s "$repoRoot" "$sandbox/.dotfiles"
+fi
 
 realHome="$HOME"
 realHomePathsNoStubMayName=(
@@ -156,7 +164,8 @@ for presentFromTheStart in apt-get sudo dpkg curl; do
   provideCommand "$presentFromTheStart"
 done
 
-retiredExtensionName="$(head -n 1 "$topicDir/extensions-remove.txt")"
+retiredExtensionName="fixture.retired-extension"
+printf '%s\n' "$retiredExtensionName" > "$topicDir/extensions-remove.txt"
 
 printf 'aaron-bond.better-comments\n' > "$installedExtensionsFile"
 printf 'nosuch.extension\n' >> "$installedExtensionsFile"

@@ -1,6 +1,6 @@
 import { deepEqual, equal, ok } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,9 +10,16 @@ const scriptPath = join(import.meta.dirname, "../digest.ts");
 const fixturesDir = join(import.meta.dirname, "fixtures");
 const fixturePath = join(fixturesDir, "synthetic-project/synthetic-session.jsonl");
 
-test("CLI reduces a synthetic session to ordered incidents without counting metadata as prompts", () => {
+test("CLI reduces a synthetic session to ordered incidents without counting metadata as prompts", (context) => {
+  const projectsDir = mkdtempSync(join(tmpdir(), "retro-digest-"));
+  context.after(() => rmSync(projectsDir, { recursive: true, force: true }));
+  const projectDir = join(projectsDir, "synthetic-project");
+  mkdirSync(projectDir);
+  const transcript = readFileSync(fixturePath, "utf8")
+    .replace('"OVERSIZED_TOOL_RESULT"', JSON.stringify("x".repeat(60000)));
+  writeFileSync(join(projectDir, "synthetic-session.jsonl"), transcript);
   const digestProcess = spawnSync(process.execPath, [
-    scriptPath, "synthetic-session", "--no-git", "--projects-dir", fixturesDir,
+    scriptPath, "synthetic-session", "--no-git", "--projects-dir", projectsDir,
   ], { encoding: "utf8", timeout: 5000 });
   equal(digestProcess.status, 0, digestProcess.stderr);
   const digest = JSON.parse(digestProcess.stdout) as SessionDigest;

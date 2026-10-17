@@ -28,13 +28,6 @@ runSuite "packages-lib" bash "$repoRoot/test/packages-lib.sh"
 runSuite "dot" bash "$repoRoot/test/dot.sh"
 runSuite "repo-wiring" bash "$repoRoot/test/repo-wiring.sh"
 
-if command -v bwrap >/dev/null 2>&1; then
-  runSuite "cutover" "$repoRoot/test/run-sandbox.sh" bash "$repoRoot/test/cutover.sh"
-fi
-if ! command -v bwrap >/dev/null 2>&1; then
-  printf '\n=== cutover ===\n  skipped, bubblewrap is not installed\n'
-fi
-
 if ((${#failedSuites[@]} > 0)); then
   printf '\nfailing suites: %s\n' "${failedSuites[*]}"
   exit 1

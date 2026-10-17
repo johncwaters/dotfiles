@@ -8,31 +8,6 @@ fi
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
 
-installOptionsPlusCask() {
-  local brewCommand
-  if [[ -d "$(applicationsDirectory)/logioptionsplus.app" ]]; then
-    notePresent "Logi Options+" "already installed"
-    upgradeBrewPackage cask logi-options+
-    return 0
-  fi
-  brewCommand="$(brewCommandPath || true)"
-  if [[ -z "$brewCommand" ]]; then
-    noteWarned "Logi Options+" "Homebrew not on PATH, install manually"
-    return 0
-  fi
-  if "$brewCommand" list --cask logi-options+ >/dev/null 2>&1; then
-    notePresent "Logi Options+" "already installed"
-    upgradeBrewPackage cask logi-options+
-    return 0
-  fi
-  noteStarting "Logi Options+" "installing via Homebrew"
-  if installSystemPackages brew --cask logi-options+; then
-    noteInstalled "Logi Options+" "installed"
-    return 0
-  fi
-  noteWarned "Logi Options+" "Homebrew install failed"
-}
-
 retireLinearMouseLaunchAgent() {
   local agentLabel="dev.dotfiles.linearmouse"
   local plistPath="$HOME/Library/LaunchAgents/$agentLabel.plist"
@@ -69,7 +44,6 @@ retireLinearMouseCask() {
 }
 
 installDarwinMouseSupport() {
-  installOptionsPlusCask
   retireLinearMouseLaunchAgent
   retireLinearMouseConfigLink
   retireLinearMouseCask

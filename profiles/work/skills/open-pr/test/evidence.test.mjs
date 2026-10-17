@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
-    listAreas,
     parseFlags,
     parseShotName,
     parseUploadedMarkdown,
@@ -26,11 +25,6 @@ test('a shot file name round-trips through the parser', () => {
 test('a file outside the naming scheme parses to null', () => {
     assert.equal(parseShotName('after-session-replay-motion.gif'), null)
     assert.equal(parseShotName('peek.png'), null)
-})
-
-test('areas are listed once each in first-seen order', () => {
-    const fileNames = [...allShots('session-replay'), ...allShots('ai-observability'), 'preview.html']
-    assert.deepEqual(listAreas(fileNames), ['session-replay', 'ai-observability'])
 })
 
 test('the contact sheet flags a missing cell instead of leaving it blank', () => {

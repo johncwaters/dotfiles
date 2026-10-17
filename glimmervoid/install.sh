@@ -102,62 +102,6 @@ selectGlimmervoidSeedInputs() {
   selectedGlimmervoidWarningDescription="profiles/$profileName/glimmervoid.overlay.json"
 }
 
-renameLegacyGlimmervoidDatabase() {
-  local nameSuffix
-  local legacyPath
-  for nameSuffix in "" "-wal" "-shm"; do
-    legacyPath="$glimmervoidConfigDirectory/glissa.db$nameSuffix"
-    if [[ -f "$legacyPath" && ! -L "$legacyPath" ]] \
-      && ! mv -- "$legacyPath" "$glimmervoidConfigDirectory/glimmervoid.db$nameSuffix"; then
-      noteWarned "glimmervoid config" "rename ~/.glimmervoid/glissa.db$nameSuffix by hand"
-    fi
-  done
-}
-
-rewriteLegacyGlimmervoidSecretNames() {
-  local label="glimmervoid secrets"
-  local stagedPath
-  if [[ ! -f "$glimmervoidSecretsPath" || -L "$glimmervoidSecretsPath" ]]; then
-    return 0
-  fi
-  if ! grep -q 'GLISSA_' "$glimmervoidSecretsPath"; then
-    return 0
-  fi
-  stagedPath="$(mktemp "$glimmervoidConfigDirectory/.secrets.env.XXXXXX")"
-  chmod 600 "$stagedPath"
-  if ! sed -e 's/GLISSA_/GLIMMERVOID_/g' "$glimmervoidSecretsPath" > "$stagedPath"; then
-    rm -f -- "$stagedPath"
-    noteWarned "$label" "rename the GLISSA_ variables to GLIMMERVOID_ in $glimmervoidSecretsDisplayPath by hand"
-    return 0
-  fi
-  if ! mv -f -- "$stagedPath" "$glimmervoidSecretsPath"; then
-    rm -f -- "$stagedPath"
-    noteWarned "$label" "rename the GLISSA_ variables to GLIMMERVOID_ in $glimmervoidSecretsDisplayPath by hand"
-  fi
-}
-
-# The app dropped the old name with no migration, so a machine that served under it carries its live state across rather than taking a fresh seed over it.
-migrateLegacyGlimmervoidConfig() {
-  local label="glimmervoid config"
-  local legacyDirectory="$HOME/.glissa"
-  if [[ -e "$glimmervoidConfigDirectory" || -L "$glimmervoidConfigDirectory" ]]; then
-    if [[ -d "$legacyDirectory" && ! -L "$legacyDirectory" ]]; then
-      noteWarned "$label" "~/.glissa still holds state, move what it keeps into ~/.glimmervoid by hand"
-    fi
-    return 0
-  fi
-  if [[ ! -d "$legacyDirectory" || -L "$legacyDirectory" ]]; then
-    return 0
-  fi
-  if ! mv -- "$legacyDirectory" "$glimmervoidConfigDirectory"; then
-    noteWarned "$label" "move ~/.glissa to ~/.glimmervoid by hand"
-    return 0
-  fi
-  renameLegacyGlimmervoidDatabase
-  rewriteLegacyGlimmervoidSecretNames
-  noteApplied "$label" "migrated ~/.glissa to ~/.glimmervoid"
-}
-
 seedGlimmervoidConfig() {
   local label="glimmervoid config"
   local machineLocalSeed
@@ -268,7 +212,7 @@ reportGlimmervoidSecrets() {
 }
 
 glimmervoidAppIsPresent() {
-  [[ ( -f "$glimmervoidAppDirectory/server/main.ts" || -f "$glimmervoidAppDirectory/server.js" ) \
+  [[ -f "$glimmervoidAppDirectory/server/main.ts" \
     && -f "$glimmervoidAppDirectory/package.json" \
     && ( -d "$glimmervoidAppDirectory/.git" || -f "$glimmervoidAppDirectory/.git" ) ]]
 }
@@ -551,7 +495,7 @@ noteGlimmervoidPairingChecklist() {
   noteDetail "glimmervoid checklist" "run glimmervoid pair once per device"
 }
 
-# The previous implementation linked this path, so a symlink onto a plain file stays replaceable while one onto a directory would swallow the staged file.
+# A symlink onto a directory would swallow the staged file.
 glimmervoidCliPathIsUsable() {
   [[ ! -e "$1" ]] || [[ -f "$1" ]]
 }
@@ -630,16 +574,11 @@ if ! glimmervoidProfileSettingsAreUsable; then
   finishTopic
 fi
 
-if ! removeStaleGlimmervoidUnit; then
-  finishTopic
-fi
-
 if ! glimmervoidConfigDirectoryIsUsable; then
   noteWarned "glimmervoid config" "$glimmervoidConfigDisplayPath is not a directory, move it aside first"
   finishTopic
 fi
 
-migrateLegacyGlimmervoidConfig
 if [[ "$profileName" != work ]]; then
   seedGlimmervoidConfig
 fi

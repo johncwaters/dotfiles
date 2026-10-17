@@ -8,56 +8,6 @@ source "$dotfilesRepo/script/lib/packages.sh"
 source "$dotfilesRepo/devbox/lib.sh"
 source "$dotfilesRepo/script/lib/launchd.sh"
 
-escapeDevboxXmlText() {
-  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
-}
-
-renderDevboxLaunchAgent() {
-  local noteLabel="$1"
-  local templatePath="$2"
-  local destination="$3"
-  local stagedPath renderedLine escapedHome escapedBrew escapedState
-  escapedHome="$(escapeDevboxXmlText "$HOME")"
-  escapedBrew="$(escapeDevboxXmlText "$(homebrewPrefix)")"
-  dotfilesStateDirectory || return 2
-  escapedState="$(escapeDevboxXmlText "$dotfilesStateDirectoryPath")"
-  mkdir -p -- "$(dirname -- "$destination")" || return 2
-  clearDestinationIfNotPlainFile "$noteLabel" "$destination" || return 2
-  stagedPath="$(mktemp "$(dirname -- "$destination")/.dotfiles-devbox-agent.XXXXXX")" || return 2
-  while IFS= read -r renderedLine || [[ -n "$renderedLine" ]]; do
-    renderedLine="${renderedLine//\{\{HOME\}\}/$escapedHome}"
-    renderedLine="${renderedLine//\{\{BASH\}\}/$escapedBrew/bin/bash}"
-    renderedLine="${renderedLine//\{\{BREW\}\}/$escapedBrew}"
-    renderedLine="${renderedLine//\{\{STATE\}\}/$escapedState}"
-    printf '%s\n' "$renderedLine"
-  done < "$templatePath" > "$stagedPath" || return 2
-  if commitRenderedFile "$noteLabel" "$stagedPath" "$destination"; then
-    chmod 600 "$destination"
-    noteApplied "$noteLabel" "rendered"
-    return 0
-  fi
-  chmod 600 "$destination"
-  notePresent "$noteLabel" "rendered"
-  return 1
-}
-
-installDarwinDevboxAgent() {
-  local noteLabel="$1"
-  local agentLabel="$2"
-  local templateName="$3"
-  local plistPath="$HOME/Library/LaunchAgents/$agentLabel.plist"
-  local plistChanged=0
-  local renderStatus=0
-  renderDevboxLaunchAgent "$noteLabel" "$dotfilesRepo/devbox/$templateName" "$plistPath" || renderStatus=$?
-  if ((renderStatus == 2)); then
-    return 1
-  fi
-  if ((renderStatus == 0)); then
-    plistChanged=1
-  fi
-  installLaunchAgent "$noteLabel" "$agentLabel" "$plistPath" "$plistChanged"
-}
-
 installDevbox() {
   local lookupStatus=0
   resolveDevboxWorkspace || lookupStatus=$?
@@ -101,7 +51,7 @@ installDarwinDevboxAgentWithoutStoppingTheTopic() {
   local noteLabel="$1"
   local warningsBeforeAgent
   warningsBeforeAgent="$(warningCountSoFar)"
-  if installDarwinDevboxAgent "$@"; then
+  if installDarwinLaunchAgent "$@"; then
     return 0
   fi
   if (($(warningCountSoFar) == warningsBeforeAgent)); then
@@ -115,7 +65,7 @@ if ! readDevboxProfile; then
 fi
 installDevbox
 if isDarwin; then
-  installDarwinDevboxAgentWithoutStoppingTheTopic "devbox launch agent" dev.dotfiles.devbox.ensure dotfiles-devbox-ensure.plist.template
-  installDarwinDevboxAgentWithoutStoppingTheTopic "devbox agent forward" dev.dotfiles.devbox.forward-agent dotfiles-devbox-forward-agent.plist.template
+  installDarwinDevboxAgentWithoutStoppingTheTopic "devbox launch agent" dev.dotfiles.devbox.ensure "$dotfilesRepo/devbox/dotfiles-devbox-ensure.plist.template"
+  installDarwinDevboxAgentWithoutStoppingTheTopic "devbox agent forward" dev.dotfiles.devbox.forward-agent "$dotfilesRepo/devbox/dotfiles-devbox-forward-agent.plist.template"
 fi
 finishTopic

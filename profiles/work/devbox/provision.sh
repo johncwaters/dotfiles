@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-glimmervoidVersion="${1:-${GLIMMERVOID_VERSION:-}}"
-devboxAction="${2:-provision}"
+glimmervoidVersion="latest"
+devboxAction="${1:-provision}"
+devboxWorkspaceDomain="${2:-}"
 export PATH="$HOME/.local/bin:$PATH"
 glimmervoidDirectory="$HOME/.glimmervoid"
 hasUpdatedApt=0
 hasFailedGlimmervoidInstall=0
+devboxFallbackReleaseStatus=75
 devboxPublicHostName=""
 
 reportDevboxItem() {
@@ -14,10 +16,11 @@ reportDevboxItem() {
 }
 
 devboxPublicHost() {
-  printf '3457--%s--%s--%s.coder.dev.posthog.dev' \
+  printf '3457--%s--%s--%s.%s' \
     "${CODER_WORKSPACE_AGENT_NAME:?missing Coder agent name}" \
     "${CODER_WORKSPACE_NAME:?missing Coder workspace name}" \
-    "${CODER_WORKSPACE_OWNER_NAME:?missing Coder owner name}"
+    "${CODER_WORKSPACE_OWNER_NAME:?missing Coder owner name}" \
+    "${devboxWorkspaceDomain:?missing Coder workspace domain}"
 }
 
 requireDevboxPublicHost() {
@@ -288,14 +291,6 @@ installDevboxNode() {
   reportDevboxItem installed Node "$(node --version)"
 }
 
-requireDevboxReleaseVersion() {
-  if [[ "$glimmervoidVersion" == latest || "$glimmervoidVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    return 0
-  fi
-  printf 'devbox: a release version is required\n' >&2
-  exit 1
-}
-
 installedDevboxGlimmervoidVersion() {
   if command -v glimmervoid >/dev/null 2>&1; then
     glimmervoid --version
@@ -322,23 +317,6 @@ resolveDevboxLatestGlimmervoid() {
   latestVersion="$(npm view glimmervoid@latest version 2>> "$glimmervoidDirectory/provision.log")" || latestVersion=""
   [[ "$latestVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
   glimmervoidVersion="$latestVersion"
-}
-
-requireDevboxReleaseOnRegistry() {
-  if ! resolveDevboxLatestGlimmervoid; then
-    reportDevboxItem warned glimmervoid "cannot read the latest release from the npm registry; server left running; see ~/.glimmervoid/provision.log"
-    exit 1
-  fi
-  if devboxGlimmervoidMeetsMinimum "$(installedDevboxGlimmervoidVersion)"; then
-    return 0
-  fi
-  local publishedVersion
-  publishedVersion="$(npm view "glimmervoid@$glimmervoidVersion" version 2>> "$glimmervoidDirectory/provision.log")" || publishedVersion=""
-  if [[ "$publishedVersion" == "$glimmervoidVersion" ]]; then
-    return 0
-  fi
-  reportDevboxItem warned glimmervoid "$glimmervoidVersion not found on the npm registry; server left running; see ~/.glimmervoid/provision.log"
-  exit 1
 }
 
 installDevboxGlimmervoid() {
@@ -372,7 +350,7 @@ installDevboxGlimmervoid() {
     reportDevboxItem warned glimmervoid "install of $glimmervoidVersion failed; no previous version to start; see ~/.glimmervoid/provision.log"
     exit 1
   fi
-  reportDevboxItem warned glimmervoid "install of $glimmervoidVersion failed; starting installed $fallbackVersion instead; see ~/.glimmervoid/provision.log"
+  reportDevboxItem warned glimmervoid "install of $glimmervoidVersion failed; keeping installed $fallbackVersion instead; see ~/.glimmervoid/provision.log"
 }
 
 installDevboxGlobals() {
@@ -504,10 +482,10 @@ HELPER
   git config --global --replace-all credential.https://github.com/johncwaters/.helper ""
   git config --global --add credential.https://github.com/johncwaters/.helper "$helperPath"
   git config --global credential.https://github.com/johncwaters/.useHttpPath true
-  if [[ -z "${GH_PERSONAL_TOKEN:-}" && "$devboxAction" != prepare ]]; then
+  if [[ -z "${GH_PERSONAL_TOKEN:-}" ]]; then
     reportDevboxItem warned "personal GitHub token" "GH_PERSONAL_TOKEN not set; johncwaters repos will 403"
   fi
-  if [[ -n "${GH_PERSONAL_TOKEN:-}" && "$devboxAction" != prepare ]]; then
+  if [[ -n "${GH_PERSONAL_TOKEN:-}" ]]; then
     probeDevboxPersonalTokenDotfilesAccess
   fi
 }
@@ -603,69 +581,17 @@ mergeDevboxConfig() {
     }
     const parsedOriginal = structuredClone(config);
     if (!config || Array.isArray(config) || typeof config !== "object") throw new Error("config.json must contain an object");
-    const ledgerPath = path.join(directory, "devbox-imported-defaults.json");
-    const hasLedger = fs.existsSync(ledgerPath);
-    if (hasLedger && !fs.lstatSync(ledgerPath).isFile()) throw new Error("devbox-imported-defaults.json must be a regular file");
-    let ledger;
-    try {
-      ledger = hasLedger ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { keys: [], hookIds: [] };
-    } catch {
-      throw new Error("devbox-imported-defaults.json is invalid JSON; left unchanged");
-    }
-    if (!Array.isArray(ledger?.keys) || !Array.isArray(ledger?.hookIds)) throw new Error("devbox-imported-defaults.json must list keys and hookIds; left unchanged");
-    const importedKeys = new Set(ledger.keys);
-    const importedHookIds = new Set(ledger.hookIds);
     const settingsPath = path.join(process.env.HOME, ".dotfiles", "profiles/work/glimmervoid.settings.json");
     const syncPath = path.join(process.env.HOME, ".dotfiles", "glimmervoid/sync-settings.mjs");
-    let settingsPlan;
-    let settingsSync;
+    const settingsSync = await import(syncPath);
     const basePath = path.join(directory, "dotfiles-settings-base.json");
-    if (fs.existsSync(settingsPath)) {
-      settingsSync = await import(syncPath);
-      config = settingsSync.withoutProvisionerUpdateDefault(config, ledger);
-      const wanted = settingsSync.translateHome(settingsSync.settingsFrom(settingsSync.readJson(settingsPath)), process.env.HOME, "render");
-      settingsPlan = settingsSync.planApply(config, wanted, settingsSync.readJson(basePath));
-      config = settingsPlan.config;
-    }
-    const defaultsPath = path.join(process.env.HOME, ".dotfiles", "glimmervoid", "config.example.json");
-    if (!fs.existsSync(settingsPath) && !ledger.checkForUpdatesMigration && !importedKeys.has("checkForUpdates") && config.checkForUpdates === false) delete config.checkForUpdates;
-    if (!fs.existsSync(settingsPath) && fs.existsSync(defaultsPath)) {
-      const defaults = JSON.parse(fs.readFileSync(defaultsPath, "utf8"), (_key, value) =>
-        typeof value === "string" ? value.replaceAll("{{HOME}}", process.env.HOME) : value);
-      for (const settingName of ["skipPermissionsByDefault", "postTurnChecks", "branchGc"]) {
-        if (!Object.hasOwn(defaults, settingName) || importedKeys.has(settingName)) continue;
-        if (!Object.hasOwn(config, settingName)) config[settingName] = defaults[settingName];
-        importedKeys.add(settingName);
-      }
-      if (Array.isArray(defaults.hooks) && defaults.hooks.some(hook => hook?.id && !importedHookIds.has(hook.id))) {
-        if (!Object.hasOwn(config, "hooks")) config.hooks = [];
-        if (!Array.isArray(config.hooks)) throw new Error("config.hooks must contain an array; left unchanged");
-        const installedHookIds = new Set(config.hooks.map(hook => hook?.id));
-        for (const hook of defaults.hooks) {
-          if (!hook?.id || importedHookIds.has(hook.id)) continue;
-          if (!installedHookIds.has(hook.id)) config.hooks.push(hook);
-          installedHookIds.add(hook.id);
-          importedHookIds.add(hook.id);
-        }
-      }
-    }
+    const wanted = settingsSync.translateHome(settingsSync.settingsFrom(settingsSync.readJson(settingsPath)), process.env.HOME, "render");
+    const settingsPlan = settingsSync.planApply(config, wanted, settingsSync.readJson(basePath));
+    config = settingsPlan.config;
     if (process.env.DEVBOX_CONFIG_MODE === "check") process.exit(0);
-    const nextLedger = { ...ledger, keys: [...importedKeys], hookIds: [...importedHookIds], checkForUpdatesMigration: true };
-    const isLedgerCurrent = hasLedger && isDeepStrictEqual(ledger, nextLedger);
-    const writeLedger = () => {
-      if (settingsPlan) settingsSync.writeJson(basePath, settingsPlan.base);
-      if (isLedgerCurrent) return;
-      const stagedLedgerPath = path.join(directory, `.devbox-imported-defaults.${crypto.randomUUID()}`);
-      try {
-        fs.writeFileSync(stagedLedgerPath, JSON.stringify(nextLedger, null, 2) + "\n", { mode: 0o600, flag: "wx" });
-        fs.renameSync(stagedLedgerPath, ledgerPath);
-      } finally {
-        fs.rmSync(stagedLedgerPath, { force: true });
-      }
-    };
     if (!Array.isArray(config.projects)) config.projects = [];
     if (!config.projects.some((project) => project?.path === "/home/coder/posthog")) {
-      config.projects.push({ id: "bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7", name: "posthog", path: "/home/coder/posthog" });
+      config.projects.push({ id: settingsSync.provisionerManagedProjectId, name: "posthog", path: "/home/coder/posthog" });
     }
     config.port = 3456;
     config.repoRoots = [path.join(process.env.HOME, "Projects")];
@@ -673,7 +599,7 @@ mergeDevboxConfig() {
     const merged = JSON.stringify(config, null, 2) + "\n";
     if (hasConfig && isDeepStrictEqual(parsedOriginal, config)) {
       fs.chmodSync(configPath, 0o600);
-      writeLedger();
+      settingsSync.writeJson(basePath, settingsPlan.base);
       console.log("[present] config: current; runtime records preserved");
       process.exit(0);
     }
@@ -691,7 +617,7 @@ mergeDevboxConfig() {
     } finally {
       fs.rmSync(stagedPath, { force: true });
     }
-    writeLedger();
+    settingsSync.writeJson(basePath, settingsPlan.base);
     console.log("[installed] config: merged; runtime records preserved");
   '
 }
@@ -832,7 +758,6 @@ case "$devboxAction" in
     installDevboxWizardWorkbench
     exit "$repositorySyncStatus"
     ;;
-  config-only) requireDevboxPublicHost; holdDevboxProvisionLock; convergeDevboxConfig "$devboxPublicHostName"; exit ;;
   status)
     if devboxPortListens 3456; then
       reportRunningDevboxGlimmervoid
@@ -845,10 +770,8 @@ case "$devboxAction" in
     ;;
   pair) exec glimmervoid pair --config "$glimmervoidDirectory/config.json" --name "${3:?missing pairing label}" ;;
   restart)
-    requireDevboxReleaseVersion
     requireDevboxPublicHost
     holdDevboxProvisionLock
-    requireDevboxReleaseOnRegistry
     requireMergeableDevboxConfig "$devboxPublicHostName"
     stopDevboxGlimmervoid
     installDevboxGlimmervoid
@@ -858,21 +781,19 @@ case "$devboxAction" in
     exit "$hasFailedGlimmervoidInstall"
     ;;
   prepare)
-    requireDevboxReleaseVersion
     requireDevboxPublicHost
     holdDevboxProvisionLock
     installDevboxPrerequisites
     linkDevboxTemplateRepository
+    ((hasFailedGlimmervoidInstall == 0)) || exit "$devboxFallbackReleaseStatus"
     exit 0
     ;;
   provision) ;;
   *) printf 'devbox: unknown remote action\n' >&2; exit 1 ;;
 esac
 
-requireDevboxReleaseVersion
 requireDevboxPublicHost
 holdDevboxProvisionLock
-installDevboxPrerequisites
 linkDevboxTemplateRepository
 convergeDevboxConfig "$devboxPublicHostName"
 startDevboxGlimmervoid

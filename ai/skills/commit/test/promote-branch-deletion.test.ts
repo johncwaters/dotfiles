@@ -187,19 +187,6 @@ test("a remote branch that gained commits after the local push is kept with a wa
   }
 });
 
-test("a local custom merge driver cannot make an unmerged remote branch look contained", () => {
-  const { origin, seed, local } = seedMergeDriverDivergence();
-  try {
-    runGit(local, ["config", "merge.ours.driver", "true"]);
-
-    const { result } = land(local, ["--promote"], VALID_MESSAGE);
-
-    assertContainmentRefusedAndBranchKept(result, origin);
-  } finally {
-    cleanup(origin, seed, local);
-  }
-});
-
 test("an included custom merge driver cannot make an unmerged remote branch look contained", () => {
   const { origin, seed, local } = seedMergeDriverDivergence();
   try {

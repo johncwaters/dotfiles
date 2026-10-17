@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// SessionStart never fires for subagents, so it is the only seam that keeps
-// main-loop-only routing rules out of every spawn and out of the Codex mirror.
+// SessionStart excludes subagents, keeping main-loop routing out of spawns and the Codex mirror.
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";

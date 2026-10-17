@@ -1,5 +1,4 @@
-// Node's own types ship in @types/node, which would mean a node_modules tree the
-// rest of this skill deliberately does without; this declares only the surface used.
+// Local declarations avoid requiring an @types/node dependency tree for shared AI tooling.
 
 declare module "node:child_process" {
   export type SpawnSyncOptions = {

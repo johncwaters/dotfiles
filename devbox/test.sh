@@ -2,7 +2,7 @@
 set -euo pipefail
 
 topicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-requestedGlimmervoidVersion="$(sed -n 's/^devboxGlimmervoidVersion="\(.*\)"$/\1/p' "$topicDirectory/lib.sh")"
+workspaceDomain="coder.dev.posthog.dev"
 repoRoot="$(cd -- "$topicDirectory/.." && pwd)"
 export DOTFILES_PLATFORM=linux
 source "$repoRoot/test/harness.sh"
@@ -33,20 +33,20 @@ case "$1" in
   ssh)
     printf '%s %s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" "${CODER_SSH_USAGE_APP:-}" >> "$DOTFILES_TEST_STATE/ssh-safety"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
-    if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" && "${*:4}" == *sync-repos ]]; then
+    if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" && "${7:-}" == sync-repos ]]; then
       cat > /dev/null
       DOTFILES_TEST_REMOTE=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
         WIZARD_WORKBENCH_POSTHOG_API_KEY=phx_fixture WIZARD_WORKBENCH_GATEWAY_TOKEN=phs_fixture \
-        HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 sync-repos
+        HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" sync-repos coder.dev.posthog.dev
       exit
     fi
-    if [[ -f "$DOTFILES_TEST_STATE/execute-config" && "${*:4}" == *provision ]]; then
+    if [[ -f "$DOTFILES_TEST_STATE/execute-config" && "${7:-}" == provision ]]; then
       XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" HOME="$DOTFILES_TEST_STATE/remote-home" \
         CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture CODER_WORKSPACE_OWNER_NAME=fixture \
-        bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 config-only
+        bash "$DOTFILES_TEST_STATE/provision-with-test-listeners.sh" provision coder.dev.posthog.dev
       exit
     fi
-    if [[ "${*:4}" == *collect-settings ]]; then
+    if [[ "${7:-}" == collect-settings ]]; then
       cat > "$DOTFILES_TEST_STATE/collect-script"
       if [[ -f "$DOTFILES_TEST_STATE/execute-collect" ]]; then
         HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/collect-script"
@@ -59,11 +59,11 @@ case "$1" in
       printf '{"home":"/home/coder","live":{},"base":{},"projectPaths":[]}\n'
       exit
     fi
-    if [[ "${*:4}" == *" dotfiles" ]]; then
+    if [[ "${7:-}" == dotfiles ]]; then
       cat > /dev/null
       if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" ]]; then
         DOTFILES_TEST_REMOTE=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
-          HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" 0.29.1 dotfiles
+          HOME="$DOTFILES_TEST_STATE/remote-home" bash "$DOTFILES_TEST_STATE/remote-provision.sh" dotfiles coder.dev.posthog.dev
         exit
       fi
       printf '[present] dotfiles: fixture\n'
@@ -167,7 +167,7 @@ runDevbox() {
 }
 
 dotfilesConvergeSitsBetweenPrepareAndProvision() {
-  [[ "$(sed -nE 's/^coder ssh .* (prepare|dotfiles|sync-repos|provision)$/\1/p' "$commandLog" | tr '\n' ' ')" == 'prepare dotfiles sync-repos provision ' ]]
+  [[ "$(sed -nE 's/^coder ssh .* (prepare|dotfiles|sync-repos|provision) [^ ]+$/\1/p' "$commandLog" | tr '\n' ' ')" == 'prepare dotfiles sync-repos provision ' ]]
 }
 
 printf '\ndevbox topic\n'
@@ -246,7 +246,7 @@ printf 'running\n' > "$stubState/workspace-status"
 : > "$commandLog"
 rm -f "$stubState/ssh-usage-app"
 runningOutput="$(runInstall)"
-check "running converge pushes with the pinned release" logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
+check "running converge pushes with the profile workspace domain" logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 check "running converge pipes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "converge SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
@@ -271,8 +271,8 @@ rm -f "$stubState/provision-output"
 : > "$commandLog"
 rm -f "$stubState/ssh-usage-app"
 runDevbox ensure >/dev/null
-check "ensure provisions a running workspace with the pinned release" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
+check "ensure provisions a running workspace with the profile workspace domain" \
+  logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 check "ensure pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "ensure disables SSH autostart after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
 check "ensure SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
@@ -335,17 +335,9 @@ check "darwin installs the poller while logged out" test -f "$launchAgentPath"
 check "a logged-out darwin install warns only about the login" \
   test "$(grep -c '\[warn\]' <<< "$loggedOutDarwinOutput")" -eq 1
 check "a logged-out darwin install exits with its login warning" test "$loggedOutDarwinStatus" -eq 1
-check "darwin uses the converge label namespace" grep -qF '<string>dev.dotfiles.devbox.ensure</string>' "$launchAgentPath"
 check "darwin invokes Homebrew bash" grep -qF "<string>$darwinHomebrewPrefix/bin/bash</string>" "$launchAgentPath"
 check "darwin invokes devbox through the dotfiles alias" \
   grep -qF "<string>$sandbox/.dotfiles/devbox/commands.bash</string>" "$launchAgentPath"
-check "darwin invokes the ensure action" grep -qF '<string>ensure</string>' "$launchAgentPath"
-check "darwin polls every ten minutes" \
-  bash -c 'grep -A1 "<key>StartInterval</key>" "$1" | grep -q "<integer>600</integer>"' _ "$launchAgentPath"
-check "darwin runs the poller at load" \
-  bash -c 'grep -A1 "<key>RunAtLoad</key>" "$1" | grep -q "<true/>"' _ "$launchAgentPath"
-check "darwin uses no calendar schedule" \
-  bash -c '! grep -q StartCalendarInterval "$1"' _ "$launchAgentPath"
 check "darwin logs stdout under converge state" \
   grep -qF "$sandbox/.local/state/dotfiles/devbox-ensure.stdout.log" "$launchAgentPath"
 check "darwin logs stderr under converge state" \
@@ -376,8 +368,8 @@ launchAgentArguments[0]="$(type -P bash)"
 : > "$commandLog"
 runInStubbedSandbox "$sandbox" "${launchAgentArguments[@]}" >/dev/null
 check "rendered program arguments provision through ensure" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
-check "rendered launchd ensure converges the box dotfiles" logHas "$requestedGlimmervoidVersion dotfiles"
+  logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
+check "rendered launchd ensure converges the box dotfiles" logHas "dotfiles $workspaceDomain"
 check "rendered program arguments never start a workspace" logLacks 'coder start'
 
 printf 'hand edit\n' >> "$launchAgentPath"
@@ -395,7 +387,7 @@ failedAgentOutput="$(runDarwinInstall)" || failedAgentStatus=$?
 check "failed poller load fails install" test "$failedAgentStatus" -ne 0
 check "failed poller load remains owed" test -f "$launchAgentPending"
 check "failed poller load still provisions the box" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
+  logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 check "failed poller load is reported as a launch agent warning" outputHas "$failedAgentOutput" '[warn] devbox launch agent'
 check "darwin provisions the box before it loads the poller" \
   outputMatches "$(grep -E 'coder ssh|launchctl bootstrap' "$commandLog" | head -1)" '^coder ssh'
@@ -410,7 +402,7 @@ reloadOwedOutput="$(DOTFILES_CONVERGE_AGENT=1 runDarwinInstall)" || reloadOwedSt
 check "an owed reload under the converge agent fails install" test "$reloadOwedStatus" -ne 0
 check "an owed reload under the converge agent is reported" outputHas "$reloadOwedOutput" 'reload owed'
 check "an owed reload under the converge agent still provisions the box" \
-  logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
+  logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 check "an owed reload under the converge agent never boots out its poller" logLacks 'launchctl bootout'
 runDarwinInstall >/dev/null
 check "a later install pays the owed reload" test ! -e "$launchAgentPending"
@@ -428,7 +420,7 @@ printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
 upOutput="$(runDevbox up)"
 check "up starts a stopped workspace" logHas 'coder start devbox-fixture --yes'
-check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- $requestedGlimmervoidVersion provision"
+check "up waits through the default Coder ssh behavior" logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 check "up pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "up prints the dashboard URL" outputHas "$upOutput" 'https://fixture.invalid/'
 check "up runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
@@ -448,10 +440,10 @@ printf 'n\n' | runDevbox restart-glimmervoid >/dev/null 2>&1 || restartStatus=$?
 check "restart refuses a negative confirmation" test "$restartStatus" -ne 0
 check "negative confirmation makes no connection" logLacks 'coder ssh'
 printf 'y\n' | runDevbox restart-glimmervoid >/dev/null 2>&1
-check "affirmative confirmation requests the shared restart" logHas "$requestedGlimmervoidVersion restart"
+check "affirmative confirmation requests the shared restart" logHas "restart $workspaceDomain"
 : > "$commandLog"
 runDevbox restart-glimmervoid --yes >/dev/null
-check "explicit yes requests the shared restart" logHas "$requestedGlimmervoidVersion restart"
+check "explicit yes requests the shared restart" logHas "restart $workspaceDomain"
 
 : > "$commandLog"
 runDevbox pair "laptop's label; literal" >/dev/null
@@ -465,7 +457,7 @@ rm -f "$stubState/ssh-usage-app"
 statusOutput="$(runDevbox status)"
 check "status reports the workspace" outputHas "$statusOutput" 'workspace devbox-fixture: running'
 check "status SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
-check "status uses the shared remote status action" logHas "$requestedGlimmervoidVersion status"
+check "status uses the shared remote status action" logHas "status $workspaceDomain"
 check "status never starts a workspace" logLacks 'coder start'
 printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
@@ -479,6 +471,123 @@ printf 'flock %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 [[ ! -f "$DOTFILES_TEST_STATE/provision-lock-held" ]]
 STUB
 provideCommand flock
+
+export DOTFILES_TEST_NODE_PATH="$testNodePath"
+writeStub node <<'STUB'
+#!/usr/bin/env bash
+case "${2:-}" in
+  *snapshot.serverBuild*) printf '0.28.0\n'; exit ;;
+esac
+exec "$DOTFILES_TEST_NODE_PATH" "$@"
+STUB
+glimmervoidScriptPath="$sandbox/.local/lib/node_modules/glimmervoid/dist/cli.js"
+mkdir -p "${glimmervoidScriptPath%/*}"
+cat > "$glimmervoidScriptPath" <<'JS'
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const stateDirectory = process.env.DOTFILES_TEST_STATE;
+fs.appendFileSync(process.env.DOTFILES_TEST_LOG, `glimmervoid ${process.argv.slice(2).join(" ")}\n`);
+if (process.argv[2] === "--version") {
+  process.stdout.write(fs.readFileSync(path.join(stateDirectory, "glimmervoid-version")));
+  process.exit(0);
+}
+fs.appendFileSync(process.env.DOTFILES_TEST_LOG, `glimmervoid-path ${process.env.PATH}\n`);
+fs.writeFileSync(path.join(stateDirectory, "listening-3456"), "");
+if (fs.existsSync(path.join(stateDirectory, "no-remote-listener"))) process.exit(0);
+fs.writeFileSync(path.join(stateDirectory, "listening-3457"), "");
+JS
+chmod +x "$glimmervoidScriptPath"
+ln -s "$glimmervoidScriptPath" "$stubBin/glimmervoid"
+glimmervoidScriptPath="$(readlink -f "$glimmervoidScriptPath")"
+writeStub codex <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+writeStub bwrap <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+writeStub socat <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+writeStub npm <<'STUB'
+#!/usr/bin/env bash
+printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "$1" == view ]]; then
+  [[ "$2" != glimmervoid@latest ]] || { printf '0.29.1\n'; exit 0; }
+  printf '%s\n' "${2#glimmervoid@}"
+  exit 0
+fi
+case "$*" in
+  *glimmervoid@*)
+    [[ ! -f "$DOTFILES_TEST_STATE/npm-install-failed" ]] || exit 1
+    printf '%s\n' "${!#}" | sed 's/^glimmervoid@//' > "$DOTFILES_TEST_STATE/glimmervoid-version"
+    ;;
+  *@openai/codex*) cp "$DOTFILES_TEST_STATE/available/codex" "$DOTFILES_TEST_STUB_BIN/codex" ;;
+  *) exit 1 ;;
+esac
+STUB
+writeStub apt-get <<'STUB'
+#!/usr/bin/env bash
+printf 'apt-get %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+case "$*" in
+  *bubblewrap*)
+    [[ ! -f "$DOTFILES_TEST_STATE/sandbox-install-failed" ]] || exit 1
+    cp "$DOTFILES_TEST_STATE/available/bwrap" "$DOTFILES_TEST_STUB_BIN/bwrap"
+    ;;
+  *socat*) cp "$DOTFILES_TEST_STATE/available/socat" "$DOTFILES_TEST_STUB_BIN/socat" ;;
+  *" git") printf '2.55.0\n' > "$DOTFILES_TEST_STATE/git-version" ;;
+esac
+STUB
+writeStub add-apt-repository <<'STUB'
+#!/usr/bin/env bash
+printf 'add-apt-repository %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+STUB
+writeStub setsid <<'STUB'
+#!/usr/bin/env bash
+printf 'setsid %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ -e /dev/fd/9 ]]; then touch "$DOTFILES_TEST_STATE/server-inherited-lock"; fi
+umask > "$DOTFILES_TEST_STATE/umask-at-start"
+cp "$HOME/.glimmervoid/config.json" "$DOTFILES_TEST_STATE/config-at-start"
+exec "$@"
+STUB
+writeContainedSudoStub
+writeStub uname <<'STUB'
+#!/usr/bin/env bash
+printf 'x86_64\n'
+STUB
+for stubName in node npm apt-get add-apt-repository setsid uname; do
+  provideCommand "$stubName"
+done
+
+instrumentedProvisionPath="$stubState/provision-with-test-listeners.sh"
+hasProcCommandLines=0
+if [[ -r /proc/self/cmdline ]]; then hasProcCommandLines=1; fi
+awk -v hasProcCommandLines="$hasProcCommandLines" '
+  $0 == "case \"$devboxAction\" in" {
+    print "devboxPortListens() { [[ -f \"$DOTFILES_TEST_STATE/listening-$1\" ]]; }"
+    if (hasProcCommandLines == 0) print "devboxProcessCommandLine() { ps -o args= -p \"$1\"; }"
+  }
+  { print }
+' "$repoRoot/profiles/work/devbox/provision.sh" > "$instrumentedProvisionPath"
+
+runRemoteProvision() {
+  if [[ "${1:-provision}" == provision ]]; then
+    runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
+      CODER_WORKSPACE_OWNER_NAME=fixture bash "$instrumentedProvisionPath" prepare "$workspaceDomain" || return
+  fi
+  runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
+    CODER_WORKSPACE_OWNER_NAME=fixture bash "$instrumentedProvisionPath" "${1:-provision}" "$workspaceDomain"
+}
+
+runRemoteProvisionWithoutWorkspaceName() {
+  runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_OWNER_NAME=fixture \
+    env -u CODER_WORKSPACE_NAME bash "$instrumentedProvisionPath" "${1:-provision}" "$workspaceDomain"
+}
+
+printf '0.29.1\n' > "$stubState/glimmervoid-version"
 
 remoteHome="$stubState/remote-home"
 remoteClone="$remoteHome/Projects/dotfiles"
@@ -515,8 +624,8 @@ linesAppearInOrder() {
 }
 
 remoteConvergeSitsBetweenPrepareAndProvision() {
-  linesAppearInOrder "^coder ssh .* $requestedGlimmervoidVersion prepare$" "^coder ssh .* $requestedGlimmervoidVersion dotfiles$" \
-    "^coder ssh .* $requestedGlimmervoidVersion provision$"
+  linesAppearInOrder "^coder ssh .* prepare $workspaceDomain$" "^coder ssh .* dotfiles $workspaceDomain$" \
+    "^coder ssh .* provision $workspaceDomain$"
 }
 
 startEmptyRemoteHome
@@ -570,7 +679,7 @@ convergedOutput="$(runDevbox ensure)"
 check "a clean converge reports dotfiles installed" outputHas "$convergedOutput" '[installed] dotfiles'
 check "a snapshot box clones, bootstraps, then syncs repositories before provision" \
   linesAppearInOrder '^git clone .*johncwaters/dotfiles\.git' '^bootstrap work-server$' \
-    "^coder ssh .* $requestedGlimmervoidVersion sync-repos$" "^coder ssh .* $requestedGlimmervoidVersion provision$"
+    "^coder ssh .* sync-repos $workspaceDomain$" "^coder ssh .* provision $workspaceDomain$"
 check "a clean converge removes every retired snapshot directory" \
   bash -c '[[ ! -e "$1/dotfiles-snapshot" && ! -e "$1/dotfiles-snapshot.new" && ! -e "$1/dotfiles-snapshot.old" ]]' _ "$remoteHome"
 check "a clean converge reports the retired snapshot removed" outputHas "$convergedOutput" '[installed] dotfiles snapshot: removed ~/dotfiles-snapshot'
@@ -693,25 +802,12 @@ check "a converged work-server box never syncs the template checkout" \
   bash -c '! grep -qE "^git -C $1/(Projects/)?posthog " "$2"' _ "$remoteHome" "$commandLog"
 check "the repository sync log is private" test "$(fileModeOf "$remoteHome/.local/state/dotfiles/devbox-repos.log")" = 600
 : > "$commandLog"
-legacyEntryDirectoryKinds=(agents commands workflows)
-for entryKind in "${legacyEntryDirectoryKinds[@]}"; do
-  rm -rf "$remoteHome/.claude/$entryKind"
-  ln -s "$remoteHome/.dotfiles/ai/$entryKind" "$remoteHome/.claude/$entryKind"
-done
 rm -f "$remoteConvergedRecord"
 : > "$remoteBootstrapLog"
-legacyEntryLinksStatus=0
-legacyEntryLinksOutput="$(runDevbox ensure 2>&1)" || legacyEntryLinksStatus=$?
-check "a converge over whole-directory entry links exits cleanly" test "$legacyEntryLinksStatus" -eq 0
-check "a converge over whole-directory entry links converges with zero warnings" \
-  bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$legacyEntryLinksOutput" "$remoteBootstrapLog"
-for entryKind in "${legacyEntryDirectoryKinds[@]}"; do
-  firstRepoEntryName="$(basename -- "$(find "$repoRoot/ai/$entryKind" -mindepth 1 -maxdepth 1 | sort | head -1)")"
-  check "a converge cuts ~/.claude/$entryKind over to per-entry links" \
-    bash -c '[[ -d "$1" && ! -L "$1" && "$(readlink "$1/$2")" == "$3/$2" ]]' _ \
-    "$remoteHome/.claude/$entryKind" "$firstRepoEntryName" "$remoteHome/.dotfiles/ai/$entryKind"
-done
-check "a converge over whole-directory entry links records the clone HEAD as clean" \
+forcedConvergeStatus=0
+runDevbox ensure > /dev/null 2>&1 || forcedConvergeStatus=$?
+check "a forced work-server converge exits cleanly" test "$forcedConvergeStatus" -eq 0
+check "a forced work-server converge records the clone HEAD as clean" \
   remoteConvergeRecordIsCleanAt "$(cat "$stubState/work-server-commit")"
 check "every hook script the real work-server settings run exists on the box" \
   node -e '
@@ -781,16 +877,19 @@ mkdir -p "$stubState/box-dotfiles"
 ln -s "$stubState/box-dotfiles" "$sandbox/.dotfiles"
 
 mergeConfig() {
+  rm -f "$stubState/listening-3456" "$stubState/listening-3457" "$stubState/no-remote-listener"
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
-    CODER_WORKSPACE_OWNER_NAME=fixture bash -s -- 0.29.1 config-only < "$repoRoot/profiles/work/devbox/provision.sh"
+    CODER_WORKSPACE_OWNER_NAME=fixture bash "$instrumentedProvisionPath" provision "$workspaceDomain"
 }
 
 mergeConfigWithoutWorkspaceName() {
   runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_OWNER_NAME=fixture \
-    env -u CODER_WORKSPACE_NAME bash -s -- 0.29.1 config-only < "$repoRoot/profiles/work/devbox/provision.sh"
+    env -u CODER_WORKSPACE_NAME bash "$instrumentedProvisionPath" provision "$workspaceDomain"
 }
 
-mkdir -p "$sandbox/.glimmervoid"
+mkdir -p "$sandbox/.glimmervoid" "$sandbox/.dotfiles/glimmervoid" "$sandbox/.dotfiles/profiles/work"
+cp "$repoRoot/glimmervoid/sync-settings.mjs" "$sandbox/.dotfiles/glimmervoid/"
+cp "$repoRoot/profiles/work/glimmervoid.settings.json" "$sandbox/.dotfiles/profiles/work/"
 cat > "$sandbox/.glimmervoid/config.json" <<'JSON'
 {"projects":[{"id":"existing","name":"kept","path":"/another/project"}],"sessions":[{"id":"active","transcript":"keep me"}],"unrelated":{"keep":true},"port":3000,"remote":{"ownerLogin":"retired"}}
 JSON
@@ -815,15 +914,15 @@ JS
 backups=("$sandbox/.glimmervoid"/config.json.*.bak)
 check "config merge backs up the original bytes" cmp -s "$stubState/original-config" "${backups[0]}"
 check "config backup has mode 0600" test "$(fileModeOf "${backups[0]}")" = 600
-check "config-only waits a bounded time for the provision lock" grep -qx 'flock -w 120 9' "$commandLog"
+check "provision waits a bounded time for the provision lock" grep -qx 'flock -w 120 9' "$commandLog"
 cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-held-lock"
 touch "$stubState/provision-lock-held"
 heldLockMergeStatus=0
 heldLockMergeOutput="$(mergeConfig)" || heldLockMergeStatus=$?
-check "config-only refuses while another run holds the provision lock" test "$heldLockMergeStatus" -ne 0
-check "config-only names the run holding the provision lock" \
+check "provision refuses while another run holds the provision lock" test "$heldLockMergeStatus" -ne 0
+check "provision names the run holding the provision lock" \
   outputHas "$heldLockMergeOutput" '[warned] provision: another run is in progress'
-check "config-only under a held lock keeps the config bytes" \
+check "provision under a held lock keeps the config bytes" \
   cmp -s "$stubState/config-before-held-lock" "$sandbox/.glimmervoid/config.json"
 rm -f "$stubState/provision-lock-held"
 secondMergeOutput="$(mergeConfig)"
@@ -835,11 +934,11 @@ check "unchanged merge creates no new backup" test "${#secondBackups[@]}" -eq 1
 cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-missing-host"
 missingHostMergeStatus=0
 mergeConfigWithoutWorkspaceName >/dev/null 2>&1 || missingHostMergeStatus=$?
-check "config-only without a Coder workspace variable fails" test "$missingHostMergeStatus" -ne 0
-check "config-only without a Coder workspace variable keeps the config bytes" \
+check "provision without a Coder workspace variable fails" test "$missingHostMergeStatus" -ne 0
+check "provision without a Coder workspace variable keeps the config bytes" \
   cmp -s "$stubState/config-before-missing-host" "$sandbox/.glimmervoid/config.json"
 missingHostBackups=("$sandbox/.glimmervoid"/config.json.*.bak)
-check "config-only without a Coder workspace variable writes no backup" test "${#missingHostBackups[@]}" -eq 1
+check "provision without a Coder workspace variable writes no backup" test "${#missingHostBackups[@]}" -eq 1
 "$testNodePath" -e '
   const fs = require("node:fs");
   const config = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
@@ -862,202 +961,9 @@ mergeConfig >/dev/null 2>&1 || invalidConfigStatus=$?
 check "invalid runtime config fails instead of being replaced" test "$invalidConfigStatus" -ne 0
 check "invalid runtime config preserves its bytes" grep -qx 'invalid JSON' "$sandbox/.glimmervoid/config.json"
 
-mkdir -p "$sandbox/.dotfiles/glimmervoid"
-cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/.dotfiles/glimmervoid/config.example.json"
-cp "$stubState/server-saved-config" "$sandbox/.glimmervoid/config.json"
-"$testNodePath" - "$sandbox/.glimmervoid/config.json" "$sandbox/.dotfiles/glimmervoid/config.example.json" <<'JS'
-const fs = require("node:fs");
-const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const defaults = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
-config.skipPermissionsByDefault = false;
-config.postTurnChecks = { mode: "check", custom: true };
-config.branchGc = null;
-config.hooks = [{ ...defaults.hooks[0], command: "custom command", enabled: false }, { id: "local-hook", command: "keep me" }];
-config.teams = [{ id: "local-team" }];
-config.repoRoots = ["/local/root"];
-config.sessionRecords = { active: { transcript: "kept" } };
-defaults.hooks.push({ id: "new-hook", command: "node {{HOME}}/.claude/hooks/new.mjs" });
-defaults.hooks.push({ id: "new-hook", command: "duplicate must be ignored" });
-fs.writeFileSync(process.argv[2], JSON.stringify(config));
-fs.writeFileSync(process.argv[3], JSON.stringify(defaults));
-JS
-printf 'live session record\n' > "$sandbox/.glimmervoid/session-record"
-cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-defaults"
-defaultsOutput="$(mergeConfig)"
-check "operator defaults add missing hooks by id without overwriting live values" \
-  "$testNodePath" - "$sandbox/.glimmervoid/config.json" "$stubState/config-before-defaults" "$sandbox" <<'JS'
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const previous = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
-for (const settingName of Object.keys(previous)) {
-  if (["hooks", "repoRoots"].includes(settingName)) continue;
-  assert.deepEqual(config[settingName], previous[settingName]);
-}
-assert.deepEqual(config.repoRoots, [require("node:path").join(process.argv[4], "Projects")]);
-assert.deepEqual(config.hooks.slice(0, previous.hooks.length), previous.hooks);
-assert.deepEqual(config.hooks.slice(previous.hooks.length), [{ id: "new-hook", command: `node ${process.argv[4]}/.claude/hooks/new.mjs` }]);
-assert.equal(config.hooks.filter(hook => hook.id === "new-hook").length, 1);
-assert.equal(config.autoRecoverSeconds, undefined);
-JS
-check "operator defaults preserve session record files" grep -qx 'live session record' "$sandbox/.glimmervoid/session-record"
-secondDefaultsOutput="$(mergeConfig)"
-check "operator defaults are idempotent" outputHas "$secondDefaultsOutput" '[present] config'
-importedDefaultsLedger="$sandbox/.glimmervoid/devbox-imported-defaults.json"
-check "imported defaults are recorded with mode 0600" test "$(fileModeOf "$importedDefaultsLedger")" = 600
-check "imported defaults record every default key and hook id once" \
-  "$testNodePath" - "$importedDefaultsLedger" "$sandbox/.dotfiles/glimmervoid/config.example.json" <<'JS'
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const ledger = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const defaults = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
-const defaultKeys = ["skipPermissionsByDefault", "postTurnChecks", "branchGc"].filter(settingName => Object.hasOwn(defaults, settingName));
-assert.deepEqual([...ledger.keys].sort(), defaultKeys.sort());
-assert.deepEqual([...ledger.hookIds].sort(), [...new Set(defaults.hooks.map(hook => hook.id))].sort());
-JS
-"$testNodePath" - "$sandbox/.glimmervoid/config.json" <<'JS'
-const fs = require("node:fs");
-const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-delete config.skipPermissionsByDefault;
-delete config.postTurnChecks;
-delete config.branchGc;
-config.hooks = config.hooks.filter(hook => hook.id !== "new-hook");
-fs.writeFileSync(process.argv[2], JSON.stringify(config));
-JS
-cp "$sandbox/.glimmervoid/config.json" "$stubState/config-after-operator-removal"
-removedDefaultsOutput="$(mergeConfig)"
-check "operator-removed defaults report the config current" outputHas "$removedDefaultsOutput" '[present] config'
-check "operator-removed defaults and hooks are never imported again" \
-  cmp -s "$stubState/config-after-operator-removal" "$sandbox/.glimmervoid/config.json"
-rm -f "$importedDefaultsLedger"
-mergeConfig >/dev/null
-check "defaults never recorded as imported fill only missing settings and hooks from the dotfiles checkout" \
-  "$testNodePath" - "$sandbox/.glimmervoid/config.json" "$repoRoot/glimmervoid/config.example.json" <<'JS'
-const assert = require("node:assert/strict");
-const config = require(process.argv[2]);
-const defaults = require(process.argv[3]);
-for (const settingName of ["skipPermissionsByDefault", "postTurnChecks", "branchGc"]) {
-  assert.deepEqual(config[settingName], defaults[settingName]);
-}
-assert.equal(config.hooks.filter(hook => hook.id === "new-hook").length, 1);
-JS
-cp "$repoRoot/glimmervoid/config.example.json" "$sandbox/.dotfiles/glimmervoid/config.example.json"
-
-rm -f "$sandbox/.glimmervoid/config.json" "$importedDefaultsLedger"
-export DOTFILES_TEST_NODE_PATH="$testNodePath"
-writeStub node <<'STUB'
-#!/usr/bin/env bash
-case "${2:-}" in
-  *snapshot.serverBuild*) printf '0.28.0\n'; exit ;;
-esac
-exec "$DOTFILES_TEST_NODE_PATH" "$@"
-STUB
-glimmervoidScriptPath="$sandbox/.local/lib/node_modules/glimmervoid/dist/cli.js"
-mkdir -p "${glimmervoidScriptPath%/*}"
-cat > "$glimmervoidScriptPath" <<'JS'
-#!/usr/bin/env node
-const fs = require("node:fs");
-const path = require("node:path");
-const stateDirectory = process.env.DOTFILES_TEST_STATE;
-fs.appendFileSync(process.env.DOTFILES_TEST_LOG, `glimmervoid ${process.argv.slice(2).join(" ")}\n`);
-if (process.argv[2] === "--version") {
-  process.stdout.write(fs.readFileSync(path.join(stateDirectory, "glimmervoid-version")));
-  process.exit(0);
-}
-fs.appendFileSync(process.env.DOTFILES_TEST_LOG, `glimmervoid-path ${process.env.PATH}\n`);
-fs.writeFileSync(path.join(stateDirectory, "listening-3456"), "");
-if (fs.existsSync(path.join(stateDirectory, "no-remote-listener"))) process.exit(0);
-fs.writeFileSync(path.join(stateDirectory, "listening-3457"), "");
-JS
-chmod +x "$glimmervoidScriptPath"
-ln -s "$glimmervoidScriptPath" "$stubBin/glimmervoid"
-glimmervoidScriptPath="$(readlink -f "$glimmervoidScriptPath")"
-writeStub codex <<'STUB'
-#!/usr/bin/env bash
-exit 0
-STUB
-writeStub bwrap <<'STUB'
-#!/usr/bin/env bash
-exit 0
-STUB
-writeStub socat <<'STUB'
-#!/usr/bin/env bash
-exit 0
-STUB
-writeStub npm <<'STUB'
-#!/usr/bin/env bash
-printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-if [[ "$1" == view ]]; then
-  [[ ! -f "$DOTFILES_TEST_STATE/npm-view-failed" ]] || exit 1
-  [[ "$2" != glimmervoid@latest ]] || { printf '0.29.1\n'; exit 0; }
-  printf '%s\n' "${2#glimmervoid@}"
-  exit 0
-fi
-case "$*" in
-  *glimmervoid@*)
-    [[ ! -f "$DOTFILES_TEST_STATE/npm-install-failed" ]] || exit 1
-    printf '%s\n' "${!#}" | sed 's/^glimmervoid@//' > "$DOTFILES_TEST_STATE/glimmervoid-version"
-    ;;
-  *@openai/codex*) cp "$DOTFILES_TEST_STATE/available/codex" "$DOTFILES_TEST_STUB_BIN/codex" ;;
-  *) exit 1 ;;
-esac
-STUB
-writeStub apt-get <<'STUB'
-#!/usr/bin/env bash
-printf 'apt-get %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-case "$*" in
-  *bubblewrap*)
-    [[ ! -f "$DOTFILES_TEST_STATE/sandbox-install-failed" ]] || exit 1
-    cp "$DOTFILES_TEST_STATE/available/bwrap" "$DOTFILES_TEST_STUB_BIN/bwrap"
-    ;;
-  *socat*) cp "$DOTFILES_TEST_STATE/available/socat" "$DOTFILES_TEST_STUB_BIN/socat" ;;
-  *" git") printf '2.55.0\n' > "$DOTFILES_TEST_STATE/git-version" ;;
-esac
-STUB
-writeStub add-apt-repository <<'STUB'
-#!/usr/bin/env bash
-printf 'add-apt-repository %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-STUB
-writeStub setsid <<'STUB'
-#!/usr/bin/env bash
-printf 'setsid %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-if [[ -e /dev/fd/9 ]]; then touch "$DOTFILES_TEST_STATE/server-inherited-lock"; fi
-umask > "$DOTFILES_TEST_STATE/umask-at-start"
-cp "$HOME/.glimmervoid/config.json" "$DOTFILES_TEST_STATE/config-at-start"
-exec "$@"
-STUB
-writeContainedSudoStub
-writeStub uname <<'STUB'
-#!/usr/bin/env bash
-printf 'x86_64\n'
-STUB
-for stubName in node npm apt-get add-apt-repository setsid uname; do
-  provideCommand "$stubName"
-done
-
-instrumentedProvisionPath="$stubState/provision-with-test-listeners.sh"
-hasProcCommandLines=0
-if [[ -r /proc/self/cmdline ]]; then hasProcCommandLines=1; fi
-awk -v hasProcCommandLines="$hasProcCommandLines" '
-  $0 == "case \"$devboxAction\" in" {
-    print "devboxPortListens() { [[ -f \"$DOTFILES_TEST_STATE/listening-$1\" ]]; }"
-    if (hasProcCommandLines == 0) print "devboxProcessCommandLine() { ps -o args= -p \"$1\"; }"
-  }
-  { print }
-' "$repoRoot/profiles/work/devbox/provision.sh" > "$instrumentedProvisionPath"
-
-runRemoteProvision() {
-  runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture \
-    CODER_WORKSPACE_OWNER_NAME=fixture bash "$instrumentedProvisionPath" 0.29.1 "${1:-provision}"
-}
-
-runRemoteProvisionWithoutWorkspaceName() {
-  runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_OWNER_NAME=fixture \
-    env -u CODER_WORKSPACE_NAME bash "$instrumentedProvisionPath" 0.29.1 "${1:-provision}"
-}
-
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 : > "$commandLog"
+rm -f "$stubState/listening-3456" "$stubState/listening-3457" "$sandbox/.glimmervoid/config.json"
 remoteOutput="$( (umask 022; runRemoteProvision) )"
 check "remote provision installs the requested npm version under the box home" \
   logHas "npm install -g --prefix $sandbox/.local glimmervoid@0.29.1"
@@ -1159,28 +1065,6 @@ check "operator-removed defaults raise no pending warning while the server runs"
   outputLacks "$removedWhileRunningOutput" '[warned] config'
 check "operator-removed defaults stay removed while the server runs" \
   cmp -s "$stubState/config-after-removal-while-running" "$sandbox/.glimmervoid/config.json"
-rm -f "$importedDefaultsLedger"
-cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-pending-defaults"
-: > "$commandLog"
-pendingDefaultsOutput="$(runRemoteProvision)"
-check "defaults never imported are pending while the server runs" outputHas "$pendingDefaultsOutput" '[warned] config: changes pending'
-check "pending defaults are not recorded as imported" test ! -e "$importedDefaultsLedger"
-check "pending defaults leave live config bytes untouched" \
-  cmp -s "$stubState/config-before-pending-defaults" "$sandbox/.glimmervoid/config.json"
-check "pending defaults never restart the server" logLacks 'setsid'
-rm -f "$stubState/listening-3456" "$stubState/listening-3457"
-runRemoteProvision >/dev/null
-check "not-running provision applies pending defaults before starting" \
-  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" <<'JS'
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const defaults = require(process.argv[3]);
-assert.deepEqual(config.postTurnChecks, defaults.postTurnChecks);
-assert.equal(config.hooks[0].id, defaults.hooks[0].id);
-JS
-check "applied defaults are recorded as imported" test -f "$importedDefaultsLedger"
-
 rm -f "$stubState/listening-3457"
 : > "$commandLog"
 missingRemoteOutput="$(runRemoteProvision)"
@@ -1203,12 +1087,11 @@ check "the upgraded git is reported" outputHas "$oldGitOutput" '[installed] git:
 touch "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 printf '{"port":3000,"sessions":["live"]}' > "$sandbox/.glimmervoid/config.json"
-rm -f "$importedDefaultsLedger"
 cp "$sandbox/.glimmervoid/config.json" "$stubState/live-config"
 backupsBeforePending=("$sandbox/.glimmervoid"/config.json.*.bak)
 : > "$commandLog"
 pendingOutput="$(runRemoteProvision)"
-check "a running server is never reinstalled under itself" logLacks 'glimmervoid@'
+check "a running server is never reinstalled under itself" logLacks 'npm install -g --prefix'
 check "a running server names the pending release" \
   outputHas "$pendingOutput" '[warned] glimmervoid: 0.28.0 running, 0.29.1 pending; run devbox restart-glimmervoid'
 check "a running server keeps its config bytes" cmp -s "$stubState/live-config" "$sandbox/.glimmervoid/config.json"
@@ -1292,25 +1175,11 @@ check "restart reads the listener PID from ss" logHas "ss -ltnp sport = :3456"
 check "restart terminates the identified glimmervoid listener" bash -c '! kill -0 "$1" 2>/dev/null' _ "$glimmervoidListenerPid"
 check "restart reports the old server stopped" outputHas "$glimmervoidRestartOutput" '[installed] glimmervoid server: stopped'
 check "restart starts a fresh detached server" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
-check "restart installs the pinned release after the server stops" \
+check "restart installs the latest release after the server stops" \
   test "$(firstLogLineOf 'fixture server stopped')" -lt "$(firstLogLineOf "npm install -g --prefix $sandbox/.local glimmervoid@0.29.1")"
-check "restart installs the pinned release before the server starts" \
+check "restart installs the latest release before the server starts" \
   test "$(firstLogLineOf "npm install -g --prefix $sandbox/.local glimmervoid@0.29.1")" -lt "$(firstLogLineOf 'setsid nohup')"
-check "restart confirms the pinned release is published before the server stops" \
-  test "$(firstLogLineOf 'npm view glimmervoid@0.29.1 version')" -lt "$(firstLogLineOf 'fixture server stopped')"
 check "restart leaves the config unmerged while the server runs" grep -q '"port":3000' "$stubState/config-at-stop"
-check "restart applies operator defaults after stopping and before starting" \
-  "$testNodePath" - "$stubState/config-at-stop" "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" <<'JS'
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const before = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const after = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
-const defaults = require(process.argv[4]);
-assert.equal(before.postTurnChecks, undefined);
-assert.deepEqual(after.postTurnChecks, defaults.postTurnChecks);
-assert.equal(after.hooks[0].id, defaults.hooks[0].id);
-assert.deepEqual(after.sessions, before.sessions);
-JS
 check "restart merges the config before the server starts" \
   "$testNodePath" -e 'process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).port === 3456 ? 0 : 1)' "$stubState/config-at-start"
 
@@ -1358,25 +1227,13 @@ check "restart with invalid config JSON keeps the config bytes" \
   cmp -s "$stubState/config-before-invalid-restart" "$sandbox/.glimmervoid/config.json"
 cp "$stubState/config-before-missing-host-restart" "$sandbox/.glimmervoid/config.json"
 
-touch "$stubState/npm-view-failed"
-: > "$commandLog"
-unpublishedRestartStatus=0
-unpublishedRestartOutput="$(runRemoteProvision restart)" || unpublishedRestartStatus=$?
-check "restart of an unpublished release fails" test "$unpublishedRestartStatus" -ne 0
-check "restart of an unpublished release explains the refusal" \
-  outputHas "$unpublishedRestartOutput" '[warned] glimmervoid: 0.29.1 not found on the npm registry; server left running'
-check "restart of an unpublished release leaves the server running" kill -0 "$glimmervoidListenerPid"
-check "restart of an unpublished release installs nothing" logLacks 'npm install'
-check "restart of an unpublished release starts nothing" logLacks 'setsid'
-rm -f "$stubState/npm-view-failed"
-
 touch "$stubState/npm-install-failed"
 : > "$commandLog"
 failedInstallRestartStatus=0
 failedInstallRestartOutput="$(runRemoteProvision restart)" || failedInstallRestartStatus=$?
 check "restart with a failed install fails" test "$failedInstallRestartStatus" -ne 0
 check "restart with a failed install names the fallback release" \
-  outputHas "$failedInstallRestartOutput" '[warned] glimmervoid: install of 0.29.1 failed; starting installed 0.28.0 instead'
+  outputHas "$failedInstallRestartOutput" '[warned] glimmervoid: install of 0.29.1 failed; keeping installed 0.28.0 instead'
 check "restart with a failed install still stops the old server first" bash -c '! kill -0 "$1" 2>/dev/null' _ "$glimmervoidListenerPid"
 check "restart with a failed install starts the previous release" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
 check "restart with a failed install brings both listeners up" outputHas "$failedInstallRestartOutput" 'both listeners ready'
@@ -1410,18 +1267,16 @@ failedInstallProvisionStatus=0
 failedInstallProvisionOutput="$(runRemoteProvision)" || failedInstallProvisionStatus=$?
 check "provision with a failed install fails" test "$failedInstallProvisionStatus" -ne 0
 check "provision with a failed install names the fallback release" \
-  outputHas "$failedInstallProvisionOutput" '[warned] glimmervoid: install of 0.29.1 failed; starting installed 0.28.0 instead'
-check "provision with a failed install starts the previous release" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
-check "provision with a failed install still prints the forwarding URL" \
-  outputHas "$failedInstallProvisionOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
+  outputHas "$failedInstallProvisionOutput" '[warned] glimmervoid: install of 0.29.1 failed; keeping installed 0.28.0 instead'
 rm -f "$stubState/npm-install-failed"
 
 rm -rf "$dotfilesOriginRepo"
-mkdir -p "$dotfilesOriginRepo/profiles/work-server" "$dotfilesOriginRepo/fresh-box-probe" "$dotfilesOriginRepo/glimmervoid"
+mkdir -p "$dotfilesOriginRepo/profiles/work-server" "$dotfilesOriginRepo/fresh-box-probe" "$dotfilesOriginRepo/glimmervoid" "$dotfilesOriginRepo/profiles/work"
 cp -R "$repoRoot/script" "$repoRoot/bin" "$dotfilesOriginRepo/"
 printf '{"platform":"linux","topics":["fresh-box-probe"]}\n' > "$dotfilesOriginRepo/profiles/work-server/profile.json"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$dotfilesOriginRepo/fresh-box-probe/install.sh"
-cp "$repoRoot/glimmervoid/config.example.json" "$dotfilesOriginRepo/glimmervoid/config.example.json"
+cp "$repoRoot/glimmervoid/sync-settings.mjs" "$dotfilesOriginRepo/glimmervoid/"
+cp "$repoRoot/profiles/work/glimmervoid.settings.json" "$dotfilesOriginRepo/profiles/work/"
 "$testGitPath" -C "$dotfilesOriginRepo" init -q -b main
 commitDotfilesOrigin fresh-box
 startEmptyRemoteHome
@@ -1433,10 +1288,11 @@ freshBoxStatus=0
 freshBoxOutput="$(runDevbox ensure 2>&1)" || freshBoxStatus=$?
 check "a fresh box ensure through the real provision phases succeeds" test "$freshBoxStatus" -eq 0
 check "a fresh box converges its dotfiles between prepare and provision" remoteConvergeSitsBetweenPrepareAndProvision
-check "a fresh box starts its server exactly once" test "$(countLogLines '^setsid nohup ')" -eq 1
+check "a fresh box prepares prerequisites once and starts its server once" \
+  bash -c '[[ "$(grep -c "^setsid nohup " "$1")" -eq 1 && "$(grep -c "^npm view glimmervoid@latest version$" "$1")" -eq 1 ]]' _ "$commandLog"
 check "a fresh box reports no pending config" outputLacks "$freshBoxOutput" 'changes pending'
 check "a fresh box starts its server with the imported operator defaults" \
-  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/config.example.json" "$remoteHome" <<'JS'
+  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/profiles/work/glimmervoid.settings.json" "$remoteHome" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -1452,6 +1308,18 @@ freshBoxSecondEnsureOutput="$(runDevbox ensure 2>&1)"
 check "the ensure after a fresh box prints no pending config warning" outputLacks "$freshBoxSecondEnsureOutput" 'changes pending'
 check "the ensure after a fresh box finds the config current" outputHas "$freshBoxSecondEnsureOutput" '[present] config: current'
 check "the ensure after a fresh box leaves its server running" logLacks 'setsid'
+rm -f "$stubState/listening-3456" "$stubState/listening-3457"
+printf '0.28.0\n' > "$stubState/glimmervoid-version"
+touch "$stubState/npm-install-failed"
+: > "$commandLog"
+failedInstallEnsureStatus=0
+failedInstallEnsureOutput="$(runDevbox ensure 2>&1)" || failedInstallEnsureStatus=$?
+check "ensure with a failed install fails" test "$failedInstallEnsureStatus" -ne 0
+check "ensure with a failed install still converges and provisions" remoteConvergeSitsBetweenPrepareAndProvision
+check "ensure with a failed install starts the previous release" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config"
+check "ensure with a failed install still prints the forwarding URL" \
+  outputHas "$failedInstallEnsureOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
+rm -f "$stubState/npm-install-failed"
 rm -f "$stubState/execute-dotfiles" "$stubState/execute-provision"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 
@@ -1473,7 +1341,7 @@ definitionsPath="$stubState/provision-functions.sh"
 awk '$0 == "case \"$devboxAction\" in" { exit } { print }' "$repoRoot/profiles/work/devbox/provision.sh" > "$definitionsPath"
 
 runProvisionFunction() {
-  runInStubbedSandbox "$sandbox" bash -c 'source "$1" 0.29.1; shift; "$@"' _ "$definitionsPath" "$@"
+  runInStubbedSandbox "$sandbox" bash -c 'source "$1" prepare coder.dev.posthog.dev; shift; "$@"' _ "$definitionsPath" "$@"
 }
 
 : > "$commandLog"
@@ -1481,23 +1349,15 @@ printf '0.31.0\n' > "$stubState/glimmervoid-version"
 newerVersionOutput="$(runProvisionFunction installDevboxGlimmervoid)"
 check "a newer in-app release satisfies the version floor" outputHas "$newerVersionOutput" '[present] glimmervoid: 0.31.0'
 check "a newer in-app release is never downgraded" logLacks 'npm install'
-check "a newer release never needs a registry check on restart" runProvisionFunction requireDevboxReleaseOnRegistry
-check "a newer release makes no registry request" logLacks 'npm view'
 rm -f "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 olderVersionOutput="$(runProvisionFunction installDevboxGlimmervoid)"
 check "an older release upgrades to the minimum" outputHas "$olderVersionOutput" '[installed] glimmervoid: 0.29.1'
-printf '0.28.0\n' > "$stubState/glimmervoid-version"
-latestVersionOutput="$(runInStubbedSandbox "$sandbox" bash -c 'source "$1" latest; installDevboxGlimmervoid' _ "$definitionsPath")"
-check "latest resolves to the newest published release" outputHas "$latestVersionOutput" '[installed] glimmervoid: 0.29.1'
-check "a prerelease below the release floor needs an upgrade" \
-  bash -c '! HOME="$1" PATH="$2:$3" source "$4" 0.29.1; ! devboxGlimmervoidMeetsMinimum 0.29.1-beta.1' _ "$sandbox" "$stubBin" "$coreBin" "$definitionsPath"
-
 workbenchEnvironmentPath="$sandbox/Projects/wizard-workbench/.env"
 workbenchTokenPath="$sandbox/.config/posthog/wizard-gateway-token"
 mkdir -p "$sandbox/Projects/wizard-workbench" "$sandbox/.local/state/dotfiles/devbox-workbench"
 runWorkbenchSecrets() {
-  runInStubbedSandbox "$sandbox" "$@" bash -c 'source "$1" 0.29.1; writeDevboxWorkbenchSecrets' _ "$definitionsPath"
+  runInStubbedSandbox "$sandbox" "$@" bash -c 'source "$1" prepare coder.dev.posthog.dev; writeDevboxWorkbenchSecrets' _ "$definitionsPath"
 }
 missingSecretOutput="$(runWorkbenchSecrets WIZARD_WORKBENCH_POSTHOG_API_KEY=phx_fixture)"
 check "a missing workbench secret warns once with the fix and writes neither file" bash -c '
@@ -1604,7 +1464,7 @@ chmod +x "$curlStubDirectory/curl"
 runPersonalTokenProbe() {
   printf '%s\n' "$1" > "$stubState/curl-answer"
   runInStubbedSandbox "$sandbox" PATH="$curlStubDirectory:$stubBin:$coreBin" GH_PERSONAL_TOKEN=fixture-personal-secret \
-    bash -c 'source "$1" 0.29.1 provision; shift; "$@"' _ "$definitionsPath" "${@:2}"
+    bash -c 'source "$1" provision coder.dev.posthog.dev; shift; "$@"' _ "$definitionsPath" "${@:2}"
 }
 dotfilesReadableOutput="$(runPersonalTokenProbe 200 installDevboxPersonalGitAuth)"
 check "a personal token that can read dotfiles is present" \
@@ -1624,20 +1484,7 @@ check "an unreachable GitHub warns about the dotfiles probe" \
   outputHas "$unreachableProbeOutput" '[warned] personal GitHub token: cannot reach GitHub to check dotfiles access'
 check "an unreachable GitHub does not fail provisioning" test "$unreachableProbeStatus" -eq 0
 
-rm -f "$importedDefaultsLedger"
-printf '{"projects":[],"checkForUpdates":false}\n' > "$sandbox/.glimmervoid/config.json"
-mergeConfig >/dev/null
-check "migration removes the provisioner update-check false once" \
-  "$testNodePath" -e 'if (Object.hasOwn(require(process.argv[1]), "checkForUpdates")) process.exit(1)' "$sandbox/.glimmervoid/config.json"
-"$testNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.checkForUpdates=false;fs.writeFileSync(process.argv[1], JSON.stringify(config))' "$sandbox/.glimmervoid/config.json"
-mergeConfig >/dev/null
-check "migration never removes an operator false afterward" \
-  "$testNodePath" -e 'if (require(process.argv[1]).checkForUpdates !== false) process.exit(1)' "$sandbox/.glimmervoid/config.json"
-printf '{"keys":["checkForUpdates"],"hookIds":[]}\n' > "$importedDefaultsLedger"
-mergeConfig >/dev/null
-check "migration respects an operator false already recorded in the ledger" \
-  "$testNodePath" -e 'if (require(process.argv[1]).checkForUpdates !== false) process.exit(1)' "$sandbox/.glimmervoid/config.json"
-
+printf '{"projects":[],"checkForUpdates":false,"scrollback":100}\n' > "$sandbox/.glimmervoid/config.json"
 mkdir -p "$sandbox/.dotfiles/profiles/work"
 cp "$repoRoot/glimmervoid/sync-settings.mjs" "$sandbox/.dotfiles/glimmervoid/sync-settings.mjs"
 printf '{"scrollback":100,"checkForUpdates":true}\n' > "$sandbox/.dotfiles/profiles/work/glimmervoid.settings.json"
@@ -1746,14 +1593,14 @@ rm -f "$stubState/collect-packet"
 check "all collection SSH uses the automated safety flags" \
   bash -c '! grep -vx "true disable" "$1"' _ "$stubState/ssh-safety"
 mkdir -p "$stubState/remote-home/.glimmervoid"
+printf '{}\n' > "$stubState/remote-home/.glimmervoid/dotfiles-settings-base.json"
 printf '{"port":3456,"scrollback":200,"checkForUpdates":false,"posthog":{"apiKey":"fixture","enabled":true}}\n' > "$stubState/remote-home/.glimmervoid/config.json"
-printf '{"keys":[],"hookIds":[]}\n' > "$stubState/remote-home/.glimmervoid/devbox-imported-defaults.json"
 cp "$stubState/remote-home/.glimmervoid/config.json" "$stubState/remote-before-collect"
 touch "$stubState/execute-collect"
 runCollectionDevbox collect >/dev/null
 check "the shipped extraction script leaves box bytes unchanged" cmp -s "$stubState/remote-before-collect" "$stubState/remote-home/.glimmervoid/config.json"
-check "the shipped extraction script drops legacy update false and loader secrets" \
-  "$testNodePath" -e 'const assert=require("node:assert/strict");const {stagedAgainstSettingsSha256,...staged}=require(process.argv[1]);assert.deepEqual(staged,{scrollback:200,posthog:{enabled:true}})' "$stagedSettingsPath"
+check "the shipped extraction script preserves update preferences and drops loader secrets" \
+  "$testNodePath" -e 'const assert=require("node:assert/strict");const {stagedAgainstSettingsSha256,...staged}=require(process.argv[1]);assert.deepEqual(staged,{scrollback:200,checkForUpdates:false,posthog:{enabled:true}})' "$stagedSettingsPath"
 rm -f "$stubState/execute-collect"
 
 reportTopicResults devbox

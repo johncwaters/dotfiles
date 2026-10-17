@@ -15,8 +15,19 @@ check "a placeholder host is never probed over TLS" logLacks "https://"
 check "a missing tailnet login exits non-zero" test "$unauthedStatus" -eq 1
 check "the placeholder is left in place for its owner" \
   bash -c 'grep -q "CHANGEME" "$1/.glimmervoid/config.json"' _ "$unauthedHome"
-check "the merged server seed matches the previous example except for key order" \
-  serverSeedMatchesPreviousExample "$unauthedHome"
+
+check "the server seed matches the real example plus the profile overlay" \
+  "$realNodePath" - "$unauthedHome" "$repoRoot" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const [home, repository] = process.argv.slice(2);
+const readSettingsFile = filePath => JSON.parse(fs.readFileSync(filePath, "utf8"), (_key, value) =>
+  typeof value === "string" ? value.replaceAll("{{HOME}}", home) : value);
+assert.deepEqual(readSettingsFile(`${home}/.glimmervoid/config.json`), {
+  ...readSettingsFile(`${repository}/glimmervoid/config.example.json`),
+  ...readSettingsFile(`${repository}/profiles/server/glimmervoid.overlay.json`),
+});
+NODE
 
 unauthedRerunOutput="$(runInstall "$unauthedHome" server)"
 check "a second unauthenticated run reports no change" reportsNoChanges "$unauthedRerunOutput"

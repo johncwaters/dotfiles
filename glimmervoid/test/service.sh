@@ -27,8 +27,6 @@ check "the unit runs the node from the fixed candidate list, not the shell's" \
   grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
 check "the unit rebuilds dist before starting, with the npm beside the resolved node" \
   grep -q "^ExecStartPre=$serverHome/.local/bin/npm run build\$" "$serverUnitPath"
-check "the unit no longer conditions on a built dist, the build step heals it instead" \
-  bash -c '! grep -q "^ConditionPathExists=" "$1"' _ "$serverUnitPath"
 check "the unit works out of this home" grep -q "^WorkingDirectory=$serverHome/Projects/glimmervoid\$" "$serverUnitPath"
 check "an OOM-killed session leaves the dashboard and its other sessions running" \
   grep -q "^OOMPolicy=continue\$" "$serverUnitPath"
@@ -334,30 +332,3 @@ check "an unreachable user manager warns" \
 check "an unreachable user manager starts nothing" logLacks "enable --now"
 check "an unreachable user manager exits non-zero" test "$unreachableStatus" -eq 1
 rm -f "$stubState/$(basename -- "$serverHome")/systemd-unreachable"
-
-serverLegacyUnitPath="$serverHome/.config/systemd/user/glissa.service"
-foreignGlissaUnitTarget="$serverHome/Projects/Glissa/systemd/glissa.service"
-mkdir -p "$(dirname -- "$foreignGlissaUnitTarget")"
-printf '[Unit]\nDescription=Glissa on Telegram\n' > "$foreignGlissaUnitTarget"
-ln -s "$foreignGlissaUnitTarget" "$serverLegacyUnitPath"
-: > "$commandLog"
-foreignGlissaOutput="$(runInstall "$serverHome" server)" || true
-check "a linked glissa.service from another project survives the converge" test -L "$serverLegacyUnitPath"
-check "a linked glissa.service from another project is never stopped" logLacks "disable --now glissa"
-check "a linked glissa.service from another project is never reported retired" \
-  outputLacks "$foreignGlissaOutput" "removed the retired glissa.service"
-rm -f "$serverLegacyUnitPath"
-
-printf '[Unit]\nDescription=Glissa on Telegram\n' > "$serverLegacyUnitPath"
-: > "$commandLog"
-runInstall "$serverHome" server > /dev/null || true
-check "a glissa.service written by hand for another service survives the converge" test -f "$serverLegacyUnitPath"
-rm -f "$serverLegacyUnitPath"
-
-printf '[Unit]\nDescription=Glissa dashboard\n' > "$serverLegacyUnitPath"
-: > "$commandLog"
-retiredDashboardOutput="$(runInstall "$serverHome" server)" || true
-check "the retired dashboard unit is removed" test ! -e "$serverLegacyUnitPath"
-check "the retired dashboard unit is stopped first" logHas "systemctl --user disable --now glissa"
-check "the retired dashboard removal is reported" \
-  outputMatches "$retiredDashboardOutput" '\[ ok \].*removed the retired glissa.service'

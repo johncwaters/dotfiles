@@ -1,34 +1,7 @@
 #!/usr/bin/env node
-/**
- * PreToolUse guard for Write / Edit / MultiEdit that DENIES a tool call which
- * would add net-new comment lines to a code file. Seeded onto a fresh machine
- * from glimmervoid/config.example.json (config.json `hooks`) and edited per-session
- * through the Glimmervoid Hooks tab, NOT through ~/.claude/settings.json, so it
- * applies only to Glimmervoid-spawned agent sessions.
- *
- * What counts: full lines that are comments (line markers `//`, `#`, `--`, and
- * block comments opening at line start) outside string regions (JS template
- * literals, Python triple-quoted strings, shell heredoc bodies), whose openers are
- * read only from the code before a trailing comment. What is exempt: the shebang
- * line, and inside a `/**` block its bare delimiters and `@tag` lines (type
- * machinery the typecheck gates depend on); its prose lines still count. Accepted
- * under-blocks: trailing comments after code, a `#` glued to the word before it
- * (`url#frag`), a backtick inside a JS regex literal, and a shell left shift by a
- * bare name (`$((1 << width))`), which still reads as a heredoc opener.
- *
- * The decision compares counts, not absolutes: a Write is judged against the file
- * currently on disk, an Edit against that same file with its edits applied, and
- * only against its own old_string when the file is absent or the fragment does
- * not occur in it. So deleting, moving, or rewriting existing comments always
- * passes. Only growth denies, and the reason quotes only lines the call itself
- * supplied, falling back to a bare count when the denied line came from disk.
- *
- * Fail open (shared rule of this directory): any error, unreadable payload, or
- * unknown file type MUST allow. Node built-ins only, synchronous, pure ASCII.
- */
-
 import fs from "node:fs";
 import path from "node:path";
+import { replayEdits } from "./edit-replay.mjs";
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
 import { commentLinesOnlyInAfter, scanCommentLines, syntaxFor } from "./comment-scanner.mjs";
 
@@ -77,26 +50,6 @@ function editsOf(toolInput) {
   return edits.filter((edit) => edit && typeof edit === "object");
 }
 
-function applyEdit(document, edit) {
-  const oldString = typeof edit.old_string === "string" ? edit.old_string : "";
-  const newString = typeof edit.new_string === "string" ? edit.new_string : "";
-  if (oldString === "") return null;
-  if (edit.replace_all === true) return document.split(oldString).join(newString);
-  const at = document.indexOf(oldString);
-  if (at < 0) return null;
-  return document.slice(0, at) + newString + document.slice(at + oldString.length);
-}
-
-function applyEdits(document, edits) {
-  let applied = document;
-  for (const edit of edits) {
-    const next = applyEdit(applied, edit);
-    if (next === null) return null;
-    applied = next;
-  }
-  return applied;
-}
-
 function judgeFragments(edits, syntax) {
   let added = 0;
   const samples = [];
@@ -124,9 +77,12 @@ function judgeEdits(toolInput, syntax) {
   const edits = editsOf(toolInput);
   const baseline = readBaseline(toolInput.file_path);
   if (baseline === null) return null;
-  const edited = baseline === "" ? null : applyEdits(baseline, edits);
-  if (edited === null) return judgeFragments(edits, syntax);
-  return compareDocuments(baseline, edited, syntax);
+  if (baseline === "" || edits.some((edit) => typeof edit.old_string !== "string" || edit.old_string === "")) {
+    return judgeFragments(edits, syntax);
+  }
+  const replay = replayEdits({ edits }, toolInput.file_path, { shouldFlagUnmatchedReplaceAll: false });
+  if (replay.hasUnmatchedOldString) return judgeFragments(edits, syntax);
+  return compareDocuments(baseline, replay.content, syntax);
 }
 
 try {

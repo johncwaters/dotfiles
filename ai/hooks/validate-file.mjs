@@ -335,9 +335,7 @@ function validateWithBiome(content, ext, filePath) {
   const r = runStdin(bin, formatArguments, content);
   if (r.error) return jsonFallback();
   if (r.status === 0) return null;
-  // A project biome.json can disable the formatter outright (formatter.enabled=false).
-  // Biome then exits 1 ("formatter is currently disabled") WITHOUT parsing, which is
-  // not a syntax verdict: fall back / fail open, never deny.
+  // Biome exits 1 without parsing when formatter.enabled=false, so it cannot justify denial.
   const out = [r.stderr || "", r.stdout || ""].join(" ");
   if (out.includes("formatter is currently disabled")) return jsonFallback();
   const isWorkflow = isWorkflowScript(filePath, content);
@@ -369,8 +367,7 @@ function validatePython(content) {
   const r = runStdin(pythonBin(), ["-m", "ruff", "format", "--stdin-filename", "f.py", "-"], content);
   if (r.error || r.status === 0) return null;
   const err = (r.stderr || r.stdout || "").trim();
-  // python present but ruff not installed: engine absent, not a parse failure.
-  // Fail open per the decision-engine contract (a missing engine must never deny).
+  // Missing Ruff must fail open under the shared decision-engine contract.
   if (/No module named ['"]?ruff/.test(err)) return null;
   const m = /Failed to parse [^\s:]*:(\d+):(\d+):\s*(.*)/.exec(err);
   if (m) {

@@ -90,7 +90,7 @@ ensureStubFile() {
   local content
   content="$(cat)"
   lastBackupPath=""
-  if ! printf '%s\n' "$content" | grep -qxF -- "$markerLine"; then
+  if ! grep -qxF -- "$markerLine" <<< "$content"; then
     noteWarned "$label" "stub content lacks its marker line"
     return 0
   fi
