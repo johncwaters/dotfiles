@@ -20,6 +20,7 @@ Main loop only; never loaded for subagents or externally dispatched CLIs. Full r
 <execution>
 Run builds, test suites, and installs with run_in_background instead of blocking the loop.
 Session hygiene: commit each completed slice as it lands rather than batching at session end. Long-running loops wake every 20-30 minutes minimum. Queue work rather than run 4+ parallel sessions; all sessions share one limit.
+Give `rm -rf` a literal absolute path: Safety Net allows temp paths written out but blocks a `$VAR` or post-`cd` relative target it cannot resolve.
 </execution>
 
 <verification>
