@@ -260,6 +260,11 @@ check "disabled plugin is never held" bash -c '! grep -qF disabled "$1"' _ "$plu
 check "disabled plugin records no failure" test ! -e "$pluginFailedPath"
 check "plugin marketplace refreshes once" test "$(grep -cxF '["plugin","marketplace","update","caveman"]' "$mcpCommandLog")" -eq 1
 check "plugins are listed once with available versions" test "$(grep -cxF '["plugin","list","--json","--available"]' "$mcpCommandLog")" -eq 1
+writeInstalledPlugins 11ddc0c9813c 2.1.0
+writePluginMarketplace 4.0.1 2.2.0
+DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
+check "a commit-sha installed plugin version is updatable" grep -qx 'plugin caveman@caveman 11ddc0c9813c 4.0.1' "$pluginHeldPath"
+writeInstalledPlugins 2.1.0 2.1.0
 writePluginMarketplace 3.0.0 2.2.0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null

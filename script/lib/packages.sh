@@ -85,9 +85,9 @@ versionIsNewer() {
   [[ "$1" != "$2" ]] || return 1
   local installedNumericVersion
   local availableNumericVersion
-  [[ "$1" =~ ^([0-9]+(\.[0-9]+)*) ]] || return 0
+  [[ "$1" =~ ^([0-9]+(\.[0-9]+)*)(-[0-9A-Za-z.-]+)?$ ]] || return 0
   installedNumericVersion="${BASH_REMATCH[1]}"
-  [[ "$2" =~ ^([0-9]+(\.[0-9]+)*) ]] || return 0
+  [[ "$2" =~ ^([0-9]+(\.[0-9]+)*)(-[0-9A-Za-z.-]+)?$ ]] || return 0
   availableNumericVersion="${BASH_REMATCH[1]}"
   if [[ "$installedNumericVersion" == "$availableNumericVersion" ]]; then
     [[ "$1" == *-* && "$2" != *-* ]]
