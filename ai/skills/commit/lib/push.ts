@@ -1,6 +1,6 @@
 import type { PushRefResult, PushResult } from "./git.ts";
 
-export type PendingPushRef = { branch: string; kind: "feature" | "promote" };
+export type PendingPushRef = { branch: string; kind: "feature" | "promote"; sourceTip?: string };
 
 export function sleep(milliseconds: number): void {
   if (milliseconds <= 0) {
@@ -9,8 +9,8 @@ export function sleep(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
-export function branchRefspec(branch: string): string {
-  return `refs/heads/${branch}:refs/heads/${branch}`;
+export function branchRefspec(branch: string, sourceTip?: string): string {
+  return `${sourceTip ?? `refs/heads/${branch}`}:refs/heads/${branch}`;
 }
 
 function pushRefResult(push: PushResult, branch: string): PushRefResult | undefined {

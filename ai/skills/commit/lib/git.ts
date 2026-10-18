@@ -264,6 +264,14 @@ export class Git {
     return nonEmptyLines(this.run(scoped(["status", "--short", "-uall"], paths)).stdout);
   }
 
+  indexPathIn(worktreePath: string): string | null {
+    const proc = this.run(["rev-parse", "--path-format=absolute", "--git-path", "index"], { cwd: worktreePath });
+    if (proc.code !== 0) {
+      return null;
+    }
+    return proc.stdout.trim();
+  }
+
   statusShortIn(worktreePath: string): string[] {
     return nonEmptyLines(this.run(["status", "--short"], { cwd: worktreePath }).stdout);
   }

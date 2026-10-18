@@ -149,6 +149,7 @@ class Landing {
   private deferredFeatureBranch: string | null = null;
   private parkedFeatureBranch: string | null = null;
   private preRebaseFeatureTip: string | null = null;
+  private readOnlyHolderMainlineTip: string | null = null;
   private noOriginPromoteWarned = false;
 
   constructor(repo: string, config: Arguments) {
@@ -536,7 +537,7 @@ class Landing {
     if (remoteFeatureTip === null) {
       return;
     }
-    const mainlineRef = `refs/heads/${mainline}`;
+    const mainlineRef = this.readOnlyHolderMainlineTip === null ? `refs/heads/${mainline}` : `refs/remotes/origin/${mainline}`;
     const mainlineTip = this.git.revParseRef(mainlineRef);
     if (mainlineTip === null) {
       this.warnings.push(`could not verify merged remote branch ${featureBranch}: ${mainline} is unavailable`);
@@ -637,7 +638,8 @@ class Landing {
       );
       return "PROMOTE_FAILED";
     }
-    const rebase = this.rebaseInTemporaryWorktree(source, destination, featureTipBeforeRebase);
+    const rebaseBase = this.readOnlyHolderMainlineTip ?? destination;
+    const rebase = this.rebaseInTemporaryWorktree(source, rebaseBase, featureTipBeforeRebase);
     if (rebase.failure !== null) {
       return rebase.failure;
     }
@@ -799,6 +801,10 @@ class Landing {
       return "PROMOTE_FAILED";
     }
 
+    if (!this.isHolderIndexWritable(holder)) {
+      return this.deferToReadOnlyHolder(source, destination, holder);
+    }
+
     const dirty = this.git.statusShortIn(holder).filter((line) => !line.startsWith("??"));
     if (dirty.length > 0) {
       this.warnings.push(
@@ -819,6 +825,44 @@ class Landing {
     return null;
   }
 
+  private isHolderIndexWritable(holder: string): boolean {
+    const indexPath = this.git.indexPathIn(holder);
+    if (indexPath === null || !fs.existsSync(indexPath)) {
+      return true;
+    }
+    try {
+      fs.accessSync(indexPath, fs.constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private deferToReadOnlyHolder(source: string, destination: string, holder: string): FailureOutcome | null {
+    if (this.config.noPush) {
+      this.warnings.push(
+        `${destination} is checked out read-only in ${holder} and --no-push forbids carrying the commit to origin/${destination}; promotion stopped`,
+      );
+      return "PROMOTE_FAILED";
+    }
+    if (!this.git.listRemotes().includes("origin")) {
+      this.warnings.push(
+        `${destination} is checked out read-only in ${holder} and no origin remote can carry the commit; promotion stopped`,
+      );
+      return "PROMOTE_FAILED";
+    }
+    const sourceTip = this.git.revParseRef(source);
+    if (sourceTip === null) {
+      this.warnings.push(`could not resolve ${source} to push it to origin/${destination}; promotion stopped`);
+      return "PROMOTE_FAILED";
+    }
+    this.readOnlyHolderMainlineTip = sourceTip;
+    this.warnings.push(
+      `${destination} is checked out read-only in ${holder}; origin/${destination} moves without local ${destination}, which that checkout's owner fast-forwards`,
+    );
+    return null;
+  }
+
   private originRefIsUpToDate(branch: string): boolean {
     const local = this.git.revParseRef(`refs/heads/${branch}`);
     if (local === null) {
@@ -832,7 +876,11 @@ class Landing {
   }
 
   private pushMainline(mainline: string): FailureOutcome | null {
-    if (this.originRefIsUpToDate(mainline)) {
+    const heldBackTip = this.readOnlyHolderMainlineTip;
+    if (heldBackTip !== null && this.git.revParseRef(`refs/remotes/origin/${mainline}`) === heldBackTip) {
+      return null;
+    }
+    if (heldBackTip === null && this.originRefIsUpToDate(mainline)) {
       return null;
     }
     if (this.config.noPush) {
@@ -840,7 +888,7 @@ class Landing {
       return null;
     }
     return this.pushPendingRefs(
-      [{ branch: mainline, kind: "promote" }],
+      [{ branch: mainline, kind: "promote", sourceTip: heldBackTip ?? undefined }],
       false,
       "PROMOTE_FAILED",
     );
@@ -855,7 +903,7 @@ class Landing {
       return null;
     }
 
-    const refspecs = pendingRefs.map((pendingRef) => branchRefspec(pendingRef.branch));
+    const refspecs = pendingRefs.map((pendingRef) => branchRefspec(pendingRef.branch, pendingRef.sourceTip));
     for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt += 1) {
       const push = this.git.push("origin", refspecs, setUpstream);
       const statuses = statusByBranch(push, pendingRefs);
