@@ -48,6 +48,7 @@ import {
   findWorktreeForBranch,
   isDenylisted,
   resolveMainline,
+  withNewJournalFiles,
 } from "./lib/workspace.ts";
 
 const PUSH_ATTEMPTS = 3;
@@ -151,6 +152,7 @@ class Landing {
   private preRebaseFeatureTip: string | null = null;
   private readOnlyHolderMainlineTip: string | null = null;
   private noOriginPromoteWarned = false;
+  private scopePaths: string[] = [];
 
   constructor(repo: string, config: Arguments) {
     this.git = new Git(repo);
@@ -179,10 +181,12 @@ class Landing {
       return messageInvalid({ errors: messageErrors });
     }
 
-    const { changed, untracked } = computeScope(this.git, this.config.paths);
-    if (changed.size === 0 && untracked.length === 0) {
+    const operatorScope = computeScope(this.git, this.config.paths);
+    if (operatorScope.changed.size === 0 && operatorScope.untracked.length === 0) {
       return this.landNothing();
     }
+    this.scopePaths = withNewJournalFiles(this.git, this.config.paths);
+    const { untracked } = computeScope(this.git, this.scopePaths);
 
     const commitOutcome = this.commit(message, untracked);
     if (commitOutcome) {
@@ -321,7 +325,7 @@ class Landing {
       return exclusionOutcome;
     }
     const stagingFailures = [
-      this.git.addUpdate(this.config.paths),
+      this.git.addUpdate(this.scopePaths),
       ...untracked.map((filePath) => this.git.addPath(filePath)),
     ].filter((staging) => staging.code !== 0);
     if (stagingFailures.length > 0) {
@@ -357,10 +361,10 @@ class Landing {
   }
 
   private excludeStagedFilesOutsideScope(): FailureOutcome | null {
-    if (this.config.paths.length === 0) {
+    if (this.scopePaths.length === 0) {
       return null;
     }
-    const inScope = new Set(this.git.diffNameOnly({ cached: true, paths: this.config.paths }));
+    const inScope = new Set(this.git.diffNameOnly({ cached: true, paths: this.scopePaths }));
     const outOfScope = this.git
       .diffNameOnly({ cached: true })
       .filter((filePath) => !inScope.has(filePath));

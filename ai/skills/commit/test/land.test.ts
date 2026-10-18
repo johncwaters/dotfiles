@@ -238,6 +238,32 @@ test("--paths leaves an out-of-scope change dirty", () => {
   }
 });
 
+test("--paths still commits Coherence journal files opened during review", () => {
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    writeFile(repo, "a.txt", "two\n");
+    writeFile(repo, ".coherence/decisions/review-lane.jsonl", "{}\n");
+    writeFile(repo, ".coherence/decisions/intent-lane.jsonl", "{}\n");
+    runGit(repo, ["add", "-N", ".coherence/decisions/intent-lane.jsonl"]);
+    writeFile(repo, ".coherence/defects/s-review-lane.jsonl", "{}\n");
+    writeFile(repo, "b.txt", "out of scope\n");
+
+    const { result } = land(repo, ["--no-push", "--paths", "a.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]).split("\n").sort(), [
+      ".coherence/decisions/intent-lane.jsonl",
+      ".coherence/decisions/review-lane.jsonl",
+      ".coherence/defects/s-review-lane.jsonl",
+      "a.txt",
+    ]);
+    assert.match(gitOutput(repo, ["status", "--short"]), /b\.txt/);
+  } finally {
+    cleanup(repo);
+  }
+});
+
 test("--paths naming an already staged deletion still stages the other scoped changes", () => {
   const repo = makeRepo("feature");
   try {
@@ -322,6 +348,7 @@ test("--paths matching nothing dirty is NOTHING_TO_COMMIT", () => {
     commitFile(repo, "a.txt", "one\n");
     commitFile(repo, "b.txt", "one\n");
     writeFile(repo, "b.txt", "two\n");
+    writeFile(repo, ".coherence/decisions/review-lane.jsonl", "{}\n");
 
     const { result } = land(repo, ["--no-push", "--paths", "a.txt"], VALID_MESSAGE);
 

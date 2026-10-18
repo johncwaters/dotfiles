@@ -212,6 +212,8 @@ Flags:
   Omit it only when the carbon unit asked to commit everything or you cannot enumerate what
   changed. Report `excluded staged files outside --paths: ...` warnings to the carbon unit;
   those files were unstaged and remain in the working tree.
+  New `.coherence/**/*.jsonl` files ride along regardless, because the review lanes
+  open their journals after preflight fixed the list.
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
   mainline, and pushing mainline. Omit it when the

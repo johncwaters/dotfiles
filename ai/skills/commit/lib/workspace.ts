@@ -23,6 +23,24 @@ export function isDenylisted(filePath: string): boolean {
   return basename.startsWith(".env") || basename.endsWith(".log");
 }
 
+const COHERENCE_DIR = ".coherence";
+
+function isNewFileStatus(statusCode: string): boolean {
+  return statusCode === "??" || statusCode.includes("A");
+}
+
+export function withNewJournalFiles(git: Git, paths: string[]): string[] {
+  if (paths.length === 0) {
+    return paths;
+  }
+  const newJournalFiles = git
+    .statusShort([COHERENCE_DIR])
+    .filter((line) => isNewFileStatus(line.slice(0, 2)))
+    .map((line) => line.slice(3).trim())
+    .filter((filePath) => filePath.endsWith(".jsonl") && !paths.includes(filePath));
+  return [...paths, ...newJournalFiles];
+}
+
 export function computeScope(git: Git, paths: string[]): Scope {
   const changed = new Set([
     ...git.diffNameOnly({ cached: false, paths }),
