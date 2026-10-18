@@ -359,7 +359,7 @@ upgradeNpmGlobal() {
   availableVersion="${latestNpmVersions[$packageName]:-}"
   [[ -n "$availableVersion" ]] || return 0
   versionIsNewer "$installedVersion" "$availableVersion" || return 0
-  if ! areAllUpgradesApproved; then
+  if shouldHoldUpgrade "$installedVersion" "$availableVersion"; then
     recordHeldUpgrade npm "$packageName" "$installedVersion" "$availableVersion"
     return 0
   fi

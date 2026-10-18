@@ -476,8 +476,8 @@ check "every brew upgrade skips auto-update and dependent upgrades" \
 check "pinned formula is never upgraded" logLacks 'brew upgrade gh'
 check "pinned formula is never recorded" bash -c '! grep -qs "formula gh " "$1" "$2"' _ "$upgradeHeldPath" "$upgradeFailedPath"
 check "npm latest is queried once" test "$(countLogLines '^npm outdated -g --json$')" -eq 1
-check "unapproved same-major npm is never installed" logLacks 'npm install -g typescript'
-check "unapproved same-major npm is recorded held" grep -qx 'npm typescript 1.0.0 1.2.0' "$upgradeHeldPath"
+check "same-major npm applies" logHas 'npm install -g typescript@latest'
+check "same-major npm is never held" bash -c '! grep -qs "npm typescript " "$1"' _ "$upgradeHeldPath"
 check "unowned brew packages remain untouched" logLacks 'brew upgrade vale'
 check "unowned npm globals remain untouched" logLacks 'npm install -g npm@'
 check "a 0.x patch pip update applies inside the venv" logHas 'pip install --quiet --no-input --upgrade ruff==0.2.1'
@@ -497,7 +497,7 @@ check "major cask is held" logLacks 'brew upgrade --cask slack'
 check "major cask is recorded" grep -qx 'cask slack 4.1.0 5.0.0' "$upgradeHeldPath"
 check "major formula is recorded" grep -qx 'formula git 2.1.0 3.0.0' "$upgradeHeldPath"
 check "major npm is never installed" logLacks 'npm install -g typescript'
-check "major npm is recorded" grep -qx 'npm typescript 1.0.0 2.0.0' "$upgradeHeldPath"
+check "major npm is recorded" grep -qx 'npm typescript 1.2.0 2.0.0' "$upgradeHeldPath"
 check "major pip is held" logLacks '--upgrade ruff'
 check "major pip is recorded" grep -qx 'pip ruff 0.2.0 1.0.0' "$upgradeHeldPath"
 : > "$commandLog"

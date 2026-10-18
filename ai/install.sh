@@ -733,6 +733,11 @@ fi
 convergeCodexServers
 convergeMcpServers
 
+shouldHoldNonNumericPluginUpgrade() {
+  ! areAllUpgradesApproved || return 1
+  ! [[ "$1" =~ ^[0-9]+\.[0-9]+ && "$2" =~ ^[0-9]+\.[0-9]+ ]]
+}
+
 upgradeEnabledClaudePlugins() {
   [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
   command -v claude >/dev/null 2>&1 || return 0
@@ -826,7 +831,7 @@ upgradeEnabledClaudePlugins() {
       continue
     fi
     versionIsNewer "$installedVersion" "$availableVersion" || continue
-    if ! areAllUpgradesApproved; then
+    if shouldHoldUpgrade "$installedVersion" "$availableVersion" || shouldHoldNonNumericPluginUpgrade "$installedVersion" "$availableVersion"; then
       recordHeldUpgrade plugin "$pluginId" "$installedVersion" "$availableVersion"
       continue
     fi

@@ -253,10 +253,10 @@ writeInstalledPlugins 2.1.0 2.1.0
 writePluginMarketplace 2.2.0 2.2.0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
-check "unapproved plugin update is never applied" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update",'
-check "plugin version resolves from the marketplace source plugin.json" grep -qx 'plugin caveman@caveman 2.1.0 2.2.0' "$pluginHeldPath"
-check "plugin version resolves from the marketplace entry" grep -qx 'plugin companion@caveman 2.1.0 2.2.0' "$pluginHeldPath"
-check "disabled plugin is never held" bash -c '! grep -qF disabled "$1"' _ "$pluginHeldPath"
+check "same-major plugin resolved from the marketplace source plugin.json applies" grep -qxF '["plugin","update","caveman@caveman"]' "$mcpCommandLog"
+check "same-major plugin resolved from the marketplace entry applies" grep -qxF '["plugin","update","companion@caveman"]' "$mcpCommandLog"
+check "same-major plugins are never held" test ! -e "$pluginHeldPath"
+check "disabled plugin never updates nightly" bash -c '! grep -qF disabled "$1"' _ "$mcpCommandLog"
 check "disabled plugin records no failure" test ! -e "$pluginFailedPath"
 check "plugin marketplace refreshes once" test "$(grep -cxF '["plugin","marketplace","update","caveman"]' "$mcpCommandLog")" -eq 1
 check "plugins are listed once with available versions" test "$(grep -cxF '["plugin","list","--json","--available"]' "$mcpCommandLog")" -eq 1
@@ -264,11 +264,16 @@ writeInstalledPlugins 11ddc0c9813c 2.1.0
 writePluginMarketplace 4.0.1 2.2.0
 DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
 check "a commit-sha installed plugin version is updatable" grep -qx 'plugin caveman@caveman 11ddc0c9813c 4.0.1' "$pluginHeldPath"
+writeInstalledPlugins abddc0c9813c 2.1.0
+: > "$mcpCommandLog"
+DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
+check "a letter-leading commit-sha plugin version is held" grep -qx 'plugin caveman@caveman abddc0c9813c 4.0.1' "$pluginHeldPath"
+check "a letter-leading commit-sha plugin never updates nightly" bash -c '! grep -qxF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update","caveman@caveman"]'
 writeInstalledPlugins 2.1.0 2.1.0
 writePluginMarketplace 3.0.0 2.2.0
 : > "$mcpCommandLog"
 DOTFILES_UPGRADE=1 runTopicInstall "$stagedTopicDir" > /dev/null
-check "major plugin is held" bash -c '! grep -qF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update",'
+check "major plugin is held" bash -c '! grep -qxF "$2" "$1"' _ "$mcpCommandLog" '["plugin","update","caveman@caveman"]'
 check "major plugin is recorded" grep -qx 'plugin caveman@caveman 2.1.0 3.0.0' "$pluginHeldPath"
 : > "$mcpCommandLog"
 runTopicInstall "$stagedTopicDir" > /dev/null
