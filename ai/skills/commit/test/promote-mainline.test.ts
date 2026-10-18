@@ -526,28 +526,32 @@ test("a mainline checked out in a clean worktree is fast-forwarded there", () =>
   }
 });
 
-test("a mainline checked out read-only is pushed to origin without touching that checkout", () => {
-  const { origin, seed } = seedOrigin();
-  const holder = cloneRepo(origin);
-  const session = path.join(path.dirname(holder), "session");
-  try {
-    runGit(holder, ["worktree", "add", "-b", "feature", session, "origin/feature"]);
-    advanceOriginMain(seed, "mainline.txt");
-    writeFile(session, "base.txt", "base\nfeature change\n");
-    const mainBefore = gitOutput(holder, ["rev-parse", "main"]);
-    fs.chmodSync(path.join(holder, ".git", "index"), 0o444);
-    const { result } = land(session, ["--promote"], VALID_MESSAGE);
+for (const readOnlyPart of ["index", "working tree"] as const) {
+  test(`a mainline checked out with a read-only ${readOnlyPart} is pushed to origin without touching that checkout`, () => {
+    const { origin, seed } = seedOrigin();
+    const holder = cloneRepo(origin);
+    const session = path.join(path.dirname(holder), "session");
+    const readOnlyPath = readOnlyPart === "index" ? path.join(holder, ".git", "index") : holder;
+    try {
+      runGit(holder, ["worktree", "add", "-b", "feature", session, "origin/feature"]);
+      advanceOriginMain(seed, "mainline.txt");
+      writeFile(session, "base.txt", "base\nfeature change\n");
+      const mainBefore = gitOutput(holder, ["rev-parse", "main"]);
+      fs.chmodSync(readOnlyPath, readOnlyPart === "index" ? 0o444 : 0o555);
+      const { result } = land(session, ["--promote"], VALID_MESSAGE);
 
-    assert.equal(result.outcome, "COMMITTED");
-    assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
-    assert.equal(gitOutput(origin, ["rev-parse", `${result.commit}^`]), gitOutput(seed, ["rev-parse", "main"]));
-    assert.equal(gitOutput(holder, ["rev-parse", "main"]), mainBefore);
-    assert.equal(gitOutput(holder, ["status", "--porcelain"]), "");
-    assert.match((result.warnings as string[]).join("\n"), /checked out read-only/);
-  } finally {
-    cleanup(origin, seed, path.dirname(holder));
-  }
-});
+      assert.equal(result.outcome, "COMMITTED");
+      assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
+      assert.equal(gitOutput(origin, ["rev-parse", `${result.commit}^`]), gitOutput(seed, ["rev-parse", "main"]));
+      assert.equal(gitOutput(holder, ["rev-parse", "main"]), mainBefore);
+      assert.equal(gitOutput(holder, ["status", "--porcelain"]), "");
+      assert.match((result.warnings as string[]).join("\n"), /checked out read-only/);
+    } finally {
+      fs.chmodSync(readOnlyPath, 0o755);
+      cleanup(origin, seed, path.dirname(holder));
+    }
+  });
+}
 
 test("a mainline checked out read-only stops promotion under --no-push", () => {
   const { origin, seed } = seedOrigin();

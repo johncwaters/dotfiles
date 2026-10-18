@@ -82,6 +82,23 @@ test("a conflicted merge left in progress is OPERATION_IN_PROGRESS", () => {
   }
 });
 
+test("a REBASE_HEAD left by a finished rebase blocks only while a rebase state directory exists", () => {
+  const repo = makeRepo();
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    const gitDirectory = path.join(repo, ".git");
+    fs.writeFileSync(path.join(gitDirectory, "REBASE_HEAD"), `${gitOutput(repo, ["rev-parse", "HEAD"])}\n`);
+    assert.equal(preflight(repo).result.outcome, "READY");
+
+    fs.mkdirSync(path.join(gitDirectory, "rebase-merge"));
+    const { result } = preflight(repo);
+    assert.equal(result.outcome, "OPERATION_IN_PROGRESS");
+    assert.equal(result.operation, "REBASE_HEAD");
+  } finally {
+    cleanup(repo);
+  }
+});
+
 test("a clean tree is READY with an empty scope", () => {
   const repo = makeRepo();
   try {

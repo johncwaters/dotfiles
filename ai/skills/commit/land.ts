@@ -801,7 +801,7 @@ class Landing {
       return "PROMOTE_FAILED";
     }
 
-    if (!this.isHolderIndexWritable(holder)) {
+    if (!this.isHolderWritable(holder)) {
       return this.deferToReadOnlyHolder(source, destination, holder);
     }
 
@@ -825,17 +825,18 @@ class Landing {
     return null;
   }
 
-  private isHolderIndexWritable(holder: string): boolean {
+  // A guarded session can see a writable shared .git while the holder's working tree is read-only.
+  private isHolderWritable(holder: string): boolean {
     const indexPath = this.git.indexPathIn(holder);
-    if (indexPath === null || !fs.existsSync(indexPath)) {
-      return true;
-    }
-    try {
-      fs.accessSync(indexPath, fs.constants.W_OK);
-      return true;
-    } catch {
-      return false;
-    }
+    const pathsToWrite = indexPath !== null && fs.existsSync(indexPath) ? [holder, indexPath] : [holder];
+    return pathsToWrite.every((pathToWrite) => {
+      try {
+        fs.accessSync(pathToWrite, fs.constants.W_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
   }
 
   private deferToReadOnlyHolder(source: string, destination: string, holder: string): FailureOutcome | null {

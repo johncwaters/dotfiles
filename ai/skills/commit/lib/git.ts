@@ -264,6 +264,10 @@ export class Git {
     return nonEmptyLines(this.run(scoped(["status", "--short", "-uall"], paths)).stdout);
   }
 
+  gitPath(name: string): string {
+    return this.run(["rev-parse", "--path-format=absolute", "--git-path", name]).stdout.trim();
+  }
+
   indexPathIn(worktreePath: string): string | null {
     const proc = this.run(["rev-parse", "--path-format=absolute", "--git-path", "index"], { cwd: worktreePath });
     if (proc.code !== 0) {
