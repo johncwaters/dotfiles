@@ -539,19 +539,19 @@ for entryKind in agents workflows; do
 done
 
 skillsPath="$sandbox/.claude/skills"
-mkdir -p "$skillsPath/open-pr"
-printf 'foreign skill state\n' > "$skillsPath/open-pr/state.json"
+mkdir -p "$skillsPath/posthog-querying"
+printf 'foreign skill state\n' > "$skillsPath/posthog-querying/state.json"
 foreignWorkSkillPath="$sandbox/foreign-sprint-update"
 mkdir -p "$foreignWorkSkillPath"
 printf 'foreign linked skill state\n' > "$foreignWorkSkillPath/state.json"
 ln -s "$foreignWorkSkillPath" "$skillsPath/sprint-update"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile preserves a foreign directory named after a work skill" \
-  bash -c '[[ ! -L "$1" ]] && grep -qx "foreign skill state" "$1/state.json"' _ "$skillsPath/open-pr"
+  bash -c '[[ ! -L "$1" ]] && grep -qx "foreign skill state" "$1/state.json"' _ "$skillsPath/posthog-querying"
 check "personal profile preserves a foreign symlink named after a work skill" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]] && grep -qx "foreign linked skill state" "$1/state.json"' _ \
   "$skillsPath/sprint-update" "$foreignWorkSkillPath"
-rm -rf "$skillsPath/open-pr"
+rm -rf "$skillsPath/posthog-querying"
 rm -f "$skillsPath/sprint-update"
 for skillName in "${workSkillNames[@]}"; do
   ln -s "$sandbox/.dotfiles/ai/skills/$skillName" "$skillsPath/$skillName"
@@ -1297,7 +1297,7 @@ workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
 commitTestFiles=("$topicDir"/skills/commit/test/*.test.ts)
 retroTestFiles=("$topicDir"/skills/retro/test/*.test.ts)
 specTestFiles=("$topicDir"/skills/spec/test/*.test.ts)
-openPrTestFiles=("$repoRoot"/profiles/work/skills/open-pr/test/*.test.mjs)
+openPrTestFiles=("$topicDir"/skills/open-pr/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
 hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
 shopt -u nullglob

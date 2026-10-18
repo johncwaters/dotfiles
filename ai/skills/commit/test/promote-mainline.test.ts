@@ -95,7 +95,6 @@ test("land refuses a forbidden branch before committing under policy and fallbac
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "main",
-    afterCommit: "promote",
   });
   const fallbackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-no-policy-"));
   for (const root of [policyRoot, fallbackRoot]) {
@@ -131,7 +130,6 @@ test("committing on a resolved mainline outside the forbid list is BRANCH_FORBID
     profile: "personal",
     commitBranches: { forbid: ["main", "master"], onForbidden: "create-feature-branch" },
     mainline: "auto",
-    afterCommit: "promote",
   });
   try {
     commitFile(seed, "base.txt", "base\n", "init");
@@ -216,7 +214,6 @@ test("promotion honors a literal policy mainline", () => {
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "trunk",
-    afterCommit: "promote",
   });
   try {
     runGit(seed, ["checkout", "-q", "main"]);

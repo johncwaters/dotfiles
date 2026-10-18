@@ -429,7 +429,6 @@ test("mainline is never deleted as a feature branch", () => {
     profile: "personal",
     commitBranches: { forbid: ["release"], onForbidden: "create-feature-branch" },
     mainline: "release",
-    afterCommit: "promote",
   });
   try {
     runGit(origin, ["symbolic-ref", "HEAD", "refs/heads/release"]);

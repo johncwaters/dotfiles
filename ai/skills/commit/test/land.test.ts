@@ -149,7 +149,6 @@ test("land refuses a stale forbidden-branch remedy before committing", () => {
     profile: "legacy",
     commitBranches: { forbid: ["main"], onForbidden: "switch-to-develop" },
     mainline: "main",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");

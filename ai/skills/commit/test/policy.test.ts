@@ -14,7 +14,6 @@ const PERSONAL_POLICY = {
   profile: "personal",
   commitBranches: { forbid: ["main", "master"], onForbidden: "create-feature-branch" },
   mainline: "auto",
-  afterCommit: "promote",
 };
 
 test("an applied profile yields its policy", () => {
@@ -57,7 +56,7 @@ test("a non-string onForbidden is a policy validation error", () => {
 });
 
 test("a policy without commitBranches uses fallback guards instead of failing validation", () => {
-  const policy = { profile: "personal", mainline: "auto", afterCommit: "promote" };
+  const policy = { profile: "personal", mainline: "auto" };
   assert.deepEqual(policyValidationErrors(policy, "/profiles/personal/commit-policy.json"), []);
   assert.deepEqual(forbiddenBranches(policy), ["main", "master"]);
 });
@@ -120,10 +119,7 @@ test("the profiles shipped in this repo all parse and name a forbid list", () =>
     const policy = JSON.parse(fs.readFileSync(policyPath, "utf8")) as Record<string, unknown>;
     assert.ok(forbiddenBranches(policy).includes("master"), `${profile} must guard master`);
     assert.ok(forbiddenBranches(policy).includes("main"), `${profile} must guard main`);
-    assert.ok(
-      ["promote", "pull-request"].includes(policy.afterCommit as string),
-      `${profile} needs a known afterCommit`,
-    );
+    assert.equal(Object.hasOwn(policy, "afterCommit"), false, `${profile} must resolve ownership at runtime`);
     assert.ok(["auto", "main", "master"].includes(policy.mainline as string));
     assert.deepEqual(policyValidationErrors(policy, policyPath), []);
   }

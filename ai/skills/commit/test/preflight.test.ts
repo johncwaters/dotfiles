@@ -147,7 +147,6 @@ test("a pushed branch under a pull-request policy is told to merge mainline, not
     profile: "work",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "auto",
-    afterCommit: "pull-request",
   });
   try {
     commitFile(seed, "a.txt", "one\n");
@@ -211,7 +210,6 @@ test("a dash-named default branch is fetched by refspec and prunes no tracking r
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "auto",
-    afterCommit: "promote",
   });
   try {
     commitFile(seed, "a.txt", "one\n");
@@ -336,7 +334,6 @@ test("a branch the applied profile forbids reports branchAllowed false", () => {
     profile: "personal",
     commitBranches: { forbid: ["main", "master"], onForbidden: "create-feature-branch" },
     mainline: "auto",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -365,7 +362,6 @@ test("a retired forbidden-branch remedy refuses preflight and names the profile 
     profile: "legacy",
     commitBranches: { forbid: ["main"], onForbidden: "switch-to-develop" },
     mainline: "auto",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -388,7 +384,6 @@ test("a literal policy mainline resolves into preflight policy output", () => {
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "main",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -408,7 +403,6 @@ test("auto mainline prefers origin HEAD over a different local main branch", () 
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "auto",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -433,7 +427,6 @@ test("a mismatched release integration warns without refusing preflight", () => 
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "main",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -453,7 +446,6 @@ test("the live JSON release profile is preferred when both profile formats exist
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "main",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -481,7 +473,6 @@ test("an unresolved policy mainline stays READY with a warning", () => {
     profile: "personal",
     commitBranches: { forbid: ["main"], onForbidden: "create-feature-branch" },
     mainline: "missing-trunk",
-    afterCommit: "promote",
   });
   try {
     commitFile(repo, "a.txt", "one\n");

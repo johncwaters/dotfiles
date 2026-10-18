@@ -18,7 +18,7 @@ import {
   readCommitPolicy,
 } from "./lib/policy.ts";
 import { readStdin } from "./lib/stdio.ts";
-import { readRemoteVisibility } from "./lib/visibility.ts";
+import { readGithubRemote, readRemoteVisibility, resolveAfterCommit } from "./lib/visibility.ts";
 import { checkMainlineFreshness, computeScope, resolveMainline } from "./lib/workspace.ts";
 
 type Arguments = { paths: string[]; checkMessage: boolean; noFetch: boolean };
@@ -139,11 +139,17 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
 
   const mainline = resolveMainline(git, configuredMainline(policy));
   const warnings = warning ? [warning] : [];
+  const origin = readGithubRemote(git);
+  const ownershipResolution = resolveAfterCommit(origin);
+  const resolvedPolicy = policy ? { ...policy, afterCommit: ownershipResolution.mode, resolved: { mainline } } : undefined;
+  if (ownershipResolution.warning) {
+    warnings.push(ownershipResolution.warning);
+  }
   const mainlineFreshness = mainline === null || noFetch
     ? undefined
     : checkMainlineFreshness(git, mainline);
   if (mainlineFreshness?.checked && mainlineFreshness.behind > 0) {
-    const shouldMergeMainline = policy?.afterCommit === "pull-request" && git.hasUpstream();
+    const shouldMergeMainline = resolvedPolicy?.afterCommit === "pull-request" && git.hasUpstream();
     const integrationVerb = shouldMergeMainline ? "merge" : "rebase onto";
     warnings.push(
       `branch is ${mainlineFreshness.behind} commits behind origin/${mainlineFreshness.mainline}; ${integrationVerb} origin/${mainlineFreshness.mainline} before review`,
@@ -166,7 +172,6 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
       `${profilePath} git.integration names ${releaseIntegration.integration}, but commit policy resolves mainline to ${mainline}`,
     );
   }
-  const resolvedPolicy = policy ? { ...policy, resolved: { mainline } } : undefined;
 
   return {
     ...ready({
@@ -177,7 +182,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
       ...(profile ? { profile } : {}),
       ...(resolvedPolicy ? { policy: resolvedPolicy } : {}),
       ...(mainlineFreshness ? { mainlineFreshness } : {}),
-      remoteVisibility: readRemoteVisibility(git),
+      remoteVisibility: readRemoteVisibility(origin),
       warnings,
     }),
     paths: resolvedScopePaths,
