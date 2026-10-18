@@ -558,7 +558,13 @@ rm -f "$stubState/brew-update-fails"
 printf '{"formulae":[],"casks":[{"name":"slack","installed_versions":["release-a"],"current_version":"release-b"}]}\n' > "$stubState/brew-outdated.json"
 : > "$commandLog"
 DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null
-check "versions without leading numbers apply" logHas 'brew upgrade --cask slack'
+check "versions without leading numbers are held" logLacks 'brew upgrade --cask slack'
+check "versions without leading numbers are recorded" grep -qx 'cask slack release-a release-b' "$upgradeHeldPath"
+printf '{"formulae":[],"casks":[{"name":"slack","installed_versions":["0.5rc1"],"current_version":"0.6rc1"}]}\n' > "$stubState/brew-outdated.json"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null
+check "a 0.x minor bump with a letter suffix is held" logLacks 'brew upgrade --cask slack'
+check "a 0.x minor bump with a letter suffix is recorded" grep -qx 'cask slack 0.5rc1 0.6rc1' "$upgradeHeldPath"
 printf '{"formulae":[],"casks":[]}\n' > "$stubState/brew-outdated.json"
 : > "$commandLog"
 DOTFILES_UPGRADE=1 runUpgradeInstall > /dev/null

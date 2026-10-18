@@ -71,10 +71,10 @@ finishPackageUpgrades() {
 }
 
 versionHasNewMajor() {
-  [[ "$1" =~ ^([0-9]+)(\.([0-9]+))? ]] || return 1
+  [[ "$1" =~ ^([0-9]+)(\.([0-9]+)([^0-9A-Za-z]|$)|[^.0-9A-Za-z]|$) ]] || return 0
   local installedMajor="${BASH_REMATCH[1]}"
   local installedMinor="${BASH_REMATCH[3]:-0}"
-  [[ "$2" =~ ^([0-9]+)(\.([0-9]+))? ]] || return 1
+  [[ "$2" =~ ^([0-9]+)(\.([0-9]+)([^0-9A-Za-z]|$)|[^.0-9A-Za-z]|$) ]] || return 0
   local availableMajor="${BASH_REMATCH[1]}"
   local availableMinor="${BASH_REMATCH[3]:-0}"
   ((10#$installedMajor == 10#$availableMajor)) || return 0
