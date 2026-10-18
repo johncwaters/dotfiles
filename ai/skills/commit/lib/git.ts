@@ -268,12 +268,20 @@ export class Git {
     return this.run(["rev-parse", "--path-format=absolute", "--git-path", name]).stdout.trim();
   }
 
-  indexPathIn(worktreePath: string): string | null {
-    const proc = this.run(["rev-parse", "--path-format=absolute", "--git-path", "index"], { cwd: worktreePath });
+  gitPathIn(worktreePath: string, gitPath: string): string | null {
+    const proc = this.run(["rev-parse", "--path-format=absolute", "--git-path", gitPath], { cwd: worktreePath });
     if (proc.code !== 0) {
       return null;
     }
     return proc.stdout.trim();
+  }
+
+  pathsChangedByFastForwardIn(worktreePath: string, ref: string): string[] | null {
+    const proc = this.run(["diff", "--name-only", "--no-renames", "-z", "HEAD", ref], { cwd: worktreePath });
+    if (proc.code !== 0) {
+      return null;
+    }
+    return proc.stdout.split("\0").filter((changedPath) => changedPath.length > 0);
   }
 
   statusShortIn(worktreePath: string): string[] {

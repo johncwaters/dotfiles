@@ -805,11 +805,12 @@ class Landing {
       return "PROMOTE_FAILED";
     }
 
-    if (!this.isHolderWritable(holder)) {
+    if (!this.isHolderWritable(holder, source, destination)) {
       return this.deferToReadOnlyHolder(source, destination, holder);
     }
 
-    const dirty = this.git.statusShortIn(holder).filter((line) => !line.startsWith("??"));
+    const statusBeforeMerge = this.git.statusShortIn(holder);
+    const dirty = statusBeforeMerge.filter((line) => !line.startsWith("??"));
     if (dirty.length > 0) {
       this.warnings.push(
         `${destination} is checked out in ${holder} and has uncommitted changes; promotion stopped`,
@@ -822,6 +823,7 @@ class Landing {
       this.warnings.push(
         `could not fast-forward ${destination} from ${source} in ${holder}; promotion stopped: ${merge.stderr.trim()}`,
       );
+      this.reportPathsLeftByFailedMerge(holder, statusBeforeMerge);
       return "PROMOTE_FAILED";
     }
 
@@ -830,17 +832,32 @@ class Landing {
   }
 
   // A guarded session can see a writable shared .git while the holder's working tree is read-only.
-  private isHolderWritable(holder: string): boolean {
-    const indexPath = this.git.indexPathIn(holder);
+  // The tree can also be writable at its top and read-only below, and a partial merge leaves files behind.
+  private isHolderWritable(holder: string, source: string, destination: string): boolean {
+    const changedPaths = this.git.pathsChangedByFastForwardIn(holder, source);
+    const indexPath = this.git.gitPathIn(holder, "index");
+    const destinationRefPath = this.git.gitPathIn(holder, `refs/heads/${destination}`);
+    const origHeadPath = this.git.gitPathIn(holder, "ORIG_HEAD");
+    if (changedPaths === null || destinationRefPath === null || origHeadPath === null) {
+      return false;
+    }
     const pathsToWrite = indexPath !== null && fs.existsSync(indexPath) ? [holder, indexPath] : [holder];
-    return pathsToWrite.every((pathToWrite) => {
-      try {
-        fs.accessSync(pathToWrite, fs.constants.W_OK);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    const gitDirectoriesToWrite = [destinationRefPath, origHeadPath].map((gitPath) =>
+      nearestExistingDirectory(path.dirname(gitPath), holder),
+    );
+    const directoriesToWrite = changedPaths.map((changedPath) =>
+      nearestExistingDirectory(path.join(holder, path.dirname(changedPath)), holder),
+    );
+    return [...new Set([...pathsToWrite, ...gitDirectoriesToWrite, ...directoriesToWrite])].every(isWritable);
+  }
+
+  private reportPathsLeftByFailedMerge(holder: string, statusBeforeMerge: string[]): void {
+    const statusBefore = new Set(statusBeforeMerge);
+    const leftPaths = this.git.statusShortIn(holder).filter((line) => !statusBefore.has(line));
+    if (leftPaths.length === 0) {
+      return;
+    }
+    this.warnings.push(`left modified in ${holder}: ${leftPaths.map((line) => line.slice(3)).join(", ")}`);
   }
 
   private deferToReadOnlyHolder(source: string, destination: string, holder: string): FailureOutcome | null {
@@ -947,6 +964,22 @@ class Landing {
         `promote push ${pendingRef.branch} attempt ${attempt}/${PUSH_ATTEMPTS} failed: ${stderr}`,
       );
     }
+  }
+}
+
+function nearestExistingDirectory(directory: string, holder: string): string {
+  if (directory === holder || fs.existsSync(directory)) {
+    return directory;
+  }
+  return nearestExistingDirectory(path.dirname(directory), holder);
+}
+
+function isWritable(pathToWrite: string): boolean {
+  try {
+    fs.accessSync(pathToWrite, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
 }
 

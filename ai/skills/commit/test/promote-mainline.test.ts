@@ -550,6 +550,39 @@ for (const readOnlyPart of ["index", "working tree"] as const) {
   });
 }
 
+for (const readOnlyPart of ["server", ".git/refs/heads"]) {
+  test(`a mainline checkout writable at its top but read-only below at ${readOnlyPart} is pushed to origin without a partial merge`, () => {
+    const { origin, seed } = seedOrigin();
+    const holder = cloneRepo(origin);
+    const session = path.join(path.dirname(holder), "session");
+    const readOnlyDirectory = path.join(holder, readOnlyPart);
+    try {
+      advanceOriginMain(seed, "server/core.txt");
+      runGit(holder, ["pull", "-q", "--ff-only"]);
+      runGit(holder, ["worktree", "add", "-b", "glimmervoid/session/feature", session, "origin/main"]);
+      writeFile(session, "base.txt", "base\nfeature change\n");
+      writeFile(session, "server/core.txt", "mainline change\nfeature change\n");
+      writeFile(session, "newdir/new.txt", "new\n");
+      const mainBefore = gitOutput(holder, ["rev-parse", "main"]);
+      fs.chmodSync(readOnlyDirectory, 0o555);
+      const { result } = land(
+        session,
+        ["--promote", "--paths", "base.txt", "server/core.txt", "newdir/new.txt"],
+        VALID_MESSAGE,
+      );
+
+      assert.equal(result.outcome, "COMMITTED");
+      assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
+      assert.equal(gitOutput(holder, ["rev-parse", "main"]), mainBefore);
+      assert.equal(gitOutput(holder, ["status", "--porcelain"]), "");
+      assert.match((result.warnings as string[]).join("\n"), /checked out read-only/);
+    } finally {
+      fs.chmodSync(readOnlyDirectory, 0o755);
+      cleanup(origin, seed, path.dirname(holder));
+    }
+  });
+}
+
 test("a mainline checked out read-only stops promotion under --no-push", () => {
   const { origin, seed } = seedOrigin();
   const holder = cloneRepo(origin);
