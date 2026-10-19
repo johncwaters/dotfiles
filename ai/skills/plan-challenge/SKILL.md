@@ -9,7 +9,7 @@ Every step is guilty until justified. Three challengers press necessity, leverag
 
 ## Contract with the caller
 
-**Required input.** The draft plan with numbered steps, the goal it serves in one or two sentences, and the repo path.
+**Required input.** The draft plan with numbered steps, the goal it serves in one or two sentences, and the repo path. When the caller knows what the goal tolerates (stale reads, a lost write, one writer, tail latency), the goal names it: a tolerance the challengers never see cannot cut the step that guards against it.
 
 **Guaranteed output.** A revised plan whose final line is the stamp:
 

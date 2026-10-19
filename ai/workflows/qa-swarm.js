@@ -61,7 +61,7 @@ const laneDefinitions = [
     name: 'necessity',
     recommendable: true,
     classNeedles: [],
-    trigger: 'the diff introduces a net-new file, exported symbol, or doc section, and the context states a goal',
+    trigger: 'the context states a goal, and the diff introduces a net-new file, exported symbol, or doc section, or adds a lock, mutex, transaction, retry, sync, cache invalidation, freshness or re-authorization check, or guard for a concurrent or mid-operation state',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Necessity review', phase: 'Review', agentType: 'necessity-reviewer' })
   }
 ]

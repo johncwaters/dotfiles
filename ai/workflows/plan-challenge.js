@@ -3,7 +3,7 @@ export const meta = { name: 'plan-challenge', description: 'Runs three adversari
 const laneBriefs = [
   {
     lane: 'necessity',
-    brief: 'Burden of proof per step: argue the step should be CUT. Does the goal still land without it? Hunt YAGNI, speculative generality, gold-plating, unenforceable docs, tests duplicating existing coverage, work the goal never asked for.'
+    brief: 'Burden of proof per step: argue the step should be CUT. Does the goal still land without it? Hunt YAGNI, speculative generality, gold-plating, unenforceable docs, tests duplicating existing coverage, work the goal never asked for. Hunt invented requirements: a step whose only payoff is a guarantee the goal never states (fresh reads, atomic multi-key writes, exactly-once delivery, ordering, concurrent writers, a permission changing mid-operation) is a CUT naming the tolerance that already holds, verified in the repo or quoted from the goal.'
   },
   {
     lane: 'leverage',
