@@ -39,7 +39,18 @@ Load `voice-style` and write in it.
 - During an offsite or holiday, list it first in Plans, shrink the rest to match, and add a one-line note under Updates.
 - Never @-mention anyone unless the user asks.
 
-## Step 4: Show, then post
+## Step 4: Verify every claim
+
+The first full run claimed a NUL-byte fix from a closed, unmerged PR, and called an eval "promising" from a Slack post while its PR reported a failing run. Re-check the finished draft, one claim at a time, against the primary source:
+
+- Each PR: `gh pr view` for state and merge date. Closed is not merged, and done means merged inside the window.
+- Each number or result: the PR body, the code, or a fresh query. A Slack message is a lead, not proof; when the PR or code says otherwise, the PR or code wins.
+- Each joke in the rating rests on a fact that also passes this check.
+- Facts the user stated stay as stated.
+
+Fix or drop every claim that fails, then list the corrections for the user when showing the draft.
+
+## Step 5: Show, then post
 
 - Save the draft in the scratchpad and show it in full, with each private-channel or DM source noted next to its claim so the user confirms it. Strip those notes from the file before posting.
 - Post only when the user says to:
