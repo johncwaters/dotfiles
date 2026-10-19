@@ -92,5 +92,5 @@ Style, from the graphics team's blog art and the carbon unit's rounds:
 - The chamber sign follows the Portal 2 sign: a tall, thin stroked number; `NN/total` over thin ticks, done ones in ink and the rest light, and never the last chamber; a rule; uncaptioned icons right-aligned in uneven rows, only ones that read without a label, with a cake bottom-right; the logo lockup at the bottom. Leave whitespace: a filler stats block and colored tiles were both cut.
 - Don't label a hatch with a direction. "Docs in" over a hatch that cubes come out of reads backwards; the stripes alone make it read as a dispenser.
 - Color lives in the illustration and charts. The sign stays monochrome.
-- Stats board: phrase every stat as a reduction so a shorter bar is always better, use green for the new arm and one color for the baseline, and say both in the legend.
+- Stats board: phrase every stat as a reduction so a shorter bar is always better, draw the new arm in solid green and the baseline in the same green at 50% opacity (PostHog's own compare-to-previous convention, `getTrendLikeSeriesColor` in the posthog repo's `frontend/src/lib/colors.ts`), keep the raw-number caption neutral gray, and say solid and faded in the legend. Red read as "bad" on an arm that is only the old version.
 - Alt text carries the headline and every number on the poster.
