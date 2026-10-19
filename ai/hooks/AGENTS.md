@@ -17,6 +17,7 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
 | `gate-codex-dispatch.mjs` | PreToolUse subagent Codex ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
 | `guard-workflow.mjs` | PreToolUse attended main-loop gate: raw git commit/push outside /commit, first repo edit without /spec | `test/guard-workflow.test.mjs` |
+| `require-commit-on-stop.mjs` | Stop hook: blocks once a turn ending with uncommitted session edits and no /commit | `test/require-commit-on-stop.test.mjs` |
 | `session-transcript.mjs` | Shared transcript event stream for the workflow gates | `test/guard-workflow.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `inject-routing.mjs` | SessionStart routing context | `test/inject-routing.test.mjs` |

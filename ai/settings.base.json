@@ -152,6 +152,16 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/require-commit-on-stop.mjs"
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
