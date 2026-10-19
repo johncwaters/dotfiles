@@ -5,11 +5,11 @@ description: Extension for /open-pr on a work machine. Adds PostHog's PR convent
 
 # Open PR: PostHog
 
-PostHog opens pull requests early and often, so reviewers can steer work before it hardens. That is why the core skill defaults to drafts and always writes a feedback block. Each PostHog repo still owns its conventions, and they differ between repos.
+PostHog opens pull requests early and often, so reviewers can steer work before it hardens. That is why the core skill defaults to drafts and always writes a status block. Each PostHog repo still owns its conventions, and they differ between repos.
 
 ## Step 2: PostHog repo rules
 
-- `PostHog/posthog` names PR skills such as `/writing-pr-descriptions`, `/reviewing-with-coderabbit`, and `/stacking-prs`. Invoke each one where the repo says to. The repo forbids changing a template's section structure, so the feedback block never gets its own `##` heading.
+- `PostHog/posthog` names PR skills such as `/writing-pr-descriptions`, `/reviewing-with-coderabbit`, and `/stacking-prs`. Invoke each one where the repo says to. The repo forbids changing a template's section structure, so the status block never gets its own `##` heading.
 - `PostHog/posthog.com` routes bugs and non-content changes to issues and closes such PRs. A visual change spanning several pages also goes to an issue, and a PR that goes ahead anyway says why in its description.
 
 ## Step 4: visual evidence
@@ -27,7 +27,7 @@ After the PR is posted, print a short message the carbon unit can paste into the
 The team posts PRs as one casual sentence, not a restated PR body, so match that. Write it with `/voice-style`.
 
 - Lead with the bare PR link, e.g. `https://github.com/org/repo/pull/123`: the composer does not render `<url|label>`, but Slack autolinks and unfurls a bare URL.
-- One sentence on what it changes, in the reader's words, not how. That sentence is the whole message at every stage: no feedback questions, evidence, risk, or "quick stamp?", since the PR body's feedback block carries them and posting the link is the ask. Repeating the questions in Slack splits the answers across two places.
+- One sentence on what it changes, in the reader's words, not how. That sentence is the whole message at every stage: no feedback questions, evidence, risk, or "quick stamp?", since the PR body's status block carries them and posting the link is the ask. Repeating the questions in Slack splits the answers across two places.
 - One workspace emoji where it fits the subject. Find it with the Slack MCP's `slack_search_emojis` (name substring search, e.g. `wizard` finds `:pet_wizard:`) rather than guessing a name, since a custom emoji that does not exist renders as literal text.
 - Link every companion PR this run opened or cited in other repos (the backend or config change it depends on), plus the issue it closes and the stack tip or base PR ("review the stack as a whole"), as bare URLs after the sentence.
 - Leave out thanks, credits, @-mentions, caveats, and side stories. The PR body holds those.
