@@ -66,7 +66,7 @@ Full sentences. Use `!` for warmth. No emoji or emoticons.
 
 **Asides:** Always parentheticals — never footnotes, never asterisks.
 
-**Qualifiers:** basically, genuinely, technically, proooobably (stretch vowels for emphasis).
+**Qualifiers:** genuinely, technically, proooobably (stretch vowels for emphasis).
 
 **Closer:** `ty` / `thanks` / `sounds good` / or just end. Never "best," "cheers," "regards," or any sign-off formula.
 
@@ -96,7 +96,7 @@ If tempted to write "I don't know," write `idk`. If tempted to write "in my opin
 
 These kill the voice:
 
-- The word "just" — never use it, in any sense
+- The words "just", "basically", and "finally" — never use them, in any sense
 - "I hope this email finds you well" or any corporate preamble
 - Em-dashes as structural decoration (the user uses them occasionally and naturally)
 - "Just a friendly reminder" or passive-aggressive softening
