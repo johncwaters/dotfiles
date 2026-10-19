@@ -97,6 +97,7 @@ pins the shared boundary. Shared npm entries apply everywhere; profile lists con
 | `coder` | the Coder CLI |
 | `devbox` | glimmervoid on the Coder devbox, which converges its own `~/Projects/dotfiles` clone through `dot --profile work-server` |
 | `peripherals` | Logitech tooling and the headset udev rule; Logi Options+ on macOS |
+| `desktop` | macOS login and relaunch with no reopened apps or restored windows |
 
 Vendored third-party skills are listed in [NOTICE.md](NOTICE.md).
 
