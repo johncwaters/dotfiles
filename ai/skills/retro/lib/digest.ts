@@ -47,16 +47,16 @@ export type DigestOptions = { includeGit?: boolean };
 type JsonObject = Record<string, unknown>;
 type ToolUse = { name: string; command: string };
 
-function asObject(value: unknown): JsonObject | null {
+export function asObject(value: unknown): JsonObject | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   return value as JsonObject;
 }
 
-function asText(value: unknown): string {
+export function asText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function contentText(content: unknown): string {
+export function contentText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.flatMap((block: unknown) => {
@@ -89,6 +89,22 @@ function readObject(line: string): JsonObject | null {
     return asObject(JSON.parse(line));
   } catch {
     return null;
+  }
+}
+
+export function isSyntheticPrompt(trimmedText: string, entry: JsonObject): boolean {
+  return entry.isMeta === true || isMachinePrompt(entry) || !trimmedText
+    || /^(<command-name>|<local-command-stdout>|<command-message>|<system-reminder>|<task-notification>|Caveat:|Base directory for this skill:)/.test(trimmedText);
+}
+
+export async function* transcriptEntries(transcriptPath: string): AsyncGenerator<JsonObject | null> {
+  const transcriptStream = createReadStream(transcriptPath, { encoding: "utf8" });
+  const lines = createInterface({ input: transcriptStream, crlfDelay: Infinity });
+  try {
+    for await (const line of lines) yield readObject(line);
+  } finally {
+    lines.close();
+    transcriptStream.destroy();
   }
 }
 
@@ -210,7 +226,7 @@ export async function digestTranscript(
       hasPendingInterrupt = true;
       return;
     }
-    if (entry.isMeta === true || isMachinePrompt(entry) || !trimmed || /^(<command-name>|<local-command-stdout>|<command-message>|<system-reminder>|<task-notification>|Caveat:|Base directory for this skill:)/.test(trimmed)) return;
+    if (isSyntheticPrompt(trimmed, entry)) return;
     const ownWords = trimmed.replace(/<pasted_content\b[\s\S]*?<\/pasted_content>/g, " ").trim().toLowerCase();
     const isRedirect = /^(no|nope|stop|wait|wrong|actually|instead|undo|revert)\b|don't|do not|not what i|why did you|that's wrong|you should have|i said|i told you/.test(ownWords);
     if (hasPendingInterrupt || (digest.promptCount > 0 && isRedirect)) {
@@ -257,12 +273,9 @@ export async function digestTranscript(
     if (failures.incident) failures.incident.count = failures.count;
   }
 
-  const transcriptStream = createReadStream(transcriptPath, { encoding: "utf8" });
-  const lines = createInterface({ input: transcriptStream, crlfDelay: Infinity });
   try {
-    for await (const line of lines) {
+    for await (const entry of transcriptEntries(transcriptPath)) {
       digest.lineCount += 1;
-      const entry = readObject(line);
       if (!entry) {
         digest.malformedLineCount += 1;
         continue;
@@ -300,9 +313,6 @@ export async function digestTranscript(
     }
   } catch (error) {
     throw new Error(`Cannot read transcript ${transcriptPath}: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    lines.close();
-    transcriptStream.destroy();
   }
   if (options.includeGit !== false) appendGitIncidents(digest);
   return digest;

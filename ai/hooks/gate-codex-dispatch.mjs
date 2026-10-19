@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
+import { allow, COMMAND_START, COMMAND_WRAPPERS, denyPreToolUse, readPayload } from "./hook-io.mjs";
 import { buildCodexReviewSandboxProfile } from "../protected-paths.mjs";
 
 const DISPATCHER_AGENT_TYPE = "codex-dispatcher";
@@ -19,8 +19,6 @@ const SANCTIONED_DISPATCH_COMMAND = new RegExp(
     `(?: -c model_reasoning_effort="(?:low|medium|high|xhigh)")? < (${PROMPT_STEM})\\.txt 2> \\1\\.err$`,
 );
 const PROMPT_FILE = new RegExp(`^${PROMPT_FILE_PATH}$`);
-const COMMAND_START = String.raw`(?:^|[;&|({!\x60]|\$\(|\b(?:then|do|else)\b|\b(?:ba|z|da)?sh\s+(?:-\S+\s+)*-c\s+)`;
-const COMMAND_WRAPPERS = String.raw`(?:(?:\S*/)?(?:xargs|time|sudo|nice|nohup|exec|command|env|timeout|stdbuf|eval|watch|npx|bunx|npm\s+(?:exec|x)|bun\s+x|pnpm\s+dlx|yarn\s+dlx)(?:\s+(?:-[A-Za-z]\s+[^-\s]\S*|-\S+|\S+=\S*|\d+\S*))*\s+)*`;
 const EXTERNAL_CLI_INVOCATION = new RegExp(
   String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?(?:@openai/)?codex['"]?(?=\s|$|[;&|)@])`,
   "m",
