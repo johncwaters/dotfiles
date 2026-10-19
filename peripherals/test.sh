@@ -108,7 +108,34 @@ exit 0
 STUB
 done
 
-for presentFromTheStart in apt-get sudo cp git install udevadm; do
+writeStub python3 <<'STUB'
+#!/usr/bin/env bash
+printf 'python3 %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+if [[ "$*" == "-m pip install "* ]]; then
+  targetDirectory=""
+  while (($# > 0)); do
+    if [[ "$1" == "--target" ]]; then
+      targetDirectory="$2"
+    fi
+    shift
+  done
+  mkdir -p "$targetDirectory/brother_ql_inventree-1.3.dist-info"
+fi
+exit 0
+STUB
+
+writeStub lpstat <<'STUB'
+#!/usr/bin/env bash
+[[ -f "$DOTFILES_TEST_STATE/print-queue-exists" ]]
+STUB
+
+writeStub lpadmin <<'STUB'
+#!/usr/bin/env bash
+printf 'lpadmin %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+touch "$DOTFILES_TEST_STATE/print-queue-exists"
+STUB
+
+for presentFromTheStart in apt-get sudo cp git install udevadm python3 lpstat lpadmin; do
   provideCommand "$presentFromTheStart"
 done
 
@@ -158,6 +185,11 @@ check "the udev rule is the one the binary generated" \
   grep -q 'idVendor}=="1038"' "$udevRulesPath"
 check "udev is reloaded" logHas "udevadm control --reload-rules"
 check "no command was refused for reaching outside the stubs" logLacks "sudo refused"
+check "the Brother QL library is pinned and kept out of the user site" \
+  logHas "--target $sandbox/.local/share/dotfiles/brother-ql brother_ql_inventree==1.3"
+check "the label printer gets a raw queue, since Brother's filter prints nothing" \
+  logHas "lpadmin -p QL-1100 -E -v usb://Brother/QL-1100 -m raw"
+check "ql-print is linked onto PATH" test -L "$sandbox/.local/bin/ql-print"
 
 : > "$commandLog"
 secondRunStatus=0
@@ -167,6 +199,8 @@ check "second run reports no changes" reportsNoChanges "$secondRunOutput"
 check "second run installs no system package" logLacks "install -y"
 check "second run rebuilds nothing" logLacks "cmake --build"
 check "second run reinstalls no udev rule" logLacks "udevadm control"
+check "second run recreates no printer queue" logLacks "lpadmin"
+check "second run reinstalls no Python library" logLacks "pip install"
 
 rm -f "$udevRulesPath"
 : > "$commandLog"
@@ -398,6 +432,7 @@ check "darwin skips Piper" outputLacks "$darwinFirstOutput" 'Piper'
 check "darwin skips headsetcontrol" outputLacks "$darwinFirstOutput" 'headsetcontrol'
 check "darwin never installs Linux packages" logLacks 'apt-get '
 check "darwin never touches udev" logLacks 'udevadm '
+check "darwin never creates a printer queue" logLacks 'lpadmin '
 check "darwin swaps Control and Command on the Adv360 Pro only" \
   cmp -s "$stubState/defaults/currentHost/-g/com.apple.keyboard.modifiermapping.7504-24926-0" \
   "$topicDir/keyboard/kinesis-modifier-mapping.plist"

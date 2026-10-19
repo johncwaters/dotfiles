@@ -1,0 +1,43 @@
+#!/usr/bin/env -S python3 -I
+import argparse
+import os
+import subprocess
+import sys
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Print images on the Brother QL-1100 label printer.")
+    parser.add_argument("images", nargs="+", help="black and white images, 696 dots wide for 62 mm tape")
+    parser.add_argument("--label", default="62", help="brother_ql label identifier (default: 62)")
+    parser.add_argument("--rotate", default="auto", choices=["auto", "0", "90", "180", "270"])
+    parser.add_argument("--queue", default="QL-1100", help="CUPS queue (default: QL-1100)")
+    return parser.parse_args()
+
+
+def main():
+    arguments = parse_arguments()
+    sys.path.insert(0, os.path.expanduser("~/.local/share/dotfiles/brother-ql"))
+    from brother_ql.conversion import convert
+    from brother_ql.raster import BrotherQLRaster
+    from PIL import Image
+
+    raster = BrotherQLRaster("QL-1100")
+    raster.exception_on_warning = True
+    printer_commands = convert(
+        raster,
+        [Image.open(image_path) for image_path in arguments.images],
+        label=arguments.label,
+        rotate=arguments.rotate,
+        threshold=50,
+        dither=False,
+        compress=False,
+        red=False,
+        dpi_600=False,
+        hq=True,
+        cut=True,
+    )
+    subprocess.run(["lp", "-d", arguments.queue, "-o", "raw"], input=printer_commands, check=True)
+
+
+if __name__ == "__main__":
+    main()

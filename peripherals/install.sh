@@ -161,6 +161,61 @@ runStepOrWarn() {
   return 1
 }
 
+brotherQlPackage="brother_ql_inventree"
+brotherQlVersion="1.3"
+brotherQlLibraryDirectory="$HOME/.local/share/dotfiles/brother-ql"
+labelPrinterQueue="QL-1100"
+labelPrinterDeviceUri="usb://Brother/QL-1100"
+
+# --target keeps Pillow and pyusb out of the user site and needs no venv module, which Ubuntu ships separately.
+installBrotherQlLibrary() {
+  local label="brother_ql"
+  local pythonCommand
+  local installLog
+  if [[ -d "$brotherQlLibraryDirectory/$brotherQlPackage-$brotherQlVersion.dist-info" ]]; then
+    notePresent "$label" "$brotherQlVersion installed"
+    return 0
+  fi
+  if ! pythonCommand="$(pythonCommandName)"; then
+    noteWarned "$label" "python3 not on PATH, ql-print cannot run"
+    return 0
+  fi
+  installLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-brother-ql.XXXXXX")"
+  noteStarting "$label" "pip install $brotherQlVersion"
+  if runStepOrWarn "$label" "pip install failed" "$installLog" \
+    "$pythonCommand" -m pip install --quiet --no-input --upgrade \
+    --target "$brotherQlLibraryDirectory" "$brotherQlPackage==$brotherQlVersion"; then
+    noteInstalled "$label" "$brotherQlVersion installed"
+  fi
+  rm -f -- "$installLog"
+}
+
+# Brother's QL-1100 CUPS driver prints nothing on current distros, so the queue is raw and ql-print sends finished raster.
+ensureLabelPrinterQueue() {
+  local label="QL-1100 queue"
+  local queueLog
+  if ! command -v lpadmin >/dev/null 2>&1 || ! command -v lpstat >/dev/null 2>&1; then
+    noteWarned "$label" "lpadmin or lpstat not on PATH, install CUPS"
+    return 0
+  fi
+  if lpstat -v "$labelPrinterQueue" >/dev/null 2>&1; then
+    notePresent "$label" "configured"
+    return 0
+  fi
+  queueLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-ql-queue.XXXXXX")"
+  if runStepOrWarn "$label" "lpadmin failed" "$queueLog" \
+    lpadmin -p "$labelPrinterQueue" -E -v "$labelPrinterDeviceUri" -m raw; then
+    noteApplied "$label" "raw queue created"
+  fi
+  rm -f -- "$queueLog"
+}
+
+installLabelPrinterSupport() {
+  installBrotherQlLibrary
+  ensureLabelPrinterQueue
+  linkEntry "ql-print" "peripherals/ql-print" "$HOME/.local/bin/ql-print"
+}
+
 installLogitechTools() {
   local solaarWasPresent=0
   if command -v solaar >/dev/null 2>&1; then
@@ -395,5 +450,6 @@ installHeadsetControl() {
 
 installLogitechTools
 installHeadsetControl
+installLabelPrinterSupport
 
 finishTopic
