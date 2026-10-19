@@ -25,6 +25,11 @@ function skillRun(skillName) {
   return [toolUse("Skill", { skill: skillName }), launchResult];
 }
 
+function bashRun(command, output, isError = false) {
+  const bashResult = { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-Bash", content: output, is_error: isError }] } };
+  return [toolUse("Bash", { command }), bashResult];
+}
+
 function writeTranscript(entries) {
   const transcriptPath = path.join(fs.mkdtempSync(path.join(sandboxHome, "transcript-")), "session.jsonl");
   fs.writeFileSync(transcriptPath, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n", "utf8");
@@ -50,6 +55,11 @@ test("a turn ending with uncommitted session edits is blocked once with a pointe
 
 test("a /commit after the last edit, or edits that left no change, let the turn end", () => {
   assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...skillRun("commit")]).decision, "allow");
+  const resumedCommit = bashRun('node "$HOME/.claude/skills/commit/preflight.ts" --paths a.txt', "ok");
+  assert.equal(stopDecision([prompt("fix it"), ...skillRun("commit"), editDirtyFile, ...resumedCommit]).decision, "allow");
+  const deniedPreflight = bashRun('node "$HOME/.claude/skills/commit/preflight.ts" --paths a.txt', "Permission to use Bash was denied", true);
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...deniedPreflight]).decision, "block");
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...bashRun("cat ~/.claude/skills/commit/preflight.ts", "source")]).decision, "block");
   assert.equal(stopDecision([prompt("fix it"), toolUse("Edit", { file_path: path.join(cleanRepository, "a.txt") })]).decision, "allow");
   assert.equal(stopDecision([prompt("note it"), toolUse("Write", { file_path: path.join(sandboxHome, "notes.md") })]).decision, "allow");
 });

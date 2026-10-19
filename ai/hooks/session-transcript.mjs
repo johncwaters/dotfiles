@@ -19,7 +19,7 @@ function* entryEvents(entry, skillNamesByToolUseId) {
       const isError = block.is_error === true;
       const skillName = skillNamesByToolUseId.get(asText(block.tool_use_id));
       if (skillName && !isError) yield { kind: "skillRun", name: skillName };
-      yield { kind: "toolResult", text: contentText(block.content), isError };
+      yield { kind: "toolResult", toolUseId: asText(block.tool_use_id), text: contentText(block.content), isError };
     }
     return;
   }
@@ -28,7 +28,7 @@ function* entryEvents(entry, skillNamesByToolUseId) {
     if (block?.type !== "tool_use") continue;
     const input = asObject(block.input) ?? {};
     if (block.name === "Skill" && typeof input.skill === "string") skillNamesByToolUseId.set(asText(block.id), input.skill);
-    yield { kind: "toolUse", name: asText(block.name), input };
+    yield { kind: "toolUse", id: asText(block.id), name: asText(block.name), input };
   }
 }
 

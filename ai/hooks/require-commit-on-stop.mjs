@@ -8,11 +8,20 @@ import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const MAX_LISTED_PATHS = 5;
+const COMMIT_PREFLIGHT_COMMAND = /^\s*(?:cd\s+\S+\s*(?:&&|;)\s*)?node\s+["']?[^\s"']*\/\.claude\/skills\/commit\/preflight\.ts["']?(?:\s|$)/;
+
+function isCommitPreflightCall(event) {
+  return event.kind === "toolUse" && event.name === "Bash" && COMMIT_PREFLIGHT_COMMAND.test(String(event.input.command || ""));
+}
 
 async function pathsEditedSinceLastCommitRun(transcriptPath) {
   const editedPaths = new Set();
+  const pendingPreflightIds = new Set();
   for await (const event of sessionEvents(transcriptPath)) {
     if (isSkillRun(event, "commit")) editedPaths.clear();
+    if (isCommitPreflightCall(event)) pendingPreflightIds.add(event.id);
+    const isPreflightResult = event.kind === "toolResult" && pendingPreflightIds.delete(event.toolUseId);
+    if (isPreflightResult && !event.isError) editedPaths.clear();
     if (event.kind !== "toolUse" || !EDIT_TOOLS.has(event.name)) continue;
     const filePath = String(event.input.file_path || "");
     if (path.isAbsolute(filePath)) editedPaths.add(filePath);
