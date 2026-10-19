@@ -56,7 +56,7 @@ Pattern: `Heyo` + reason + ask. Full sentences, friendly but clear.
 ### 7. Coaching / Warm Close
 Full sentences. Use `!` for warmth. No emoji or emoticons.
 
-> Hey! Just wanted to let you know that I hope this first week went great. If you have any questions or need anything at all, don't hesitate to reach out!
+> Hey! Wanted to let you know that I hope this first week went great. If you have any questions or need anything at all, don't hesitate to reach out!
 
 ## Structural Rules
 
