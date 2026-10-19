@@ -1,6 +1,6 @@
 ---
 name: explainer-animations
-description: Make narrated, scripted explainer animations in a brand's style, such as Portal-2-style isometric "test chamber" instructional videos for PostHog docs, as one self-contained SVG page rendered to MP4 and published as a downloadable Artifact. Covers picking the topic, storyboarding, writing narration in a character voice, directing the camera, checking frames, review by test-audience personas, and rendering. Use for animated docs explainers, instructional or onboarding animations, product-explainer clips, and "make an animation like <reference> using our brand assets".
+description: Make narrated, scripted explainer animations and still posters in a brand's style, such as Portal-2-style isometric "test chamber" instructional videos and launch posters for PostHog docs, as one self-contained SVG page rendered to MP4 (or to PNG for posters) and published as a downloadable Artifact. Covers picking the topic, storyboarding, writing narration in a character voice, directing the camera, checking frames, review by test-audience personas, and rendering. Use for animated docs explainers, docs launch posters, instructional or onboarding animations, product-explainer clips, and "make an animation like <reference> using our brand assets".
 ---
 
 # Explainer animations
@@ -64,3 +64,30 @@ node <skill-dir>/scripts/frames.mjs render --page <page.html> --out <name>.mp4
 ```
 
 Run it with `run_in_background`, because a 50 s loop at 30 fps takes minutes. Make only MP4 unless a GIF is asked for. Publish the page as an Artifact with `capabilities: {"downloads": true}`, with `downloads/<name>.mp4` and `downloads/<name>.html` (the standalone page with a doctype). Republish to the same URL for later rounds. Tell the carbon unit the link is private until they share it.
+
+## 8. PostHog brand pass
+
+Run before calling an explainer or poster done.
+
+- Read the handbook brand pages as Markdown: `https://posthog.com/handbook/brand/{foundations,visual-identity,assets,art-requests}.md`. Report each rule as pass or fix, then apply only the fixes the carbon unit picks.
+- Take assets from the `@posthog/brand` package in the posthog.com checkout: RoundHog weights under `dist/fonts`, the `Logo` component, colors from `@posthog/brand/colors` (the root export has none), and approved hoggies as PNG under `dist/generated/hoggies/png`. Use a hoggie unmodified and whole, and pick one whose prop does work in the scene, such as a magnifying glass inspecting the input.
+- Put every number through the handbook's Hacker News test: one baseline across all stats, raw numbers beside each percentage, and a stat from a different test labeled on the board itself, not only in the footer. Picking the friendliest baseline per stat was the first thing the audit caught.
+- The headline states a specific result, with its number, about the piece's main point. Vague benefit words such as "smarter" fail the foundations page.
+- Use quote marks only on a line someone said.
+- Keep the isometric view even though the visual identity page lists isometric 3D under avoid: it is the Portal reference, and the graphics team draws isometric scenes too.
+- Anything published beyond claude.ai goes to #design-review first, and posting there needs the carbon unit's OK.
+
+## 9. Still posters
+
+A poster is one frame of the same chamber. A node generator writes the SVG and sharp renders it to PNG at density 144. RoundHog text goes in as paths through `@foliojs-fork/fontkit`, because librsvg does not load web fonts. Copy the generator to `poster.vN.js` before each round so any step can roll back, crop the changed region to check it, and republish to the same Artifact URL.
+
+Style, from the graphics team's blog art and the carbon unit's rounds:
+
+- Background: faint graph paper with minor and major lines, like the newest blog art. Separate the isometric building from it with the sticker treatment: an ink outline around the room silhouette and a hard offset ink shadow.
+- Headline: highlight one word or number with a box in the lighter tint and text in the darker hue.
+- It is not a blog card: no series tag, no author line, no hedgehog bleeding off the edge.
+- Portal-inspired, never Portal-branded: no portal ovals and no Aperture-style emblem.
+- The chamber sign follows the Portal 2 sign: a tall, thin stroked number; `NN/total` over thin ticks, done ones in ink and the rest light, and never the last chamber; a rule; uncaptioned icons right-aligned in uneven rows, only ones that read without a label, with a cake bottom-right; the logo lockup at the bottom. Leave whitespace: a filler stats block and colored tiles were both cut.
+- Color lives in the illustration and charts. The sign stays monochrome.
+- Stats board: phrase every stat as a reduction so a shorter bar is always better, use green for the new arm and one color for the baseline, and say both in the legend.
+- Alt text carries the headline and every number on the poster.
