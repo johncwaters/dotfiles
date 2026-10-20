@@ -69,10 +69,7 @@ A `challenged` design spec with every open question answered cuts into one inten
 node ~/.claude/skills/spec/cut.ts <spec.json>
 ```
 
-It writes `<slug>.intent.json` beside the design spec, or names what to settle first. The whole intent takes one route, chosen by the carbon unit:
-
-- **Factory**, for any repo registered as a project on the live Glimmervoid instance with the Factory setting on. From a Glimmervoid session in that repo: `glimmervoid factory setup` (it prints any missing step, such as committing `coherence.config.json`), then `glimmervoid factory queue <intent.json>`, then `glimmervoid factory status`. A design spec that changes Glimmervoid's own factory code goes through the harness instead: `node test/factory/run.ts --target gated-clone --intent-file <intent.json>` from a Glimmervoid checkout. Name the design spec and the intent file for the carbon unit to delete once the intent closes.
-- **Dedicated session**, for any repo. Read `subskills/build.md`.
+It writes `<slug>.intent.json` beside the design spec, or names what to settle first. Build the whole intent in one dedicated session: read `subskills/build.md`.
 
 ## Hand off
 
