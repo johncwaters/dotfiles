@@ -222,6 +222,8 @@ check "converge installs a skill's locked dependencies from inside its directory
   grep -qx "npm ci --omit=dev in .*/ai/skills/social-images" "$skillDependencyLog"
 check "converge installs the headless browser for a skill shipping playwright-core" \
   grep -qx 'playwright-core install --only-shell chromium' "$skillDependencyLog"
+check "converge runs no sudo browser library install when no headless shell lacks a library" \
+  bash -c '! grep -qF "install-deps" "$1"' _ "$skillDependencyLog"
 reviewChecklistPath="$sandbox/.claude/review-checklist.md"
 check "personal profile leaves the review checklist absent" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"

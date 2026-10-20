@@ -153,8 +153,41 @@ installSkillBrowser() {
   local skillName="$2"
   local playwrightCliPath="$skillDirectory/node_modules/.bin/playwright-core"
   [[ -x "$playwrightCliPath" ]] || return 0
-  "$playwrightCliPath" install --only-shell chromium && return 0
-  noteWarned "skill $skillName browser" "Chromium headless shell install failed"
+  if ! "$playwrightCliPath" install --only-shell chromium; then
+    noteWarned "skill $skillName browser" "Chromium headless shell install failed"
+    return 0
+  fi
+  installHeadlessShellLibraries "$playwrightCliPath" "$skillName"
+}
+
+headlessShellLacksLibraries() {
+  local headlessShellPath
+  for headlessShellPath in "$HOME"/.cache/ms-playwright/chromium_headless_shell-*/*/chrome-headless-shell; do
+    [[ -x "$headlessShellPath" ]] || continue
+    env -u LD_LIBRARY_PATH ldd "$headlessShellPath" 2>/dev/null | grep -q 'not found' && return 0
+  done
+  return 1
+}
+
+installHeadlessShellLibraries() {
+  local playwrightCliPath="$1"
+  local skillName="$2"
+  isDarwin && return 0
+  headlessShellLacksLibraries || return 0
+  local manualInstallHint="missing; run: $playwrightCliPath install-deps chromium --dry-run, then sudo /usr/bin/apt-get install the listed packages"
+  local dependencyReport
+  local missingPackages=()
+  dependencyReport="$("$playwrightCliPath" install-deps chromium --dry-run 2>&1 || true)"
+  mapfile -t missingPackages < <(sed -nE 's/^  ([^[:space:]]+)$/\1/p' <<< "$dependencyReport")
+  if (( ${#missingPackages[@]} == 0 )); then
+    noteWarned "skill $skillName browser libraries" "$manualInstallHint"
+    return 0
+  fi
+  if sudo -n /usr/bin/apt-get install -y --no-install-recommends "${missingPackages[@]}"; then
+    noteApplied "skill $skillName browser libraries" "installed through apt-get from playwright-core install-deps --dry-run"
+    return 0
+  fi
+  noteWarned "skill $skillName browser libraries" "$manualInstallHint"
 }
 
 installLockedSkillDependencies() {
