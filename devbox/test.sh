@@ -512,6 +512,9 @@ writeStub socat <<'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
+for toolchainCommand in ruby java mvn sqlite3 python3 biome tsc typescript-language-server; do
+  printf '#!/usr/bin/env bash\nexit 0\n' | writeStub "$toolchainCommand"
+done
 writeStub npm <<'STUB'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -526,6 +529,11 @@ case "$*" in
     printf '%s\n' "${!#}" | sed 's/^glimmervoid@//' > "$DOTFILES_TEST_STATE/glimmervoid-version"
     ;;
   *@openai/codex*) cp "$DOTFILES_TEST_STATE/available/codex" "$DOTFILES_TEST_STUB_BIN/codex" ;;
+  *typescript-language-server*)
+    for npmCommand in biome tsc typescript-language-server; do
+      cp "$DOTFILES_TEST_STATE/available/$npmCommand" "$DOTFILES_TEST_STUB_BIN/$npmCommand"
+    done
+    ;;
   *) exit 1 ;;
 esac
 STUB
@@ -538,6 +546,11 @@ case "$*" in
     cp "$DOTFILES_TEST_STATE/available/bwrap" "$DOTFILES_TEST_STUB_BIN/bwrap"
     ;;
   *socat*) cp "$DOTFILES_TEST_STATE/available/socat" "$DOTFILES_TEST_STUB_BIN/socat" ;;
+  *maven*)
+    for aptCommand in ruby java mvn sqlite3 python3; do
+      cp "$DOTFILES_TEST_STATE/available/$aptCommand" "$DOTFILES_TEST_STUB_BIN/$aptCommand"
+    done
+    ;;
   *" git") printf '2.55.0\n' > "$DOTFILES_TEST_STATE/git-version" ;;
 esac
 STUB

@@ -381,6 +381,47 @@ installDevboxSandboxTools() {
   done
 }
 
+installDevboxWorkToolchain() {
+  local -A aptPackageByCommand=([ruby]=ruby-full [java]=openjdk-21-jdk-headless [mvn]=maven [sqlite3]=sqlite3)
+  local -A npmPackageByCommand=([biome]=@biomejs/biome [tsc]=typescript [typescript-language-server]=typescript-language-server)
+  local commandName
+  local missingAptPackages=()
+  local missingNpmPackages=()
+  for commandName in "${!aptPackageByCommand[@]}"; do
+    command -v "$commandName" >/dev/null 2>&1 || missingAptPackages+=("${aptPackageByCommand[$commandName]}")
+  done
+  python3 -c 'import yaml' >/dev/null 2>&1 || missingAptPackages+=(python3-yaml)
+  for commandName in "${!npmPackageByCommand[@]}"; do
+    command -v "$commandName" >/dev/null 2>&1 || missingNpmPackages+=("${npmPackageByCommand[$commandName]}")
+  done
+  reportDevboxToolchainBatch apt "${missingAptPackages[@]}"
+  reportDevboxToolchainBatch npm "${missingNpmPackages[@]}"
+}
+
+reportDevboxToolchainBatch() {
+  local packageManager="$1"
+  shift
+  if (($# == 0)); then
+    reportDevboxItem present "work toolchain ($packageManager)" "on PATH"
+    return 0
+  fi
+  if installDevboxToolchainPackages "$packageManager" "$@"; then
+    reportDevboxItem installed "work toolchain ($packageManager)" "$*"
+    return 0
+  fi
+  reportDevboxItem warned "work toolchain ($packageManager)" "install of $* failed; retried next run; see ~/.glimmervoid/provision.log"
+}
+
+installDevboxToolchainPackages() {
+  local packageManager="$1"
+  shift
+  if [[ "$packageManager" == apt ]]; then
+    installDevboxAptPackages "$@"
+    return
+  fi
+  npm install -g --prefix "$HOME/.local" "$@" >> "$glimmervoidDirectory/provision.log" 2>&1 < /dev/null 9>&-
+}
+
 installDevboxGhWrapper() {
   if [[ ! -x /usr/bin/gh ]]; then
     installDevboxAptPackages gh
@@ -552,6 +593,7 @@ installDevboxPrerequisites() {
   installDevboxNode
   installDevboxGlobals
   installDevboxSandboxTools
+  installDevboxWorkToolchain
   installDevboxGhWrapper
   installDevboxPersonalGitAuth
   installDevboxModernGit
