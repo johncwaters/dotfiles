@@ -27,4 +27,17 @@ fi
 disableDefaultsFlag "reopen windows at login" com.apple.loginwindow TALLogoutSavingState
 disableDefaultsFlag "relaunch apps at login" com.apple.loginwindow LoginwindowLaunchesRelaunchApps
 disableDefaultsFlag "app window restore" NSGlobalDomain NSQuitAlwaysKeepsWindows
+
+wallpaperPath="$HOME/Pictures/Wallpapers/posthog-dynamic.heic"
+linkEntry "wallpaper file" "desktop/posthog-dynamic.heic" "$wallpaperPath"
+desktopPictures="$(osascript -e 'tell application "System Events" to get picture of every desktop' 2>/dev/null)"
+if [[ -n "$desktopPictures" && "${desktopPictures//"$wallpaperPath"/}" =~ ^[,[:space:]]*$ ]]; then
+  notePresent "wallpaper" "set"
+  finishTopic
+fi
+if ! osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"$wallpaperPath\"" >/dev/null; then
+  noteWarned "wallpaper" "osascript set failed, allow Automation for System Events"
+  finishTopic
+fi
+noteApplied "wallpaper" "set"
 finishTopic

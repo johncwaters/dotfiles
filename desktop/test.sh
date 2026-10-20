@@ -8,7 +8,7 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "desktop"
-linkCoreUtilities bash dirname cat mkdir printf rm
+linkCoreUtilities bash dirname cat mkdir mv ln readlink printf rm
 writeStub defaults <<'STUB'
 #!/usr/bin/env bash
 printf 'defaults %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -22,7 +22,19 @@ case "$1" in
   *) exit 1 ;;
 esac
 STUB
+writeStub osascript <<'STUB'
+#!/usr/bin/env bash
+printf 'osascript %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+picturePath="$DOTFILES_TEST_STATE/desktop-picture"
+if [[ "$2" == *"get picture"* ]]; then
+  [[ -f "$picturePath" ]] && cat "$picturePath"
+  exit 0
+fi
+[[ "$2" =~ set\ picture\ to\ \"([^\"]+)\" ]] || exit 1
+printf '%s, %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}" > "$picturePath"
+STUB
 provideCommand defaults
+provideCommand osascript
 mkdir -p "$stubState/defaults/com.apple.loginwindow"
 printf '1\n' > "$stubState/defaults/com.apple.loginwindow/TALLogoutSavingState"
 
@@ -40,10 +52,15 @@ for disabledFlag in com.apple.loginwindow/TALLogoutSavingState \
   com.apple.loginwindow/LoginwindowLaunchesRelaunchApps NSGlobalDomain/NSQuitAlwaysKeepsWindows; do
   check "darwin turns off $disabledFlag" grep -qx 0 "$stubState/defaults/$disabledFlag"
 done
+wallpaperPath="$sandbox/Pictures/Wallpapers/posthog-dynamic.heic"
+check "darwin links the wallpaper" test -L "$wallpaperPath"
+check "darwin sets the wallpaper on every desktop" \
+  grep -qx "$wallpaperPath, $wallpaperPath" "$stubState/desktop-picture"
 
 : > "$commandLog"
 checkRerunIsQuiet "a darwin rerun reports no changes" "$(runInstallOn darwin)"
 check "a darwin rerun writes no defaults" logLacks ' write '
+check "a darwin rerun sets no wallpaper" logLacks 'set picture'
 
 rm -f "$stubState/defaults/NSGlobalDomain/NSQuitAlwaysKeepsWindows"
 : > "$stubState/defaults-write-fails"
