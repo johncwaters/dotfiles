@@ -833,6 +833,7 @@ class Landing {
 
   // A guarded session can see a writable shared .git while the holder's working tree is read-only.
   // The tree can also be writable at its top and read-only below, and a partial merge leaves files behind.
+  // A guarded session bind-mounts tracked files read-only one by one, so a writable directory can still hold an unreplaceable file.
   private isHolderWritable(holder: string, source: string, destination: string): boolean {
     const changedPaths = this.git.pathsChangedByFastForwardIn(holder, source);
     const indexPath = this.git.gitPathIn(holder, "index");
@@ -848,7 +849,12 @@ class Landing {
     const directoriesToWrite = changedPaths.map((changedPath) =>
       nearestExistingDirectory(path.join(holder, path.dirname(changedPath)), holder),
     );
-    return [...new Set([...pathsToWrite, ...gitDirectoriesToWrite, ...directoriesToWrite])].every(isWritable);
+    const existingFilesToWrite = changedPaths
+      .map((changedPath) => path.join(holder, changedPath))
+      .filter((changedFile) => fs.existsSync(changedFile));
+    return [
+      ...new Set([...pathsToWrite, ...gitDirectoriesToWrite, ...directoriesToWrite, ...existingFilesToWrite]),
+    ].every(isWritable);
   }
 
   private reportPathsLeftByFailedMerge(holder: string, statusBeforeMerge: string[]): void {

@@ -550,12 +550,16 @@ for (const readOnlyPart of ["index", "working tree"] as const) {
   });
 }
 
-for (const readOnlyPart of ["server", ".git/refs/heads"]) {
+for (const [readOnlyPart, readOnlyMode, restoredMode] of [
+  ["server", 0o555, 0o755],
+  [".git/refs/heads", 0o555, 0o755],
+  ["server/core.txt", 0o444, 0o644],
+] as const) {
   test(`a mainline checkout writable at its top but read-only below at ${readOnlyPart} is pushed to origin without a partial merge`, () => {
     const { origin, seed } = seedOrigin();
     const holder = cloneRepo(origin);
     const session = path.join(path.dirname(holder), "session");
-    const readOnlyDirectory = path.join(holder, readOnlyPart);
+    const readOnlyPath = path.join(holder, readOnlyPart);
     try {
       advanceOriginMain(seed, "server/core.txt");
       runGit(holder, ["pull", "-q", "--ff-only"]);
@@ -564,7 +568,7 @@ for (const readOnlyPart of ["server", ".git/refs/heads"]) {
       writeFile(session, "server/core.txt", "mainline change\nfeature change\n");
       writeFile(session, "newdir/new.txt", "new\n");
       const mainBefore = gitOutput(holder, ["rev-parse", "main"]);
-      fs.chmodSync(readOnlyDirectory, 0o555);
+      fs.chmodSync(readOnlyPath, readOnlyMode);
       const { result } = land(
         session,
         ["--promote", "--paths", "base.txt", "server/core.txt", "newdir/new.txt"],
@@ -577,7 +581,7 @@ for (const readOnlyPart of ["server", ".git/refs/heads"]) {
       assert.equal(gitOutput(holder, ["status", "--porcelain"]), "");
       assert.match((result.warnings as string[]).join("\n"), /checked out read-only/);
     } finally {
-      fs.chmodSync(readOnlyDirectory, 0o755);
+      fs.chmodSync(readOnlyPath, restoredMode);
       cleanup(origin, seed, path.dirname(holder));
     }
   });
