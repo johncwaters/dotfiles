@@ -243,6 +243,7 @@ failures.
 | `POLICY_INVALID` | 27 | [Recovery](subskills/recovery.md#policy_invalid) |
 | `BRANCH_FORBIDDEN` | 28 | [Recovery](subskills/recovery.md#branch_forbidden) |
 | `MAINLINE_UNVERIFIED` | 29 | [Recovery](subskills/recovery.md#mainline_unverified) |
+| `HOME_PATH_STAGED` | 30 | [Recovery](subskills/recovery.md#home_path_staged) |
 | `NOT_A_REPO` | 10 | [Recovery](subskills/recovery.md#not_a_repo) |
 | `DETACHED_HEAD` | 11 | [Recovery](subskills/recovery.md#detached_head) |
 | `OPERATION_IN_PROGRESS` | 12 | [Recovery](subskills/recovery.md#operation_in_progress) |

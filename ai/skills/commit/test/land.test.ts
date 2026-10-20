@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { findWorktreeForBranch } from "../lib/workspace.ts";
+import { findWorktreeForBranch, listedUsernames } from "../lib/workspace.ts";
 import {
   cleanup,
   cloneRepo,
@@ -596,6 +596,37 @@ test("a staged denylisted addition stops the run instead of riding along", () =>
     assert.equal(result.outcome, "DENYLISTED_FILE_STAGED");
     assert.equal(code, 25);
     assert.deepEqual(result.files, [".env"]);
+    assert.equal(gitOutput(repo, ["rev-parse", "HEAD"]), head);
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("a local path in a staged line or the message stops the run before it reaches history", () => {
+  const repo = makeRepo("feature");
+  const [listedUsername] = listedUsernames();
+  try {
+    commitFile(repo, "config.py", `SITE_ROOT = '${os.homedir()}/site'\n`);
+    writeFile(
+      repo,
+      "config.py",
+      [
+        `SITE_ROOT = '${os.homedir()}/site'`,
+        `MONOREPO_ROOT = '${os.homedir()}/projects/posthog'`,
+        `POSTHOG_JS_ROOT = '/Users/${listedUsername}/projects/posthog-js'`,
+        `CURRENT_USER_ROOT = '/home/${os.userInfo().username}/src'`,
+        "",
+      ].join("\n"),
+    );
+    writeFile(repo, "notes.txt", `${os.homedir()}x, ${os.homedir()}.bak and /home/user/ are not local paths\n`);
+    const head = gitOutput(repo, ["rev-parse", "HEAD"]);
+    const messageWithLocalPath = VALID_MESSAGE.replace("A body line.", `Moved off ${os.homedir()}/site.\nStopped reading /Users/${listedUsername}.`);
+
+    const { code, result } = land(repo, ["--no-push"], messageWithLocalPath);
+
+    assert.equal(result.outcome, "HOME_PATH_STAGED");
+    assert.equal(code, 30);
+    assert.deepEqual(result.matches, ["config.py:2", "config.py:3", "config.py:4", "commit message:3", "commit message:4"]);
     assert.equal(gitOutput(repo, ["rev-parse", "HEAD"]), head);
   } finally {
     cleanup(repo);

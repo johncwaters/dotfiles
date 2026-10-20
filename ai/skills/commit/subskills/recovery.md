@@ -18,6 +18,10 @@ A commit hook rejected the commit, or git could not stage a scoped file or unsta
 
 The index would add a file the denylist names (`.env*`, `*.log`, `node_modules/`, `dist/`, `__pycache__/`); `files` lists them and nothing was committed. Unstage each one (`git restore --staged <file>`) and re-run, or put it to the carbon unit when it genuinely belongs in the commit
 
+## HOME_PATH_STAGED
+
+A staged line or the commit message holds a local path (this machine's home directory, or `/home/<name>` or `/Users/<name>` for the current username or one in `local-usernames.txt`), which publishes the owner's username and layout; `matches` lists each `file:line`, or `commit message:line`, and nothing was committed. Lines a commit hook stages or writes into the message are scanned too: the commit is made, rescanned, and reset back off the branch, leaving its changes staged. Replace each with a path the code derives at runtime (an env var, a path relative to the file, `os.homedir()`) or reword the message, restage, and re-run. There is no override: a path that genuinely belongs goes to the carbon unit, who commits it by hand
+
 ## PUSH_FAILED
 
 The commit exists, the push did not land. Follow [Push and promote recovery](#push-and-promote-recovery)

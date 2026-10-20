@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Git } from "./lib/git.ts";
+import { type AddedLinesScan, Git } from "./lib/git.ts";
 import { repositoryGuard } from "./lib/guard.ts";
 import {
   appendParkedEntry,
@@ -16,6 +16,7 @@ import {
   committed,
   denylistedFileStaged,
   emit,
+  homePathStaged,
   hookFailed,
   mainlineAhead,
   mainlineUnverified,
@@ -46,7 +47,10 @@ import { readStdin } from "./lib/stdio.ts";
 import {
   computeScope,
   findWorktreeForBranch,
+  localPathMatches,
   isDenylisted,
+  listedUsernames,
+  localPathPrefixes,
   resolveMainline,
   withNewJournalFiles,
 } from "./lib/workspace.ts";
@@ -57,6 +61,7 @@ const NEVER_DELETED_BRANCHES = ["main", "master", "develop"];
 type FailureOutcome =
   | "NOTHING_TO_COMMIT"
   | "DENYLISTED_FILE_STAGED"
+  | "HOME_PATH_STAGED"
   | "HOOK_FAILED"
   | "PUSH_FAILED"
   | "PROMOTE_CONFLICT"
@@ -142,6 +147,7 @@ class Landing {
   private readonly promoted: string[] = [];
   private readonly deletedRemoteBranches: string[] = [];
   private denylistedStagedFiles: string[] = [];
+  private homePathStagedLines: string[] = [];
   private conflicts: string[] = [];
   private localOnlyCommits: string[] = [];
   private mainline: string | null = null;
@@ -274,6 +280,9 @@ class Landing {
     if (outcome === "DENYLISTED_FILE_STAGED") {
       return denylistedFileStaged({ files: this.denylistedStagedFiles, warnings: this.warnings });
     }
+    if (outcome === "HOME_PATH_STAGED") {
+      return homePathStaged({ matches: this.homePathStagedLines, warnings: this.warnings });
+    }
     return hookFailed({ warnings: this.warnings });
   }
 
@@ -345,7 +354,14 @@ class Landing {
       return "DENYLISTED_FILE_STAGED";
     }
 
-    const proc = this.git.commit(normalizeMessage(message));
+    const commitMessage = normalizeMessage(message);
+    const stagedScanOutcome = this.refuseLocalPaths(this.git.stagedAddedLines(), commitMessage);
+    if (stagedScanOutcome) {
+      return stagedScanOutcome;
+    }
+
+    const headBeforeCommit = this.git.revParseHead();
+    const proc = this.git.commit(commitMessage);
     if (proc.code !== 0) {
       this.warnings.push(proc.stderr.trim());
       return "HOOK_FAILED";
@@ -356,8 +372,46 @@ class Landing {
       this.warnings.push("commit succeeded but HEAD did not resolve to a commit");
       return "HOOK_FAILED";
     }
+
+    const afterHooksScanOutcome = this.refuseLocalPaths(this.git.headAddedLines(), this.git.headMessage());
+    if (afterHooksScanOutcome) {
+      this.undoCommit(headBeforeCommit, committedHash);
+      return afterHooksScanOutcome;
+    }
     this.commitHash = committedHash;
     return null;
+  }
+
+  private refuseLocalPaths(addedLinesScan: AddedLinesScan, messageText: string | null): FailureOutcome | null {
+    if (addedLinesScan.failure !== null) {
+      this.warnings.push(`could not scan changes for local paths: ${addedLinesScan.failure}`);
+      return "HOOK_FAILED";
+    }
+    if (messageText === null) {
+      this.warnings.push("could not read the commit message to scan it for local paths");
+      return "HOOK_FAILED";
+    }
+    const commitMessageLines = messageText.split("\n").map((text, index) => ({
+      filePath: "commit message",
+      lineNumber: index + 1,
+      text,
+    }));
+    const localPrefixes = localPathPrefixes(os.homedir(), [os.userInfo().username, ...listedUsernames()]);
+    this.homePathStagedLines = localPathMatches(
+      [...addedLinesScan.addedLines, ...commitMessageLines],
+      localPrefixes,
+    );
+    if (this.homePathStagedLines.length > 0) {
+      return "HOME_PATH_STAGED";
+    }
+    return null;
+  }
+
+  private undoCommit(headBeforeCommit: string | null, committedHash: string): void {
+    const undo = headBeforeCommit === null ? this.git.deleteHeadRef() : this.git.resetSoft(headBeforeCommit);
+    if (undo.code !== 0) {
+      this.warnings.push(`could not undo commit ${committedHash}: ${undo.stderr.trim()}`);
+    }
   }
 
   private excludeStagedFilesOutsideScope(): FailureOutcome | null {

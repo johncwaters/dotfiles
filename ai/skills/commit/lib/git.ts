@@ -16,6 +16,38 @@ function scoped(args: string[], paths: string[]): string[] {
   return [...args, "--", ...paths];
 }
 
+export type AddedLine = { filePath: string; lineNumber: number; text: string };
+
+export type AddedLinesScan = { addedLines: AddedLine[]; failure: string | null };
+
+function parseAddedLines(diffText: string): AddedLine[] {
+  const addedLines: AddedLine[] = [];
+  let filePath = "";
+  let nextLineNumber = 0;
+  let isInsideHunk = false;
+  for (const line of diffText.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      isInsideHunk = false;
+      continue;
+    }
+    if (!isInsideHunk && line.startsWith("+++ ")) {
+      filePath = line.slice("+++ ".length).replace(/^b\//, "");
+      continue;
+    }
+    const hunkStart = /^@@ -\S+ \+(\d+)/.exec(line);
+    if (hunkStart) {
+      isInsideHunk = true;
+      nextLineNumber = Number(hunkStart[1]);
+      continue;
+    }
+    if (isInsideHunk && line.startsWith("+")) {
+      addedLines.push({ filePath, lineNumber: nextLineNumber, text: line.slice(1) });
+      nextLineNumber += 1;
+    }
+  }
+  return addedLines;
+}
+
 function nonEmptyLines(text: string): string[] {
   return text.split("\n").filter((line) => line.trim() !== "");
 }
@@ -233,6 +265,49 @@ export class Git {
     return nonEmptyLines(
       this.run(["diff", "--cached", "--name-only", "--diff-filter=A"]).stdout,
     );
+  }
+
+  stagedAddedLines(): AddedLinesScan {
+    return this.addedLinesOfDiff(["--cached"]);
+  }
+
+  headAddedLines(): AddedLinesScan {
+    const parentCommit = this.revParseRef("HEAD^");
+    return this.addedLinesOfDiff([parentCommit ?? this.emptyTreeOid(), "HEAD"]);
+  }
+
+  headMessage(): string | null {
+    const messageRun = this.run(["log", "-1", "--format=%B", "HEAD"]);
+    if (messageRun.code !== 0) {
+      return null;
+    }
+    return messageRun.stdout;
+  }
+
+  resetSoft(commit: string): GitResult {
+    return this.run(["reset", "--soft", commit]);
+  }
+
+  deleteHeadRef(): GitResult {
+    return this.run(["update-ref", "-d", "HEAD"]);
+  }
+
+  private addedLinesOfDiff(revisionArgs: string[]): AddedLinesScan {
+    const diffArgs = [
+      "diff",
+      ...revisionArgs,
+      "-U0",
+      "--no-color",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--text",
+      "--no-relative",
+    ];
+    const diffRun = this.run(diffArgs);
+    if (diffRun.code !== 0) {
+      return { addedLines: [], failure: diffRun.stderr.trim() || `git diff exited ${diffRun.code}` };
+    }
+    return { addedLines: parseAddedLines(diffRun.stdout), failure: null };
   }
 
   // The empty tree oid differs between sha1 and sha256 repositories, so it is hashed per repo.

@@ -15,6 +15,7 @@ export const EXIT_CODES = {
   POLICY_INVALID: 27,
   BRANCH_FORBIDDEN: 28,
   MAINLINE_UNVERIFIED: 29,
+  HOME_PATH_STAGED: 30,
 } as const;
 
 export type OutcomeName = keyof typeof EXIT_CODES;
@@ -143,6 +144,10 @@ export const hookFailed = defineOutcome("HOOK_FAILED", {});
 
 export const denylistedFileStaged = defineOutcome("DENYLISTED_FILE_STAGED", {
   files: required("stringList"),
+});
+
+export const homePathStaged = defineOutcome("HOME_PATH_STAGED", {
+  matches: required("stringList"),
 });
 
 export const pushFailed = defineOutcome("PUSH_FAILED", {

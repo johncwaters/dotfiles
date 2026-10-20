@@ -1,4 +1,7 @@
-import type { Git } from "./git.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { AddedLine, Git } from "./git.ts";
 
 export const MAINLINE_CANDIDATES = ["main", "master"] as const;
 
@@ -21,6 +24,42 @@ export function isDenylisted(filePath: string): boolean {
   }
   const basename = normalized.slice(normalized.lastIndexOf("/") + 1);
   return basename.startsWith(".env") || basename.endsWith(".log");
+}
+
+const LISTED_USERNAMES_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "local-usernames.txt",
+);
+
+export function listedUsernames(listPath: string = LISTED_USERNAMES_PATH): string[] {
+  if (!fs.existsSync(listPath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(listPath, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+}
+
+export function localPathPrefixes(homeDirectory: string, usernames: string[]): string[] {
+  const prefixes = [
+    homeDirectory.replace(/\/+$/, ""),
+    ...usernames.flatMap((username) => [`/home/${username}`, `/Users/${username}`]),
+  ];
+  return [...new Set(prefixes.filter((prefix) => prefix !== ""))];
+}
+
+export function localPathMatches(addedLines: AddedLine[], localPrefixes: string[]): string[] {
+  if (localPrefixes.length === 0) {
+    return [];
+  }
+  const escapedPrefixes = localPrefixes.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const localPathPattern = new RegExp(`(?:${escapedPrefixes.join("|")})(?![\\w-])(?!\\.[\\w-])`);
+  return addedLines
+    .filter((addedLine) => localPathPattern.test(addedLine.text))
+    .map((addedLine) => `${addedLine.filePath}:${addedLine.lineNumber}`);
 }
 
 const COHERENCE_DIR = ".coherence";
