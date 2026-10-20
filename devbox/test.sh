@@ -459,6 +459,21 @@ check "status reports the workspace" outputHas "$statusOutput" 'workspace devbox
 check "status SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
 check "status uses the shared remote status action" logHas "status $workspaceDomain"
 check "status never starts a workspace" logLacks 'coder start'
+writeStub ssh <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$DOTFILES_TEST_STATE/forward-ssh-pid"
+trap '' TERM
+exec sleep 30
+STUB
+provideCommand ssh
+forwardStatus=0
+runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work SSH_AUTH_SOCK="$stubState/agent.sock" \
+  DEVBOX_FORWARD_HEARTBEAT_DEADLINE_SECONDS=1 \
+  bash -c 'source "$1/commands.bash"; devbox forward-agent' _ "$topicDirectory" 2>/dev/null || forwardStatus=$?
+check "a silent agent forward ends so launchd reconnects" test "$forwardStatus" -ne 0
+check "a silent agent forward that ignores SIGTERM is killed" \
+  bash -c '! kill -0 "$(cat "$1")" 2>/dev/null' _ "$stubState/forward-ssh-pid"
+withdrawCommand ssh
 printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
 stoppedStatusOutput="$(runDevbox status)"

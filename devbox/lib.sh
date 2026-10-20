@@ -102,9 +102,20 @@ holdDevboxAgentForward() {
     printf 'devbox: no ssh agent to forward\n' >&2
     return 1
   fi
-  SSH_AUTH_SOCK="$forwardedAgentSocket" CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable \
-    ssh -T -o BatchMode=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "coder.$devboxWorkspaceName" \
-    'while ssh-add -l >/dev/null 2>&1; do sleep 15; done'
+  local heartbeatDeadlineSeconds="${DEVBOX_FORWARD_HEARTBEAT_DEADLINE_SECONDS:-45}"
+  local heartbeat
+  coproc forwardSession {
+    SSH_AUTH_SOCK="$forwardedAgentSocket" CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable \
+      exec ssh -T -o BatchMode=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "coder.$devboxWorkspaceName" \
+      'while timeout 10 ssh-add -l >/dev/null 2>&1; do echo alive; sleep 15; done'
+  }
+  local forwardSessionPid="$forwardSession_PID"
+  while IFS= read -r -t "$heartbeatDeadlineSeconds" -u "${forwardSession[0]}" heartbeat; do :; done
+  # A hung forward ssh ignores SIGTERM, so only SIGKILL frees launchd to reconnect.
+  kill -9 "$forwardSessionPid" 2>/dev/null
+  wait "$forwardSessionPid" 2>/dev/null
+  printf 'devbox: agent forward stopped answering; reconnecting\n' >&2
+  return 1
 }
 
 pushDevboxScript() {
