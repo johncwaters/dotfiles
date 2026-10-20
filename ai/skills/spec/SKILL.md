@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Turns a feature request into a design spec, a typed and validated JSON graph of decisions and units of work. Sketches the feature from the repo, asks the carbon unit rounds of questions until every decision and edge case is settled, cuts the result into ticket-sized units with verifiable contracts, and runs plan-challenge on them. Use for /spec, "spec this", "sharpen this", "grill me on this", and any feature request that used to go through plan mode.
+description: Turns a feature request into a design spec, a typed and validated JSON graph of decisions and units of work. Sketches the feature from the repo, asks the carbon unit rounds of questions until every decision and edge case is settled, cuts the result into ticket-sized units with verifiable contracts, and runs plan-challenge on them. Use for /spec, "spec this", "sharpen this", "grill me on this", and before the first edit of any change that involves a choice: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a non-trivial bug fix, or a multi-file change, whether or not plan mode would have turned on. Skip only for a typo or mechanical edit, an edit the carbon unit dictated verbatim, or when the carbon unit says to skip it.
 ---
 
 # Spec

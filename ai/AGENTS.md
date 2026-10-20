@@ -3,7 +3,7 @@ Say "carbon unit" / "carbon units" wherever prose would say human, person, peopl
 </output_style>
 
 <scope>
-`<routing>` and `<auto_commit>` are main-loop only. Subagents (Agent/Task) and externally dispatched CLIs (Codex): execute the assigned task with your own tools, never spawn further agents, never offload to Codex, never run /commit, report results back instead. Every other section applies to everyone.
+`<routing>`, `<spec_first>`, and `<auto_commit>` are main-loop only. Subagents (Agent/Task) and externally dispatched CLIs (Codex): execute the assigned task with your own tools, never spawn further agents, never offload to Codex, never run /commit, report results back instead. Every other section applies to everyone.
 </scope>
 
 <scope_boundary>
@@ -22,6 +22,14 @@ Run builds, test suites, and installs with run_in_background instead of blocking
 Session hygiene: commit each completed slice as it lands rather than batching at session end. Long-running loops wake every 20-30 minutes minimum. Queue work rather than run 4+ parallel sessions; all sessions share one limit.
 Give `rm -rf` a literal absolute path: Safety Net allows temp paths written out but blocks a `$VAR` or post-`cd` relative target it cannot resolve.
 </execution>
+
+<spec_first>
+Main loop only. Run /spec before the first edit of any change that involves a choice: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a bug fix whose cause or fix is not a single obvious line, or anything touching more than one file. Plan mode never turning on is not a reason to skip it.
+- Skip only for a typo or mechanical edit with no decision in it, an edit the carbon unit dictated verbatim, resuming work from an existing design spec, or when the carbon unit says to skip it.
+- "Small", "obvious", "quick", or "I already know the fix" are not exemptions; a change that fits one is cheap to spec.
+- Unsure whether a change qualifies: it qualifies.
+- `hooks/guard-workflow.mjs` denies the first repo edit of a session that never ran /spec; retrying past it is legitimate only for the skip cases above.
+</spec_first>
 
 <verification>
 Before any completion claim or auto-commit: zero pending tasks, tests passing, and verification evidence collected by actually exercising the change, not just typechecking. Never self-approve in the same context. Review is a ladder of read-only engines with one writer: `qa-swarm` finds, `code-review` triages and judges, the `finding-fixer` agent is the only thing that edits inside the loop, and the caller owns the loop. /commit runs that loop and is the single gate for local work; /pr-review is the gate for a pull request and never fixes anything. Never spawn a reviewer agent directly or invoke `qa-swarm` yourself; `qa-swarm` owns lane selection behind `code-review`, and a second review path is how findings stop composing. If verification fails, keep iterating.

@@ -23,8 +23,8 @@ const RAW_COMMIT_REASON =
 
 const SPEC_GATE_REASON =
   `${SPEC_GATE_MARKER} This is the first repo edit in a session that never ran /spec. ` +
-  "A feature request goes through /spec before any code changes. " +
-  "A bug fix, a mechanical change, or an edit the carbon unit dictated: retry this same edit; the gate fires once per session.";
+  "Any change that involves a choice goes through /spec first: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a non-trivial bug fix, or a multi-file change. Run /spec now. " +
+  "Retry this same edit only for a typo or mechanical edit with no decision in it, an edit the carbon unit dictated verbatim, or when the carbon unit said to skip /spec; \"small\" or \"obvious\" is not an exemption. The gate fires once per session.";
 
 async function hasLandingSkillRunSinceLastPrompt(transcriptPath) {
   let hasLandingSkillRun = false;
