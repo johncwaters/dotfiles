@@ -52,9 +52,38 @@ if [[ "$1" == "-g" ]]; then
 fi
 printf '%s\n' "$3" > "$acDisplaySleepPath"
 STUB
+writeStub plutil <<'STUB'
+#!/usr/bin/env bash
+printf 'plutil %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+valuePath="$DOTFILES_TEST_STATE/plutil/$2"
+case "$1" in
+  -create) : > "$3" ;;
+  -insert) (($# < 5)) || printf '%s=%s\n' "$2" "$4" >> "$5" ;;
+  -extract)
+    if [[ "${@: -1}" == - ]]; then
+      sed -n "s|^$2=||p"
+      exit 0
+    fi
+    [[ -f "$valuePath" ]] && cat "$valuePath"
+    ;;
+  -replace) mkdir -p "${valuePath%/*}" && printf '%s\n' "$4" > "$valuePath" ;;
+  *) exit 1 ;;
+esac
+STUB
+writeStub killall <<'STUB'
+#!/usr/bin/env bash
+printf 'killall %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+STUB
 provideCommand defaults
 provideCommand osascript
 provideCommand pmset
+provideCommand plutil
+provideCommand killall
+linkCoreUtilities base64 mktemp sed
+wallpaperStorePath="$sandbox/Library/Application Support/com.apple.wallpaper/Store/Index.plist"
+mkdir -p "${wallpaperStorePath%/*}"
+: > "$wallpaperStorePath"
+idleChoiceState="$stubState/plutil/AllSpacesAndDisplays.Idle.Content.Choices.0"
 writeContainedSudoStub
 printf '10\n' > "$stubState/ac-displaysleep"
 mkdir -p "$stubState/defaults/com.apple.loginwindow"
@@ -78,6 +107,10 @@ wallpaperPath="$sandbox/Pictures/Wallpapers/posthog-dynamic.heic"
 check "darwin links the wallpaper" test -L "$wallpaperPath"
 check "darwin sets the wallpaper on every desktop" \
   grep -qx "$wallpaperPath, $wallpaperPath" "$stubState/desktop-picture"
+check "darwin shows the wallpaper as the screensaver" \
+  grep -qx com.apple.wallpaper.choice.image "$idleChoiceState.Provider"
+check "darwin points the screensaver at the linked wallpaper" \
+  bash -c 'base64 -d < "$1" | grep -qxF "url.relative=file://$2"' _ "$idleChoiceState.Configuration" "$wallpaperPath"
 check "darwin starts the screensaver after 10 minutes" \
   grep -qx 600 "$stubState/defaults/com.apple.screensaver/idleTime"
 check "darwin sets display sleep on power to 60 minutes as root" \
