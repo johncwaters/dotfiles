@@ -8,7 +8,7 @@ type GaugeEvent = Record<string, unknown> & { type: string; seq?: number | strin
 type CriterionResult = { name: string; passed: boolean | null };
 type GaugeRun = {
   id: string; status: string; agent: string; model: string; batchId?: string; evalSetId?: string;
-  durationMs?: number; criterionResults?: CriterionResult[];
+  durationMs?: number; creditsCharged?: number | null; criterionResults?: CriterionResult[];
 };
 type FactDefinition = { name: string; pattern: string; expected: string };
 type FactsFile = { docsUrlPattern: string; sdkPattern: string; facts: FactDefinition[] };
@@ -21,14 +21,16 @@ type FactReading = {
 };
 type DocsRequest = { url: string; bytes: number; format: string };
 type RunRow = {
-  runId: string; status: string; isComplete: boolean; agent: string; model: string;
-  sandboxDocsRequests: DocsRequest[]; webEvents: { kind: string; target: string }[];
+  runId: string; batchId: string; status: string; isComplete: boolean; agent: string; model: string;
+  creditsCharged: number | null; sandboxDocsRequests: DocsRequest[]; webEvents: { kind: string; target: string }[];
   facts: FactReading[];
   criteriaPassed: number; criteriaTotal: number; failingCriteria: string[]; unassessedCriteria: string[];
+  comparableCriteriaPassed: number; comparableCriteriaTotal: number; hasReachedDocs: boolean;
   npmWindowSeconds: number | null; totalSeconds: number | null;
 };
 
 const terminalStatuses = new Set(["SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELED"]);
+const docsReadCriterionName = "Read PostHog docs before coding";
 const skillDirectory = import.meta.dirname;
 const gaugeIdPattern = /^[a-z0-9]+$/;
 
@@ -249,15 +251,21 @@ function buildRow(run: GaugeRun, events: GaugeEvent[], diff: string, facts: Fact
     });
   const npmTimestamps = networkRequests.filter((event) => event.host === "registry.npmjs.org").map((event) => stringify(event.ts));
   const criteria = run.criterionResults ?? [];
+  const comparableCriteria = criteria.filter((criterion) => criterion.name !== docsReadCriterionName);
+  const webEvents = events.filter((event) => event.type === "web_event")
+    .map((event) => ({ kind: stringify(event.kind), target: stringify(event.url || event.query) }));
+  const hasFetchedDocsOnWeb = webEvents.some((event) => event.kind === "fetch" && docsMatcher.test(event.target));
   return {
-    runId: run.id, status: run.status, isComplete: terminalStatuses.has(run.status), agent: run.agent, model: run.model,
-    sandboxDocsRequests,
-    webEvents: events.filter((event) => event.type === "web_event")
-      .map((event) => ({ kind: stringify(event.kind), target: stringify(event.url || event.query) })),
+    runId: run.id, batchId: run.batchId ?? "-", status: run.status, isComplete: terminalStatuses.has(run.status),
+    agent: run.agent, model: run.model, creditsCharged: run.creditsCharged ?? null,
+    sandboxDocsRequests, webEvents,
     facts: readFacts(facts, events, diff),
     criteriaPassed: criteria.filter((criterion) => criterion.passed === true).length, criteriaTotal: criteria.length,
     failingCriteria: criteria.filter((criterion) => criterion.passed === false).map((criterion) => criterion.name),
     unassessedCriteria: criteria.filter((criterion) => criterion.passed === null).map((criterion) => criterion.name),
+    comparableCriteriaPassed: comparableCriteria.filter((criterion) => criterion.passed === true).length,
+    comparableCriteriaTotal: comparableCriteria.length,
+    hasReachedDocs: sandboxDocsRequests.length > 0 || hasFetchedDocsOnWeb,
     npmWindowSeconds: secondsBetween(npmTimestamps),
     totalSeconds: run.durationMs ? Math.round(run.durationMs / 1000) : null,
   };
@@ -294,6 +302,50 @@ function criteriaCell(row: RunRow): string {
   return `${row.criteriaPassed}/${row.criteriaTotal}${details ? ` ${details}` : ""}`;
 }
 
+type GroupTally = {
+  batchId: string; agent: string; finishedRuns: number; runningRuns: number; factsPassed: number; factsTotal: number;
+  runsReachingDocs: number; criteriaPassed: number; criteriaTotal: number; creditsTotal: number; runsWithCredits: number;
+};
+
+function percent(part: number, whole: number): string {
+  return whole === 0 ? "-" : `${Math.round((part / whole) * 100)}% (${part}/${whole})`;
+}
+
+function renderSummary(rows: RunRow[]): string {
+  const tallyByGroup = new Map<string, GroupTally>();
+  for (const row of rows) {
+    const groupKey = `${row.batchId} ${row.agent}`;
+    const tally = tallyByGroup.get(groupKey) ?? {
+      batchId: row.batchId, agent: row.agent, finishedRuns: 0, runningRuns: 0, factsPassed: 0, factsTotal: 0,
+      runsReachingDocs: 0, criteriaPassed: 0, criteriaTotal: 0, creditsTotal: 0, runsWithCredits: 0,
+    };
+    tallyByGroup.set(groupKey, tally);
+    if (!row.isComplete) {
+      tally.runningRuns += 1;
+      continue;
+    }
+    const isSucceeded = row.status === "SUCCEEDED";
+    tally.finishedRuns += 1;
+    tally.factsTotal += row.facts.length;
+    tally.factsPassed += isSucceeded ? row.facts.filter((fact) => fact.passed === true).length : 0;
+    tally.runsReachingDocs += row.hasReachedDocs ? 1 : 0;
+    tally.criteriaTotal += row.comparableCriteriaTotal;
+    tally.criteriaPassed += isSucceeded ? row.comparableCriteriaPassed : 0;
+    if (row.creditsCharged === null) continue;
+    tally.creditsTotal += row.creditsCharged;
+    tally.runsWithCredits += 1;
+  }
+  const header = ["batch", "agent", "runs", "fact accuracy", "docs reach", `criteria passed (excl. ${docsReadCriterionName})`, "mean credits"];
+  const lines = [`| ${header.join(" | ")} |`, `|${header.map(() => "---").join("|")}|`];
+  for (const tally of tallyByGroup.values()) {
+    const runs = tally.runningRuns ? `${tally.finishedRuns} (+${tally.runningRuns} running)` : String(tally.finishedRuns);
+    const meanCredits = tally.runsWithCredits ? (tally.creditsTotal / tally.runsWithCredits).toFixed(1) : "-";
+    lines.push(`| ${[tally.batchId, tally.agent, runs, percent(tally.factsPassed, tally.factsTotal),
+      percent(tally.runsReachingDocs, tally.finishedRuns), percent(tally.criteriaPassed, tally.criteriaTotal), meanCredits].join(" | ")} |`);
+  }
+  return lines.join("\n");
+}
+
 function renderTable(rows: RunRow[]): string {
   const factNames = rows[0]?.facts.map((fact) => fact.name) ?? [];
   const header = ["run", "agent", "status", "sandbox docs", "web search/fetch", ...factNames, "criteria", "npm s", "total s"];
@@ -309,6 +361,7 @@ function renderTable(rows: RunRow[]): string {
     ];
     lines.push(`| ${cells.map((cell) => cell.replaceAll("|", "\\|")).join(" | ")} |`);
   }
+  lines.push("", renderSummary(rows));
   lines.push("", "Not in these logs: content returned by web_event searches and fetches, and the agent's tool roster. Claims about them are inferred.");
   return lines.join("\n");
 }

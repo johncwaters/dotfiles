@@ -25,4 +25,5 @@ test("a cached Codex run that fetched docs only through its own web tool reads a
     ["defaults", ["2026-01-30"], false, "unlogged-web"],
   ]);
   deepEqual(row.failingCriteria, ["Env var names match the docs", "Defaults match the docs"]);
+  match(readerProcess.stdout, /\| cmviaewep00be01ipjgfalnu8 \| CODEX_CLI \| 1 \| 0% \(0\/2\) \| 100% \(1\/1\) \| 60% \(3\/5\) \| 10\.0 \|/);
 });

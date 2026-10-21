@@ -6,6 +6,7 @@
  "batchId": "cmviaewep00be01ipjgfalnu8",
  "evalSetId": "cmvi9vsck007v01j6j03725y5",
  "durationMs": 760876,
+ "creditsCharged": 10,
  "exitReason": "judge_stop",
  "criterionResults": [
   {
