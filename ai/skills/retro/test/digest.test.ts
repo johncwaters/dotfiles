@@ -1,7 +1,7 @@
 import { deepEqual, equal, ok } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionDigest } from "../lib/digest.ts";
@@ -9,6 +9,35 @@ import type { SessionDigest } from "../lib/digest.ts";
 const scriptPath = join(import.meta.dirname, "../digest.ts");
 const fixturesDir = join(import.meta.dirname, "fixtures");
 const fixturePath = join(fixturesDir, "synthetic-project/synthetic-session.jsonl");
+
+test("CLI collects only touched spec graphs and deduplicates expanded paths", (context) => {
+  const transcriptDirectory = mkdtempSync(join(tmpdir(), "retro-digest-"));
+  context.after(() => rmSync(transcriptDirectory, { recursive: true, force: true }));
+  const livePath = join(homedir(), ".claude/specs/dotfiles/session-spec.json");
+  const archivePath = join(homedir(), ".claude/spec-archive/dotfiles/session-spec.built.2026-10-20.json");
+  const transcriptPath = join(transcriptDirectory, "spec-session.jsonl");
+  const toolUses = [
+    { name: "Read", input: { file_path: livePath } },
+    { name: "Write", input: { file_path: livePath.replace("session-spec", "written-spec") } },
+    { name: "Edit", input: { file_path: archivePath } },
+    { name: "Write", input: { file_path: `${livePath.slice(0, -5)}.intent.json` } },
+    { name: "Edit", input: { file_path: join(transcriptDirectory, "unrelated.json") } },
+    { name: "Bash", input: { command: `node ~/.claude/skills/spec/render.ts ${livePath} tree` } },
+    { name: "Bash", input: { command: 'node ~/.claude/skills/spec/validate.ts "~/.claude/specs/dotfiles/session-spec.json" && node ~/.claude/skills/spec/cut.ts ~/.claude/specs/dotfiles/session-spec.json' } },
+    { name: "Bash", input: { command: `node ~/.claude/skills/spec/archive.ts '${archivePath}' built` } },
+    { name: "Bash", input: { command: `node ~/.claude/skills/spec/cut.ts '${livePath.slice(0, -5)}.intent.json'` } },
+  ];
+  writeFileSync(transcriptPath, JSON.stringify({
+    type: "assistant", message: { content: toolUses.map((toolUse) => ({ type: "tool_use", ...toolUse })) },
+  }));
+  const digestProcess = spawnSync(process.execPath, [scriptPath, transcriptPath, "--no-git"], {
+    encoding: "utf8", timeout: 5000,
+  });
+  equal(digestProcess.status, 0, digestProcess.stderr);
+  const digest = JSON.parse(digestProcess.stdout) as SessionDigest;
+  deepEqual(digest.specPaths, [livePath.replace("session-spec", "written-spec"), archivePath, livePath]);
+  deepEqual(digest.incidents, []);
+});
 
 test("CLI reduces a synthetic session to ordered incidents without counting metadata as prompts", (context) => {
   const projectsDir = mkdtempSync(join(tmpdir(), "retro-digest-"));

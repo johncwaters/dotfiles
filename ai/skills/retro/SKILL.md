@@ -35,7 +35,7 @@ Write every intermediate file to the scratchpad directory, never into a repo.
 
 1. Resolve the session. With no argument, the newest `*.jsonl` directly under `~/.claude/projects/<cwd with every / and . replaced by ->/` is this session. Repo key for the ledger: the parent of `git rev-parse --path-format=absolute --git-common-dir`.
 2. Run `digest.ts` into a scratch file. Never read the transcript into context yourself; the digest is the only view of it. Open a transcript line only to settle an ambiguous incident, by line number, with `sed -n '<line>p' <path> | cut -c1-2000`.
-3. Zero incidents: record the session as reviewed with an empty run (`report.outcome` `nothing-durable`), tell the carbon unit there is nothing to review, and stop. Headless mode still writes the report.
+3. Zero incidents and zero `specPaths`: record the session as reviewed with an empty run (`report.outcome` `nothing-durable`), tell the carbon unit there is nothing to review, and stop. Headless mode still writes the report.
 
 ## Step 2: Judge in a fresh context
 
@@ -43,6 +43,8 @@ The session that did the work never judges it. Spawn one `general-purpose` agent
 
 Judge brief:
 
+- For each digest `specPaths` entry, use its current path; if gone, find the newest matching `~/.claude/spec-archive/<repo>/<slug>.*.json`, excluding `*.intent.json`. Read the JSON and `node ~/.claude/skills/spec/render.ts <path> tree`. Zero `specPaths`: no spec judging.
+- Judge spec structure for waste and refinement: decisions no unit implements and budget waivers. Only for a spec archived under `~/.claude/spec-archive/` (`<slug>.<built|abandoned>.<date>.json`), also units with no landed `Ticket: <slug>/<id>` commit in the spec's `repoRoot` and size against tickets delivered; a live spec in `~/.claude/specs/` is unbuilt by design, not waste. Lessons become proposals targeting `~/.dotfiles/ai/skills/spec/` under the same proposal rules below.
 - Group incidents into lessons: the one setup gap behind them. Several incidents are often one lesson. Give each a kebab-case `lessonKey`, reusing a `knownLessonKeys` entry when it is the same lesson. Mark a sighting `explicit` when a `correction` incident with `explicit: true` or a `hook-denial`/`repeated-failure` on the same gap supports it.
 - Discard incidents that are the setup working: a hook denying what it exists to deny, a permission prompt the carbon unit wanted, a test failing on a real bug, a one-off typo. Discard what belongs to the task, not the setup.
 - A lesson becomes a proposal only when, counting this run's sightings, it spans two sessions or is explicit (the ledger's `readyLessons` lists those already ready). The rest are recorded as sightings only.

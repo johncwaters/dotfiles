@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
 import { createReadStream, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 export type IncidentKind =
@@ -40,6 +40,7 @@ export type SessionDigest = {
   promptCount: number;
   counts: Record<IncidentKind, number>;
   incidents: Incident[];
+  specPaths: string[];
 };
 
 export type DigestOptions = { includeGit?: boolean };
@@ -206,6 +207,7 @@ export async function digestTranscript(
       "costly-subagent": 0, "oversized-result": 0, revert: 0,
     },
     incidents: [],
+    specPaths: [],
   };
   const toolsById = new Map<string, ToolUse>();
   const failuresByCommand = new Map<string, { count: number; incident?: Incident }>();
@@ -236,10 +238,24 @@ export async function digestTranscript(
     hasPendingInterrupt = false;
   }
 
+  function recordSpecPath(filePath: string): void {
+    const expandedPath = filePath.startsWith("~/") ? join(homedir(), filePath.slice(2)) : filePath;
+    if (!isAbsolute(expandedPath) || !expandedPath.endsWith(".json") || expandedPath.endsWith(".intent.json")) return;
+    const specPath = resolve(expandedPath);
+    if (!["specs", "spec-archive"].some((directory) => specPath.startsWith(`${join(homedir(), ".claude", directory)}/`))) return;
+    if (!digest.specPaths.includes(specPath)) digest.specPaths.push(specPath);
+  }
+
   function recordToolUse(block: JsonObject): void {
     const name = asText(block.name);
     const input = asObject(block.input);
     const command = asText(input?.command).replace(/\s+/g, " ").trim();
+    if (name === "Write" || name === "Edit") recordSpecPath(asText(input?.file_path));
+    if (name === "Bash") {
+      for (const invocation of asText(input?.command).matchAll(/\bspec\/(?:archive|cut|validate)\.ts["']?\s+(?:"([^"\n]+\.json)"|'([^'\n]+\.json)'|([^\s;|&<>"']+\.json)(?=$|[\s;|&<>]))/g)) {
+        recordSpecPath(invocation[1] ?? invocation[2] ?? invocation[3] ?? "");
+      }
+    }
     if (typeof block.id === "string") toolsById.set(block.id, { name, command });
     if (name === "Agent" && input?.subagent_type === "finding-fixer") {
       addIncident("review-rework", asText(input.subagent_type), { toolName: name });
