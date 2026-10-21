@@ -93,8 +93,13 @@ convergeDefaultsValue "app window restore" -bool false 0 NSGlobalDomain NSQuitAl
 convergeDefaultsValue "screensaver idle time" -int 600 600 com.apple.screensaver idleTime -currentHost
 convergeAcDisplaySleep 60
 
-wallpaperPath="$HOME/Pictures/Wallpapers/posthog-dynamic.heic"
-linkEntry "wallpaper file" "desktop/posthog-dynamic.heic" "$wallpaperPath"
+retiredWallpaperPath="$HOME/Pictures/Wallpapers/posthog-dynamic.heic"
+if pathIsLinkIntoThisRepo "$retiredWallpaperPath"; then
+  rm -f -- "$retiredWallpaperPath"
+  noteApplied "old wallpaper file" "retired link removed"
+fi
+wallpaperPath="$HOME/Pictures/Wallpapers/posthog-clock.heic"
+linkEntry "wallpaper file" "desktop/posthog-clock.heic" "$wallpaperPath"
 convergeScreensaverPicture "$wallpaperPath"
 desktopPictures="$(osascript -e 'tell application "System Events" to get picture of every desktop' 2>/dev/null)"
 if [[ -n "$desktopPictures" && "${desktopPictures//"$wallpaperPath"/}" =~ ^[,[:space:]]*$ ]]; then

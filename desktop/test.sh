@@ -103,7 +103,7 @@ for disabledFlag in com.apple.loginwindow/TALLogoutSavingState \
   com.apple.loginwindow/LoginwindowLaunchesRelaunchApps NSGlobalDomain/NSQuitAlwaysKeepsWindows; do
   check "darwin turns off $disabledFlag" grep -qx 0 "$stubState/defaults/$disabledFlag"
 done
-wallpaperPath="$sandbox/Pictures/Wallpapers/posthog-dynamic.heic"
+wallpaperPath="$sandbox/Pictures/Wallpapers/posthog-clock.heic"
 check "darwin links the wallpaper" test -L "$wallpaperPath"
 check "darwin sets the wallpaper on every desktop" \
   grep -qx "$wallpaperPath, $wallpaperPath" "$stubState/desktop-picture"
