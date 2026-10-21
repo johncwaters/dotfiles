@@ -4,6 +4,6 @@
   "sdkPattern": "node_modules|npm pack|\\.d\\.ts|PostHog/posthog-js|unpkg\\.com|jsdelivr",
   "facts": [
     { "name": "token env var", "pattern": "process\\.env\\.(NEXT_PUBLIC_POSTHOG_(?!HOST\\b)[A-Z_]+)", "expected": "NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN" },
-    { "name": "defaults", "pattern": "defaults:\\s*[\"']([^\"']+)[\"']", "expected": "2026-05-30" }
+    { "name": "defaults", "pattern": "defaults:\\s*[\"']([^\"']+)[\"']", "expected": ["2026-05-30", "2026-08-30"] }
   ]
 }

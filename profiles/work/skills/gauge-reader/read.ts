@@ -10,19 +10,19 @@ type GaugeRun = {
   id: string; status: string; agent: string; model: string; batchId?: string; evalSetId?: string;
   durationMs?: number; creditsCharged?: number | null; criterionResults?: CriterionResult[];
 };
-type FactDefinition = { name: string; pattern: string; expected: string };
+type FactDefinition = { name: string; pattern: string; expected: string | string[] };
 type FactsFile = { docsUrlPattern: string; sdkPattern: string; facts: FactDefinition[] };
 type Provenance = {
-  origin: "docs" | "sdk" | "other" | "unlogged-web" | "none"; seq: number | null; isCertain: boolean; toolInput: string;
+  origin: "docs" | "sdk" | "mcp" | "other" | "unlogged-web" | "none"; seq: number | null; isCertain: boolean; toolInput: string;
 };
 type FactReading = {
-  name: string; expected: string; writtenValues: string[]; passed: boolean | null;
+  name: string; expected: string[]; writtenValues: string[]; passed: boolean | null;
   provenance: Provenance | null;
 };
 type DocsRequest = { url: string; bytes: number; format: string };
 type RunRow = {
   runId: string; batchId: string; status: string; isComplete: boolean; agent: string; model: string;
-  creditsCharged: number | null; sandboxDocsRequests: DocsRequest[]; webEvents: { kind: string; target: string }[];
+  creditsCharged: number | null; sandboxDocsRequests: DocsRequest[]; mcpDocsSearches: number; webEvents: { kind: string; target: string }[];
   facts: FactReading[];
   criteriaPassed: number; criteriaTotal: number; failingCriteria: string[]; unassessedCriteria: string[];
   comparableCriteriaPassed: number; comparableCriteriaTotal: number; hasReachedDocs: boolean;
@@ -201,17 +201,28 @@ function findWriteWindow(orderedEvents: GaugeEvent[], value: string, filesWithVa
   return { firstWriteSeq, lastWriteSeq };
 }
 
+function isMcpCall(event: GaugeEvent): boolean {
+  return event.type === "tool_call" && event.tool_kind === "mcp";
+}
+
 function traceProvenance(orderedEvents: GaugeEvent[], value: string, filesWithValue: Set<string>, originMatchers: OriginMatchers): Provenance {
   const { firstWriteSeq, lastWriteSeq } = findWriteWindow(orderedEvents, value, filesWithValue);
-  const toolInputById = new Map<string, string>();
+  const toolCallById = new Map<string, { toolInput: string; isMcp: boolean }>();
   let hasWebEventBeforeWrite = false;
   for (const event of orderedEvents) {
     if (sequenceOf(event) >= lastWriteSeq) break;
     if (event.type === "web_event") hasWebEventBeforeWrite = true;
-    if (event.type === "tool_call") toolInputById.set(stringify(event.tool_id), stringify(event.input));
+    if (event.type === "tool_call") {
+      const toolCall = { toolInput: stringify(event.input), isMcp: isMcpCall(event) };
+      toolCallById.set(stringify(event.tool_id), toolCall);
+      if (toolCall.isMcp && toolCall.toolInput.includes(value)) {
+        return { origin: "mcp", seq: sequenceOf(event), isCertain: sequenceOf(event) < firstWriteSeq, toolInput: toolCall.toolInput.slice(0, 300) };
+      }
+    }
     if (event.type !== "tool_result" || !stringify(event.output).includes(value)) continue;
-    const toolInput = toolInputById.get(stringify(event.tool_id)) ?? "";
-    return { origin: sightingOrigin(toolInput, originMatchers), seq: sequenceOf(event), isCertain: sequenceOf(event) < firstWriteSeq, toolInput: toolInput.slice(0, 300) };
+    const toolCall = toolCallById.get(stringify(event.tool_id)) ?? { toolInput: "", isMcp: false };
+    const origin = toolCall.isMcp ? "mcp" : sightingOrigin(toolCall.toolInput, originMatchers);
+    return { origin, seq: sequenceOf(event), isCertain: sequenceOf(event) < firstWriteSeq, toolInput: toolCall.toolInput.slice(0, 300) };
   }
   if (hasWebEventBeforeWrite) return { origin: "unlogged-web", seq: null, isCertain: false, toolInput: "" };
   return { origin: "none", seq: null, isCertain: true, toolInput: "" };
@@ -226,9 +237,10 @@ function readFacts(facts: FactsFile | null, events: GaugeEvent[], diff: string):
     const filesByValue = filesByValueByFact[index] ?? new Map<string, Set<string>>();
     const values = [...filesByValue.keys()];
     const firstValue = values[0];
+    const expectedValues = [fact.expected].flat();
     return {
-      name: fact.name, expected: fact.expected, writtenValues: values,
-      passed: values.length === 0 ? null : values.every((value) => value === fact.expected),
+      name: fact.name, expected: expectedValues, writtenValues: values,
+      passed: values.length === 0 ? null : values.every((value) => expectedValues.includes(value)),
       provenance: firstValue === undefined ? null : traceProvenance(orderedEvents, firstValue, filesByValue.get(firstValue) ?? new Set(), originMatchers),
     };
   });
@@ -255,17 +267,18 @@ function buildRow(run: GaugeRun, events: GaugeEvent[], diff: string, facts: Fact
   const webEvents = events.filter((event) => event.type === "web_event")
     .map((event) => ({ kind: stringify(event.kind), target: stringify(event.url || event.query) }));
   const hasFetchedDocsOnWeb = webEvents.some((event) => event.kind === "fetch" && docsMatcher.test(event.target));
+  const mcpDocsSearches = events.filter((event) => isMcpCall(event) && /\bcall docs-search\b/.test(stringify(event.input))).length;
   return {
     runId: run.id, batchId: run.batchId ?? "-", status: run.status, isComplete: terminalStatuses.has(run.status),
     agent: run.agent, model: run.model, creditsCharged: run.creditsCharged ?? null,
-    sandboxDocsRequests, webEvents,
+    sandboxDocsRequests, mcpDocsSearches, webEvents,
     facts: readFacts(facts, events, diff),
     criteriaPassed: criteria.filter((criterion) => criterion.passed === true).length, criteriaTotal: criteria.length,
     failingCriteria: criteria.filter((criterion) => criterion.passed === false).map((criterion) => criterion.name),
     unassessedCriteria: criteria.filter((criterion) => criterion.passed === null).map((criterion) => criterion.name),
     comparableCriteriaPassed: comparableCriteria.filter((criterion) => criterion.passed === true).length,
     comparableCriteriaTotal: comparableCriteria.length,
-    hasReachedDocs: sandboxDocsRequests.length > 0 || hasFetchedDocsOnWeb,
+    hasReachedDocs: sandboxDocsRequests.length > 0 || hasFetchedDocsOnWeb || mcpDocsSearches > 0,
     npmWindowSeconds: secondsBetween(npmTimestamps),
     totalSeconds: run.durationMs ? Math.round(run.durationMs / 1000) : null,
   };
@@ -348,14 +361,14 @@ function renderSummary(rows: RunRow[]): string {
 
 function renderTable(rows: RunRow[]): string {
   const factNames = rows[0]?.facts.map((fact) => fact.name) ?? [];
-  const header = ["run", "agent", "status", "sandbox docs", "web search/fetch", ...factNames, "criteria", "npm s", "total s"];
+  const header = ["run", "agent", "status", "sandbox docs", "mcp docs-search", "web search/fetch", ...factNames, "criteria", "npm s", "total s"];
   const lines = [`| ${header.join(" | ")} |`, `|${header.map(() => "---").join("|")}|`];
   for (const row of rows) {
     const searches = row.webEvents.filter((event) => event.kind === "search").length;
     const fetches = row.webEvents.filter((event) => event.kind === "fetch").length;
     const cells = [
       row.runId, `${row.agent} ${row.model}`, row.isComplete ? row.status : `INCOMPLETE ${row.status}`,
-      docsCell(row.sandboxDocsRequests), `${searches}/${fetches}`, ...row.facts.map(factCell),
+      docsCell(row.sandboxDocsRequests), String(row.mcpDocsSearches), `${searches}/${fetches}`, ...row.facts.map(factCell),
       criteriaCell(row),
       String(row.npmWindowSeconds ?? "-"), String(row.totalSeconds ?? "-"),
     ];
