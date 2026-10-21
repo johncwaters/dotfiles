@@ -19,11 +19,11 @@ test("a cached Codex run that fetched docs only through its own web tool reads a
   match(readerProcess.stdout, /\| cmviaewes00bm01ipgd7mcxqd \| CODEX_CLI gpt-6\.1-sol \| SUCCEEDED \| 0 \|/);
   const [row] = JSON.parse(readFileSync(join(cacheRoot, fixtureRunId, "runs.json"), "utf8"));
   deepEqual(row.sandboxDocsRequests, []);
-  deepEqual(row.facts.map((fact: { name: string; writtenValues: string[]; passed: boolean; provenance: { origin: string } }) =>
-    [fact.name, fact.writtenValues, fact.passed, fact.provenance.origin]), [
+  deepEqual(row.facts.map((fact: { name: string; writtenValues: string[]; passed: boolean; values: { provenance: { origin: string } }[] }) =>
+    [fact.name, fact.writtenValues, fact.passed, fact.values.map((reading) => reading.provenance.origin).join()]), [
     ["token env var", ["NEXT_PUBLIC_POSTHOG_KEY"], false, "unlogged-web"],
     ["defaults", ["2026-01-30"], false, "unlogged-web"],
   ]);
   deepEqual(row.failingCriteria, ["Env var names match the docs", "Defaults match the docs"]);
-  match(readerProcess.stdout, /\| cmviaewep00be01ipjgfalnu8 \| CODEX_CLI \| 1 \| 0% \(0\/2\) \| 100% \(1\/1\) \| 60% \(3\/5\) \| 10\.0 \|/);
+  match(readerProcess.stdout, /\| - \| none \| CODEX_CLI \| cmviaewep00be01ipjgfalnu8 \| 1 \| 0% \(0\/2\) \| 100% \(1\/1\) \| 60% \(3\/5\) \| 10\.0 \| no \|/);
 });

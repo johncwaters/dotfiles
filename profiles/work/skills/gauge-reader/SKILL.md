@@ -46,7 +46,22 @@ expected value.
 - `unlogged-web` means a web_event search or fetch happened before the write and
   no logged output held the value. Gauge does not log what those tools
   returned, so that origin is always inferred and always carries `?`.
-- `none` means no web event and no sighting before the write: memory.
+- `unlogged-skill` means a skill was loaded before the write and no logged
+  output held the value. Claude Code's Skill result logs only "Launching
+  skill", so its skill content is never in the log; Codex's `cat` of SKILL.md is.
+- `none` means no web event, no skill load, and no sighting before the write: memory.
+- Every written value gets its own provenance, right or wrong.
+- `docs timing` is the first docs access against the first PostHog write
+  (`never`, `no-write`, `before-write`, `after-write`); `relevant` means a
+  logged docs result held an expected fact value, and it is blank when no docs
+  result was logged (web tools).
+- `docs queries` counts MCP docs-search/learn and web searches and fetches; MCP
+  and Claude Code WebFetch results are logged, so they can show the expected
+  value. Codex web_search results are not logged, so those queries show blank.
+- `skills loaded` reads `(followed)` when a value traces to the skill's logged content.
+- The summary groups runs by cell (prompt, MCP and skills digests, agent)
+  across batches; `top-up yes` marks a cell under 5 runs whose runs disagree
+  on docs timing or skills loaded.
 - `works check` is static and diff-only: env names the added code reads that a
   written `.env*` file or the final message lacks, and `proxy rewrites` only
   when a next.config rewrite source covers the `api_host` path.

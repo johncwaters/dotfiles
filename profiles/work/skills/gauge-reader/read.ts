@@ -14,19 +14,24 @@ type FactDefinition = { name: string; pattern: string; expected: string | string
 type FactsFile = { promptPattern?: string; docsUrlPattern: string; sdkPattern: string; facts: FactDefinition[] };
 type LoadedFactsFile = FactsFile & { fileName: string };
 type Provenance = {
-  origin: "docs" | "sdk" | "mcp" | "other" | "unlogged-web" | "none"; seq: number | null; isCertain: boolean; toolInput: string;
+  origin: "docs" | "sdk" | "mcp" | "skill" | "other" | "unlogged-web" | "unlogged-skill" | "none"; seq: number | null; isCertain: boolean; toolInput: string;
 };
-type FactReading = {
-  name: string; expected: string[]; writtenValues: string[]; passed: boolean | null;
-  provenance: Provenance | null;
+type ValueReading = { value: string; passed: boolean; provenance: Provenance };
+type FactReading = { name: string; expected: string[]; writtenValues: string[]; passed: boolean | null; values: ValueReading[] };
+type DocsTiming = {
+  firstDocsSeq: number | null; firstPosthogWriteSeq: number | null;
+  timing: "before-write" | "after-write" | "never" | "no-write"; hasRelevantResult: boolean | null;
 };
+type DocsQuery = { seq: number; source: "mcp" | "web"; query: string; hasExpectedValue: boolean | null };
+type Recovery = { checksRun: number; errors: number; queriesAfterFirstError: number };
 type DocsRequest = { url: string; bytes: number; format: string };
 type WorksCheck = {
   envNamesInCode: string[]; envNamesMissingFromEnvFiles: string[]; envNamesMissingFromFinalMessage: string[];
   proxyRoute: "rewrites" | "rewriteRequestPath" | "unrouted" | null;
 };
 type RunRow = {
-  runId: string; batchId: string; status: string; isComplete: boolean; agent: string; model: string;
+  runId: string; batchId: string; promptText: string; mcpDigest: string | null; skillsDigest: string | null;
+  docsTiming: DocsTiming; skillsLoaded: string[]; docsQueries: DocsQuery[]; recovery: Recovery; status: string; isComplete: boolean; agent: string; model: string;
   creditsCharged: number | null; sandboxDocsRequests: DocsRequest[]; mcpDocsSearches: number; webEvents: { kind: string; target: string }[];
   facts: FactReading[]; worksCheck: WorksCheck; docsPagesFetched: string[]; installedPosthogJsVersion: string | null;
   criteriaPassed: number; criteriaTotal: number; failingCriteria: string[]; unassessedCriteria: string[];
@@ -219,7 +224,16 @@ function installedPosthogJsVersion(diff: string): string | null {
 
 type OriginMatchers = { docs: RegExp; sdk: RegExp };
 
+const skillLoadPattern = /"skill":\s*"([^"]+)"|\/skills\/([^/\s'"]+)\/SKILL\.md/;
+
+function loadedSkillName(event: GaugeEvent): string | null {
+  if (event.type !== "tool_call") return null;
+  const match = stringify(event.input).match(skillLoadPattern);
+  return match ? (match[1] ?? match[2] ?? null) : null;
+}
+
 function sightingOrigin(toolInput: string, originMatchers: OriginMatchers): Provenance["origin"] {
+  if (skillLoadPattern.test(toolInput)) return "skill";
   if (originMatchers.docs.test(toolInput)) return "docs";
   if (originMatchers.sdk.test(toolInput)) return "sdk";
   return "other";
@@ -271,9 +285,11 @@ function traceProvenance(orderedEvents: GaugeEvent[], value: string, filesWithVa
   const { firstWriteSeq, lastWriteSeq } = findWriteWindow(orderedEvents, value, filesWithValue);
   const toolCallById = new Map<string, { toolInput: string; isMcp: boolean }>();
   let hasWebEventBeforeWrite = false;
+  let hasSkillLoadBeforeWrite = false;
   for (const event of orderedEvents) {
     if (sequenceOf(event) >= lastWriteSeq) break;
     if (event.type === "web_event") hasWebEventBeforeWrite = true;
+    if (loadedSkillName(event) !== null) hasSkillLoadBeforeWrite = true;
     if (event.type === "tool_call") {
       const toolCall = { toolInput: stringify(event.input), isMcp: isMcpCall(event) };
       toolCallById.set(stringify(event.tool_id), toolCall);
@@ -287,6 +303,7 @@ function traceProvenance(orderedEvents: GaugeEvent[], value: string, filesWithVa
     return { origin, seq: sequenceOf(event), isCertain: sequenceOf(event) < firstWriteSeq, toolInput: toolCall.toolInput.slice(0, 300) };
   }
   if (hasWebEventBeforeWrite) return { origin: "unlogged-web", seq: null, isCertain: false, toolInput: "" };
+  if (hasSkillLoadBeforeWrite) return { origin: "unlogged-skill", seq: null, isCertain: false, toolInput: "" };
   return { origin: "none", seq: null, isCertain: true, toolInput: "" };
 }
 
@@ -298,14 +315,98 @@ function readFacts(facts: FactsFile | null, events: GaugeEvent[], diff: string):
   return facts.facts.map((fact, index) => {
     const filesByValue = filesByValueByFact[index] ?? new Map<string, Set<string>>();
     const values = [...filesByValue.keys()];
-    const firstValue = values[0];
     const expectedValues = [fact.expected].flat();
     return {
       name: fact.name, expected: expectedValues, writtenValues: values,
       passed: values.length === 0 ? null : values.every((value) => expectedValues.includes(value)),
-      provenance: firstValue === undefined ? null : traceProvenance(orderedEvents, firstValue, filesByValue.get(firstValue) ?? new Set(), originMatchers),
+      values: values.map((value) => ({
+        value, passed: expectedValues.includes(value),
+        provenance: traceProvenance(orderedEvents, value, filesByValue.get(value) ?? new Set(), originMatchers),
+      })),
     };
   });
+}
+
+const posthogWritePattern = /posthog/i;
+const packageInstallPattern = /\b(npm|pnpm|yarn|bun)\s+(install|add|i)\b[^\n]*posthog/;
+const buildCheckPattern = /\b(build|lint|tsc|typecheck|test)\b/;
+
+function isMcpDocsCall(event: GaugeEvent): boolean {
+  return isMcpCall(event) && /^(call docs-search|learn)\b/.test(mcpCommand(event));
+}
+
+function isPosthogWrite(event: GaugeEvent): boolean {
+  if (event.type !== "tool_call") return false;
+  const toolInput = stringify(event.input);
+  if (event.tool_kind === "file_edit") return posthogWritePattern.test(toolInput);
+  return event.tool_kind === "shell" && packageInstallPattern.test(toolInput);
+}
+
+function mcpCommand(event: GaugeEvent): string {
+  const input = (event.input ?? {}) as { command?: unknown; arguments?: { command?: unknown } };
+  return stringify(input.command ?? input.arguments?.command);
+}
+
+function callResultText(event: GaugeEvent, resultById: Map<string, string>): string {
+  const embeddedResult = (event.input as { result?: unknown } | undefined)?.result;
+  return resultById.get(stringify(event.tool_id)) ?? (embeddedResult === undefined ? "" : stringify(embeddedResult));
+}
+
+function mcpQueryText(event: GaugeEvent): string {
+  const command = mcpCommand(event);
+  return command.match(/"query":\s*"((?:[^"\\]|\\.)*)"/)?.[1] ?? command.match(/learn\s+-s\s+"([^"]*)"/)?.[1] ?? command;
+}
+
+function webQueryText(event: GaugeEvent): string {
+  const input = (event.input ?? {}) as { query?: unknown; url?: unknown; action?: { queries?: unknown[] } };
+  const queries = input.action?.queries?.map(stringify) ?? [];
+  return queries.length ? queries.join(" ; ") : stringify(input.query ?? input.url);
+}
+
+function readDocsQueries(orderedEvents: GaugeEvent[], resultById: Map<string, string>, expectedValues: string[]): DocsQuery[] {
+  const resultHasExpected = (event: GaugeEvent): boolean => expectedValues.some((value) => callResultText(event, resultById).includes(value));
+  return orderedEvents.flatMap((event): DocsQuery[] => {
+    if (isMcpDocsCall(event)) return [{ seq: sequenceOf(event), source: "mcp", query: mcpQueryText(event), hasExpectedValue: resultHasExpected(event) }];
+    if (event.type === "tool_call" && event.tool_kind === "web") return [{ seq: sequenceOf(event), source: "web", query: webQueryText(event), hasExpectedValue: callResultText(event, resultById) === "" ? null : resultHasExpected(event) }];
+    return [];
+  });
+}
+
+function readDocsTiming(orderedEvents: GaugeEvent[], docsMatcher: RegExp, resultById: Map<string, string>, expectedValues: string[]): DocsTiming {
+  const docsEvents = orderedEvents.filter((event) => isMcpDocsCall(event)
+    || (event.type === "tool_call" && docsMatcher.test(stringify(event.input)))
+    || (event.type === "network_request" && docsMatcher.test(stringify(event.url)) && stringify(event.method) !== "HEAD")
+    || (event.type === "web_event" && docsMatcher.test(stringify(event.url || event.query))));
+  const firstDocsSeq = docsEvents[0] ? sequenceOf(docsEvents[0]) : null;
+  const firstPosthogWrite = orderedEvents.find(isPosthogWrite);
+  const firstPosthogWriteSeq = firstPosthogWrite ? sequenceOf(firstPosthogWrite) : null;
+  const loggedDocsResults = docsEvents.filter((event) => event.type === "tool_call")
+    .map((event) => callResultText(event, resultById)).filter((resultText) => resultText !== "");
+  const hasRelevantResult = loggedDocsResults.length === 0
+    ? null
+    : loggedDocsResults.some((resultText) => expectedValues.some((value) => resultText.includes(value)));
+  const timing = (): DocsTiming["timing"] => {
+    if (firstDocsSeq === null) return "never";
+    if (firstPosthogWriteSeq === null) return "no-write";
+    return firstDocsSeq < firstPosthogWriteSeq ? "before-write" : "after-write";
+  };
+  return { firstDocsSeq, firstPosthogWriteSeq, timing: timing(), hasRelevantResult };
+}
+
+function readRecovery(orderedEvents: GaugeEvent[], docsQueries: DocsQuery[]): Recovery {
+  const firstError = orderedEvents.find((event) => event.type === "tool_result" && event.is_error === true);
+  const firstErrorSeq = firstError ? sequenceOf(firstError) : Number.POSITIVE_INFINITY;
+  return {
+    checksRun: orderedEvents.filter((event) => event.type === "tool_call" && event.tool_kind === "shell" && buildCheckPattern.test(stringify(event.input))).length,
+    errors: orderedEvents.filter((event) => event.type === "tool_result" && event.is_error === true).length,
+    queriesAfterFirstError: docsQueries.filter((query) => query.seq > firstErrorSeq).length,
+  };
+}
+
+function harnessDigest(events: GaugeEvent[], action: string, key: string): string | null {
+  const harnessEvent = events.find((event) => event.type === "harness_action" && event.action === action);
+  const digest = (harnessEvent?.[key] as { digest?: unknown } | undefined)?.digest;
+  return typeof digest === "string" ? digest : null;
 }
 
 function secondsBetween(timestamps: string[]): number | null {
@@ -332,8 +433,17 @@ function buildRow(run: GaugeRun, events: GaugeEvent[], diff: string, facts: Fact
   const mcpDocsSearches = events.filter((event) => isMcpCall(event) && /\bcall docs-search\b/.test(stringify(event.input))).length;
   const fetchedDocsTargets = webEvents.filter((event) => event.kind === "fetch" && docsMatcher.test(event.target)).map((event) => event.target);
   const finalMessage = stringify(events.filter((event) => event.type === "agent_message").at(-1)?.text);
+  const orderedEvents = [...events].sort((first, second) => sequenceOf(first) - sequenceOf(second));
+  const resultById = new Map(events.filter((event) => event.type === "tool_result").map((event) => [stringify(event.tool_id), stringify(event.output)]));
+  const expectedValues = facts?.facts.flatMap((fact) => [fact.expected].flat()) ?? [];
+  const docsQueries = readDocsQueries(orderedEvents, resultById, expectedValues);
   return {
-    runId: run.id, batchId: run.batchId ?? "-", status: run.status, isComplete: terminalStatuses.has(run.status),
+    runId: run.id, batchId: run.batchId ?? "-", promptText: run.promptText ?? "",
+    mcpDigest: harnessDigest(events, "mcp_prepared", "mcp"), skillsDigest: harnessDigest(events, "skills_staged", "skills"),
+    docsTiming: readDocsTiming(orderedEvents, docsMatcher, resultById, expectedValues),
+    skillsLoaded: [...new Set(orderedEvents.map(loadedSkillName).filter((name): name is string => name !== null))],
+    docsQueries, recovery: readRecovery(orderedEvents, docsQueries),
+    status: run.status, isComplete: terminalStatuses.has(run.status),
     agent: run.agent, model: run.model, creditsCharged: run.creditsCharged ?? null,
     sandboxDocsRequests, mcpDocsSearches, webEvents,
     facts: readFacts(facts, events, diff),
@@ -369,10 +479,33 @@ function docsCell(requests: DocsRequest[]): string {
 
 function factCell(fact: FactReading): string {
   if (fact.passed === null) return "not written";
-  const verdict = fact.passed ? "pass" : "FAIL";
-  const sighting = fact.provenance;
-  const provenance = sighting ? `${sighting.origin}${sighting.seq === null ? "" : `@${sighting.seq}`}${sighting.isCertain ? "" : "?"}` : "none";
-  return `${fact.writtenValues.join(" / ")} ${verdict} (from ${provenance})`;
+  return fact.values.map(({ value, passed, provenance: sighting }) => {
+    const provenance = `${sighting.origin}${sighting.seq === null ? "" : `@${sighting.seq}`}${sighting.isCertain ? "" : "?"}`;
+    return `${value} ${passed ? "pass" : "FAIL"} (from ${provenance})`;
+  }).join(" / ");
+}
+
+function docsTimingCell(docsTiming: DocsTiming): string {
+  const relevance = docsTiming.hasRelevantResult === null ? "" : docsTiming.hasRelevantResult ? " relevant" : " irrelevant";
+  const firstDocs = docsTiming.firstDocsSeq === null ? "" : `@${docsTiming.firstDocsSeq}`;
+  return `${docsTiming.timing}${firstDocs}${relevance}`;
+}
+
+function skillsCell(row: RunRow): string {
+  if (row.skillsLoaded.length === 0) return "-";
+  const origins = new Set(row.facts.flatMap((fact) => fact.values.map((reading) => reading.provenance.origin)));
+  const followed = origins.has("skill") ? " (followed)" : origins.has("unlogged-skill") ? " (content unlogged)" : "";
+  return `${row.skillsLoaded.join(", ")}${followed}`;
+}
+
+function queriesCell(queries: DocsQuery[]): string {
+  if (queries.length === 0) return "0";
+  const hits = queries.filter((query) => query.hasExpectedValue === true).length;
+  return `${queries.length} (${hits} with expected value)`;
+}
+
+function recoveryCell(recovery: Recovery): string {
+  return `checks ${recovery.checksRun}, errors ${recovery.errors}, queries after error ${recovery.queriesAfterFirstError}`;
 }
 
 function worksCell(check: WorksCheck): string {
@@ -391,24 +524,47 @@ function criteriaCell(row: RunRow): string {
   return `${row.criteriaPassed}/${row.criteriaTotal}${details ? ` ${details}` : ""}`;
 }
 
-type GroupTally = {
-  batchId: string; agent: string; finishedRuns: number; runningRuns: number; factsPassed: number; factsTotal: number;
-  runsReachingDocs: number; criteriaPassed: number; criteriaTotal: number; creditsTotal: number; runsWithCredits: number;
+type CellTally = {
+  task: string; setup: string; agent: string; batchIds: Set<string>; finishedRuns: number; runningRuns: number;
+  factsPassed: number; factsTotal: number; runsReachingDocs: number; criteriaPassed: number; criteriaTotal: number;
+  creditsTotal: number; runsWithCredits: number; docsTimings: Set<string>; skillSets: Set<string>;
 };
+
+const fullCellRuns = 5;
 
 function percent(part: number, whole: number): string {
   return whole === 0 ? "-" : `${Math.round((part / whole) * 100)}% (${part}/${whole})`;
 }
 
+function setupLabel(row: RunRow): string {
+  const parts = [
+    ...(row.mcpDigest ? [`mcp ${row.mcpDigest.slice(7, 15)}`] : []),
+    ...(row.skillsDigest ? [`skills ${row.skillsDigest.slice(7, 15)}`] : []),
+  ];
+  return parts.length ? parts.join(" + ") : "none";
+}
+
+function taskLabel(promptText: string): string {
+  if (!promptText) return "-";
+  return promptText.length > 40 ? `${promptText.slice(0, 40)}...` : promptText;
+}
+
+function needsTopUp(tally: CellTally): boolean {
+  if (tally.finishedRuns < 2 || tally.finishedRuns >= fullCellRuns) return false;
+  return tally.docsTimings.size > 1 || tally.skillSets.size > 1;
+}
+
 function renderSummary(rows: RunRow[]): string {
-  const tallyByGroup = new Map<string, GroupTally>();
+  const tallyByCell = new Map<string, CellTally>();
   for (const row of rows) {
-    const groupKey = `${row.batchId} ${row.agent}`;
-    const tally = tallyByGroup.get(groupKey) ?? {
-      batchId: row.batchId, agent: row.agent, finishedRuns: 0, runningRuns: 0, factsPassed: 0, factsTotal: 0,
-      runsReachingDocs: 0, criteriaPassed: 0, criteriaTotal: 0, creditsTotal: 0, runsWithCredits: 0,
+    const cellKey = [row.promptText, row.mcpDigest, row.skillsDigest, row.agent].join(" ");
+    const tally = tallyByCell.get(cellKey) ?? {
+      task: taskLabel(row.promptText), setup: setupLabel(row), agent: row.agent, batchIds: new Set<string>(),
+      finishedRuns: 0, runningRuns: 0, factsPassed: 0, factsTotal: 0, runsReachingDocs: 0, criteriaPassed: 0, criteriaTotal: 0,
+      creditsTotal: 0, runsWithCredits: 0, docsTimings: new Set<string>(), skillSets: new Set<string>(),
     };
-    tallyByGroup.set(groupKey, tally);
+    tallyByCell.set(cellKey, tally);
+    tally.batchIds.add(row.batchId);
     if (!row.isComplete) {
       tally.runningRuns += 1;
       continue;
@@ -420,24 +576,28 @@ function renderSummary(rows: RunRow[]): string {
     tally.runsReachingDocs += row.hasReachedDocs ? 1 : 0;
     tally.criteriaTotal += row.comparableCriteriaTotal;
     tally.criteriaPassed += isSucceeded ? row.comparableCriteriaPassed : 0;
+    tally.docsTimings.add(row.docsTiming.timing);
+    tally.skillSets.add([...row.skillsLoaded].sort().join(","));
     if (row.creditsCharged === null) continue;
     tally.creditsTotal += row.creditsCharged;
     tally.runsWithCredits += 1;
   }
-  const header = ["batch", "agent", "runs", "fact accuracy", "docs reach", `criteria passed (excl. ${docsReadCriterionName})`, "mean credits"];
+  const header = ["task", "setup", "agent", "batches", "runs", "fact accuracy", "docs reach", `criteria passed (excl. ${docsReadCriterionName})`, "mean credits", "top-up"];
   const lines = [`| ${header.join(" | ")} |`, `|${header.map(() => "---").join("|")}|`];
-  for (const tally of tallyByGroup.values()) {
+  for (const tally of tallyByCell.values()) {
     const runs = tally.runningRuns ? `${tally.finishedRuns} (+${tally.runningRuns} running)` : String(tally.finishedRuns);
     const meanCredits = tally.runsWithCredits ? (tally.creditsTotal / tally.runsWithCredits).toFixed(1) : "-";
-    lines.push(`| ${[tally.batchId, tally.agent, runs, percent(tally.factsPassed, tally.factsTotal),
-      percent(tally.runsReachingDocs, tally.finishedRuns), percent(tally.criteriaPassed, tally.criteriaTotal), meanCredits].join(" | ")} |`);
+    const topUp = needsTopUp(tally) ? `yes (+${fullCellRuns - tally.finishedRuns})` : "no";
+    lines.push(`| ${[tally.task, tally.setup, tally.agent, [...tally.batchIds].join(" "), runs, percent(tally.factsPassed, tally.factsTotal),
+      percent(tally.runsReachingDocs, tally.finishedRuns), percent(tally.criteriaPassed, tally.criteriaTotal), meanCredits, topUp]
+      .map((cell) => cell.replaceAll("|", "\\|")).join(" | ")} |`);
   }
   return lines.join("\n");
 }
 
 function renderTable(rows: RunRow[]): string {
   const factNames = [...new Set(rows.flatMap((row) => row.facts.map((fact) => fact.name)))];
-  const header = ["run", "agent", "status", "sandbox docs", "mcp docs-search", "web search/fetch", ...factNames, "works check", "docs pages", "posthog-js", "criteria", "npm s", "total s"];
+  const header = ["run", "agent", "status", "sandbox docs", "mcp docs-search", "web search/fetch", ...factNames, "docs timing", "docs queries", "skills loaded", "works check", "docs pages", "posthog-js", "recovery", "criteria", "npm s", "total s"];
   const lines = [`| ${header.join(" | ")} |`, `|${header.map(() => "---").join("|")}|`];
   for (const row of rows) {
     const searches = row.webEvents.filter((event) => event.kind === "search").length;
@@ -448,8 +608,9 @@ function renderTable(rows: RunRow[]): string {
         const fact = row.facts.find((candidate) => candidate.name === name);
         return fact ? factCell(fact) : "-";
       }),
+      docsTimingCell(row.docsTiming), queriesCell(row.docsQueries), skillsCell(row),
       worksCell(row.worksCheck), row.docsPagesFetched.map((url) => url.replace(/^https?:\/\/(www\.)?/, "")).join(" ") || "-",
-      row.installedPosthogJsVersion ?? "-",
+      row.installedPosthogJsVersion ?? "-", recoveryCell(row.recovery),
       criteriaCell(row),
       String(row.npmWindowSeconds ?? "-"), String(row.totalSeconds ?? "-"),
     ];
