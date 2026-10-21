@@ -10,6 +10,7 @@ One explainer is one self-contained HTML page: an SVG scene driven by a single c
 ## 1. Pick the topic and gather assets
 
 - Choose the topic from the carbon unit's goals or roadmap notes, not from what animates easily. One explainer covers one idea in about four steps.
+- Find every earlier chamber before designing: `Artifact` `action: "list"` (search titles for "Chamber") plus local copies such as `~/Downloads/posthog-chambers`. The highest-numbered one is the style reference and the new chamber takes the next number; local folders lag the gallery, so the newest chamber was missed once.
 - Fetch brand assets (fonts, logomark, mascot SVGs) into a scratch `brand/` folder for each run and note their license. Never commit them anywhere: restrictive brand licenses such as PolyForm Strict allow use in the company's own materials, not redistribution.
 - Embed the assets as base64 at build time from `template.html` placeholders (`__FONT__`, `__MASCOT__`), so the published page has no external requests.
 
