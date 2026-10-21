@@ -59,7 +59,11 @@ The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` fo
 ```
 node ~/.claude/skills/spec/validate.ts <spec.json>
 node ~/.claude/skills/spec/render.ts <spec.json> tree
+node ~/.claude/skills/spec/archive.ts <spec.json> built|abandoned
+node ~/.claude/skills/spec/report.ts
 ```
+
+Report lists archived specs with landed tickets and sweeps specs idle 14 days as abandoned; read an archive's structure with `render.ts tree`.
 
 ## Cut and build
 

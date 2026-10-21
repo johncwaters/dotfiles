@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
 import { unitsInDependencyOrder } from "./lib/unit-order.ts";
@@ -48,7 +51,7 @@ function render(spec: DesignSpec, mode: string): string {
 }
 
 function renderSpec(specArgument: string | undefined, mode: string | undefined): number {
-  const { report, spec } = readSpec(specArgument);
+  const { report, spec } = readRenderableSpec(specArgument);
   if (!spec) {
     process.stdout.write(`${JSON.stringify(report)}\n`);
     return 1;
@@ -59,6 +62,17 @@ function renderSpec(specArgument: string | undefined, mode: string | undefined):
   }
   process.stdout.write(`${render(spec, mode)}\n`);
   return 0;
+}
+
+function readRenderableSpec(specArgument: string | undefined): ReturnType<typeof readSpec> {
+  const archiveDirectory = path.join(os.homedir(), ".claude", "spec-archive");
+  if (!specArgument || !path.resolve(specArgument).startsWith(`${archiveDirectory}${path.sep}`)) return readSpec(specArgument);
+  try {
+    const spec = JSON.parse(fs.readFileSync(specArgument, "utf8")) as DesignSpec;
+    return { spec, report: { outcome: "VALID", errors: [] } };
+  } catch (error) {
+    return { report: { outcome: "UNREADABLE", errors: [String(error).replace(/[\r\n]+/g, " ")] } };
+  }
 }
 
 process.exitCode = renderSpec(process.argv[2], process.argv[3]);
