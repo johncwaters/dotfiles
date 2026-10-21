@@ -1,5 +1,6 @@
 {
   "evalName": "Docs eval: Next.js 16 App Router install (starter-nextjs)",
+  "promptPattern": "^Add PostHog product analytics to this Next\\.js app",
   "docsUrlPattern": "posthog\\.com/docs|raw\\.githubusercontent\\.com/PostHog/posthog\\.com/",
   "sdkPattern": "node_modules|npm pack|\\.d\\.ts|PostHog/posthog-js|unpkg\\.com|jsdelivr",
   "facts": [

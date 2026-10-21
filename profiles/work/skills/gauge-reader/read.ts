@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -7,11 +7,12 @@ type ReaderOptions = { batchIds: string[]; runIds: string[]; factsPath?: string;
 type GaugeEvent = Record<string, unknown> & { type: string; seq?: number | string; ts?: string };
 type CriterionResult = { name: string; passed: boolean | null };
 type GaugeRun = {
-  id: string; status: string; agent: string; model: string; batchId?: string; evalSetId?: string;
+  id: string; status: string; agent: string; model: string; batchId?: string; evalSetId?: string; promptText?: string;
   durationMs?: number; creditsCharged?: number | null; criterionResults?: CriterionResult[];
 };
 type FactDefinition = { name: string; pattern: string; expected: string | string[] };
-type FactsFile = { docsUrlPattern: string; sdkPattern: string; facts: FactDefinition[] };
+type FactsFile = { promptPattern?: string; docsUrlPattern: string; sdkPattern: string; facts: FactDefinition[] };
+type LoadedFactsFile = FactsFile & { fileName: string };
 type Provenance = {
   origin: "docs" | "sdk" | "mcp" | "other" | "unlogged-web" | "none"; seq: number | null; isCertain: boolean; toolInput: string;
 };
@@ -20,10 +21,14 @@ type FactReading = {
   provenance: Provenance | null;
 };
 type DocsRequest = { url: string; bytes: number; format: string };
+type WorksCheck = {
+  envNamesInCode: string[]; envNamesMissingFromEnvFiles: string[]; envNamesMissingFromFinalMessage: string[];
+  proxyRoute: "rewrites" | "rewriteRequestPath" | "unrouted" | null;
+};
 type RunRow = {
   runId: string; batchId: string; status: string; isComplete: boolean; agent: string; model: string;
   creditsCharged: number | null; sandboxDocsRequests: DocsRequest[]; mcpDocsSearches: number; webEvents: { kind: string; target: string }[];
-  facts: FactReading[];
+  facts: FactReading[]; worksCheck: WorksCheck; docsPagesFetched: string[]; installedPosthogJsVersion: string | null;
   criteriaPassed: number; criteriaTotal: number; failingCriteria: string[]; unassessedCriteria: string[];
   comparableCriteriaPassed: number; comparableCriteriaTotal: number; hasReachedDocs: boolean;
   npmWindowSeconds: number | null; totalSeconds: number | null;
@@ -115,10 +120,22 @@ function parseEvents(log: string): GaugeEvent[] {
   return log.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as GaugeEvent);
 }
 
-function loadFacts(options: ReaderOptions, evalSetId: string | undefined): FactsFile | null {
-  const factsPath = options.factsPath ?? (evalSetId ? join(skillDirectory, "facts", `${evalSetId}.json`) : "");
-  if (!factsPath || !existsSync(factsPath)) return null;
-  return JSON.parse(readFileSync(factsPath, "utf8")) as FactsFile;
+function readFactsFile(factsPath: string): LoadedFactsFile {
+  return { ...(JSON.parse(readFileSync(factsPath, "utf8")) as FactsFile), fileName: factsPath };
+}
+
+function loadFactsFiles(options: ReaderOptions): LoadedFactsFile[] {
+  if (options.factsPath) return [readFactsFile(options.factsPath)];
+  const factsDirectory = join(skillDirectory, "facts");
+  return readdirSync(factsDirectory).filter((fileName) => fileName.endsWith(".json"))
+    .map((fileName) => readFactsFile(join(factsDirectory, fileName)));
+}
+
+function selectFacts(factsFiles: LoadedFactsFile[], run: GaugeRun, options: ReaderOptions): FactsFile | null {
+  if (options.factsPath) return factsFiles[0] ?? null;
+  const promptMatch = factsFiles.find((factsFile) => factsFile.promptPattern && new RegExp(factsFile.promptPattern).test(run.promptText ?? ""));
+  if (promptMatch) return promptMatch;
+  return factsFiles.find((factsFile) => run.evalSetId && factsFile.fileName.endsWith(`/${run.evalSetId}.json`)) ?? null;
 }
 
 function sequenceOf(event: GaugeEvent): number {
@@ -137,9 +154,8 @@ function docsFormat(url: string, bytes: number): string {
   return "html";
 }
 
-function writtenValues(diff: string, pattern: string): Map<string, Set<string>> {
-  const filesByValue = new Map<string, Set<string>>();
-  const matcher = new RegExp(pattern, "g");
+function addedLinesByFile(diff: string): Map<string, string[]> {
+  const linesByFile = new Map<string, string[]>();
   let currentFile = "";
   for (const line of diff.split("\n")) {
     if (line.startsWith("+++ ")) {
@@ -147,12 +163,58 @@ function writtenValues(diff: string, pattern: string): Map<string, Set<string>> 
       continue;
     }
     if (!line.startsWith("+")) continue;
-    for (const match of line.matchAll(matcher)) {
+    linesByFile.set(currentFile, [...(linesByFile.get(currentFile) ?? []), line.slice(1)]);
+  }
+  return linesByFile;
+}
+
+function writtenValues(diff: string, pattern: string): Map<string, Set<string>> {
+  const filesByValue = new Map<string, Set<string>>();
+  const matcher = new RegExp(pattern, "g");
+  for (const [file, lines] of addedLinesByFile(diff)) {
+    for (const match of lines.flatMap((line) => [...line.matchAll(matcher)])) {
       if (!match[1]) continue;
-      filesByValue.set(match[1], (filesByValue.get(match[1]) ?? new Set()).add(currentFile));
+      filesByValue.set(match[1], (filesByValue.get(match[1]) ?? new Set()).add(file));
     }
   }
   return filesByValue;
+}
+
+const posthogEnvNamePattern = /NEXT_PUBLIC_POSTHOG_[A-Z_]+/g;
+const envFilePattern = /(^|\/)\.env[^/]*$/;
+const sourceFilePattern = /\.(c|m)?[jt]sx?$/;
+
+function namesMatching(lines: string[], pattern: RegExp): Set<string> {
+  return new Set(lines.flatMap((line) => [...line.matchAll(pattern)].map((match) => match[1] ?? match[0])));
+}
+
+function proxyRoute(linesByFile: Map<string, string[]>): WorksCheck["proxyRoute"] {
+  const allLines = [...linesByFile.values()].flat();
+  if (allLines.some((line) => line.includes("rewriteRequestPath"))) return "rewriteRequestPath";
+  const apiHostPath = allLines.map((line) => line.match(/api_host:\s*["'`](\/[^"'`]*)["'`]/)?.[1]).find(Boolean);
+  if (!apiHostPath) return null;
+  const nextConfigLines = [...linesByFile].filter(([file]) => /(^|\/)next\.config\./.test(file)).flatMap(([, lines]) => lines);
+  const rewriteSources = namesMatching(nextConfigLines, /source:\s*["'`](\/[^"'`]*)["'`]/g);
+  return [...rewriteSources].some((source) => source.startsWith(apiHostPath)) ? "rewrites" : "unrouted";
+}
+
+function checkWorks(diff: string, finalMessage: string): WorksCheck {
+  const linesByFile = addedLinesByFile(diff);
+  const sourceLines = [...linesByFile].filter(([file]) => sourceFilePattern.test(file)).flatMap(([, lines]) => lines);
+  const envNamesInCode = [...namesMatching(sourceLines, /process\.env\.(NEXT_PUBLIC_POSTHOG_[A-Z_]+)/g)];
+  const envFileNameSets = [...linesByFile].filter(([file]) => envFilePattern.test(file))
+    .map(([, lines]) => namesMatching(lines, /^\s*(NEXT_PUBLIC_POSTHOG_[A-Z_]+)\s*=/g));
+  const finalMessageNames = namesMatching([finalMessage], posthogEnvNamePattern);
+  return {
+    envNamesInCode,
+    envNamesMissingFromEnvFiles: envNamesInCode.filter((name) => envFileNameSets.some((names) => !names.has(name))),
+    envNamesMissingFromFinalMessage: envNamesInCode.filter((name) => !finalMessageNames.has(name)),
+    proxyRoute: proxyRoute(linesByFile),
+  };
+}
+
+function installedPosthogJsVersion(diff: string): string | null {
+  return diff.match(/^\+\s*"posthog-js":\s*"([^"]+)"/m)?.[1] ?? null;
 }
 
 type OriginMatchers = { docs: RegExp; sdk: RegExp };
@@ -268,11 +330,16 @@ function buildRow(run: GaugeRun, events: GaugeEvent[], diff: string, facts: Fact
     .map((event) => ({ kind: stringify(event.kind), target: stringify(event.url || event.query) }));
   const hasFetchedDocsOnWeb = webEvents.some((event) => event.kind === "fetch" && docsMatcher.test(event.target));
   const mcpDocsSearches = events.filter((event) => isMcpCall(event) && /\bcall docs-search\b/.test(stringify(event.input))).length;
+  const fetchedDocsTargets = webEvents.filter((event) => event.kind === "fetch" && docsMatcher.test(event.target)).map((event) => event.target);
+  const finalMessage = stringify(events.filter((event) => event.type === "agent_message").at(-1)?.text);
   return {
     runId: run.id, batchId: run.batchId ?? "-", status: run.status, isComplete: terminalStatuses.has(run.status),
     agent: run.agent, model: run.model, creditsCharged: run.creditsCharged ?? null,
     sandboxDocsRequests, mcpDocsSearches, webEvents,
     facts: readFacts(facts, events, diff),
+    worksCheck: checkWorks(diff, finalMessage),
+    docsPagesFetched: [...new Set([...sandboxDocsRequests.map((request) => request.url), ...fetchedDocsTargets])],
+    installedPosthogJsVersion: installedPosthogJsVersion(diff),
     criteriaPassed: criteria.filter((criterion) => criterion.passed === true).length, criteriaTotal: criteria.length,
     failingCriteria: criteria.filter((criterion) => criterion.passed === false).map((criterion) => criterion.name),
     unassessedCriteria: criteria.filter((criterion) => criterion.passed === null).map((criterion) => criterion.name),
@@ -306,6 +373,15 @@ function factCell(fact: FactReading): string {
   const sighting = fact.provenance;
   const provenance = sighting ? `${sighting.origin}${sighting.seq === null ? "" : `@${sighting.seq}`}${sighting.isCertain ? "" : "?"}` : "none";
   return `${fact.writtenValues.join(" / ")} ${verdict} (from ${provenance})`;
+}
+
+function worksCell(check: WorksCheck): string {
+  const envProblems = [
+    ...(check.envNamesMissingFromEnvFiles.length ? [`not in .env: ${check.envNamesMissingFromEnvFiles.join(", ")}`] : []),
+    ...(check.envNamesMissingFromFinalMessage.length ? [`not in final message: ${check.envNamesMissingFromFinalMessage.join(", ")}`] : []),
+  ];
+  const envCell = check.envNamesInCode.length === 0 ? "env -" : `env ${envProblems.length ? envProblems.join("; ") : "ok"}`;
+  return `${envCell} / proxy ${check.proxyRoute ?? "-"}`;
 }
 
 function criteriaCell(row: RunRow): string {
@@ -360,15 +436,20 @@ function renderSummary(rows: RunRow[]): string {
 }
 
 function renderTable(rows: RunRow[]): string {
-  const factNames = rows[0]?.facts.map((fact) => fact.name) ?? [];
-  const header = ["run", "agent", "status", "sandbox docs", "mcp docs-search", "web search/fetch", ...factNames, "criteria", "npm s", "total s"];
+  const factNames = [...new Set(rows.flatMap((row) => row.facts.map((fact) => fact.name)))];
+  const header = ["run", "agent", "status", "sandbox docs", "mcp docs-search", "web search/fetch", ...factNames, "works check", "docs pages", "posthog-js", "criteria", "npm s", "total s"];
   const lines = [`| ${header.join(" | ")} |`, `|${header.map(() => "---").join("|")}|`];
   for (const row of rows) {
     const searches = row.webEvents.filter((event) => event.kind === "search").length;
     const fetches = row.webEvents.filter((event) => event.kind === "fetch").length;
     const cells = [
       row.runId, `${row.agent} ${row.model}`, row.isComplete ? row.status : `INCOMPLETE ${row.status}`,
-      docsCell(row.sandboxDocsRequests), String(row.mcpDocsSearches), `${searches}/${fetches}`, ...row.facts.map(factCell),
+      docsCell(row.sandboxDocsRequests), String(row.mcpDocsSearches), `${searches}/${fetches}`, ...factNames.map((name) => {
+        const fact = row.facts.find((candidate) => candidate.name === name);
+        return fact ? factCell(fact) : "-";
+      }),
+      worksCell(row.worksCheck), row.docsPagesFetched.map((url) => url.replace(/^https?:\/\/(www\.)?/, "")).join(" ") || "-",
+      row.installedPosthogJsVersion ?? "-",
       criteriaCell(row),
       String(row.npmWindowSeconds ?? "-"), String(row.totalSeconds ?? "-"),
     ];
@@ -382,10 +463,11 @@ function renderTable(rows: RunRow[]): string {
 try {
   const options = parseArguments(process.argv.slice(2));
   const runIds = [...options.batchIds.flatMap((batchId) => listBatchRunIds(batchId, options.cacheRoot)), ...options.runIds];
+  const factsFiles = loadFactsFiles(options);
   const rows: RunRow[] = [];
   for (const runId of runIds) {
     const { run, events, diff } = loadRun(runId, options.cacheRoot);
-    rows.push(buildRow(run, events, diff, loadFacts(options, run.evalSetId)));
+    rows.push(buildRow(run, events, diff, selectFacts(factsFiles, run, options)));
   }
   const outputDirectory = join(options.cacheRoot, [...options.batchIds, ...options.runIds].join("+"));
   mkdirSync(outputDirectory, { recursive: true });

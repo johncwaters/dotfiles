@@ -25,11 +25,13 @@ It prints a markdown table, one row per run, and writes the full rows to the
 `${XDG_CACHE_HOME:-~/.cache}/gauge-reader/runs/`, so reruns are instant; a row
 marked `INCOMPLETE` is still running and gets refetched next time.
 
-Facts (written value, pass or fail, provenance) appear only when
-`facts/<evalSetId>.json` exists beside this file, or with `--facts <path>`. A new
-eval gets its own facts file: `docsUrlPattern` and `sdkPattern` classify where a
-value was seen, and each fact is a regex with one capture group over the run
-diff's added lines plus the expected value.
+Facts (written value, pass or fail, provenance) appear only when a file in
+`facts/` matches the run, or with `--facts <path>`. A run matches the first file
+whose `promptPattern` matches its prompt, else `facts/<evalSetId>.json`; applied
+case runs have no evalSetId, so a new task needs a `promptPattern`.
+`docsUrlPattern` and `sdkPattern` classify where a value was seen, and each fact
+is a regex with one capture group over the run diff's added lines plus the
+expected value.
 
 ## Step 2: answer from the table
 
@@ -45,6 +47,12 @@ diff's added lines plus the expected value.
   no logged output held the value. Gauge does not log what those tools
   returned, so that origin is always inferred and always carries `?`.
 - `none` means no web event and no sighting before the write: memory.
+- `works check` is static and diff-only: env names the added code reads that a
+  written `.env*` file or the final message lacks, and `proxy rewrites` only
+  when a next.config rewrite source covers the `api_host` path.
+  `rewriteRequestPath` is recorded but its mapping is left to the judged
+  criterion; `env -` means the diff added no env read.
+- `posthog-js` is the version the diff wrote to package.json; `-` means unchanged.
 - `sandbox docs` counts requests leaving the sandbox only. Codex's built-in
   `web_search` fetches outside it and shows up in the `web search/fetch` column
   instead.

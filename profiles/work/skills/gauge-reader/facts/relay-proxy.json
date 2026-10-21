@@ -1,0 +1,10 @@
+{
+  "evalName": "Route PostHog requests through /relay (next-starter-r4)",
+  "promptPattern": "under /relay instead of PostHog's hosts",
+  "docsUrlPattern": "posthog\\.com/docs|raw\\.githubusercontent\\.com/PostHog/posthog\\.com/",
+  "sdkPattern": "node_modules|npm pack|\\.d\\.ts|PostHog/posthog-js|unpkg\\.com|jsdelivr",
+  "facts": [
+    { "name": "proxy path", "pattern": "api_host:\\s*[\"'`]([^\"'`]+)[\"'`]", "expected": "/relay" },
+    { "name": "proxy approach", "pattern": "\\b(rewrites|rewriteRequestPath)\\b", "expected": ["rewrites", "rewriteRequestPath"] }
+  ]
+}
