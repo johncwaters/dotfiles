@@ -407,6 +407,30 @@ export class Git {
     return this.run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).code === 0;
   }
 
+  resolveFeaturePushTarget(branch: string, mainlineBranchNames: readonly string[]): {
+    remote: string;
+    destination: string;
+    trackingRef: string;
+    hasUpstream: boolean;
+  } {
+    const listing = this.run([
+      "for-each-ref",
+      "--format=%(push:remotename) %(upstream:remotename) %(upstream:remoteref) %(upstream)",
+      `refs/heads/${branch}`,
+    ]);
+    const [pushRemote, upstreamRemote, upstreamDestination, upstreamTrackingRef] = listing.stdout.split("\n")[0].split(" ");
+    const remote = pushRemote || "origin";
+    const upstreamBranchName = upstreamDestination.replace(/^refs\/heads\//, "");
+    const tracksMainlineBranch = mainlineBranchNames.includes(upstreamBranchName);
+    const followsUpstreamDestination = remote === upstreamRemote && !tracksMainlineBranch;
+    return {
+      remote,
+      destination: followsUpstreamDestination ? upstreamDestination : `refs/heads/${branch}`,
+      trackingRef: followsUpstreamDestination ? upstreamTrackingRef : `refs/remotes/${remote}/${branch}`,
+      hasUpstream: Boolean(upstreamTrackingRef),
+    };
+  }
+
   deleteRemoteBranch(options: { remote: string; branch: string; expectedTip: string }): GitResult {
     return this.run([
       "push",

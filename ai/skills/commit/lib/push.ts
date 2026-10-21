@@ -1,6 +1,6 @@
 import type { PushRefResult, PushResult } from "./git.ts";
 
-export type PendingPushRef = { branch: string; kind: "feature" | "promote"; sourceTip?: string };
+export type PendingPushRef = { branch: string; kind: "feature" | "promote"; sourceTip?: string; destination?: string };
 
 export function sleep(milliseconds: number): void {
   if (milliseconds <= 0) {
@@ -9,12 +9,12 @@ export function sleep(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
-export function branchRefspec(branch: string, sourceTip?: string): string {
-  return `${sourceTip ?? `refs/heads/${branch}`}:refs/heads/${branch}`;
+export function branchRefspec(branch: string, sourceTip?: string, destination = `refs/heads/${branch}`): string {
+  return `${sourceTip ?? `refs/heads/${branch}`}:${destination}`;
 }
 
-function pushRefResult(push: PushResult, branch: string): PushRefResult | undefined {
-  return push.refs[`refs/heads/${branch}`] ?? push.refs[branch];
+function pushRefResult(push: PushResult, destination: string): PushRefResult | undefined {
+  return push.refs[destination] ?? push.refs[destination.replace(/^refs\/heads\//, "")];
 }
 
 export function statusByBranch(
@@ -23,7 +23,7 @@ export function statusByBranch(
 ): Record<string, PushRefResult> {
   const statuses: Record<string, PushRefResult> = {};
   for (const pendingRef of pendingRefs) {
-    const parsed = pushRefResult(push, pendingRef.branch);
+    const parsed = pushRefResult(push, pendingRef.destination ?? `refs/heads/${pendingRef.branch}`);
     if (parsed) {
       statuses[pendingRef.branch] = parsed;
       continue;
@@ -50,8 +50,8 @@ export function hasCauseFailure(statuses: Record<string, PushRefResult>): boolea
   return Object.values(statuses).some((entry) => isCauseFailure(entry));
 }
 
-export function pushFailureText(push: PushResult, branch: string): string {
-  const parsed = pushRefResult(push, branch);
+export function pushFailureText(push: PushResult, branch: string, destination = `refs/heads/${branch}`): string {
+  const parsed = pushRefResult(push, destination);
   const stderr = push.stderr.trim();
   if (parsed?.summary && stderr) {
     return `${parsed.summary}: ${stderr}`;

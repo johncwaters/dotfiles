@@ -18,6 +18,7 @@ import {
   runSkillScript,
   VALID_MESSAGE,
   writeFile,
+  writeOriginHook,
 } from "./helpers.ts";
 
 test("findWorktreeForBranch skips detached and bare blocks", () => {
@@ -372,6 +373,50 @@ test("a push advances the origin ref and reports pushed", () => {
     assert.equal(result.pushed, true);
     const branch = gitOutput(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
     assert.equal(gitOutput(origin, ["rev-parse", branch]), result.commit);
+  } finally {
+    cleanup(origin, repo);
+  }
+});
+
+test("a feature push follows its upstream remote and ref when origin rejects pushes", () => {
+  const origin = makeBareOrigin();
+  const upstream = makeBareOrigin();
+  const repo = cloneRepo(origin);
+  try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/local-feature"]);
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["remote", "add", "upstream", upstream]);
+    runGit(repo, ["push", "-q", "-u", "upstream", "HEAD:refs/heads/fast-stop-hook"]);
+    writeOriginHook(origin, "pre-receive", "#!/bin/sh\nexit 1\n");
+    writeFile(repo, "a.txt", "two\n");
+
+    const { code, result } = land(repo, [], VALID_MESSAGE);
+
+    assert.equal(code, 0);
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(result.pushed, true);
+    assert.equal(gitOutput(upstream, ["rev-parse", "refs/heads/fast-stop-hook"]), result.commit);
+  } finally {
+    cleanup(origin, upstream, repo);
+  }
+});
+
+test("a feature branch tracking origin main pushes under its own name and leaves main alone", () => {
+  const origin = makeBareOrigin();
+  const repo = cloneRepo(origin);
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["push", "-q", "-u", "origin", "HEAD:refs/heads/main"]);
+    const originMainBefore = gitOutput(origin, ["rev-parse", "refs/heads/main"]);
+    runGit(repo, ["checkout", "-q", "-b", "feature", "origin/main"]);
+    writeFile(repo, "a.txt", "two\n");
+
+    const { code, result } = land(repo, [], VALID_MESSAGE);
+
+    assert.equal(code, 0);
+    assert.equal(result.pushed, true);
+    assert.equal(gitOutput(origin, ["rev-parse", "refs/heads/main"]), originMainBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "refs/heads/feature"]), result.commit);
   } finally {
     cleanup(origin, repo);
   }

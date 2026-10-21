@@ -438,11 +438,6 @@ class Landing {
     if (this.config.noPush) {
       return null;
     }
-    if (!this.git.listRemotes().includes("origin")) {
-      this.warnings.push("no origin remote configured; skipping push");
-      return null;
-    }
-
     const branch = this.git.currentBranch();
     if (this.config.promote) {
       this.deferredFeatureBranch = branch;
@@ -450,13 +445,24 @@ class Landing {
     }
     this.parkedFeatureBranch = branch;
 
-    const pending: PendingPushRef[] = [{ branch, kind: "feature" }];
-    if (this.originRefIsUpToDate(branch)) {
+    return this.pushFeatureRef(branch);
+  }
+
+  private pushFeatureRef(branch: string): FailureOutcome | null {
+    const mainline = resolveMainline(this.git, configuredMainline(readCommitPolicy().policy));
+    const mainlineBranchNames = mainline === null ? NEVER_DELETED_BRANCHES : [mainline, ...NEVER_DELETED_BRANCHES];
+    const target = this.git.resolveFeaturePushTarget(branch, mainlineBranchNames);
+    if (!this.git.listRemotes().includes(target.remote)) {
+      this.warnings.push(`no ${target.remote} remote configured; skipping push`);
+      return null;
+    }
+    const pending: PendingPushRef[] = [{ branch, kind: "feature", destination: target.destination }];
+    if (this.refIsUpToDate(branch, target.trackingRef)) {
       this.markFeaturePushed(branch);
       return null;
     }
 
-    const outcome = this.pushPendingRefs(pending, !this.git.hasUpstream(), "PUSH_FAILED");
+    const outcome = this.pushPendingRefs(pending, !target.hasUpstream, "PUSH_FAILED", target.remote);
     if (outcome) {
       return outcome;
     }
@@ -525,20 +531,7 @@ class Landing {
     if (!deferredBranch || this.config.noPush) {
       return null;
     }
-    if (!this.git.listRemotes().includes("origin")) {
-      this.warnings.push("no origin remote configured; skipping push");
-      return null;
-    }
-    const outcome = this.pushPendingRefs(
-      [{ branch: deferredBranch, kind: "feature" }],
-      !this.git.hasUpstream(),
-      "PUSH_FAILED",
-    );
-    if (outcome) {
-      return outcome;
-    }
-    this.markFeaturePushed(deferredBranch);
-    return null;
+    return this.pushFeatureRef(deferredBranch);
   }
 
   private featureBranchForPromotion(current: string, mainline: string | null): string | null {
@@ -559,13 +552,8 @@ class Landing {
       return;
     }
 
-    const pushOutcome = this.pushPendingRefs(
-      [{ branch: featureBranch, kind: "feature" }],
-      false,
-      "PUSH_FAILED",
-    );
+    const pushOutcome = this.pushFeatureRef(featureBranch);
     if (!pushOutcome) {
-      this.markFeaturePushed(featureBranch);
       return;
     }
     this.warnings.push(`promotion failed and safety push of ${featureBranch} also failed`);
@@ -945,12 +933,12 @@ class Landing {
     return null;
   }
 
-  private originRefIsUpToDate(branch: string): boolean {
+  private refIsUpToDate(branch: string, trackingRef: string): boolean {
     const local = this.git.revParseRef(`refs/heads/${branch}`);
     if (local === null) {
       return false;
     }
-    const remote = this.git.revParseRef(`refs/remotes/origin/${branch}`);
+    const remote = this.git.revParseRef(trackingRef);
     if (remote === null) {
       return false;
     }
@@ -962,7 +950,7 @@ class Landing {
     if (heldBackTip !== null && this.git.revParseRef(`refs/remotes/origin/${mainline}`) === heldBackTip) {
       return null;
     }
-    if (heldBackTip === null && this.originRefIsUpToDate(mainline)) {
+    if (heldBackTip === null && this.refIsUpToDate(mainline, `refs/remotes/origin/${mainline}`)) {
       return null;
     }
     if (this.config.noPush) {
@@ -980,14 +968,15 @@ class Landing {
     pendingRefs: PendingPushRef[],
     setUpstream: boolean,
     exhaustedOutcome: FailureOutcome,
+    remote = "origin",
   ): FailureOutcome | null {
     if (pendingRefs.length === 0) {
       return null;
     }
 
-    const refspecs = pendingRefs.map((pendingRef) => branchRefspec(pendingRef.branch, pendingRef.sourceTip));
+    const refspecs = pendingRefs.map((pendingRef) => branchRefspec(pendingRef.branch, pendingRef.sourceTip, pendingRef.destination));
     for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt += 1) {
-      const push = this.git.push("origin", refspecs, setUpstream);
+      const push = this.git.push(remote, refspecs, setUpstream);
       const statuses = statusByBranch(push, pendingRefs);
       if (allRefsPushed(statuses)) {
         return null;
@@ -995,7 +984,7 @@ class Landing {
       if (hasCauseFailure(statuses)) {
         for (const pendingRef of pendingRefs) {
           this.warnings.push(
-            `${pendingRef.kind === "promote" ? "promote " : ""}push ${pendingRef.branch} failed: ${pushFailureText(push, pendingRef.branch)}`,
+            `${pendingRef.kind === "promote" ? "promote " : ""}push ${pendingRef.branch} failed: ${pushFailureText(push, pendingRef.branch, pendingRef.destination)}`,
           );
         }
         return exhaustedOutcome;
