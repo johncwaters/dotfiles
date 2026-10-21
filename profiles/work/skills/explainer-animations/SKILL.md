@@ -37,7 +37,7 @@ Isometric drawing: draw back to front by depth. A part that sits under another (
 
 Direct the eye with a camera shot list keyed to the narration windows: `{ at, centerX, centerY, zoom }`, eased between shots. Frame whatever the current line talks about. Make pop-ups appear where the camera already is, for example a browser window opening on the terminal screen rather than in a far corner.
 
-Motion follows Disney's twelve principles. Before animating, read [references/animation-principles.md](references/animation-principles.md), which maps each one to a time-based state term and covers seamless loops.
+Motion follows Disney's twelve principles. Before animating, read `~/.claude/skills/design/subskills/animation-principles.md`, which maps each one to a time-based state term and covers seamless loops.
 
 Page chrome: chapter buttons have fixed labels (`<ui_button_labels>`), there is a dark-mode token set, and prefers-reduced-motion gets a still frame.
 
