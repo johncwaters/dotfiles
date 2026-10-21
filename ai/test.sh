@@ -109,6 +109,7 @@ const runtimeSettings = JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
 const expectedServers = { foreign: { type: 'http', url: 'https://unmanaged.invalid/mcp' } };
 if (expectedPosthogUrl) expectedServers.backchannels = { type: 'http', url: 'https://api.backchannels.dev/mcp' };
 if (expectedPosthogUrl) expectedServers.posthog = { type: 'http', url: expectedPosthogUrl };
+if (expectedPosthogUrl) expectedServers.gauge = { type: 'http', url: 'https://app.withgauge.com/mcp' };
 process.exit(isDeepStrictEqual(runtimeSettings.mcpServers, expectedServers) && runtimeSettings.runtimeToken === 'keep-me' ? 0 : 1);
 NODE
 }
@@ -426,20 +427,20 @@ check "work profile installs its skill's locked dependencies inside its director
   grep -qx "npm ci --omit=dev in .*/profiles/work/skills/locked-profile-skill-test" "$skillDependencyLog"
 check "work adds posthog with no consumer header and preserves unmanaged runtime state" \
   mcpRuntimeMatches https://mcp.posthog.com/mcp
-check "work adds both declared servers once" test "$(countMcpCommands add-json)" -eq 2
+check "work adds every declared server once" test "$(countMcpCommands add-json)" -eq 3
 check "MCP output contains no server config" outputLacks "$workMcpOutput" https://mcp.posthog.com/mcp
 quietWorkOutput="$(runTopicInstall "$stagedTopicDir" work)"
 check "a work rerun reports no changes" reportsNoChanges "$quietWorkOutput"
-check "an unchanged rerun issues no MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 2
-printf '{"posthog":{"url":"https://mcp.posthog.com/mcp","type":"http"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"}}\n' \
+check "an unchanged rerun issues no MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 3
+printf '{"posthog":{"url":"https://mcp.posthog.com/mcp","type":"http"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"},"gauge":{"url":"https://app.withgauge.com/mcp","type":"http"}}\n' \
   > "$stagedRepo/profiles/work/mcp-servers.json"
 runTopicInstall "$stagedTopicDir" work > /dev/null
-check "object key order does not trigger MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 2
-printf '{"posthog":{"type":"http","url":"https://changed.invalid/mcp"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"}}\n' \
+check "object key order does not trigger MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 3
+printf '{"posthog":{"type":"http","url":"https://changed.invalid/mcp"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"},"gauge":{"type":"http","url":"https://app.withgauge.com/mcp"}}\n' \
   > "$stagedRepo/profiles/work/mcp-servers.json"
 runTopicInstall "$stagedTopicDir" work > /dev/null
 check "a changed config removes then adds the managed server" \
-  node -e 'const commands = require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse); process.exit(commands.length === 4 && commands[2][1] === "remove" && commands[3][1] === "add-json" ? 0 : 1)' "$mcpCommandLog"
+  node -e 'const commands = require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse); process.exit(commands.length === 5 && commands[3][1] === "remove" && commands[4][1] === "add-json" ? 0 : 1)' "$mcpCommandLog"
 check "a changed URL converges while preserving unmanaged state" mcpRuntimeMatches https://changed.invalid/mcp
 : > "$sandbox/.fail-mcp-remove"
 failedRemovalStatus=0
@@ -466,8 +467,8 @@ check "an unmanaged differing server names the blocked convergence" \
   outputHas "$unmanagedConflictOutput" "unmanaged server with this name blocks convergence"
 check "an unmanaged differing server survives a work converge unchanged" \
   mcpRuntimeMatches https://eu.unmanaged.invalid/mcp
-check "an unmanaged differing server triggers no mutation beyond adding backchannels" \
-  test "$(wc -l < "$mcpCommandLog")" -eq "$((mcpCommandCountBeforeUnmanaged + 1))"
+check "an unmanaged differing server triggers no mutation beyond adding the other declared servers" \
+  test "$(wc -l < "$mcpCommandLog")" -eq "$((mcpCommandCountBeforeUnmanaged + 2))"
 check "an unmanaged differing server is not recorded as managed" \
   bash -c '! grep -qx posthog "$1"' _ "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
 node -e 'const fs = require("node:fs"); const runtimeSettings = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); delete runtimeSettings.mcpServers.posthog; fs.writeFileSync(process.argv[1], JSON.stringify(runtimeSettings))' "$sandbox/.claude.json"

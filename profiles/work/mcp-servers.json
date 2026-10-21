@@ -6,5 +6,9 @@
   "backchannels": {
     "type": "http",
     "url": "https://api.backchannels.dev/mcp"
+  },
+  "gauge": {
+    "type": "http",
+    "url": "https://app.withgauge.com/mcp"
   }
 }
