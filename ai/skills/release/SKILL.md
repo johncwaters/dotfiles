@@ -79,16 +79,24 @@ Stop on any failure; fix upstream, never bypass.
 
 1. Freeze `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` per the repo's format; generate store notes when the profile defines them (respect caps).
 2. Bump `version_file` (and lockfile when the ecosystem pairs them).
-3. Commit using the repo's exact `release_commit_pattern`. Nothing else rides in the release commit except a newly derived profile on first run.
+3. Land the release commit through `/commit` with `--promote`, with the repo's exact `release_commit_pattern` as its subject. Nothing else rides in the release commit except a newly derived profile on first run. `/commit --promote` pushes the resolved mainline itself, so present the release commit and get carbon-unit approval before running it. This path requires `git.release_from` to equal preflight's `policy.resolved.mainline` and `policy.afterCommit` to be `promote`; when either does not hold, stop and report.
 
 ## Phase 3 — Execute, by archetype
 
 **Human approval before every irreversible step** (push, tag push, publish, store promotion). Present what will run and wait.
 
-- `tag_push` (CI releases on tag, e.g. Electron/NSIS or store upload): promote integration to release branch ff-only, land the bump commit on the release branch, **verify the target tag does not already exist** (`git tag --list <tag>` must be empty; the preflight tag check ran pre-bump and only covered the previous version), create the **annotated tag on that exact commit**, push branch then tag, then `gh run watch` the release workflow to completion. **Unsigned-build feed stop:** when a live auto-update feed is enabled (live-checked, never assumed) and builds are unsigned, the tag push auto-updates real users to an unsigned build; require explicit human confirmation that names exactly that consequence before pushing the tag.
+Every branch and tag push in this phase goes through the release push script, run from the repo root. After `/commit` promoted the release commit, fetch, create the annotated tag on the promoted `release_from` tip (origin's tip), then run:
+
+```
+node "$HOME/.claude/skills/release/publish.ts" --tag <tag> [--branch <integration>]
+```
+
+Pass `--branch <integration>` when the release fast-forwards the integration branch. Leave `release_from` out of `--branch`: `/commit` already pushed it, and the script checks the tag against its remote tip. It fast-forwards only the profile's `git.integration` and `git.release_from`, and pushes the named annotated tag only when it matches `tag_format` and sits on the `release_from` tip, all in one atomic push. It prints one JSON outcome; `PUBLISHED` (exit 0) covers a rerun that finds everything already up to date, and any other outcome stops the release per the failure posture below.
+
+- `tag_push` (CI releases on tag, e.g. Electron/NSIS or store upload): promote integration to release branch ff-only, the bump commit lands on the release branch via `/commit` promote (Phase 2 step 3), **verify the target tag does not already exist** (`git tag --list <tag>` must be empty; the preflight tag check ran pre-bump and only covered the previous version), create the **annotated tag on that exact commit**, run the release push script with that tag (plus `--branch <integration>` when integration moves), then `gh run watch` the release workflow to completion. **Unsigned-build feed stop:** when a live auto-update feed is enabled (live-checked, never assumed) and builds are unsigned, the tag push auto-updates real users to an unsigned build; require explicit human confirmation that names exactly that consequence before pushing the tag.
 - `workflow_dispatch` (repo owns its release workflow): `gh workflow run <workflow>` with the profile's inputs, monitor the produced PR/run, confirm the downstream tag and release workflow complete. Do not replicate the workflow's steps locally.
-- `local_script` (e.g. npm publish script): run the repo's script only after commits are in place; afterwards sync the release branch so it does not drift behind; confirm registry state, never re-run a partially failed publish without checking what landed.
-- `push_to_main` (host deploys on push, tag is metadata): merge the integration branch into the deploy branch first when the release content lives there, land the bump commit on the deploy branch, tag it, push, then watch the host deploy. If the host reports nothing headless (no CI status, no CLI token — Netlify posts nothing to GitHub by default), verify with a **live-site content marker**: a class name or string literal introduced by this release, grepped from the served CSS/JS bundles. After release, sync the integration branch back per the repo's flow.
+- `local_script` (e.g. npm publish script): run the repo's script only after commits are in place; afterwards sync the release branch through the release push script so it does not drift behind; confirm registry state, never re-run a partially failed publish without checking what landed.
+- `push_to_main` (host deploys on push, tag is metadata): merge the integration branch into the deploy branch first when the release content lives there, the bump commit lands on the deploy branch (the deploy branch is `release_from`) via `/commit` promote, then tag it and push the tag with the release push script, then watch the host deploy. If the host reports nothing headless (no CI status, no CLI token — Netlify posts nothing to GitHub by default), verify with a **live-site content marker**: a class name or string literal introduced by this release, grepped from the served CSS/JS bundles. After release, sync the integration branch back per the repo's flow, pushing it with the release push script and the release tag.
 
 ## Phase 4 — Verify and report
 
