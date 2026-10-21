@@ -1,0 +1,36 @@
+{
+ "id": "cmviaewes00bm01ipgd7mcxqd",
+ "status": "SUCCEEDED",
+ "agent": "CODEX_CLI",
+ "model": "gpt-6.1-sol",
+ "batchId": "cmviaewep00be01ipjgfalnu8",
+ "evalSetId": "cmvi9vsck007v01j6j03725y5",
+ "durationMs": 760876,
+ "exitReason": "judge_stop",
+ "criterionResults": [
+  {
+   "name": "Read PostHog docs before coding",
+   "passed": true
+  },
+  {
+   "name": "Init in instrumentation-client",
+   "passed": true
+  },
+  {
+   "name": "Env var names match the docs",
+   "passed": false
+  },
+  {
+   "name": "Defaults match the docs",
+   "passed": false
+  },
+  {
+   "name": "posthog-js installed via package manager",
+   "passed": true
+  },
+  {
+   "name": "Browser SDK stays out of server code",
+   "passed": true
+  }
+ ]
+}

@@ -1314,11 +1314,15 @@ specTestFiles=("$topicDir"/skills/spec/test/*.test.ts)
 openPrTestFiles=("$topicDir"/skills/open-pr/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/social-images/test/*.test.mjs)
 hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
+workSkillTestFiles=("$repoRoot"/profiles/work/skills/*/test/*.test.ts)
 shopt -u nullglob
 check "all behavior test groups are present" \
-  test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0))" -eq 1
+  test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0 && ${#workSkillTestFiles[@]} > 0))" -eq 1
 if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#openPrTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
   check "hook, workflow, commit, retro, release, open-pr, social-images, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${openPrTestFiles[@]}" "${socialImagesTestFiles[@]}" "${hudTestFiles[@]}"
+fi
+if ((${#workSkillTestFiles[@]} > 0)); then
+  check "work profile skill behavior tests pass" node --test "${workSkillTestFiles[@]}"
 fi
 
 if ((${#specTestFiles[@]} > 0)); then

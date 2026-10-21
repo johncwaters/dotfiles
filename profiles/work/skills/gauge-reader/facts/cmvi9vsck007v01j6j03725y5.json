@@ -1,0 +1,9 @@
+{
+  "evalName": "Docs eval: Next.js 16 App Router install (starter-nextjs)",
+  "docsUrlPattern": "posthog\\.com/docs|raw\\.githubusercontent\\.com/PostHog/posthog\\.com/",
+  "sdkPattern": "node_modules|npm pack|\\.d\\.ts|PostHog/posthog-js|unpkg\\.com|jsdelivr",
+  "facts": [
+    { "name": "token env var", "pattern": "process\\.env\\.(NEXT_PUBLIC_POSTHOG_(?!HOST\\b)[A-Z_]+)", "expected": "NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN" },
+    { "name": "defaults", "pattern": "defaults:\\s*[\"']([^\"']+)[\"']", "expected": "2026-05-30" }
+  ]
+}
