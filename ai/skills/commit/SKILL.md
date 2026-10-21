@@ -112,6 +112,9 @@ and the writer re-runs that proof in place of a confirming review.
    - A failing suite is yours to fix at the root cause before the commit. Re-run every
      `FIXED` finding's proof after that edit, since it postdates them; the review is not
      run again for it.
+   - A failing test is pre-existing only when an `origin/<mainline>` worktree on the
+     checkout's dependencies fails it with the same error. It never blocks and is never a
+     question to the carbon unit: name it in the message's `Constraint` trailer and land.
 
 A HIGH or CRITICAL finding left live or `UNVERIFIED` withholds promotion, never the commit:
 run `land.ts` without `--promote`, so the feature branch is pushed and mainline is
@@ -159,10 +162,6 @@ optional as a block, but a message that carries any trailer must carry `Confiden
 must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested` are
 included only when they apply, and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the whole trailer block only for a genuinely trivial change (a
 version bump with no logic change).
-
-Check a draft before landing with `node "$HOME/.claude/skills/commit/preflight.ts"
---check-message` and the message on stdin; success returns `READY`. `land.ts` runs the same validation and refuses
-with `MESSAGE_INVALID` rather than committing something malformed.
 
 ## Step 3.5: disclosure check
 
