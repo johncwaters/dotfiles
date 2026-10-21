@@ -79,7 +79,7 @@ convergeScreensaverPicture() {
     noteWarned "screensaver picture" "plutil could not edit $wallpaperStorePath"
     return 0
   fi
-  killall WallpaperAgent 2>/dev/null || true
+  wallpaperAgentNeedsRestart=1
   noteApplied "screensaver picture" "wallpaper"
 }
 
@@ -99,8 +99,16 @@ if pathIsLinkIntoThisRepo "$retiredWallpaperPath"; then
   noteApplied "old wallpaper file" "retired link removed"
 fi
 wallpaperPath="$HOME/Pictures/Wallpapers/posthog-clock.heic"
-linkEntry "wallpaper file" "desktop/posthog-clock.heic" "$wallpaperPath"
+wallpaperAgentNeedsRestart=0
+if [[ -L "$wallpaperPath" ]] || ! filesAreIdentical "$dotfilesRepo/desktop/posthog-clock.heic" "$wallpaperPath"; then
+  wallpaperAgentNeedsRestart=1
+fi
+# WallpaperImageExtension ignores the h24 schedule of a symlinked HEIC and shows frame 0 all day.
+copyEntry "wallpaper file" "desktop/posthog-clock.heic" "$wallpaperPath"
 convergeScreensaverPicture "$wallpaperPath"
+if ((wallpaperAgentNeedsRestart == 1)); then
+  killall WallpaperAgent 2>/dev/null || true
+fi
 desktopPictures="$(osascript -e 'tell application "System Events" to get picture of every desktop' 2>/dev/null)"
 if [[ -n "$desktopPictures" && "${desktopPictures//"$wallpaperPath"/}" =~ ^[,[:space:]]*$ ]]; then
   notePresent "wallpaper" "set"

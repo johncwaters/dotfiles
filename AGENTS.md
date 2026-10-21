@@ -16,7 +16,8 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   instead: Claude Code drops every `@import` in a memory file that is itself a symlink, and
   a stub cannot serve because the nested `@AGENTS.md` must resolve in `~/.claude`, beside
   the AGENTS.md link, not beside the profile file; the copy converges by rerunning the
-  installer.
+  installer. The desktop wallpaper HEIC is copied too: macOS ignores a symlinked HEIC's
+  time-of-day schedule.
 - Agent rules live in AGENTS.md files, never in a profile `CLAUDE.md`, which only imports
   them (`ai/test.sh` pins this), so Codex gets every rule too. Profile-only rules go in
   `profiles/<name>/AGENTS.md` and reach only that profile or its declared AI descendants

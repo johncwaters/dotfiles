@@ -79,7 +79,7 @@ provideCommand osascript
 provideCommand pmset
 provideCommand plutil
 provideCommand killall
-linkCoreUtilities base64 mktemp sed
+linkCoreUtilities base64 mktemp sed cp cmp chmod
 wallpaperStorePath="$sandbox/Library/Application Support/com.apple.wallpaper/Store/Index.plist"
 mkdir -p "${wallpaperStorePath%/*}"
 : > "$wallpaperStorePath"
@@ -104,12 +104,12 @@ for disabledFlag in com.apple.loginwindow/TALLogoutSavingState \
   check "darwin turns off $disabledFlag" grep -qx 0 "$stubState/defaults/$disabledFlag"
 done
 wallpaperPath="$sandbox/Pictures/Wallpapers/posthog-clock.heic"
-check "darwin links the wallpaper" test -L "$wallpaperPath"
+check "darwin copies the wallpaper as a plain file" bash -c 'test -f "$1" && ! test -L "$1"' _ "$wallpaperPath"
 check "darwin sets the wallpaper on every desktop" \
   grep -qx "$wallpaperPath, $wallpaperPath" "$stubState/desktop-picture"
 check "darwin shows the wallpaper as the screensaver" \
   grep -qx com.apple.wallpaper.choice.image "$idleChoiceState.Provider"
-check "darwin points the screensaver at the linked wallpaper" \
+check "darwin points the screensaver at the copied wallpaper" \
   bash -c 'base64 -d < "$1" | grep -qxF "url.relative=file://$2"' _ "$idleChoiceState.Configuration" "$wallpaperPath"
 check "darwin starts the screensaver after 10 minutes" \
   grep -qx 600 "$stubState/defaults/com.apple.screensaver/idleTime"
@@ -121,6 +121,14 @@ checkRerunIsQuiet "a darwin rerun reports no changes" "$(runInstallOn darwin)"
 check "a darwin rerun writes no defaults" logLacks ' write '
 check "a darwin rerun sets no wallpaper" logLacks 'set picture'
 check "a darwin rerun runs no sudo" logLacks 'sudo '
+check "a darwin rerun restarts no WallpaperAgent" logLacks 'killall'
+
+rm -f "$wallpaperPath"
+ln -s "$topicDir/posthog-clock.heic" "$wallpaperPath"
+: > "$commandLog"
+runInstallOn darwin >/dev/null
+check "replacing the old wallpaper symlink restarts WallpaperAgent" logHas 'killall WallpaperAgent'
+check "replacing the old wallpaper symlink leaves a plain file" bash -c 'test -f "$1" && ! test -L "$1"' _ "$wallpaperPath"
 
 rm -f "$stubState/defaults/NSGlobalDomain/NSQuitAlwaysKeepsWindows"
 : > "$stubState/defaults-write-fails"
