@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "inputs": {
+    "posthog-nextjs": {
+      "type": "skill",
+      "path": "inputs/a3/posthog-nextjs"
+    }
+  }
+}
