@@ -15,11 +15,23 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
   "m",
 );
 const LANDING_SKILLS = ["commit", "open-pr"];
+const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
+const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
+const SHELL_WORD_ON_LINE = /(?:^|[;&|(\s])(?:\S*\/)?(?:(?:ba|z|da|k)?sh|eval)(?=$|[\s;&|)])/;
+const HEREDOC = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1([^\n]*\n)([\s\S]*?\n)?([ \t]*\2[ \t]*(?=\n|$))/g;
+const PKILL_CALL = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(?:\S*/)?pkill\s+([^;&|\n]*)`, "gm");
+const PKILL_FULL_FLAG = /^(?:--full|-[A-Za-z]*f[A-Za-z]*)$/;
+const QUOTE_AWARE_WORD = /(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"])+/g;
+const BRACKET_CLASS = /\[[^\]]+\]/;
 
 const RAW_COMMIT_REASON =
   "Raw `git commit` and `git push` are denied outside /commit, so every landing goes through its review loop. " +
   "Run /commit; its Step 2 already skips the review for a mechanical change such as a pure rename or a reviewer's suggestion applied verbatim. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
+
+const PKILL_SELF_MATCH_REASON =
+  "pkill -f matches full command lines, and this Bash call's own shell carries the same pattern, so it kills itself. " +
+  "Run pgrep -f '<pattern>' and kill the PIDs it prints, or bracket one character ('[n]ode server') so the pattern no longer matches its own text.";
 
 const SPEC_GATE_REASON =
   `${SPEC_GATE_MARKER} This is the first repo edit in a session that never ran /spec. ` +
@@ -65,8 +77,58 @@ function isInsideGitWorktree(filePath) {
   return gitProbe.status === 0 && gitProbe.stdout.trim() === "true";
 }
 
+function maskLiteralHeredocBodies(command) {
+  return command.replace(HEREDOC, (heredoc, quote, delimiter, header, body = "", terminator, offset) => {
+    const textBeforeHeredoc = command.slice(command.lastIndexOf("\n", offset) + 1, offset);
+    const isShellInput = SHELL_WORD_ON_LINE.test(`${textBeforeHeredoc} ${header}`);
+    const canExpandCommands = quote === "" && /\$\(|`/.test(body);
+    if (isShellInput || canExpandCommands) return heredoc;
+    return `<<${quote}${delimiter}${quote}${header}${terminator}`;
+  });
+}
+
+function maskSingleQuotedText(command) {
+  let maskedCommand = "";
+  let index = 0;
+  let isInsideDoubleQuotes = false;
+  while (index < command.length) {
+    const character = command[index];
+    if (character === "\\") {
+      maskedCommand += command.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
+    if (character === '"') isInsideDoubleQuotes = !isInsideDoubleQuotes;
+    if (character !== "'" || isInsideDoubleQuotes) {
+      maskedCommand += character;
+      index += 1;
+      continue;
+    }
+    const closingIndex = command.indexOf("'", index + 1);
+    if (closingIndex === -1) return maskedCommand + command.slice(index);
+    const quotedText = command.slice(index, closingIndex + 1);
+    const isEvaluatedByShell = SHELL_EVALUATES_NEXT_WORD.test(maskedCommand);
+    maskedCommand += isEvaluatedByShell || !/\s/.test(quotedText) ? quotedText : "''";
+    index = closingIndex + 1;
+  }
+  return maskedCommand;
+}
+
+function isSelfMatchingPkill(pkillArguments) {
+  const words = pkillArguments.match(QUOTE_AWARE_WORD) ?? [];
+  if (!words.some((word) => PKILL_FULL_FLAG.test(word))) return false;
+  const patternText = words.filter((word) => !word.startsWith("-")).join(" ");
+  return patternText !== "" && !BRACKET_CLASS.test(patternText);
+}
+
+function guardPkillSelfMatch(command) {
+  for (const pkillCall of command.matchAll(PKILL_CALL)) {
+    if (isSelfMatchingPkill(pkillCall[1])) denyPreToolUse(PKILL_SELF_MATCH_REASON);
+  }
+}
+
 async function guardRawCommit(command, transcriptPath) {
-  if (!GIT_COMMIT_OR_PUSH.test(command)) allow();
+  if (!GIT_COMMIT_OR_PUSH.test(maskSingleQuotedText(maskLiteralHeredocBodies(command)))) allow();
   if (await hasLandingSkillRunSinceLastPrompt(transcriptPath)) allow();
   denyPreToolUse(RAW_COMMIT_REASON);
 }
@@ -84,6 +146,7 @@ async function main() {
   if (!payload || typeof payload !== "object" || !isAttendedMainLoopCall(payload)) allow();
   if (typeof payload.transcript_path !== "string" || !fs.existsSync(payload.transcript_path)) allow();
   const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
+  if (payload.tool_name === "Bash") guardPkillSelfMatch(String(toolInput.command || ""));
   if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
   if (EDIT_TOOLS.has(payload.tool_name)) await guardSpecFirst(String(toolInput.file_path || ""), payload.transcript_path);
   allow();

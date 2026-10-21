@@ -623,7 +623,7 @@ async function main() {
     await renderManifest(flags.manifest, { safeZones: flags['safe-zones'] === true, sheet: flags.sheet === true })
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
     main().catch((error) => {
         console.error(error.message)
         process.exitCode = 1

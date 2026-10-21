@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -149,7 +149,7 @@ function main() {
     console.log(`wrote ${outputPath}: ${Buffer.byteLength(page)} bytes`)
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
     try {
         main()
     } catch (error) {

@@ -1078,6 +1078,16 @@ for workflowPath in "${workflowScripts[@]}"; do
   check "$workflowName avoids calls the workflow runtime rejects" workflowAvoidsResumeBreakingCalls "$workflowPath"
 done
 
+mainGuardsResolveSymlinks() {
+  local unresolvedScripts
+  unresolvedScripts="$(
+    grep -rlE --include='*.mjs' --include='*.js' --include='*.ts' --exclude-dir=node_modules 'import\.meta\.url.*argv\[1\]|argv\[1\].*import\.meta\.url' "$topicDir" \
+      | xargs -r grep -LE 'realpathSync\(process\.argv\[1\]\)'
+  )"
+  [[ -z "$unresolvedScripts" ]] || { printf 'unresolved main guard: %s\n' $unresolvedScripts >&2; return 1; }
+}
+check "every script main guard resolves argv[1] through symlinks" mainGuardsResolveSymlinks
+
 # Claude Code drops every @import in a symlinked CLAUDE.md, so this one entry is a copy.
 claudeMdPath="$sandbox/.claude/CLAUDE.md"
 check "CLAUDE.md is a plain file, never a symlink" \

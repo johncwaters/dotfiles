@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, extname, join, resolve, sep } from 'node:path'
@@ -308,7 +308,7 @@ async function main() {
     for (const reviewFramePath of clip.reviewFramePaths) console.log(`review ${reviewFramePath}`)
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
     main().catch((error) => {
         console.error(error.message)
         process.exitCode = 1

@@ -8,6 +8,8 @@ import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const MAX_LISTED_PATHS = 5;
+const FRAMED_BACKGROUND_TOOLS = new Set(["Agent", "Workflow"]);
+const BACKGROUND_LAUNCH_FRAMING = /^\s*(?:Async agent launched|Workflow launched in background)/;
 const COMMIT_PREFLIGHT_COMMAND = /^\s*(?:cd\s+\S+\s*(?:&&|;)\s*)?node\s+["']?[^\s"']*\/\.claude\/skills\/commit\/preflight\.ts["']?(?:\s|$)/;
 
 function isCommitPreflightCall(event) {
@@ -27,6 +29,26 @@ async function pathsEditedSinceLastCommitRun(transcriptPath) {
     if (path.isAbsolute(filePath)) editedPaths.add(filePath);
   }
   return editedPaths;
+}
+
+function isBackgroundLaunchResult(event, backgroundBashToolUseIds, framedBackgroundToolUseIds) {
+  if (event.kind !== "toolResult" || event.isError) return false;
+  if (backgroundBashToolUseIds.has(event.toolUseId)) return true;
+  return framedBackgroundToolUseIds.has(event.toolUseId) && BACKGROUND_LAUNCH_FRAMING.test(event.text);
+}
+
+async function hasBackgroundWorkPending(transcriptPath) {
+  const backgroundBashToolUseIds = new Set();
+  const framedBackgroundToolUseIds = new Set();
+  const pendingBackgroundToolUseIds = new Set();
+  for await (const event of sessionEvents(transcriptPath)) {
+    const isToolUse = event.kind === "toolUse";
+    if (isToolUse && event.name === "Bash" && event.input.run_in_background === true) backgroundBashToolUseIds.add(event.id);
+    if (isToolUse && FRAMED_BACKGROUND_TOOLS.has(event.name)) framedBackgroundToolUseIds.add(event.id);
+    if (isBackgroundLaunchResult(event, backgroundBashToolUseIds, framedBackgroundToolUseIds)) pendingBackgroundToolUseIds.add(event.toolUseId);
+    if (event.kind === "taskNotification") pendingBackgroundToolUseIds.delete(event.toolUseId);
+  }
+  return pendingBackgroundToolUseIds.size > 0;
 }
 
 function runGit(directory, args) {
@@ -86,6 +108,7 @@ async function main() {
   if (editedPaths.size === 0) allow();
   const dirtyPaths = uncommittedPaths(groupPathsByWorktree(editedPaths));
   if (dirtyPaths.length === 0) allow();
+  if (await hasBackgroundWorkPending(payload.transcript_path)) allow();
   blockStop(dirtyPaths);
 }
 

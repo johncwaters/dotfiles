@@ -68,6 +68,19 @@ test("an edit after a /commit run blocks again", () => {
   assert.equal(stopDecision([prompt("fix it"), ...skillRun("commit"), prompt("one more"), editDirtyFile]).decision, "block");
 });
 
+test("a background launch that has not reported back lets the turn end until its notification arrives", () => {
+  const [, backgroundTestsResult] = bashRun("npm test", "Command running in background with ID: b1. Output is being written to: /tmp/b1.output");
+  const backgroundTests = [toolUse("Bash", { command: "npm test", run_in_background: true }), backgroundTestsResult];
+  const notificationText = "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>tool-Bash</tool-use-id>\n<status>completed</status>\n</task-notification>";
+  const midTurnNotification = { type: "attachment", attachment: { type: "queued_command", prompt: notificationText, commandMode: "task-notification" } };
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...backgroundTests]).decision, "allow");
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...backgroundTests, prompt(notificationText)]).decision, "block");
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...backgroundTests, midTurnNotification]).decision, "block");
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...bashRun("npm test", "# pass 12")]).decision, "block");
+  const foregroundGrep = bashRun("grep -n BACKGROUND ai/hooks/require-commit-on-stop.mjs", "12:const BACKGROUND_LAUNCH_RESULT = /running in background|launched in background|Async agent launched/i;");
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...foregroundGrep]).decision, "block");
+});
+
 test("unattended sessions and unreadable transcripts are never blocked", () => {
   assert.equal(stopDecision([prompt("fix it"), editDirtyFile], {}, { CLAUDE_CODE_SESSION_ATTENDED: "0", HOME: sandboxHome }).decision, "allow");
   const missing = runHook("require-commit-on-stop.mjs", { hook_event_name: "Stop", transcript_path: path.join(sandboxHome, "missing.jsonl") }, ATTENDED);

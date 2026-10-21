@@ -67,6 +67,16 @@ test("raw git commit and push outside /commit are denied in every command positi
     "git --work-tree . push",
     "git -c alias.ci=commit ci -m x",
     `git -c "alias.ci=!git commit" ci`,
+    `git -c 'alias.ci=!git commit' ci`,
+    "eval 'git push origin'",
+    `echo "don't" && git commit -m 'a b'`,
+    "bash <<'EOF'\ngit commit -m x\nEOF",
+    "cat <<EOF\n$(git push)\nEOF",
+    "cat <<'EOF' | bash\ngit commit -m x\nEOF",
+    "cat <<'EOF' > /tmp/s.sh && bash /tmp/s.sh\ngit commit -m x\nEOF",
+    "cat <<EOF | sh\ngit push origin main\nEOF",
+    `node -e 'require("child_process").execSync("git commit -m x")'`,
+    `perl -e 'system("git commit -m x")'`,
   ]) {
     const { decision, reason } = decisionFor(bashCall(command, transcriptPath));
     assert.equal(decision, "deny", command);
@@ -77,6 +87,29 @@ test("raw git commit and push outside /commit are denied in every command positi
 test("git commands that neither commit nor push are allowed", () => {
   const transcriptPath = writeTranscript([prompt("look around")]);
   for (const command of ["git status", "git log --grep commit", "git commit-tree HEAD^{tree}", "echo git commit", "git push-not-a-command"]) {
+    assert.equal(decisionFor(bashCall(command, transcriptPath)).decision, "allow", command);
+  }
+});
+
+test("git commit or push inside quoted search text or a literal heredoc body is allowed", () => {
+  const transcriptPath = writeTranscript([prompt("look around")]);
+  for (const command of [
+    "grep -n 'Raw git commit; git push' hooks/guard.mjs",
+    "node land.ts --promote <<'MSG'\nfix: thing\n\ngit commit and git push stay denied\nMSG",
+    "cat <<EOF\ngit push is denied\nEOF",
+  ]) {
+    assert.equal(decisionFor(bashCall(command, transcriptPath)).decision, "allow", command);
+  }
+});
+
+test("pkill -f with a pattern that matches its own shell is denied", () => {
+  const transcriptPath = writeTranscript([prompt("stop the server")]);
+  for (const command of ['pkill -f "node server.js"', "pkill -9 -f vite", "sleep 1; pkill -fx vite"]) {
+    const { decision, reason } = decisionFor(bashCall(command, transcriptPath));
+    assert.equal(decision, "deny", command);
+    assert.match(reason, /pgrep/);
+  }
+  for (const command of ["pkill -f '[v]ite'", "pkill -f '[n]ode server'", 'pkill -f "[n]ode server"', "pkill vite", "pgrep -f vite"]) {
     assert.equal(decisionFor(bashCall(command, transcriptPath)).decision, "allow", command);
   }
 });
