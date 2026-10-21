@@ -103,8 +103,18 @@ only to unblock the run.
   included. Never commit them by hand to clear the way. Changes you cannot attribute are a
   stop case.
 - Transient network or remote errors: re-run once before treating the failure as real.
+- Feature push denied on permissions (403, "Permission denied"): the branch is pushing
+  somewhere other than its PR head. Read the head with
+  `gh pr view --json headRepository,headRefName`; when a configured remote points at that
+  repository and `headRefName` is not main, master, develop, or the resolved mainline,
+  run `git push <remote> HEAD:<headRefName>`,
+  `git branch --set-upstream-to=<remote>/<headRefName>`, and
+  `git config branch.<branch>.pushRemote <remote>`, then re-run `land.ts`, which now
+  pushes there. The landing gate admits this push while /commit runs.
 
-Stop and report only when the failure is authentication, permissions, or branch protection;
-when the same failure survives two recovery passes; or when fixing would mean touching
-changes you cannot attribute.
+Stop and report only when the failure is authentication or branch protection; when a
+permissions failure persists because no configured remote holds the PR head, the PR head
+is main, master, develop, or the resolved mainline, or the push there is denied too; when
+the same failure survives two recovery passes; or when fixing would mean touching changes
+you cannot attribute.
 
