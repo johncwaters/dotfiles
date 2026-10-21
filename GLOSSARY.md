@@ -9,10 +9,11 @@ here.
   every decision behind it, complete enough that an agent holding none of the originating
   conversation could build it. It is a typed JSON graph of nodes and edges that the `spec`
   skill writes to `~/.claude/specs/<repo>/<slug>.json`; `ai/skills/spec/lib/graph.ts` is
-  the type, and a write hook refuses a graph that breaks it. It lives outside any repo
-  because it is deleted once its tickets are built: a spec that outlives its tickets drifts
-  from the code and gets trusted anyway. It replaces the Claude Code plan as what
-  `plan-challenge` judges.
+  the type, and a write hook refuses a graph that breaks it. Once its tickets are built,
+  it moves to `~/.claude/spec-archive/<repo>/` to review spec effectiveness over time,
+  outside `~/.claude/specs` so no agent resumes or trusts a design that drifts from the
+  code; `guard-workflow` clears the `/spec` gate on reads inside `~/.claude/specs`.
+  It replaces the Claude Code plan as what `plan-challenge` judges.
 - **sketch**: The first draft of a design spec, written from the feature request and a read
   of the repo before any question is asked. It exists so questions attack something
   concrete; every guess in it is recorded as a branch, never as a decision.
