@@ -2,8 +2,6 @@
   "worktree": { "baseRef": "fresh" },
   "disabledMcpjsonServers": ["posthog-local", "trunk"],
   "enabledPlugins": {
-    "posthog@claude-plugins-official": false,
-    "slack@claude-plugins-official": false,
     "cloudflare@cloudflare": false
   },
   "extraKnownMarketplaces": {
