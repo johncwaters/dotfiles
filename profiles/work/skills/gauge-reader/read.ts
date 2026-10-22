@@ -224,7 +224,7 @@ function installedPosthogJsVersion(diff: string): string | null {
 
 type OriginMatchers = { docs: RegExp; sdk: RegExp };
 
-const skillLoadPattern = /"skill":\s*"([^"]+)"|\/skills\/([^/\s'"]+)\/SKILL\.md/;
+const skillLoadPattern = /"skill":\s*"([^"]+)"|\.(?:claude|codex|agents)\/skills\/([^/\s'"]+)\//;
 
 function loadedSkillName(event: GaugeEvent): string | null {
   if (event.type !== "tool_call") return null;

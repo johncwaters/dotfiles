@@ -48,7 +48,9 @@ expected value.
   returned, so that origin is always inferred and always carries `?`.
 - `unlogged-skill` means a skill was loaded before the write and no logged
   output held the value. Claude Code's Skill result logs only "Launching
-  skill", so its skill content is never in the log; Codex's `cat` of SKILL.md is.
+  skill", so its skill content is never in the log; a shell read of any file
+  under a staged skill's directory (SKILL.md or its references) is, and counts
+  as `skill`.
 - `none` means no web event, no skill load, and no sighting before the write: memory.
 - Every written value gets its own provenance, right or wrong.
 - `docs timing` is the first docs access against the first PostHog write
