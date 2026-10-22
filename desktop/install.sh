@@ -26,19 +26,21 @@ convergeDefaultsValue() {
   noteApplied "$noteLabel" "set to $expectedReadBack"
 }
 
-convergeAcDisplaySleep() {
-  local wantedMinutes="$1"
-  local acDisplaySleepMinutes
-  acDisplaySleepMinutes="$(pmset -g custom | awk '/^AC Power:/ { onAcBlock = 1; next } /^[^ ]/ { onAcBlock = 0 } onAcBlock && $1 == "displaysleep" { print $2 }')"
-  if [[ "$acDisplaySleepMinutes" == "$wantedMinutes" ]]; then
-    notePresent "display sleep on power" "$wantedMinutes min"
+convergeAcPowerSetting() {
+  local noteLabel="$1"
+  local settingKey="$2"
+  local wantedMinutes="$3"
+  local currentMinutes
+  currentMinutes="$(pmset -g custom | awk -v settingKey="$settingKey" '/^AC Power:/ { onAcBlock = 1; next } /^[^ ]/ { onAcBlock = 0 } onAcBlock && $1 == settingKey { print $2 }')"
+  if [[ "$currentMinutes" == "$wantedMinutes" ]]; then
+    notePresent "$noteLabel" "$wantedMinutes min"
     return 0
   fi
-  if ! runPackageManagerCommand pmset -c displaysleep "$wantedMinutes" >/dev/null 2>&1; then
-    noteWarned "display sleep on power" "run: sudo pmset -c displaysleep $wantedMinutes"
+  if ! runPackageManagerCommand pmset -c "$settingKey" "$wantedMinutes" >/dev/null 2>&1; then
+    noteWarned "$noteLabel" "run: sudo pmset -c $settingKey $wantedMinutes"
     return 0
   fi
-  noteApplied "display sleep on power" "$wantedMinutes min"
+  noteApplied "$noteLabel" "$wantedMinutes min"
 }
 
 imageChoiceConfigurationBase64() {
@@ -91,7 +93,8 @@ convergeDefaultsValue "reopen windows at login" -bool false 0 com.apple.loginwin
 convergeDefaultsValue "relaunch apps at login" -bool false 0 com.apple.loginwindow LoginwindowLaunchesRelaunchApps
 convergeDefaultsValue "app window restore" -bool false 0 NSGlobalDomain NSQuitAlwaysKeepsWindows
 convergeDefaultsValue "screensaver idle time" -int 600 600 com.apple.screensaver idleTime -currentHost
-convergeAcDisplaySleep 60
+convergeAcPowerSetting "display sleep on power" displaysleep 60
+convergeAcPowerSetting "system sleep on power" sleep 1
 
 retiredWallpaperPath="$HOME/Pictures/Wallpapers/posthog-dynamic.heic"
 if pathIsLinkIntoThisRepo "$retiredWallpaperPath"; then
