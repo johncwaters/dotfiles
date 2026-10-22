@@ -20,9 +20,11 @@ Write a beat table in story time from 0 to 20 seconds. Each row has the time, wh
 
 ## 3. Narration voice
 
-- Write original lines in the chosen character voice, for example a bombastic founder. Never quote the reference work or name its characters.
-- Each line carries one fact and one joke, in at most about 65 characters. The joke must not cost the fact.
+- Write original lines in the chosen character voice, for example a bombastic founder. Never quote the reference work or name its characters, and never clone or imitate a real actor's voice.
+- Write each line as spoken sentences, one fact plus one joke that does not cost the fact, then split it into timed captions. Clipped subtitle fragments made the synthesized voice sound awful.
 - Swap out any line a reviewer says reads oddly or sounds like a threat. Name what is on screen ("Payments, database, CRM") rather than jokes about the narrator.
+- Audition before voicing the script: voice one line with 3 to 5 premade ElevenLabs voices (the free plan allows only premade ones), publish an audition page, and let the carbon unit pick. Then voice every line with `eleven_multilingual_v2` at stability 0.4, similarity 0.8, style 0.45, speed 1.05; `eleven_v3` at stability 0 sounded worse. The output folder must exist first.
+- Time the words locally, never through a hosted model: `uv run --with faster-whisper==1.2.1 --with numpy python <skill-dir>/scripts/word-times.py vo/line*.wav` prints each word's start in seconds. Copy each line's length into `voiceSeconds` and each caption's start into `captions: [[seconds, text], ...]`.
 
 ## 4. Build the page
 
@@ -32,7 +34,9 @@ The scripts below drive the page through this contract, so keep it:
 - `renderAt(realSeconds)` draws one frame. `realTimeAt(storySeconds)` maps story time to real time, and `window.totalSeconds` is the loop length.
 - Opening the page with the hash `#t<storySeconds>` shows a paused still at that story time.
 
-Time-stretch: author everything in story time, then slow each subtitle window to `max(span, characters / 15 + 0.6)` real seconds, and hold the end card at least 5 s. Gaps between windows run at 1x. Viewers read slower than you write; the first versions were unreadable.
+Narration: paste [templates/narration.js](templates/narration.js) after `SUBTITLES` and keep its controls in the chrome: `<audio id="narration">` with the mix embedded as base64, an `#volume` range input, a `#sound-hint` "Click anywhere for sound" note, and `#pause`. The page needs `isPlaying` and `currentTime`, calls `syncNarration()` from `showTime` and `setPlaying`, reads `narration.currentTime` in `tick` while `isNarrationAudible()`, and calls `wireNarrationControls()` at start. The page must carry its own audio: a silent page next to a narrated MP4 was the first complaint.
+
+Time-stretch: author everything in story time. Each subtitle window runs `narrationWindowSeconds(line)` real seconds, the voice length plus lead and tail, and the end card holds at least 5 s. Gaps between windows run at 1x. Key every story event a word lands on with `voiceCue(lineIndex, wordSeconds)` from the word timings, so "four ways in" connects each pipe as its name is said.
 
 Isometric drawing: draw back to front by depth. A part that sits under another (a flange under a pipe) is drawn first, or it paints over the part above it.
 
@@ -60,13 +64,29 @@ Read every sheet. Pick times inside each beat and at each transition. Check for:
 
 Spawn four persona reviewers in parallel: the target developer, a fan of the reference genre, a brand designer, and a docs lead who owns accuracy. Use Agent with `model: "opus"` and the standard `Scope:`, `Out of scope:` and `Definition of done:` lines. Each one reads the brief built from [templates/review-brief.md](templates/review-brief.md) plus the sheet paths, scores the explainer, and returns blocking and optional notes with frame times. Resume the same agents with SendMessage for later rounds so they judge what changed. Apply the blocking notes, keep accuracy over a joke, record the notes you rejected along with the reason, and repeat until no reviewer has a blocker.
 
-## 7. Render and publish
+## 7. Mix, render and publish
+
+Sound effects come from earshot's offline bank, run from the pinned commit; PyPI's `earshot` is an unrelated project, the CPU index keeps CUDA torch (2 GB) off the disk, and its Gemini critique stays off because work content goes only to sanctioned providers, so never set `GEMINI_API_KEY`:
 
 ```
-node <skill-dir>/scripts/frames.mjs render --page <page.html> --out <name>.mp4
+earshot() { EARSHOT_OFFLINE=1 uvx --index https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match --from git+https://github.com/Leonxlnx/earshot@925ebe5 earshot "$@"; }
+earshot sfx render <category/name> -o sfx/<name>.wav
 ```
 
-Run it with `run_in_background`, because a 50 s loop at 30 fps takes minutes. Make only MP4 unless a GIF is asked for. Publish the page as an Artifact with `capabilities: {"downloads": true}`, with `downloads/<name>.mp4` and `downloads/<name>.html` (the standalone page with a doctype). Republish to the same URL for later rounds. Tell the carbon unit the link is private until they share it.
+Every later `earshot` command runs through that shell function, since earshot is not on PATH. `earshot sfx list` names the bank. Write a cue sheet whose times are page expressions, so cues follow the story when timings change, with clip paths relative to the sheet:
+
+```json
+{ "soundLevel": 0.45, "voices": [{ "clip": "vo/line01.wav" }], "sounds": [{ "clip": "sfx/thock.wav", "at": "SOURCES[0].connectAt + 0.1", "level": 0.45 }] }
+```
+
+```
+node <skill-dir>/scripts/frames.mjs cues --page <page.html> --sheet cues.json
+node <skill-dir>/scripts/frames.mjs mix --page <page.html> --sheet cues.json --out mix.wav
+node <skill-dir>/scripts/frames.mjs audio-check --page <page.html>
+node <skill-dir>/scripts/frames.mjs render --page <page.html> --audio mix.wav --max-mb 15 --out <name>.mp4
+```
+
+`cues` prints real seconds plus an `earshotCues` list for `earshot timeline <file> --cues <list>`, which confirms each hit lands. `mix` ducks effects under the voice and normalizes to -16 LUFS; effects at full level drowned the voice. Embed the mix in the page as m4a, then `audio-check` must pass: it fails a page without in-page narration, volume control, sync, or pause. `render --max-mb 15` two-pass encodes under the Artifact's 16 MB per-file cap, which a 21 MB MP4 once broke. Run it with `run_in_background`, because a 50 s loop at 30 fps takes minutes, and check for 1 GB of free disk for its frames. Make only MP4 unless a GIF is asked for. Publish the page as an Artifact with `capabilities: {"downloads": true}`, with `downloads/<name>.mp4` and `downloads/<name>.html` (the standalone page with a doctype). Republish to the same URL for later rounds. Tell the carbon unit the link is private until they share it.
 
 ## 8. PostHog brand pass
 
