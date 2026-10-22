@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { devNull, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium } from 'playwright-core'
 import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../lib/headless-chrome.mjs'
@@ -14,6 +14,10 @@ const artifactSizeHeadroom = 0.95
 const voiceDuckFilter = 'sidechaincompress=threshold=0.03:ratio=6:attack=20:release=350'
 const loudnessFilter = 'loudnorm=I=-16:TP=-1.5:LRA=11'
 const narrationDriftToleranceSeconds = 0.15
+const loudnessWindowSeconds = 0.05
+const sustainFadeOutSeconds = 0.15
+const trimmedHeadFadeInSeconds = 0.05
+const silentLandingDecibels = -50
 
 function requireFfmpegOnPath() {
     try {
@@ -49,19 +53,33 @@ function readCueSheet(sheetPath) {
     return {
         soundLevel: cueSheet.soundLevel ?? 1,
         voiceClips: (cueSheet.voices ?? []).map((voice) => resolve(sheetDirectory, voice.clip)),
-        sounds: (cueSheet.sounds ?? []).map((sound) => ({ clip: resolve(sheetDirectory, sound.clip), at: sound.at, level: sound.level ?? 1 })),
+        sounds: (cueSheet.sounds ?? []).map((sound) => readSoundCue(sound, sheetDirectory)),
     }
+}
+
+function readSoundCue(sound, sheetDirectory) {
+    if (sound.align !== undefined && sound.align !== 'peak') {
+        throw new Error(`cue ${sound.clip} at ${sound.at}: align must be "peak", got ${JSON.stringify(sound.align)}`)
+    }
+    return { clip: resolve(sheetDirectory, sound.clip), at: sound.at, level: sound.level ?? 1, isPeakAligned: sound.align === 'peak', until: sound.until, notBefore: sound.notBefore }
 }
 
 async function resolveCueTimes(page, cueSheet) {
     const voiceStoryStarts = cueSheet.voiceClips.map((_, lineIndex) => `SUBTITLES[${lineIndex}].from`)
     const voiceLeadSeconds = await page.evaluate('typeof VOICE_LEAD_SECONDS === "number" ? VOICE_LEAD_SECONDS : 0')
     const voiceStarts = await evaluateRealSeconds(page, voiceStoryStarts)
-    const soundStarts = await evaluateRealSeconds(page, cueSheet.sounds.map((sound) => sound.at))
+    const soundExpressions = cueSheet.sounds.flatMap((sound) => [sound.at, sound.until ?? 'NaN', sound.notBefore ?? 'NaN'])
+    const soundSeconds = await evaluateRealSeconds(page, soundExpressions)
+    const optionalSeconds = (storyExpression, seconds) => (storyExpression === undefined ? undefined : seconds)
     return {
         totalSeconds: await page.evaluate('totalSeconds'),
         voices: cueSheet.voiceClips.map((clip, lineIndex) => ({ clip, realSeconds: voiceStarts[lineIndex] + voiceLeadSeconds })),
-        sounds: cueSheet.sounds.map((sound, soundIndex) => ({ ...sound, realSeconds: soundStarts[soundIndex] })),
+        sounds: cueSheet.sounds.map((sound, soundIndex) => ({
+            ...sound,
+            realSeconds: soundSeconds[soundIndex * 3],
+            untilSeconds: optionalSeconds(sound.until, soundSeconds[soundIndex * 3 + 1]),
+            notBeforeSeconds: optionalSeconds(sound.notBefore, soundSeconds[soundIndex * 3 + 2]),
+        })),
     }
 }
 
@@ -83,6 +101,71 @@ function delayedInputFilter(inputIndex, startSeconds, extraFilters) {
     return `[${inputIndex}:a]aresample=48000,aformat=channel_layouts=mono,${extraFilters}adelay=${Math.round(startSeconds * 1000)}:all=1`
 }
 
+function measureWindowDecibels(audioPath) {
+    const windowSamples = Math.round(48000 * loudnessWindowSeconds)
+    const levelFilter = `aresample=48000,aformat=channel_layouts=mono,asetnsamples=n=${windowSamples},astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-`
+    const levelLines = execFileSync('ffmpeg', ['-loglevel', 'error', '-i', audioPath, '-af', levelFilter, '-f', 'null', '-'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+    return [...levelLines.matchAll(/RMS_level=(\S+)/g)].map(([, level]) => (level === '-inf' ? -Infinity : Number(level)))
+}
+
+function loudestWindowCenterSeconds(windowDecibels) {
+    const loudestDecibels = Math.max(...windowDecibels)
+    if (!Number.isFinite(loudestDecibels)) {
+        return 0
+    }
+    return (windowDecibels.indexOf(loudestDecibels) + 0.5) * loudnessWindowSeconds
+}
+
+function placeSound(sound, peakSecondsByClip) {
+    const peakSeconds = sound.isPeakAligned ? peakSecondsByClip.get(sound.clip) : 0
+    const naturalStartSeconds = sound.realSeconds - peakSeconds
+    const startSeconds = Math.max(naturalStartSeconds, sound.notBeforeSeconds ?? 0, 0)
+    const label = `cue ${sound.clip} at ${sound.at}`
+    if (sound.untilSeconds !== undefined && sound.untilSeconds <= startSeconds) {
+        throw new Error(`${label}: until lands at ${sound.untilSeconds.toFixed(3)} s, at or before its start at ${startSeconds.toFixed(3)} s`)
+    }
+    return { ...sound, peakSeconds, startSeconds, skippedHeadSeconds: startSeconds - naturalStartSeconds, landingSeconds: Math.max(sound.realSeconds, startSeconds) }
+}
+
+function soundShapingFilters(placedSound, soundLevel) {
+    const headTrim = placedSound.skippedHeadSeconds > 0
+        ? `atrim=start=${placedSound.skippedHeadSeconds.toFixed(3)},asetpts=PTS-STARTPTS,afade=t=in:d=${trimmedHeadFadeInSeconds},`
+        : ''
+    const sustain = placedSound.untilSeconds === undefined ? '' : sustainFilters(placedSound.untilSeconds - placedSound.startSeconds)
+    return `${headTrim}${sustain}volume=${placedSound.level * soundLevel},`
+}
+
+function sustainFilters(sustainSeconds) {
+    return `aloop=loop=-1:size=2147483647,atrim=0:${sustainSeconds.toFixed(3)},asetpts=PTS-STARTPTS,afade=t=out:st=${Math.max(0, sustainSeconds - sustainFadeOutSeconds).toFixed(3)}:d=${sustainFadeOutSeconds},`
+}
+
+function formatDecibels(decibels) {
+    return Number.isFinite(decibels) ? `${decibels.toFixed(1)} dB` : 'silent'
+}
+
+function printLandingReport(mixPath, placedSounds) {
+    const mixWindowDecibels = measureWindowDecibels(mixPath)
+    const loudestDecibelsBetween = (fromSeconds, toSeconds) => {
+        const firstWindow = Math.max(0, Math.floor(fromSeconds / loudnessWindowSeconds))
+        const lastWindow = Math.max(firstWindow, Math.ceil(toSeconds / loudnessWindowSeconds) - 1)
+        return Math.max(...mixWindowDecibels.slice(firstWindow, lastWindow + 1))
+    }
+    let silentLandingCount = 0
+    for (const placedSound of placedSounds) {
+        const landingDecibels = loudestDecibelsBetween(placedSound.landingSeconds - loudnessWindowSeconds, placedSound.landingSeconds + 2 * loudnessWindowSeconds)
+        const isSilentLanding = !(landingDecibels > silentLandingDecibels)
+        silentLandingCount += isSilentLanding ? 1 : 0
+        const peakNote = placedSound.isPeakAligned ? `, clip peak +${placedSound.peakSeconds.toFixed(3)} s` : ''
+        const sustainNote = placedSound.untilSeconds === undefined
+            ? ''
+            : `, until ${placedSound.untilSeconds.toFixed(3)} s: ${formatDecibels(loudestDecibelsBetween(placedSound.untilSeconds - 0.25, placedSound.untilSeconds - 0.05))} before, ${formatDecibels(loudestDecibelsBetween(placedSound.untilSeconds + 0.05, placedSound.untilSeconds + 0.25))} after`
+        console.log(`${isSilentLanding ? 'SILENT LANDING ' : ''}${placedSound.landingSeconds.toFixed(3)} s ${basename(placedSound.clip)}: ${formatDecibels(landingDecibels)}${peakNote}${sustainNote}`)
+    }
+    if (silentLandingCount > 0) {
+        console.log(`${silentLandingCount} cue(s) land on silence: check the clip, its level, and its timing`)
+    }
+}
+
 async function writeAudioMix(flags) {
     requireFlags(flags, ['page', 'sheet', 'out'])
     requireFfmpegOnPath()
@@ -90,24 +173,35 @@ async function writeAudioMix(flags) {
     const { browser, page } = await openStage(flags.page)
     const cueTimes = await resolveCueTimes(page, cueSheet)
     await browser.close()
-    if (cueTimes.voices.length === 0 || cueTimes.sounds.length === 0) {
-        throw new Error('the cue sheet needs at least one voice clip and one sound')
+    if (cueTimes.sounds.length === 0) {
+        throw new Error('the cue sheet needs at least one sound')
     }
-    const clips = [...cueTimes.voices, ...cueTimes.sounds].map((cue) => cue.clip)
+    const peakAlignedClips = new Set(cueTimes.sounds.filter((sound) => sound.isPeakAligned).map((sound) => sound.clip))
+    const peakSecondsByClip = new Map([...peakAlignedClips].map((clip) => [clip, loudestWindowCenterSeconds(measureWindowDecibels(clip))]))
+    const placedSounds = cueTimes.sounds.map((sound) => placeSound(sound, peakSecondsByClip))
+    const clips = [...cueTimes.voices, ...placedSounds].map((cue) => cue.clip)
     const voiceFilters = cueTimes.voices.map((voice, voiceIndex) => `${delayedInputFilter(voiceIndex, voice.realSeconds, '')}[voice${voiceIndex}]`)
-    const soundFilters = cueTimes.sounds.map((sound, soundIndex) => `${delayedInputFilter(cueTimes.voices.length + soundIndex, sound.realSeconds, `volume=${sound.level * cueSheet.soundLevel},`)}[sound${soundIndex}]`)
+    const soundFilters = placedSounds.map((placedSound, soundIndex) => `${delayedInputFilter(cueTimes.voices.length + soundIndex, placedSound.startSeconds, soundShapingFilters(placedSound, cueSheet.soundLevel))}[sound${soundIndex}]`)
     const trimToLoop = `apad,atrim=0:${cueTimes.totalSeconds}`
-    const voiceLabels = cueTimes.voices.map((_, voiceIndex) => `[voice${voiceIndex}]`).join('')
-    const soundLabels = cueTimes.sounds.map((_, soundIndex) => `[sound${soundIndex}]`).join('')
-    const busFilters = [
-        `${voiceLabels}amix=inputs=${cueTimes.voices.length}:normalize=0,${trimToLoop},asplit=2[voicebus][voicekey]`,
-        `${soundLabels}amix=inputs=${cueTimes.sounds.length}:normalize=0,${trimToLoop}[soundbus]`,
+    const soundLabels = placedSounds.map((_, soundIndex) => `[sound${soundIndex}]`).join('')
+    const soundBus = `${soundLabels}amix=inputs=${placedSounds.length}:normalize=0,${trimToLoop}`
+    const busFilters = cueTimes.voices.length === 0
+        ? [`${soundBus},${loudnessFilter},aresample=48000[mixed]`]
+        : duckedBusFilters(cueTimes.voices, soundBus, trimToLoop)
+    const inputArguments = clips.flatMap((clip) => ['-i', clip])
+    execFileSync('ffmpeg', ['-loglevel', 'error', '-y', ...inputArguments, '-filter_complex', [...voiceFilters, ...soundFilters, ...busFilters].join(';'), '-map', '[mixed]', '-ac', '2', flags.out], { stdio: 'inherit' })
+    console.log(`${flags.out}: ${cueTimes.voices.length} voice clips, ${placedSounds.length} sounds, ${cueTimes.totalSeconds.toFixed(2)} s`)
+    printLandingReport(flags.out, placedSounds)
+}
+
+function duckedBusFilters(voices, soundBus, trimToLoop) {
+    const voiceLabels = voices.map((_, voiceIndex) => `[voice${voiceIndex}]`).join('')
+    return [
+        `${voiceLabels}amix=inputs=${voices.length}:normalize=0,${trimToLoop},asplit=2[voicebus][voicekey]`,
+        `${soundBus}[soundbus]`,
         `[soundbus][voicekey]${voiceDuckFilter}[duckedsound]`,
         `[voicebus][duckedsound]amix=inputs=2:normalize=0,${loudnessFilter},aresample=48000[mixed]`,
     ]
-    const inputArguments = clips.flatMap((clip) => ['-i', clip])
-    execFileSync('ffmpeg', ['-loglevel', 'error', '-y', ...inputArguments, '-filter_complex', [...voiceFilters, ...soundFilters, ...busFilters].join(';'), '-map', '[mixed]', '-ac', '2', flags.out], { stdio: 'inherit' })
-    console.log(`${flags.out}: ${cueTimes.voices.length} voice clips, ${cueTimes.sounds.length} sounds, ${cueTimes.totalSeconds.toFixed(2)} s`)
 }
 
 async function writeContactSheet(flags) {
