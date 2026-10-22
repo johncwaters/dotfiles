@@ -16,7 +16,7 @@ Every motion here is a pure function of time, so each principle becomes a term i
 | Secondary action | A supporting move that adds life | Twinkling sparks, a gentle mascot tilt, belt slats crawling. Transform a brand mascot only as a whole image; never edit or rig it. |
 | Timing | The number of frames sets weight and mood | Hold one beat: spawn every 2 s. A hop of about 0.6 s reads as light, and a landing settle under 0.5 s keeps it snappy. |
 | Exaggeration | Push the pose past realism for clarity | A small joy hop (0.3 high, 0.4 s) right after a cube wakes up sells the change better than a color swap alone. |
-| Solid drawing | Consistent volume and perspective | Use one projection (`iso`) for everything, and draw back to front by depth (§4). Split an object crossing a plane into two slices, before and after the plane, each clipping its own face. Draw a part's markings, such as the dashes on a post, in the same layer as the part, or they paint over whatever passes in front of it. |
+| Solid drawing | Consistent volume and perspective | Use one projection (`iso`) for everything, and draw back to front by depth ([scene](scene.md)). Split an object crossing a plane into two slices, before and after the plane, each clipping its own face. Draw a part's markings, such as the dashes on a post, in the same layer as the part, or they paint over whatever passes in front of it. |
 | Appeal | Charm and readability | Faces carry mood (sleepy, then wide-eyed). Keep shapes simple and inked, and read every new pose on a frame sheet. |
 
 ## Seamless loops

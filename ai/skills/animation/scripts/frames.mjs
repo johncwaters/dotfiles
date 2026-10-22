@@ -5,7 +5,7 @@ import { devNull, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium } from 'playwright-core'
-import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../../../ai/lib/headless-chrome.mjs'
+import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../lib/headless-chrome.mjs'
 
 const stageViewport = { width: 1100, height: 1000 }
 const sheetCellWidth = 520
