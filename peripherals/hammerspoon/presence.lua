@@ -2,11 +2,13 @@ local presence = {}
 
 local awayIdleLockSeconds = 120
 local idleCheckIntervalSeconds = 10
+local workdayStartHour = 5
+local workdayEndHour = 19
 
 local calls = nil
 local homeNetworkNames = {}
 local wifiWatcher = nil
-local idleLockTimer = nil
+local idleCheckTimer = nil
 
 local function readHomeNetworkNames(path)
   local networkNames = {}
@@ -30,8 +32,14 @@ function presence.isAtHome()
   return networkName ~= nil and homeNetworkNames[networkName] == true
 end
 
+local function isWorkingHours()
+  local now = os.date("*t")
+  local isWeekend = now.wday == 1 or now.wday == 7
+  return not isWeekend and now.hour >= workdayStartHour and now.hour < workdayEndHour
+end
+
 local function applySleepPolicy()
-  hs.caffeinate.set("systemIdle", presence.isAtHome())
+  hs.caffeinate.set("systemIdle", presence.isAtHome() and isWorkingHours())
 end
 
 local function lockIfIdleAway()
@@ -47,11 +55,16 @@ local function lockIfIdleAway()
   hs.caffeinate.lockScreen()
 end
 
+local function onIdleCheckTick()
+  applySleepPolicy()
+  lockIfIdleAway()
+end
+
 function presence.start(homeNetworksPath, callsModule)
   calls = callsModule
   homeNetworkNames = readHomeNetworkNames(homeNetworksPath)
   wifiWatcher = hs.wifi.watcher.new(applySleepPolicy):start()
-  idleLockTimer = hs.timer.doEvery(idleCheckIntervalSeconds, lockIfIdleAway)
+  idleCheckTimer = hs.timer.doEvery(idleCheckIntervalSeconds, onIdleCheckTick)
   applySleepPolicy()
 end
 
