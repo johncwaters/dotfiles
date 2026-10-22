@@ -1,6 +1,6 @@
 # Sound
 
-Only for a narrated piece. Send audio and scripts only to providers an extension's Sound section allows; earshot's Gemini critique stays off unless one allows Google, so never set `GEMINI_API_KEY` otherwise.
+Any piece with sound. Narration voice applies only to a narrated piece; an effects-only piece skips it and still carries its mix in the page. Send audio and scripts only to providers an extension's Sound section allows; earshot's Gemini critique stays off unless one allows Google, so never set `GEMINI_API_KEY` otherwise.
 
 ## Narration voice
 
@@ -10,9 +10,9 @@ Only for a narrated piece. Send audio and scripts only to providers an extension
 - Audition before voicing the script: voice one line with 3 to 5 premade ElevenLabs voices (the free plan allows only premade ones), publish an audition page, and let the carbon unit pick. Then voice every line with `eleven_multilingual_v2` at stability 0.4, similarity 0.8, style 0.45, speed 1.05; `eleven_v3` at stability 0 sounded worse. The output folder must exist first.
 - Time the words locally, never through a hosted model: `uv run --with faster-whisper==1.2.1 --with numpy python <skill-dir>/scripts/word-times.py vo/line*.wav` prints each word's start in seconds. Copy each line's length into `voiceSeconds` and each caption's start into `captions: [[seconds, text], ...]`.
 
-## In-page narration
+## In-page audio
 
-Paste [templates/narration.js](../templates/narration.js) after `SUBTITLES` and keep its controls in the chrome: `<audio id="narration">` with the mix embedded as base64, an `#volume` range input, a `#sound-hint` "Click anywhere for sound" note, and `#pause`. The page needs `isPlaying` and `currentTime`, calls `syncNarration()` from `showTime` and `setPlaying`, reads `narration.currentTime` in `tick` while `isNarrationAudible()`, and calls `wireNarrationControls()` at start. The page must carry its own audio: a silent page next to a narrated MP4 was the first complaint.
+Paste [templates/narration.js](../templates/narration.js) after `SUBTITLES` and keep its controls in the chrome: `<audio id="narration">` with the mix embedded as base64, an `#volume` range input, a `#sound-hint` "Click anywhere for sound" note, and `#pause`. The page needs `isPlaying` and `currentTime`, calls `syncNarration()` from `showTime` and `setPlaying`, reads `narration.currentTime` in `tick` while `isNarrationAudible()`, and calls `wireNarrationControls()` at start. The page must carry its own audio, effects-only mixes included: a silent page next to a narrated MP4 was the first complaint.
 
 ## Effects and mix
 
@@ -29,10 +29,16 @@ Every later `earshot` command runs through that shell function, since earshot is
 { "soundLevel": 0.45, "voices": [{ "clip": "vo/line01.wav" }], "sounds": [{ "clip": "sfx/thock.wav", "at": "SOURCES[0].connectAt + 0.1", "level": 0.45 }] }
 ```
 
+Key each cue to the timeline fields the page itself draws from, such as a scene's start plus its side's offset, never literal seconds, so retiming a scene moves its sounds. A sound on a long motion (a slide, a counter, a fill) follows the motion, not its first frame; these optional fields do that:
+
+- `"until": "<expression>"` loops the clip until the motion ends, then fades it over 0.15 s.
+- `"align": "peak"` lands the clip's loudest moment on `at` instead of its first sample; a whoosh or riser peaks well after it starts, and start-aligned ones sounded late.
+- `"notBefore": "<expression>"` trims the head of a clip that would start earlier, such as a peak-aligned swish at a scene cut.
+
 ```
 node <skill-dir>/scripts/frames.mjs cues --page <page.html> --sheet cues.json
 node <skill-dir>/scripts/frames.mjs mix --page <page.html> --sheet cues.json --out mix.wav
 node <skill-dir>/scripts/frames.mjs audio-check --page <page.html>
 ```
 
-`cues` prints real seconds plus an `earshotCues` list for `earshot timeline <file> --cues <list>`, which confirms each hit lands. `mix` ducks effects under the voice and normalizes to -16 LUFS; effects at full level drowned the voice. Embed the mix in the page as m4a, then `audio-check` must pass: it fails a page without in-page narration, volume control, sync, or pause.
+`cues` prints real seconds plus an `earshotCues` list for `earshot timeline <file> --cues <list>`, which confirms each hit lands. `mix` ducks effects under the voice when the sheet has voices, otherwise normalizes the effects alone, to -16 LUFS; effects at full level drowned the voice. It then prints each cue's landing time and loudness, plus the loudness either side of each `until`, and marks `SILENT LANDING` on a cue that lands on nothing: fix each one, and check that every `until` reads quieter after than before. Embed the mix in the page as m4a, then `audio-check` must pass: it fails a page without in-page narration, volume control, sync, or pause.

@@ -12,13 +12,14 @@ Read each file under `subskills/` as you reach it:
 1. [concept](subskills/concept.md): topic, assets, and the storyboard.
 2. [scene](subskills/scene.md): the page contract, time, camera, and drawing.
 3. [animation-principles](subskills/animation-principles.md): how anything in the scene moves.
-4. [sound](subskills/sound.md): narration voice, word timing, effects, and the mix; only for a narrated piece.
+4. [sound](subskills/sound.md): narration voice, word timing, effects, and the mix; for any piece with sound.
 5. [review](subskills/review.md): frame sheets and the test audience.
 6. [render](subskills/render.md): MP4 and publishing.
 
 Then the subskill for the kind being made, which adds to every step above:
 
 - [explainer](subskills/explainer.md): a narrated, stepped instructional piece.
+- [comparison](subskills/comparison.md): a before/after piece that plays each side in turn.
 - [poster](subskills/poster.md): one still frame of a scene.
 
 ## Extensions

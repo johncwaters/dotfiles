@@ -8,6 +8,8 @@ node <skill-dir>/scripts/frames.mjs sheet --page <page.html> --times 1,2.6,4.7,6
 
 Read every sheet. Pick times inside each beat and at each transition. Check for:
 
+- more than one caption line per panel in a beat, or more than one hero number per panel;
+- jargon, raw units or version ids where the audience needs plain words;
 - labels covering logos or the subject;
 - subtitles caught mid-fade (lines that run straight into each other need near-instant swaps);
 - elements clipped by the camera or by other scenery;
