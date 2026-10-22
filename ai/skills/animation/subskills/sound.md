@@ -1,6 +1,6 @@
 # Sound
 
-Only for a narrated piece. Send audio and scripts only to providers an extension's Sound section allows.
+Only for a narrated piece. Send audio and scripts only to providers an extension's Sound section allows; earshot's Gemini critique stays off unless one allows Google, so never set `GEMINI_API_KEY` otherwise.
 
 ## Narration voice
 
@@ -16,7 +16,7 @@ Paste [templates/narration.js](../templates/narration.js) after `SUBTITLES` and 
 
 ## Effects and mix
 
-Sound effects come from earshot's offline bank, run from the pinned commit; PyPI's `earshot` is an unrelated project, the CPU index keeps CUDA torch (2 GB) off the disk, and its Gemini critique stays off unless an extension's Sound section allows it; never set `GEMINI_API_KEY` otherwise:
+Sound effects come from earshot's offline bank, run from the pinned commit; PyPI's `earshot` is an unrelated project, and the CPU index keeps CUDA torch (2 GB) off the disk:
 
 ```
 earshot() { EARSHOT_OFFLINE=1 uvx --index https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match --from git+https://github.com/Leonxlnx/earshot@925ebe5 earshot "$@"; }

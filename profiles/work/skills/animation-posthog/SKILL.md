@@ -9,12 +9,12 @@ Each section applies at the animation step it names.
 
 ## Concept
 
-- The series is the PostHog docs test chambers. Find every earlier chamber: `Artifact` `action: "list"` (search titles for "Chamber") plus local copies such as `~/Downloads/posthog-chambers`. The highest-numbered one is the style reference and the new chamber takes the next number; the newest chamber was missed once from a local folder alone.
+- The series is the PostHog docs test chambers: `Artifact` `action: "list"` (search titles for "Chamber") plus local copies such as `~/Downloads/posthog-chambers`.
 - Take assets from the `@posthog/brand` package in the posthog.com checkout: RoundHog weights under `dist/fonts`, the `Logo` component, colors from `@posthog/brand/colors` (the root export has none), and approved hoggies as PNG under `dist/generated/hoggies/png`. Use a hoggie unmodified and whole, and pick one whose prop does work in the scene, such as a magnifying glass inspecting the input.
 
 ## Sound
 
-earshot's Gemini critique stays off; never set `GEMINI_API_KEY`. Work audio and scripts go only to company-sanctioned providers, ElevenLabs for voice.
+Allowed providers: ElevenLabs for voice, because work audio and scripts go only to company-sanctioned providers.
 
 ## Render: brand pass
 
