@@ -40,6 +40,7 @@ export type SessionDigest = {
   promptCount: number;
   counts: Record<IncidentKind, number>;
   incidents: Incident[];
+  prompts: { line: number; excerpt: string }[];
   specPaths: string[];
 };
 
@@ -207,6 +208,7 @@ export async function digestTranscript(
       "costly-subagent": 0, "oversized-result": 0, revert: 0,
     },
     incidents: [],
+    prompts: [],
     specPaths: [],
   };
   const toolsById = new Map<string, ToolUse>();
@@ -229,11 +231,12 @@ export async function digestTranscript(
       return;
     }
     if (isSyntheticPrompt(trimmed, entry)) return;
-    const ownWords = trimmed.replace(/<pasted_content\b[\s\S]*?<\/pasted_content>/g, " ").trim().toLowerCase();
-    const isRedirect = /^(no|nope|stop|wait|wrong|actually|instead|undo|revert)\b|don't|do not|not what i|why did you|that's wrong|you should have|i said|i told you/.test(ownWords);
+    const ownWords = trimmed.replace(/<pasted_content\b[\s\S]*?<\/pasted_content>/g, " ").trim();
+    const isRedirect = /^(no|nope|stop|wait|wrong|actually|instead|undo|revert)\b|don't|do not|not what i|why did you|that's wrong|you should have|i said|i told you/.test(ownWords.toLowerCase());
     if (hasPendingInterrupt || (digest.promptCount > 0 && isRedirect)) {
       addIncident("correction", text, { explicit: true });
     }
+    if (digest.promptCount > 0) digest.prompts.push({ line: digest.lineCount, excerpt: excerpt(ownWords) });
     digest.promptCount += 1;
     hasPendingInterrupt = false;
   }

@@ -25,3 +25,4 @@
 {"type":"attachment","timestamp":"ignored","message":{"content":"No, ignore this attachment"}}
 {"type":"user","message":{"content":"<command-name>/synthetic</command-name>"}}
 {"type":"user","timestamp":"2026-10-01T10:05:00Z","message":{"content":"Finish the digest"}}
+{"type":"user","message":{"content":"I see the diagram tho"}}

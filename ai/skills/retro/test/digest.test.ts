@@ -62,8 +62,12 @@ test("CLI reduces a synthetic session to ordered incidents without counting meta
     { line: 4, explicit: true }, { line: 6, explicit: true },
   ]);
   equal(digest.malformedLineCount, 1);
-  equal(digest.promptCount, 4);
-  equal(digest.lineCount, 27);
+  equal(digest.promptCount, 5);
+  equal(digest.lineCount, 28);
+  deepEqual(digest.prompts, [
+    { line: 4, excerpt: "Actually, keep it deterministic" }, { line: 6, excerpt: "Continue with streaming" },
+    { line: 27, excerpt: "Finish the digest" }, { line: 28, excerpt: "I see the diagram tho" },
+  ]);
   equal(digest.sessionId, "synthetic-session");
   equal(digest.startedAt, "2026-10-01T10:00:00Z");
   equal(digest.endedAt, "2026-10-01T10:05:00Z");
@@ -100,7 +104,7 @@ test("CLI since selection uses file mtime, excludes subagents, and sorts session
     deepEqual(digests.map((digest) => digest.transcriptPath), [
       join(projectDir, "earlier.jsonl"), join(projectDir, "later.jsonl"),
     ]);
-    ok(digests.every((digest) => digest.promptCount === 4));
+    ok(digests.every((digest) => digest.promptCount === 5));
   } finally {
     rmSync(projectsDir, { recursive: true, force: true });
   }
