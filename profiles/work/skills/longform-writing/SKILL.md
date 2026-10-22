@@ -21,7 +21,7 @@ Read the template that fits the piece:
 
 - [Blog or post](subskills/blog-or-post.md), including short and playful social posts.
 - [Teaching guide](subskills/teaching-guide.md) for pocket guides, tutorials, and docs pages.
-- [Work doc](subskills/work-doc.md) for proposals, decisions, and updates.
+- Work docs: a PR description or status update leads with the answer and ends with the ask; a design doc, RFC, or proposal takes its shape from the `design-docs` skill.
 
 ## Sentence rules
 
