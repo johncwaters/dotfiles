@@ -868,7 +868,7 @@ localBranchOutput="$(runDevbox ensure 2>&1)"
 check "a local branch without upstream warns in the repository sync" \
   outputHas "$localBranchOutput" '[warned] repos: sync failed'
 check "a local branch without upstream is named in the sync log" \
-  grep -qF 'pull failed' "$remoteHome/.local/state/dotfiles/devbox-repos.log"
+  grep -qF 'no upstream on local-work' "$remoteHome/.local/state/dotfiles/devbox-repos.log"
 check "a local branch without upstream still records the converge" \
   remoteConvergeRecordIsCleanAt "$(cat "$stubState/work-server-commit")"
 check "the sync after a fresh converge retries the failed clone" test -d "$remoteHome/Projects/glimmervoid/.git"

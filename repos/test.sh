@@ -96,10 +96,20 @@ case "$subcommand" in
     exit 0
     ;;
   remote | config)
+    if [[ "${*: -1}" == branch.*.merge ]]; then
+      printf 'refs/heads/main\n'
+      exit 0
+    fi
     cat "$(markerPath origin-url)" 2>/dev/null
     exit $?
     ;;
   rev-parse)
+    if [[ "${1:-}" == 'HEAD^{tree}' ]]; then
+      for trackedFixtureFile in package.json npm-shrinkwrap.json package-lock.json yarn.lock pnpm-lock.yaml; do
+        [[ ! -f "$repoPath/$trackedFixtureFile" ]] || cksum < "$repoPath/$trackedFixtureFile"
+      done
+      exit 0
+    fi
     for argument in "$@"; do
       case "$argument" in
         --show-toplevel)
@@ -154,7 +164,7 @@ case "$subcommand" in
       esac
     done
     cat "$(markerPath head-branch)" 2>/dev/null
-    exit 0
+    exit $?
     ;;
 esac
 exit 0
@@ -175,6 +185,10 @@ GHSHIM
 writeStub npm <<'NPMSHIM'
 #!/usr/bin/env bash
 set -uo pipefail
+if [[ "${1:-}" == "--version" ]]; then
+  printf '12.0.0\n'
+  exit 0
+fi
 printf 'npm %s %s\n' "$PWD" "$*" >> "$DOTFILES_TEST_LOG"
 printf 'npm-environment GIT_TERMINAL_PROMPT=%s GIT_SSH_COMMAND=%s\n' \
   "${GIT_TERMINAL_PROMPT:-unset}" "${GIT_SSH_COMMAND:-unset}" >> "$DOTFILES_TEST_LOG"
@@ -191,6 +205,7 @@ fi
 if [[ -f "$DOTFILES_TEST_STATE/npm-install-fails" ]]; then
   exit 1
 fi
+mkdir -p node_modules
 if [[ -f "$DOTFILES_TEST_STATE/npm-installs-node-pty" ]]; then
   for helperDirectory in build/Release prebuilds/darwin-arm64; do
     mkdir -p "node_modules/node-pty/$helperDirectory"
@@ -204,12 +219,23 @@ NPMSHIM
 for lockfileAwarePackageManager in yarn pnpm; do
   writeStub "$lockfileAwarePackageManager" <<STUB
 #!/usr/bin/env bash
+if [[ "\${1:-}" == "--version" ]]; then
+  printf '1.0.0\n'
+  exit 0
+fi
+mkdir -p node_modules
 printf '$lockfileAwarePackageManager %s %s\n' "\$PWD" "\$*" >> "\$DOTFILES_TEST_LOG"
 exit 0
 STUB
 done
 
-for presentFromTheStart in git gh npm yarn pnpm; do
+writeStub node <<'NODESHIM'
+#!/usr/bin/env bash
+[[ "${1:-}" == "--version" ]] || exit 1
+printf 'v24.0.0\n'
+NODESHIM
+
+for presentFromTheStart in git gh npm yarn pnpm node; do
   provideCommand "$presentFromTheStart"
 done
 printf 'johncwaters\n' > "$stubState/github-owner"

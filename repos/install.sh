@@ -14,6 +14,8 @@ source "$dotfilesRepo/repos/paths.sh"
 
 repoListPath="$(reposListPath)"
 operatorGitHubOwner=""
+declare -A repoDepsToolVersions=()
+repoDepsFingerprintValue=""
 
 parseGitHubOwner() {
   local cloneUrl="$1"
@@ -213,19 +215,73 @@ restoreNodePtySpawnHelpers() {
   noteApplied "$label node-pty" "spawn-helper made executable"
 }
 
+cacheRepoDepsToolVersion() {
+  local toolName="$1"
+  if [[ -n "${repoDepsToolVersions[$toolName]+cached}" ]]; then
+    [[ -n "${repoDepsToolVersions[$toolName]}" ]]
+    return $?
+  fi
+  local toolVersion
+  repoDepsToolVersions[$toolName]=""
+  toolVersion="$("$toolName" --version 2>/dev/null)" || return 1
+  [[ -n "$toolVersion" ]] || return 1
+  repoDepsToolVersions[$toolName]="$toolVersion"
+}
+
+computeRepoDepsFingerprint() {
+  local repoPath="$1"
+  local nodePackageManager="$2"
+  local checkoutTreeId
+  repoDepsFingerprintValue=""
+  cacheRepoDepsToolVersion "$nodePackageManager" || return 1
+  cacheRepoDepsToolVersion node || return 1
+  checkoutTreeId="$(git -C "$repoPath" rev-parse 'HEAD^{tree}' 2>/dev/null)" || return 1
+  [[ -n "$checkoutTreeId" ]] || return 1
+  printf -v repoDepsFingerprintValue '%s\n%s\n%s\n%s' "$nodePackageManager" \
+    "${repoDepsToolVersions[$nodePackageManager]}" "${repoDepsToolVersions[node]}" "$checkoutTreeId"
+}
+
+clearRepoDepsState() {
+  local depsPendingStateName
+  depsPendingStateName="$(repoDepsPendingStateNameForPath "$1")"
+  clearDotfilesState "$depsPendingStateName"
+  clearDotfilesState "${depsPendingStateName%-pending}-fingerprint"
+}
+
+recordRepoDepsConverged() {
+  local depsPendingStateName="$1"
+  local depsFingerprint="$2"
+  clearDotfilesState "$depsPendingStateName"
+  [[ -n "$depsFingerprint" ]] || return 0
+  writeDotfilesState "${depsPendingStateName%-pending}-fingerprint" "$depsFingerprint"
+}
+
 installRepoDeps() {
   local label="$1"
   local repoPath="$2"
   local depsPendingStateName
+  local depsFingerprintStateName
+  local depsFingerprint=""
+  local recordedFingerprint
   local nodePackageManager
   local installArguments=()
-  depsPendingStateName="$(repoDepsPendingStateNameForPath "$repoPath")"
   if [[ ! -f "$repoPath/package.json" ]]; then
-    clearDotfilesState "$depsPendingStateName"
+    clearRepoDepsState "$repoPath"
     return 0
   fi
-  markDotfilesStatePending "$depsPendingStateName"
+  depsPendingStateName="$(repoDepsPendingStateNameForPath "$repoPath")"
+  depsFingerprintStateName="${depsPendingStateName%-pending}-fingerprint"
   nodePackageManager="$(nodePackageManagerFor "$repoPath")"
+  if computeRepoDepsFingerprint "$repoPath" "$nodePackageManager"; then
+    depsFingerprint="$repoDepsFingerprintValue"
+    if [[ -d "$repoPath/node_modules" ]] && ! dotfilesStateIsPending "$depsPendingStateName" &&
+      recordedFingerprint="$(readDotfilesState "$depsFingerprintStateName")" &&
+      [[ "$depsFingerprint" == "$recordedFingerprint" ]]; then
+      notePresent "$label deps" "up to date"
+      return 0
+    fi
+  fi
+  markDotfilesStatePending "$depsPendingStateName"
   if ! command -v "$nodePackageManager" >/dev/null 2>&1; then
     noteWarned "$label deps" "$nodePackageManager not on PATH"
     return 0
@@ -239,13 +295,13 @@ installRepoDeps() {
   notePresent "$label deps" "installed"
   restoreNodePtySpawnHelpers "$label" "$repoPath"
   if [[ ! -d "$repoPath/node_modules/electron" ]]; then
-    clearDotfilesState "$depsPendingStateName"
+    recordRepoDepsConverged "$depsPendingStateName" "$depsFingerprint"
     return 0
   fi
   if ! installElectronBinary "$label" "$repoPath/node_modules/electron"; then
     return 0
   fi
-  clearDotfilesState "$depsPendingStateName"
+  recordRepoDepsConverged "$depsPendingStateName" "$depsFingerprint"
 }
 
 repoEntryWantsDeps() {
@@ -268,7 +324,7 @@ installRepoDepsUnlessSkipped() {
   local repoPath="$2"
   shift 2
   if ! repoEntryWantsDeps "$label" "$@"; then
-    clearDotfilesState "$(repoDepsPendingStateNameForPath "$repoPath")"
+    clearRepoDepsState "$repoPath"
     notePresent "$label deps" "skipped (nodeps)"
     return 0
   fi
@@ -404,8 +460,17 @@ syncOneRepo() {
     noteDetail "$label" "skipped, $relativePath holds uncommitted work"
     return 0
   fi
+  local branchName
+  local upstreamMergeRef=""
+  if branchName="$(git -C "$destination" symbolic-ref --short -q HEAD)"; then
+    upstreamMergeRef="$(git -C "$destination" config --get "branch.$branchName.merge" 2>/dev/null)"
+  fi
+  if [[ -z "$upstreamMergeRef" ]]; then
+    noteWarned "$label" "no upstream on ${branchName:-detached HEAD}, pull skipped"
+    return 1
+  fi
   if ! runGitNetworkCommand -C "$destination" pull --ff-only -q; then
-    noteWarned "$label" "pull failed (diverged), resolve manually"
+    noteWarned "$label" "pull failed, resolve manually"
     return 1
   fi
   notePresent "$label" "synced"

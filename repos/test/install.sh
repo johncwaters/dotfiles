@@ -143,6 +143,7 @@ check "a mismatched origin gets no dependency install" logLacks "npm $sandbox/Pr
 
 depsConsentInput="$sandbox/deps-consent-input"
 printf 'y\n' > "$depsConsentInput"
+rm -r "$sandbox/Projects/delta/node_modules"
 : > "$commandLog"
 runInstall "$mainList" "$depsConsentInput" > /dev/null
 check "the deps install cannot sit on a credential prompt" \
@@ -222,6 +223,18 @@ check "a yarn repo is installed against its frozen lockfile" \
   logHas "yarn $sandbox/Projects/yarnlock install --frozen-lockfile"
 check "a pnpm repo is installed against its frozen lockfile" \
   logHas "pnpm $sandbox/Projects/pnpmlock install --frozen-lockfile"
+
+fingerprintList="$sandbox/fingerprint-list.txt"
+printf 'Projects/npmlock=https://github.com/johncwaters/npmlock\n' > "$fingerprintList"
+: > "$commandLog"
+fingerprintRerunOutput="$(runInstall "$fingerprintList")"
+check "unchanged dependencies are reported up to date" \
+  outputMatches "$fingerprintRerunOutput" 'npmlock deps.*up to date'
+check "unchanged dependencies do not run npm" logLacks "npm $sandbox/Projects/npmlock "
+printf '{"lockfileVersion":3}\n' > "$sandbox/Projects/npmlock/package-lock.json"
+: > "$commandLog"
+runInstall "$fingerprintList" > /dev/null
+check "a changed lockfile reinstalls dependencies" logHas "npm $sandbox/Projects/npmlock ci"
 
 nodePtyList="$sandbox/node-pty-list.txt"
 printf 'Projects/ptyuser=https://github.com/johncwaters/ptyuser\n' > "$nodePtyList"
