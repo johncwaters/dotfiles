@@ -557,6 +557,7 @@ if packageGroupEnabled "system-tools"; then
   writeSection "Tools"
   installPackageTool "git" "git" "git"
   installPackageTool "ripgrep" "rg" "ripgrep"
+  installPackageTool "ffmpeg" "ffmpeg" "ffmpeg"
   installPackageTool "Bash completion" "bash_completion" "bash-completion"
   installPackageTool "GitHub CLI" "gh" "gh" "https://cli.github.com"
   installPackageTool "Python" "python3" "python"

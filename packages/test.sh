@@ -103,7 +103,7 @@ if [[ "${1:-} ${2:-}" == "install --cask" ]]; then
 fi
 for packageName in "$@"; do
   case "$packageName" in
-    git | gh)
+    git | gh | ffmpeg)
       cp "$DOTFILES_TEST_STATE/available/$packageName" "$DOTFILES_TEST_STUB_BIN/$packageName"
       ;;
     ripgrep)
@@ -323,6 +323,11 @@ writeStub rg <<'STUB'
 :
 STUB
 
+writeStub ffmpeg <<'STUB'
+#!/usr/bin/env bash
+:
+STUB
+
 writeStub flatpak <<'STUB'
 #!/usr/bin/env bash
 printf 'flatpak %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -388,6 +393,7 @@ done
 
 mapPackageToCommands git "git"
 mapPackageToCommands ripgrep "rg"
+mapPackageToCommands ffmpeg "ffmpeg"
 mapPackageToCommands bash-completion "bash_completion"
 mapPackageToCommands gh "gh"
 mapPackageToCommands nodejs "node npm"
@@ -397,6 +403,7 @@ mapPackageToCommands python3 "python3"
 mkdir -p "$stubState/pip-modules"
 printf 'ruff\n' > "$stubState/pip-modules/ruff"
 printf 'yaml\n' > "$stubState/pip-modules/pyyaml"
+printf 'uv\n' > "$stubState/pip-modules/uv"
 
 printf '@xai-official/grok\n' > "$stubState/npm-installed/@xai-official%grok"
 printf 'glissa\n' > "$stubState/npm-installed/glissa"
@@ -717,7 +724,7 @@ printf 'NFSHomeDirectory: %s\n' "$realHome"
 STUB
 provideCommand brew
 provideCommand dscl
-for commandName in git rg gh node npm; do
+for commandName in git rg ffmpeg gh node npm; do
   withdrawCommand "$commandName"
 done
 darwinHomebrewPrefix="$sandbox/homebrew"

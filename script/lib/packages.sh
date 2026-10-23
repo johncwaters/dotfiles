@@ -555,6 +555,14 @@ packageNamesForTool() {
       printf 'ripgrep\n'
       return 0
       ;;
+    ffmpeg:apt-get | ffmpeg:pacman | ffmpeg:brew)
+      printf 'ffmpeg\n'
+      return 0
+      ;;
+    ffmpeg:dnf)
+      printf 'ffmpeg-free\n'
+      return 0
+      ;;
     bash-completion:apt-get | bash-completion:dnf | bash-completion:pacman | bash-completion:zypper)
       printf 'bash-completion\n'
       return 0
