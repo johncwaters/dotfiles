@@ -19,7 +19,7 @@ Paste [templates/narration.js](../templates/narration.js) after `SUBTITLES` and 
 Sound effects come from earshot's offline bank, run from the pinned commit; PyPI's `earshot` is an unrelated project, and the CPU index keeps CUDA torch (2 GB) off the disk:
 
 ```
-earshot() { EARSHOT_OFFLINE=1 uvx --index https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match --from git+https://github.com/Leonxlnx/earshot@925ebe5 earshot "$@"; }
+earshot() { EARSHOT_OFFLINE=1 uvx --index https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match --from git+https://github.com/Leonxlnx/earshot@591fa3e earshot "$@"; }
 earshot sfx render <category/name> -o sfx/<name>.wav
 ```
 
