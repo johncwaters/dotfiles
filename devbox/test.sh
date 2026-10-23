@@ -466,14 +466,26 @@ trap '' TERM
 exec sleep 30
 STUB
 provideCommand ssh
+writeStub date <<'STUB'
+#!/usr/bin/env bash
+printf '6 03\n'
+STUB
+provideCommand date
+rm -f "$stubState/forward-ssh-pid"
 forwardStatus=0
 runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work SSH_AUTH_SOCK="$stubState/agent.sock" \
-  DEVBOX_FORWARD_HEARTBEAT_DEADLINE_SECONDS=1 \
+  bash -c 'source "$1/commands.bash"; devbox forward-agent' _ "$topicDirectory" 2>/dev/null || forwardStatus=$?
+check "agent forward outside weekday hours exits cleanly" test "$forwardStatus" -eq 0
+check "agent forward outside weekday hours never connects" test ! -e "$stubState/forward-ssh-pid"
+forwardStatus=0
+runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work SSH_AUTH_SOCK="$stubState/agent.sock" \
+  DEVBOX_FORWARD_HEARTBEAT_DEADLINE_SECONDS=1 DEVBOX_FORWARD_ANY_HOUR=1 \
   bash -c 'source "$1/commands.bash"; devbox forward-agent' _ "$topicDirectory" 2>/dev/null || forwardStatus=$?
 check "a silent agent forward ends so launchd reconnects" test "$forwardStatus" -ne 0
 check "a silent agent forward that ignores SIGTERM is killed" \
   bash -c '! kill -0 "$(cat "$1")" 2>/dev/null' _ "$stubState/forward-ssh-pid"
 withdrawCommand ssh
+withdrawCommand date
 printf 'stopped\n' > "$stubState/workspace-status"
 : > "$commandLog"
 stoppedStatusOutput="$(runDevbox status)"

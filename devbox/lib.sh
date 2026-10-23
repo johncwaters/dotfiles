@@ -95,7 +95,16 @@ devboxForwardedAgentSocket() {
   printf '%s\n' "$inheritedSocket"
 }
 
+isDevboxForwardHour() {
+  [[ "${DEVBOX_FORWARD_ANY_HOUR:-}" == 1 ]] && return 0
+  local weekday hour
+  read -r weekday hour < <(date '+%u %H')
+  ((weekday <= 5 && 10#$hour >= 5 && 10#$hour < 19))
+}
+
 holdDevboxAgentForward() {
+  # Overnight DarkWakes reconnecting here bump Coder activity, so the devbox never autostops.
+  isDevboxForwardHour || return 0
   local forwardedAgentSocket
   forwardedAgentSocket="$(devboxForwardedAgentSocket)"
   if [[ -z "$forwardedAgentSocket" ]]; then
