@@ -1,6 +1,6 @@
 ---
 name: animation
-description: Make authored, scripted animations and still frames from them, such as narrated explainer videos, isometric "test chamber" instructional clips, launch posters, product-explainer clips, onboarding animations, and animated scenes or characters, as one self-contained SVG page rendered to MP4 (or PNG for stills) and published as a downloadable Artifact. Covers concept and storyboard, building the scene, camera and motion principles, narration voice and sound mix, frame checks, test-audience review, and rendering. Use for any animation, explainer, animated poster or still, "make an animation like <reference>", or motion craft questions for animated scenes.
+description: Make animations, both authored pieces and motion inside a running app or game. Authored pieces (narrated explainer videos, isometric "test chamber" clips, launch posters, onboarding animations, animated scenes or characters) are one self-contained SVG page rendered to MP4 or PNG and published as a downloadable Artifact. In-app animation (card attacks, enemy reveals, turn changes, celebrations, status indicators) sequences the product's own components so each event reads. Covers storyboard, scene, motion principles, narration and sound, frame checks, test-audience review, and rendering. Use for any animation request, "add animations", "make this animation better", an explainer, an animated poster or still, "make an animation like <reference>", or motion craft questions.
 ---
 
 # Animation
@@ -21,6 +21,7 @@ Then the subskill for the kind being made, which adds to every step above:
 - [explainer](subskills/explainer.md): a narrated, stepped instructional piece.
 - [comparison](subskills/comparison.md): a before/after piece that plays each side in turn.
 - [poster](subskills/poster.md): one still frame of a scene.
+- [in-app](subskills/in-app.md): motion inside a running app or game, built from its own components.
 
 ## Extensions
 
@@ -28,5 +29,5 @@ Each installed skill whose name starts with `animation-` extends this one with a
 
 ## Boundaries
 
-- Interface chrome motion (buttons, panels, transitions in a product UI) follows the design skill's motion step; animated scenes, demos and characters follow this skill.
+- Interface chrome motion (buttons, panels, transitions in a product UI) follows the design skill's motion step; animated scenes, demos, characters, and in-app event animation (game actions, reveals, celebrations) follow this skill.
 - A clip recorded from a product's real components is the social-images skill's clip recorder; its motion craft still follows this skill.

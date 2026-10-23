@@ -565,6 +565,12 @@ for skillName in "${workSkillNames[@]}"; do
     bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
     "$skillsPath/$skillName" "$sandbox/.dotfiles/profiles/work/skills/$skillName"
 done
+mkdir -p "$stagedRepo/profiles/work/skills/leftover-profile-skill/node_modules"
+ln -s "$sandbox/.dotfiles/profiles/work/skills/leftover-profile-skill" "$skillsPath/leftover-profile-skill"
+runTopicInstall "$stagedTopicDir" work > /dev/null
+check "a profile skill directory left without SKILL.md is retired, not relinked" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$skillsPath/leftover-profile-skill"
+rm -r "$stagedRepo/profiles/work/skills/leftover-profile-skill"
 rm -f "$skillsPath/sprint-update"
 ln -s "$stagedRepo/profiles/work/skills/sprint-update" "$skillsPath/sprint-update"
 ln -s "$sandbox/.dotfiles/profiles/retired/skills/commit" "$skillsPath/commit-from-retired-profile"
@@ -578,6 +584,7 @@ done
 profileConflictSkillPath="$stagedRepo/profiles/work/skills/commit"
 mkdir -p "$profileConflictSkillPath"
 printf '{}\n' > "$profileConflictSkillPath/package-lock.json"
+printf 'profile commit\n' > "$profileConflictSkillPath/SKILL.md"
 profileConflictStatus=0
 profileConflictOutput="$(runTopicInstall "$stagedTopicDir" work)" || profileConflictStatus=$?
 check "a profile skill conflicting with a shared skill warns" \
@@ -809,13 +816,13 @@ NODE
 }
 
 
-mkdir -p "$stagedRepo/profiles/work-server/skills" "$stagedRepo/profiles/personal/skills"
-printf 'child addition\n' > "$stagedRepo/profiles/work-server/skills/child-fixture.md"
-printf 'personal addition\n' > "$stagedRepo/profiles/personal/skills/personal-fixture.md"
+mkdir -p "$stagedRepo/profiles/work-server/skills/child-fixture" "$stagedRepo/profiles/personal/skills/personal-fixture"
+printf 'child addition\n' > "$stagedRepo/profiles/work-server/skills/child-fixture/SKILL.md"
+printf 'personal addition\n' > "$stagedRepo/profiles/personal/skills/personal-fixture/SKILL.md"
 runTopicInstall "$stagedTopicDir" work-server > /dev/null
 check "work-server installs its own addition beside inherited skills" \
-  test "$(readlink "$sandbox/.claude/skills/child-fixture.md")" = "$sandbox/.dotfiles/profiles/work-server/skills/child-fixture.md"
-check "work-server excludes personal additions" test ! -e "$sandbox/.claude/skills/personal-fixture.md"
+  test "$(readlink "$sandbox/.claude/skills/child-fixture")" = "$sandbox/.dotfiles/profiles/work-server/skills/child-fixture"
+check "work-server excludes personal additions" test ! -e "$sandbox/.claude/skills/personal-fixture"
 check "work-server inherits trusted Codex confinement" codexBackchannelsIsEnabled
 check "work-server installs every settings hook at a present script" settingsHookCommandsResolve
 check "work-server inherits work rules for Claude" \
@@ -831,11 +838,11 @@ check "work-server inherits the review checklist" \
 checkRerunIsQuiet "work-server rerun is quiet" "$(runTopicInstall "$stagedTopicDir" work-server)"
 runTopicInstall "$stagedTopicDir" server > /dev/null
 check "server removes inherited work-only artifacts" backchannelsArtifactsAreAbsent
-check "server retires the child profile addition" test ! -L "$sandbox/.claude/skills/child-fixture.md"
+check "server retires the child profile addition" test ! -L "$sandbox/.claude/skills/child-fixture"
 check "server keeps shared house style" test -L "$sandbox/.claude/skills/house-style"
 runTopicInstall "$stagedTopicDir" work-server > /dev/null
 check "work-server restores the identical trusted Codex hooks" codexBackchannelsIsEnabled
-rm "$stagedRepo/profiles/work-server/skills/child-fixture.md" "$stagedRepo/profiles/personal/skills/personal-fixture.md"
+rm -r "$stagedRepo/profiles/work-server/skills/child-fixture" "$stagedRepo/profiles/personal/skills/personal-fixture"
 overridingChildDirectory="$stagedRepo/profiles/overriding-child-fixture"
 mkdir -p "$overridingChildDirectory/skills/sprint-update"
 printf '{"extends":"work"}\n' > "$overridingChildDirectory/ai.json"

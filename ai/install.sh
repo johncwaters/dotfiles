@@ -34,8 +34,18 @@ convergeAiProfileLink() {
   convergeProfileLink "$label" "$relativePath" "$destination" "${sourcePath#"$dotfilesRepo/"}"
 }
 
+# A retired skill keeps its gitignored node_modules, so only SKILL.md marks it live.
+entryIsLive() {
+  local entryKind="$1" entryPath="$2"
+  if [[ "$entryKind" == skills ]]; then
+    [[ -f "$entryPath/SKILL.md" ]]
+    return
+  fi
+  [[ -e "$entryPath" || -L "$entryPath" ]]
+}
+
 sharedEntryExists() {
-  [[ -e "$repoEntriesDirectory/$1" || -L "$repoEntriesDirectory/$1" ]]
+  entryIsLive "$entryKind" "$repoEntriesDirectory/$1"
 }
 
 linkTargetsCurrentProfileEntry() {
@@ -43,7 +53,7 @@ linkTargetsCurrentProfileEntry() {
   local sourceProfile sourcePath
   for sourceProfile in "${aiProfileNames[@]}"; do
     sourcePath="profiles/$sourceProfile/$entryKind/$entryName"
-    [[ -e "$dotfilesRepo/$sourcePath" ]] || continue
+    entryIsLive "$entryKind" "$dotfilesRepo/$sourcePath" || continue
     [[ "$linkedEntryTarget" == "$dotfilesAlias/$sourcePath" || "$linkedEntryTarget" == "$dotfilesRepo/$sourcePath" ]] && return 0
   done
   return 1
@@ -65,7 +75,7 @@ removeRetiredEntryLinks() {
     case "$linkedEntryTarget" in
       "$dotfilesAlias/ai/$entryKind/"* | "$dotfilesRepo/ai/$entryKind/"*)
         [[ "$retiredLinkScope" == shared ]] || continue
-        [[ ! -e "$repoEntriesDirectory/$entryName" ]] || continue
+        ! entryIsLive "$entryKind" "$repoEntriesDirectory/$entryName" || continue
         ;;
       "$dotfilesAlias/profiles/"*/$entryKind/* | "$dotfilesRepo/profiles/"*/$entryKind/*)
         [[ "$retiredLinkScope" == profile ]] || continue
@@ -84,6 +94,7 @@ linkSharedEntries() {
   local entryName
   shopt -s nullglob
   for repoEntryPath in "$repoEntriesDirectory"/*; do
+    entryIsLive "$entryKind" "$repoEntryPath" || continue
     entryName="$(basename -- "$repoEntryPath")"
     linkEntry "$entryLabel $entryName" "${repoEntryPath#"$dotfilesRepo/"}" "$installedEntriesDirectory/$entryName"
   done
@@ -102,6 +113,7 @@ linkProfileEntries() {
     sourceProfile="${aiProfileNames[profileIndex]}"
     entryDirectory="$dotfilesRepo/profiles/$sourceProfile/$entryKind"
     for repoEntryPath in "$entryDirectory"/*; do
+      entryIsLive "$entryKind" "$repoEntryPath" || continue
       entryName="$(basename -- "$repoEntryPath")"
       [[ -z "${linkedEntryNames[$entryName]:-}" ]] || continue
       linkedEntryNames["$entryName"]=1
@@ -228,7 +240,7 @@ installProfileSkillDependencies() {
       skillName="$(basename -- "$skillDirectory")"
       [[ -z "${seenSkillNames[$skillName]:-}" ]] || continue
       seenSkillNames["$skillName"]=1
-      [[ ! -e "$repoSkillsDirectory/$skillName" && ! -L "$repoSkillsDirectory/$skillName" ]] || continue
+      ! entryIsLive skills "$repoSkillsDirectory/$skillName" || continue
       [[ -f "$skillDirectory/package-lock.json" ]] || continue
       skillLockPaths+=("$skillDirectory/package-lock.json")
     done
