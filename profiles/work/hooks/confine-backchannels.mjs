@@ -4,12 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { allow, denyPreToolUse, readPayload } from "../../../ai/hooks/hook-io.mjs";
+import { gitOutput, isSameFilesystemObject, isWorkRepository } from "./work-repository.mjs";
 
 const BACKCHANNELS_MCP_TOOL = /^mcp__backchannels__/;
 const BACKCHANNELS_SKILL = /^backchannels$/i;
 const MCP_RESOURCE_TOOLS = new Set(["ListMcpResourcesTool", "ReadMcpResourceTool", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]);
 const MAX_SCANNED_WORKSPACE_CHILDREN = 64;
-const POSTHOG_ORIGIN = /^(?:(?:https|ssh):\/\/(?:[^@/]+@)?github\.com(?::\d+)?\/|git@github\.com:)posthog\//i;
 
 const PERSONAL_PROJECT_NOTICE =
   "backchannels is an internal PostHog tool and this session is in a personal project, so backchannels is off here. " +
@@ -21,38 +21,6 @@ function touchesBackchannels(toolName, toolInput) {
   if (!MCP_RESOURCE_TOOLS.has(toolName)) return false;
   const serverName = String(toolInput.server || "").trim();
   return serverName === "" || serverName === "backchannels";
-}
-
-function gitOutput(directory, gitArguments) {
-  const gitResult = spawnSync("git", ["-C", directory, ...gitArguments], { encoding: "utf8" });
-  if (gitResult.status !== 0) return "";
-  return gitResult.stdout.trim();
-}
-
-function isSameFilesystemObject(firstPath, secondPath) {
-  if (!firstPath || !secondPath) return false;
-  const firstStat = fs.statSync(firstPath, { throwIfNoEntry: false });
-  const secondStat = fs.statSync(secondPath, { throwIfNoEntry: false });
-  if (!firstStat || !secondStat) return false;
-  return firstStat.dev === secondStat.dev && firstStat.ino === secondStat.ino;
-}
-
-function isWorkRepository(directory) {
-  const originUrl = gitOutput(directory, ["remote", "get-url", "origin"]);
-  if (POSTHOG_ORIGIN.test(originUrl)) return true;
-  const profilePolicy = JSON.parse(fs.readFileSync(new URL("../ai.json", import.meta.url), "utf8"));
-  const repositoryOrigin = profilePolicy.mcpServers?.backchannels?.repositoryOrigin;
-  const declaredOrigin = normalizedGitHubOrigin(repositoryOrigin);
-  if (declaredOrigin && normalizedGitHubOrigin(originUrl) === declaredOrigin) return true;
-  const backchannelGitDirectory = path.join(os.homedir(), "Projects", "backchannel", ".git");
-  const commonGitDirectory = gitOutput(directory, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  return isSameFilesystemObject(commonGitDirectory, backchannelGitDirectory);
-}
-
-function normalizedGitHubOrigin(originUrl) {
-  const repositoryMatch = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/]+\/[^/]+?)\/?$/i.exec(originUrl);
-  if (!repositoryMatch) return "";
-  return repositoryMatch[1].replace(/\.git$/i, "").toLowerCase();
 }
 
 function childDirectories(workspaceDirectory) {

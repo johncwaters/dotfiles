@@ -82,14 +82,14 @@ const CLOUDFLARE_CALLS = [
   ...CLOUDFLARE_COMMANDS.map((command) => ({ tool_name: "Bash", tool_input: { command } })),
 ];
 
-test("cloudflare tools, skills, and CLIs are denied outside the backchannel repository", (testContext) => {
+test("cloudflare tools, skills, and CLIs are allowed in a PostHog-origin repository", (testContext) => {
   const { homeDirectory } = homeWithBackchannelClone(testContext);
-  const otherRepository = initializeRepository(
-    path.join(temporaryDirectory(testContext, "confine-cloudflare-other-"), "posthog"),
+  const posthogRepository = initializeRepository(
+    path.join(temporaryDirectory(testContext, "confine-cloudflare-posthog-"), "posthog"),
     "git@github.com:PostHog/posthog.git",
   );
   for (const call of CLOUDFLARE_CALLS) {
-    assert.equal(decisionFor({ ...call, cwd: otherRepository }, homeDirectory), "deny", JSON.stringify(call));
+    assert.equal(decisionFor({ ...call, cwd: posthogRepository }, homeDirectory), "allow", JSON.stringify(call));
   }
 });
 
@@ -108,13 +108,15 @@ test("a worktree of the backchannel clone is allowed", (testContext) => {
   assert.equal(decisionFor({ ...CLOUDFLARE_CALLS[0], cwd: worktree }, homeDirectory), "allow");
 });
 
-test("a repository elsewhere forging the backchannel origin is denied", (testContext) => {
+test("cloudflare tools, skills, and CLIs are denied in a personal repository", (testContext) => {
   const { homeDirectory } = homeWithBackchannelClone(testContext);
-  const forgedRepository = initializeRepository(
-    path.join(temporaryDirectory(testContext, "confine-cloudflare-forged-"), "backchannel"),
+  const personalRepository = initializeRepository(
+    path.join(temporaryDirectory(testContext, "confine-cloudflare-personal-"), "backchannel"),
     "git@github.com:johncwaters/backchannel.git",
   );
-  assert.equal(decisionFor({ ...CLOUDFLARE_CALLS[0], cwd: forgedRepository }, homeDirectory), "deny");
+  for (const call of CLOUDFLARE_CALLS) {
+    assert.equal(decisionFor({ ...call, cwd: personalRepository }, homeDirectory), "deny", JSON.stringify(call));
+  }
 });
 
 test("a directory outside any repository denies cloudflare", (testContext) => {

@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { allow, denyPreToolUse, readPayload } from "../../../ai/hooks/hook-io.mjs";
+import { isWorkRepository } from "./work-repository.mjs";
 
 const CLOUDFLARE_MCP_TOOL = /^mcp__.*cloudflare/i;
 const CLOUDFLARE_SKILL = /^cloudflare:/i;
@@ -30,24 +27,6 @@ function touchesCloudflare(toolName, toolInput) {
   );
 }
 
-function gitCommonDirectoryOf(directory) {
-  const gitResult = spawnSync(
-    "git",
-    ["-C", directory, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-    { encoding: "utf8" },
-  );
-  if (gitResult.status !== 0) return "";
-  return gitResult.stdout.trim();
-}
-
-function isSameFilesystemObject(firstPath, secondPath) {
-  if (!firstPath || !secondPath) return false;
-  const firstStat = fs.statSync(firstPath, { throwIfNoEntry: false });
-  const secondStat = fs.statSync(secondPath, { throwIfNoEntry: false });
-  if (!firstStat || !secondStat) return false;
-  return firstStat.dev === secondStat.dev && firstStat.ino === secondStat.ino;
-}
-
 let isCloudflareCall = false;
 
 function main() {
@@ -58,11 +37,10 @@ function main() {
   isCloudflareCall = touchesCloudflare(toolName, toolInput);
   if (!isCloudflareCall) allow();
   const sessionDirectory = String(payload.cwd || process.cwd());
-  const permittedGitDirectory = path.join(os.homedir(), "Projects", "backchannel", ".git");
-  if (isSameFilesystemObject(gitCommonDirectoryOf(sessionDirectory), permittedGitDirectory)) allow();
+  if (isWorkRepository(sessionDirectory)) allow();
   denyPreToolUse(
-    "Cloudflare work is confined to the backchannels.dev project: the clone at ~/Projects/backchannel and its worktrees. " +
-      "This session is not in that repository, so Cloudflare tools, skills, and CLIs are denied. Do not retry or work around it.",
+    "Cloudflare work is confined to PostHog work repositories and the backchannel clone at ~/Projects/backchannel. " +
+      "This session is not in one, so Cloudflare tools, skills, and CLIs are denied. Do not retry or work around it.",
   );
 }
 
