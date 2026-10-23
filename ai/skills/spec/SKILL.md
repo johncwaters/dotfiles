@@ -11,7 +11,7 @@ Terms: design spec, sketch, branch, question round, decision, open question, uni
 
 **Input.** The feature in the carbon unit's words and the repo in the working directory.
 
-**Output.** A design spec at `~/.claude/specs/<repo>/<slug>.json` with status `challenged`, and once the carbon unit starts the cut, its intent file beside it.
+**Output.** A design spec at `~/.claude/specs/<repo>/<slug>.json` with status `challenged`, its intent file beside it, and the intent built.
 
 ## Subskills
 
@@ -73,8 +73,8 @@ A `challenged` design spec with every open question answered cuts into one inten
 node ~/.claude/skills/spec/cut.ts <spec.json>
 ```
 
-It writes `<slug>.intent.json` beside the design spec, or names what to settle first. Build the whole intent in one dedicated session: read `subskills/build.md`.
+It writes `<slug>.intent.json` beside the design spec, or names what to settle first. The session that wrote the design spec becomes the intent's one dedicated session and builds all of it: read `subskills/build.md`.
 
 ## Hand off
 
-Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. The cut and the build begin when the carbon unit starts them.
+Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision with a question round as `grill.md` steps 4 and 5 run it; a restored overturn follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once no `assumed` decision is left, cut and build without asking.
