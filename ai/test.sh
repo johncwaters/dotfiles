@@ -362,8 +362,8 @@ check "work preserves external Claude skill ownership" grep -qx 'external Claude
 check "work preserves external Codex skill ownership" grep -qx 'external Codex skill' "$sandbox/.agents/skills/backchannels/SKILL.md"
 check "work links profile hooks through the alias" \
   bash -c '[[ -L "$1" && "$(readlink "$1")" == "$2" ]]' _ "$sandbox/.claude/profile-hooks" "$sandbox/.dotfiles/profiles/work/hooks"
-check "the shared installed hooks contain none of the three work hooks" \
-  bash -c 'for hookName in confine-backchannels confine-cloudflare gate-posthog-exec-write; do [[ ! -e "$1/$hookName.mjs" ]] || exit 1; done' _ "$sandbox/.claude/hooks"
+check "the shared installed hooks contain none of the work hooks" \
+  bash -c 'for hookName in confine-backchannels gate-posthog-exec-write; do [[ ! -e "$1/$hookName.mjs" ]] || exit 1; done' _ "$sandbox/.claude/hooks"
 check "work configures the Codex backchannels server" grep -qx 'url = "https://api.backchannels.dev/mcp"' "$sandbox/.codex/config.toml"
 check "work preserves foreign hooks and Codex trust" foreignBackchannelsNeighboursArePreserved
 check "a first Codex hook render leaves backchannels disabled" codexBackchannelsIsDisabled
@@ -413,11 +413,11 @@ for (const gitArguments of [['init','-q',workRepository],['-C',workRepository,'r
 }
 if (run(startupHook.hooks[0].command,{cwd:workRepository,hook_event_name:'SessionStart'}) !== 'backchannels startup context') throw new Error('work startup missing');
 if (run(preToolUse.hooks[0].command,{cwd:workRepository,hook_event_name:'PreToolUse',tool_name:'mcp__backchannels__register_agent'}) !== '') throw new Error('work registration blocked');
-for (const hookName of ['confine-cloudflare','gate-posthog-exec-write']) {
+for (const hookName of ['gate-posthog-exec-write']) {
   run(`node "${homeDirectory}/.claude/profile-hooks/${hookName}.mjs"`,{tool_name:'unrelated',tool_input:{}});
 }
 NODE
-check "all three hooks resolve imports through the installed symlink and Codex work/personal behavior passes" test "$?" -eq 0
+check "all work hooks resolve imports through the installed symlink and Codex work/personal behavior passes" test "$?" -eq 0
 for skillName in "${workSkillNames[@]}"; do
   check "work profile links skill $skillName through the alias" \
     bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \

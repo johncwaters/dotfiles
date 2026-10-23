@@ -10,10 +10,6 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(Bash|Skill|mcp__.*cloudflare.*)$",
-        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/confine-cloudflare.mjs" }]
-      },
-      {
         "matcher": "^(Skill|ListMcpResourcesTool|ReadMcpResourceTool|mcp__backchannels__.*)$",
         "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/confine-backchannels.mjs" }]
       },
