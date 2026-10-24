@@ -5,7 +5,7 @@ description: "Extends the animating skill on a work machine with PostHog's test 
 
 # Animation: PostHog
 
-Each section applies at the animating step it names.
+Each section applies at the `animating` step it names.
 
 ## Concept
 
