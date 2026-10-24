@@ -15,7 +15,7 @@ Read each file under `subskills/` as you reach it:
 2. [scene](subskills/scene.md): the page contract, time, camera, and drawing.
 3. [animation-principles](subskills/animation-principles.md): how anything in the scene moves.
 4. [sound](subskills/sound.md): narration voice, word timing, effects, and the mix; for any piece with sound.
-5. [review](subskills/review.md): frame sheets and the test audience.
+5. [review](subskills/review.md): frame sheets and the test audience, briefed from `templates/review-brief.md`.
 6. [render](subskills/render.md): MP4 and publishing.
 
 Then the subskill for the kind being made, which adds to every step above:

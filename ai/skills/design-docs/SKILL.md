@@ -12,7 +12,7 @@ Read each file under `subskills/` as you reach it:
 1. [sources](subskills/sources.md): the doc's history, the code, and the numbers before any prose.
 2. [draft](subskills/draft.md): answer first, the section order, and the author's voice.
 3. [evidence](subskills/evidence.md): citations, measured rates, and cost math.
-4. [review](subskills/review.md): independent reviewers from a brief.
+4. [review](subskills/review.md): independent reviewers from the brief in `templates/review-brief.md`.
 5. [ship](subskills/ship.md): drafting beside the live doc, the author's edits, and the swap.
 
 Then the subskill for the kind being written, which adds to every step above:

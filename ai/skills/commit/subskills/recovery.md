@@ -2,6 +2,26 @@
 
 Read the section for the reported outcome; the outcome codes are pinned by `../test/skill-doc.test.ts`.
 
+## Contents
+
+- [NOTHING_TO_COMMIT](#nothing_to_commit)
+- [MESSAGE_INVALID](#message_invalid)
+- [HOOK_FAILED](#hook_failed)
+- [DENYLISTED_FILE_STAGED](#denylisted_file_staged)
+- [HOME_PATH_STAGED](#home_path_staged)
+- [PUSH_FAILED](#push_failed)
+- [PROMOTE_CONFLICT](#promote_conflict)
+- [PROMOTE_FAILED](#promote_failed)
+- [MAINLINE_AHEAD](#mainline_ahead)
+- [POLICY_INVALID](#policy_invalid)
+- [BRANCH_FORBIDDEN](#branch_forbidden)
+- [MAINLINE_UNVERIFIED](#mainline_unverified)
+- [NOT_A_REPO](#not_a_repo)
+- [DETACHED_HEAD](#detached_head)
+- [OPERATION_IN_PROGRESS](#operation_in_progress)
+- [Conflict resolution](#conflict-resolution)
+- [Push and promote recovery](#push-and-promote-recovery)
+
 ## NOTHING_TO_COMMIT
 
 With `--promote`, promotion still ran: report what `promoted` says. Without it, stop and relay

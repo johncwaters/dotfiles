@@ -8,6 +8,10 @@ const SKILL_MARKDOWN_MAX_BYTES = 8192;
 const DESCRIPTION_MIN_CHARACTERS = 200;
 const DESCRIPTION_MAX_CHARACTERS = 520;
 const NAME_MAX_CHARACTERS = 64;
+const TOC_REQUIRED_ABOVE_LINES = 100;
+const BUNDLED_PATH_PATTERN = /`((?:subskills|references|scripts|templates)\/[^`\s]+)`/g;
+const MARKDOWN_LINK_PATTERN = /\]\(([^)\s#]+)(?:#[^)\s]*)?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
+const LINK_REFERENCE_DEFINITION_PATTERN = /^\s{0,3}\[(?!\^)[^\]]+\]:\s*(\S+)/g;
 const SCRIPT_EXTENSIONS = new Set([".ts", ".mjs", ".js", ".sh", ".py"]);
 const PROHIBITION_PATTERN = /\b(never|do\s+not|don['\u2019]t|must\s+not|mustn['\u2019]t|should\s+not|shouldn['\u2019]t|avoid|avoids|avoiding)\b/gi;
 const DATE_PATTERN = /\b(19|20)\d{2}-(0[1-9]|1[0-2])(-\d{2})?\b|\b(January|February|March|April|May|June|July|August|September|October|November|December) (19|20)\d{2}\b/g;
@@ -37,7 +41,7 @@ function proseLines(markdown) {
       continue;
     }
     if (fenceMarker) continue;
-    prose.push({ number: index + 1, text: maskInlineCode(lines[index]) });
+    prose.push({ number: index + 1, text: maskInlineCode(lines[index]), rawText: lines[index] });
   }
   return prose;
 }
@@ -166,6 +170,54 @@ function phrasingViolations(markdown) {
   return found;
 }
 
+function skillReferences(content) {
+  const prose = proseLines(content);
+  const targets = prose.flatMap((line) => [
+    ...Array.from(line.text.matchAll(MARKDOWN_LINK_PATTERN)),
+    ...Array.from(line.text.matchAll(LINK_REFERENCE_DEFINITION_PATTERN)),
+    ...Array.from(line.rawText.matchAll(BUNDLED_PATH_PATTERN)),
+  ].map((match) => ({ target: match[1], line: line.number })));
+  const namedPaths = new Set(prose.flatMap((line) => line.rawText.match(/[\w./-]+\.md\b/g) ?? []));
+  return { targets, namedPaths };
+}
+
+function linkViolations(filePath, content, skillDirectory, references = skillReferences(content)) {
+  const found = [];
+  for (const { target, line } of references.targets) {
+    if (/^(?:[a-z][a-z\d+.-]*:|~|\/|#)/i.test(target)) continue;
+    const relativeTarget = target.split("#")[0];
+    const exists = [path.dirname(filePath), skillDirectory].some((directory) => fs.existsSync(path.resolve(directory, relativeTarget)));
+    if (exists) continue;
+    found.push(violation("link-broken", line, `relative target '${target}' does not exist`, "Link to a file beside this file or from the skill root."));
+  }
+  return found;
+}
+
+function backslashPathViolations(content) {
+  return proseLines(content).flatMap((line) => Array.from(line.text.matchAll(/\b[\w.-]+(?:\\(?![!-\/:-@[-`{-~])[\w.-]+)+/g))
+    .map((match) => violation("path-backslash", line.number, `path '${match[0]}' uses backslashes`, "Use forward slashes in prose paths.")));
+}
+
+function tableOfContentsViolations(filePath, content) {
+  if (path.basename(filePath) === "SKILL.md" || content.replace(/\n$/, "").split("\n").length <= TOC_REQUIRED_ABOVE_LINES) return [];
+  const firstSection = headings(proseLines(content)).find((heading) => heading.level === 2);
+  if (firstSection?.title === "Contents") return [];
+  return [violation("toc-missing", firstSection?.number ?? 1, `markdown exceeds ${TOC_REQUIRED_ABOVE_LINES} lines without an opening '## Contents'`, "Add '## Contents' before the first other H2, linking to its sections.")];
+}
+
+function unreferencedFileViolations(skillDirectory, skillContent, references = skillReferences(skillContent)) {
+  const bundledFiles = skillMarkdownFiles(skillDirectory).filter((file) => path.basename(file) !== "SKILL.md");
+  const bundledCountByBasename = new Map();
+  for (const file of bundledFiles) bundledCountByBasename.set(path.basename(file), (bundledCountByBasename.get(path.basename(file)) ?? 0) + 1);
+  return bundledFiles
+    .filter((file) => {
+      const relativePath = path.relative(skillDirectory, file).split(path.sep).join("/");
+      const isNamedByUniqueBasename = bundledCountByBasename.get(path.basename(file)) === 1 && references.namedPaths.has(path.basename(file));
+      return !references.namedPaths.has(relativePath) && !references.namedPaths.has(`./${relativePath}`) && !isNamedByUniqueBasename;
+    })
+    .map((file) => violation("file-unreferenced", 1, `bundled markdown '${path.relative(skillDirectory, file)}' is absent from SKILL.md`, "Link or name the bundled file in SKILL.md."));
+}
+
 function shippedScripts(skillDirectory) {
   const scripts = [];
   for (const entry of safeReadDirectory(skillDirectory)) {
@@ -235,7 +287,12 @@ export function lintSkillFile(filePath, rawContent) {
   const found = [];
   if (size > sizeLimit) found.push(violation("size", 1, `${size} bytes, cap ${sizeLimit}`, SPLIT_FIX, size));
   found.push(...phrasingViolations(content));
+  const references = skillReferences(content);
+  found.push(...linkViolations(filePath, content, skillDirectory, references));
+  found.push(...backslashPathViolations(content));
+  found.push(...tableOfContentsViolations(filePath, content));
   if (!isSkillFile) return found;
+  found.push(...unreferencedFileViolations(skillDirectory, content, references));
   const skillName = path.basename(skillDirectory);
   const parts = splitFrontmatter(content);
   if (!parts) return [...found, violation("frontmatter", 1, "SKILL.md has no frontmatter", "Open the file with '---', name, description, '---'.")];
@@ -253,9 +310,7 @@ export function skillDirectoryOf(filePath) {
   const skillsIndex = segments.lastIndexOf("skills", segments.length - 3);
   if (skillsIndex < 0) return null;
   const relativeSegments = segments.slice(skillsIndex + 2);
-  if (relativeSegments.includes("node_modules")) return null;
-  const isSkillMarkdown = relativeSegments.length === 1 || (relativeSegments.length === 2 && ["subskills", "references"].includes(relativeSegments[0]));
-  if (!isSkillMarkdown) return null;
+  if (relativeSegments.slice(0, -1).some((segment) => ["node_modules", "test"].includes(segment))) return null;
   const skillDirectory = segments.slice(0, skillsIndex + 2).join(path.sep);
   return isDotfilesSkillDirectory(skillDirectory) ? skillDirectory : null;
 }
@@ -340,13 +395,14 @@ function defaultSkillRoots(repoRoot) {
 }
 
 function skillMarkdownFiles(skillDirectory) {
-  const files = [path.join(skillDirectory, "SKILL.md")];
-  for (const folder of ["subskills", "references"]) {
-    for (const entry of safeReadDirectory(path.join(skillDirectory, folder))) {
-      if (entry.isFile() && entry.name.endsWith(".md")) files.push(path.join(skillDirectory, folder, entry.name));
-    }
+  const files = [];
+  for (const entry of safeReadDirectory(skillDirectory)) {
+    if (["node_modules", "test"].includes(entry.name)) continue;
+    const entryPath = path.join(skillDirectory, entry.name);
+    if (entry.isDirectory()) files.push(...skillMarkdownFiles(entryPath));
+    if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".md") files.push(entryPath);
   }
-  return files.filter((file) => fs.existsSync(file));
+  return files;
 }
 
 export function lintSkillDirectory(skillDirectory) {

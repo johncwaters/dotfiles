@@ -8,7 +8,7 @@ Definition of done: a report that follows the output contract.
 
 Find gaps: what the doc is missing, what a reviewing teammate will ask that it does not answer, and where its claims are not backed by the code or data.
 
-## Sources (read-only; never edit, commit, or run anything that writes)
+## Sources (read-only: open them only with commands that change nothing)
 - <repo or data path>: <what it holds>
 
 ## The doc as it stands (verbatim)
