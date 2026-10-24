@@ -48,15 +48,15 @@ here.
   carries it.
 - **ticket**: One unit of work cut into a self-contained work order that an agent finishes
   in a single session of roughly 150k tokens of context, counting everything that session
-  reads, writes, runs, and reviews. Self-contained because the agent working it is handed
-  the ticket and never the design spec, so the ticket carries its contract and the
-  decisions it implements.
+  reads, writes, runs, and reviews. Self-contained because a resumed or compacted
+  session starts from the intent file, and the design spec is archived once built, so
+  the ticket carries its contract and the decisions it implements.
 - **intent**: The parent work order for a whole feature: its objective, success criteria,
   risk tier, boundary, and write scopes, with every ticket that builds it.
   `ai/skills/spec/cut.ts` renders a challenged design spec as one intent file beside the
-  spec with no model in the path, so the same spec always gives the same intent. A whole
-  intent goes to the Glimmervoid factory or to one dedicated session, never split between
-  them, so one builder owns the order its tickets land in.
+  spec with no model in the path, so the same spec always gives the same intent. The
+  session that wrote the design spec builds the whole intent, so one builder owns the
+  order its tickets land in.
 - **challenge stamp**: The `CHALLENGE: <kept> kept, <shrunk> shrunk, <cut> cut` line
   `plan-challenge` produces for what it judged, stored in a design spec's
   `challengeStamp` beside `challengedUnitIds`, the ids of the units it judged. It means

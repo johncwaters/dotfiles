@@ -1,45 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
-import { oneLine, TICKET_CRITERION_LIMIT, unitTicketCriteria } from "./lib/graph.ts";
+import { listPathWithAncestors, oneLine, unitTicketCriteria } from "./lib/graph.ts";
 import type { DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
 import { unitsInDependencyOrder } from "./lib/unit-order.ts";
-
-const intentWriteScopeLimit = 32;
 
 function normalizeScope(scope: string): string {
   return scope.trim().replace(/\\/g, "/").split("/").filter((segment) => segment !== "" && segment !== ".").join("/");
 }
 
-function containsScope(parentScope: string, childScope: string): boolean {
-  return parentScope === childScope || childScope.startsWith(`${parentScope}/`);
-}
-
 function removeContainedScopes(scopes: string[]): string[] {
-  return [...new Set(scopes)].filter((scope, index, distinctScopes) =>
-    !distinctScopes.some((otherScope, otherIndex) => otherIndex !== index && containsScope(otherScope, scope)));
-}
-
-function findMostSharedParentScope(scopes: string[]): string | undefined {
-  const parentScopes = [...new Set(scopes.map((scope) => path.posix.dirname(scope)))].filter((parentScope) => parentScope !== ".");
-  const sharedParents = parentScopes
-    .map((parentScope) => ({ parentScope, containedCount: scopes.filter((scope) => containsScope(parentScope, scope)).length }))
-    .filter((sharedParent) => sharedParent.containedCount >= 2);
-  sharedParents.sort((first, second) =>
-    second.containedCount - first.containedCount
-    || second.parentScope.split("/").length - first.parentScope.split("/").length
-    || (first.parentScope < second.parentScope ? -1 : 1));
-  return sharedParents[0]?.parentScope;
-}
-
-function foldIntentScopes(ticketScopes: string[]): string[] {
-  let scopes = removeContainedScopes(ticketScopes);
-  while (scopes.length > intentWriteScopeLimit) {
-    const sharedParentScope = findMostSharedParentScope(scopes);
-    if (sharedParentScope === undefined) return scopes;
-    scopes = [...new Set(scopes.map((scope) => containsScope(sharedParentScope, scope) ? sharedParentScope : scope))];
-  }
-  return scopes;
+  const distinctScopes = new Set(scopes);
+  return [...distinctScopes].filter((scope) =>
+    !listPathWithAncestors(scope).slice(1).some((ancestorScope) => distinctScopes.has(ancestorScope)));
 }
 
 function renderIntent(spec: DesignSpec, specPath: string) {
@@ -83,38 +56,16 @@ function renderIntent(spec: DesignSpec, specPath: string) {
     + (constraints.length > 0 ? ` Constraints: ${constraints.join(" ")}` : "");
   return {
     name: oneLine(path.basename(specPath, ".json")),
-    projectId: "seed",
     objective: oneLine(goal.text),
     criteria: (goal.criteria ?? []).map(oneLine),
     risk: goal.risk ?? "",
     boundary: oneLine(boundary),
-    writeScopes: foldIntentScopes(tickets.flatMap((ticket) => ticket.writeScopes)),
+    writeScopes: removeContainedScopes(tickets.flatMap((ticket) => ticket.writeScopes)),
     tickets,
   };
 }
 
-function collectTextErrors(value: unknown, subject: string, errors: string[]): void {
-  if (typeof value === "string") {
-    if (value.length > 4096) errors.push(`${subject}: shorten text to the 4096 character limit (has ${value.length})`);
-    if (value.startsWith("-")) errors.push(`${subject}: replace the leading '-' in rendered text`);
-    return;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) => collectTextErrors(entry, `${subject}[${index}]`, errors));
-    return;
-  }
-  if (typeof value !== "object" || value === null) return;
-  for (const [field, entry] of Object.entries(value)) collectTextErrors(entry, `${subject}.${field}`, errors);
-}
-
-function collectScopeErrors(scopes: string[], subject: string, errors: string[]): void {
-  for (const scope of scopes) {
-    if (scope.length <= 1024) continue;
-    errors.push(`${subject}: shorten write scope ${scope} to the 1024 character limit (has ${scope.length})`);
-  }
-}
-
-function collectRefusalErrors(spec: DesignSpec, intent: ReturnType<typeof renderIntent>): string[] {
+function collectRefusalErrors(spec: DesignSpec): string[] {
   const errors: string[] = [];
   if (spec.status !== "challenged") errors.push(`intent: change status from ${spec.status} to challenged`);
   const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
@@ -126,20 +77,6 @@ function collectRefusalErrors(spec: DesignSpec, intent: ReturnType<typeof render
   const goal = spec.nodes.find((node) => node.kind === "goal")!;
   if (goal.risk === undefined) errors.push("intent: supply goal G1.risk");
   if (goal.criteria === undefined) errors.push("intent: supply goal G1.criteria");
-  if (intent.tickets.length > 32) errors.push(`intent: reduce tickets to the 32 ticket limit (has ${intent.tickets.length})`);
-  const { tickets, ...intentFields } = intent;
-  collectTextErrors(intentFields, "intent", errors);
-  collectScopeErrors(intent.writeScopes, "intent", errors);
-  if (intent.writeScopes.length > intentWriteScopeLimit) {
-    errors.push(`intent: reduce write scopes to the ${intentWriteScopeLimit} write scope limit (has ${intent.writeScopes.length} with no shared parent folder left to fold into)`);
-  }
-  for (const ticket of tickets) {
-    if (ticket.id.length > 64) errors.push(`${ticket.id}: shorten ticket id to the 64 character limit (has ${ticket.id.length})`);
-    if (ticket.criteria.length > TICKET_CRITERION_LIMIT) errors.push(`${ticket.id}: reduce criteria to the ${TICKET_CRITERION_LIMIT} criterion limit (has ${ticket.criteria.length})`);
-    if (ticket.writeScopes.length > 32) errors.push(`${ticket.id}: reduce write scopes to the 32 scope limit (has ${ticket.writeScopes.length})`);
-    collectTextErrors(ticket, ticket.id, errors);
-    collectScopeErrors(ticket.writeScopes, ticket.id, errors);
-  }
   for (const node of spec.nodes) {
     if (node.kind !== "unit") continue;
     for (const changedPath of node.changes) {
@@ -173,13 +110,13 @@ function cutSpec(specArgument: string | undefined): number {
   }
   const specPath = path.resolve(specArgument);
   const intentPath = resolveIntentPath(specPath);
-  const intent = renderIntent(spec, specPath);
-  const errors = collectRefusalErrors(spec, intent);
+  const errors = collectRefusalErrors(spec);
   if (errors.length > 0) {
     fs.rmSync(intentPath, { force: true });
     process.stdout.write(`${JSON.stringify({ outcome: "REFUSED", errors })}\n`);
     return 1;
   }
+  const intent = renderIntent(spec, specPath);
   fs.writeFileSync(intentPath, `${JSON.stringify(intent, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify({ outcome: "CUT", intentPath, tickets: intent.tickets.length })}\n`);
   return 0;

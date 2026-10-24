@@ -53,7 +53,6 @@ export type DesignSpec = {
 };
 
 export const READING_BUDGET_BYTES = 200000;
-export const TICKET_CRITERION_LIMIT = 12;
 const UNIT_TITLE_LIMIT = 120;
 
 export function oneLine(text: string): string {
@@ -325,7 +324,7 @@ function listedPathProblem(repoRoot: string, resolvedRoot: string | undefined, c
   return `reads path ${candidate} is missing under repoRoot; correct it, or list it under the changes of another unit that creates it`;
 }
 
-function listPathWithAncestors(targetPath: string): string[] {
+export function listPathWithAncestors(targetPath: string): string[] {
   const parentPath = path.dirname(targetPath);
   if (parentPath === targetPath) return [targetPath];
   return [targetPath, ...listPathWithAncestors(parentPath)];
@@ -500,9 +499,6 @@ export function validateGraph(value: unknown): string[] {
       if (isGoalMissingCriteria || criterionNumber <= goalCriteria.length) continue;
       addError(errors, 17, `node ${unit.id}`, `remove serves ${criterionNumber}; the goal has ${goalCriteria.length} criteria`);
     }
-    const ticketCriterionCount = unitTicketCriteria(unit, goalCriteria).length;
-    if (!isSliced || ticketCriterionCount <= TICKET_CRITERION_LIMIT) continue;
-    addError(errors, 17, `node ${unit.id}`, `split the unit or drop serves or checks; its ticket would carry ${ticketCriterionCount} criteria (title, served criteria, one per check) over the ${TICKET_CRITERION_LIMIT} criterion limit`);
   }
   for (const [criterionIndex, criterion] of goalCriteria.entries()) {
     if (!isSliced || servedCriterionNumbers.has(criterionIndex + 1)) continue;
