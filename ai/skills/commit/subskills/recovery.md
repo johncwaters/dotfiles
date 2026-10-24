@@ -36,7 +36,7 @@ The commit exists; promotion stopped for a non-conflict reason named in `warning
 
 ## MAINLINE_AHEAD
 
-Local mainline has commits absent from origin. `localOnlyCommits` lists their SHAs. Push or drop them by hand, then re-run; the skill never publishes them implicitly
+Local mainline has commits absent from origin. `localOnlyCommits` lists their SHAs. Push or drop them by hand, then re-run; publication requires that explicit action
 
 ## POLICY_INVALID
 
@@ -64,20 +64,20 @@ A merge, rebase, or cherry-pick is in flight (`operation`). Stop and relay
 
 ## Conflict resolution
 
-`PROMOTE_CONFLICT` with files in `conflicts` is yours to resolve; do not dead-end on it.
+`PROMOTE_CONFLICT` with files in `conflicts` is yours to resolve; continue through recovery.
 
 1. On the feature branch, fetch origin and rebase onto `policy.resolved.mainline`.
 2. Resolve each conflicted file on its merits: read both sides, keep both intents where
-   they are independent, and pick the semantically correct result where they collide. Never
-   resolve by blanket `--ours`/`--theirs`, and never drop changes you cannot account for.
+   they are independent, and pick the semantically correct result where they collide. Choose
+   resolutions on their merits rather than blanket `--ours`/`--theirs`; retain changes you cannot account for.
 3. Stage the resolutions and continue the rebase.
 4. Re-review the rewritten feature range before it reaches mainline.
 5. Re-run `land.ts` with the same flags so it finishes the fast-forward and push.
    `NOTHING_TO_COMMIT` there is expected.
 
 An empty `conflicts` list means local mainline diverged from origin. Stop and put the
-listed branch relationship to the carbon unit; the skill never merges, resets, rebases,
-or force-pushes a diverged mainline.
+listed branch relationship to the carbon unit; leave a diverged mainline intact, without
+merging, resetting, rebasing, or force-pushing it.
 
 Stop and report instead when the same hop conflicts again after two attempts, a conflict
 involves changes you cannot attribute, or resolving would mean discarding one side
@@ -100,7 +100,7 @@ only to unblock the run.
   branch, push it, then re-run. A conflict resolved by hand requires re-review first.
 - A destination branch checked out in a dirty worktree: if the uncommitted changes are this
   session's, land them by running this whole workflow in that worktree, review
-  included. Never commit them by hand to clear the way. Changes you cannot attribute are a
+  included. Commit them only through this workflow to clear the way. Changes you cannot attribute are a
   stop case.
 - Transient network or remote errors: re-run once before treating the failure as real.
 - Feature push denied on permissions (403, "Permission denied"): the branch is pushing

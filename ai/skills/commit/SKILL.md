@@ -1,13 +1,13 @@
 ---
 name: commit
-description: Personal commit workflow. Reviews once via /code-review, fixes what that review proved broken, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promote the feature branch onto the resolved mainline or leave it pushed for /open-pr, per the machine's commit policy. Use for /commit, "commit this", "commit and push", or landing finished work.
+description: Lands work through the personal commit workflow. Reviews once via /code-review, fixes what that review proved broken, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /open-pr, per the machine's commit policy. Use for /commit, "commit this", "commit and push", or landing finished work.
 ---
 
 # Commit
 
 Two deterministic steps own everything that touches git. You own the review step, the
-commit message, and the recovery procedures. Never stage, commit, push, or merge by hand
-outside [recovery](subskills/recovery.md).
+commit message, and the recovery procedures. Stage, commit, push, or merge by hand only
+within [recovery](subskills/recovery.md).
 
 ```
 node "$HOME/.claude/skills/commit/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]
@@ -34,8 +34,8 @@ a branch named for the work item, switch to it, and proceed.
 `origin/<mainline>` with the verb the warning names before Step 2, then re-run preflight.
 Merge only for `afterCommit: pull-request` with an upstream, since rebasing a pushed
 branch needs a force-push; a landing that passes `--promote` rebases, because
-promotion's rebase drops a merge commit. Set uncommitted work aside in a WIP commit, never
-the stash, which is shared across worktrees and sessions; the `Bash(git *stash)` deny rule
+promotion's rebase drops a merge commit. Set uncommitted work aside only in a WIP commit;
+the stash is shared across worktrees and sessions; the `Bash(git *stash)` deny rule
 matches any command ending in `stash`. On a dirty tree, first `git add -A` and
 `git commit -m "WIP set-aside"`, then:
 
@@ -44,7 +44,7 @@ matches any command ending in `stash`. On a dirty tree, first `git add -A` and
 - merge: `git switch --detach HEAD~1`,
   `git merge -m "Merge <mainline> into <branch>" origin/<mainline>`,
   `git cherry-pick --no-commit <branch>`, `git switch -C <branch>`; the branch holds the
-  WIP commit, so the merge never contains it
+  WIP commit, so the merge excludes it
 
 On a conflict, resolve by step 2 of [Conflict resolution](subskills/recovery.md#conflict-resolution), `git add` each resolved file, then
 `git rebase --continue`, `git merge --continue`, or `git cherry-pick --quit`. No re-review,
@@ -55,88 +55,13 @@ An unresolved mainline warns; landing pushes the feature branch without promotio
 
 **No policy.** A missing `policy` field (the warning names the reason) means the machine
 profile has not been applied. `main` and `master` are still guarded, so `branchAllowed`
-still answers the branch question. Do not promote: run `land.ts` without `--promote` and
+still answers the branch question. Run `land.ts` without `--promote` and
 tell the carbon unit to run `~/.dotfiles/script/bootstrap --profile <name>` from the main checkout.
 
 ## Step 2: review
 
-One review is the gate. What the writer changes after it is checked by re-running each
-finding's proof and then the suite.
-
-**Skip the review** for a mechanical follow-up with passing tests: a pure rename, or a
-reviewer's suggestion applied verbatim. A review there costs minutes and finds nothing. Go
-straight to **Step 3: write the message**. Any logic change, however small, gets the review.
-
-**Step 0, once.** Run `ai-slop-cleaner` on preflight's `paths` as its file list, identifying `/commit` as the caller.
-
-**Then one review, one writer, and the commit.** A second sweep of the same diff finds a
-fresh batch of MEDIUM findings every time, so the review runs once and reports only what a
-lane proved: every finding carries a `Proof:`, a command with its output or quoted lines,
-and the writer re-runs that proof in place of a confirming review.
-
-1. Invoke `/code-review` with target `working`, the repo path, preflight's `paths`
-   as `--paths`, and one or two sentences of what changed and the goal
-   it serves. Always `working`, never `staged`: `land.ts` stages every tracked
-   modification in scope plus the scoped untracked files, so a `staged` review would
-   approve a subset of what gets committed.
-2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
-   - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
-     and report; a failed review is never a passed one.
-   - An `AMBIGUOUS` finding at MEDIUM or higher: stop and put it to the carbon unit with
-     both readings stated. Fix it makes it `ACTIONABLE`, with the answer written into its
-     body, and it joins the batch below; leave it makes it a `NIT`. Report lower severity
-     `AMBIGUOUS` findings without interrupting.
-   - `ACTIONABLE` at MEDIUM or higher: hand exactly those findings plus the changed-file
-     list to the `finding-fixer` agent in a single spawn, and state that `Scope:` is that
-     list, `Out of scope:` is pre-existing issues outside it, and `Definition of done:` is
-     its finding-fixer receipt. LOW findings and `NIT`s are listed in the commit report and
-     left alone.
-   - No `ACTIONABLE` finding at MEDIUM or higher: go to **Step 3: write the message**.
-3. Read the receipt, one line per finding, then run the test suite that covers the changed
-   files, since the writer's edits postdate the review:
-   - `FIXED`: the writer re-ran the finding's proof and the defect is gone. One line in the
-     commit report.
-   - `UNVERIFIED`: an edit whose proof the writer could not run. Run that proof yourself.
-     Gone makes it `FIXED`; still unrunnable puts the finding in the message's `Not-tested`
-     trailer, and `Confidence` stays below `high` while that trailer names one.
-   - `DECLINED`: the writer reports no edit. Run the finding's proof yourself. A proof that
-     shows no defect refutes the finding, which goes in the commit report; one that still
-     shows it leaves a live defect, named in the commit report.
-   - Snapshot the tree again the way `/code-review` pins a `working` target, then read
-     `git diff <pin> <new tree>`, with `<pin>` the tree `/code-review`'s summary reported.
-     That diff is everything the writer changed, and a hunk no `FIXED` or `UNVERIFIED` row
-     accounts for goes in the `Not-tested` trailer, since a declined finding can leave a
-     half-applied edit behind.
-   - A receipt that never arrives, does not parse, or omits a finding counts every finding
-     missing from it as `DECLINED`.
-   - A failing suite is yours to fix at the root cause before the commit. Re-run every
-     `FIXED` finding's proof after that edit, since it postdates them; the review is not
-     run again for it.
-   - A failing test is pre-existing only when an `origin/<mainline>` worktree on the
-     checkout's dependencies fails it with the same error. It never blocks and is never a
-     question to the carbon unit: name it in the message's `Constraint` trailer and land.
-
-A HIGH or CRITICAL finding left live or `UNVERIFIED` withholds promotion, never the commit:
-run `land.ts` without `--promote`, so the feature branch is pushed and mainline is
-untouched, and name each such finding in the commit message body, so the decision is
-visible in history rather than only in the chat report. Where `policy.afterCommit` is
-`promote`, say in the report that a later plain re-run with `--promote` carries the commit
-onto mainline once a carbon unit has looked at those findings; under any other policy
-**Step 4: land** already omits the flag and nothing is withheld.
-
-A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
-overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review
-summary, since those rows were never triaged.
-
-**A merge you resolve by hand invalidates the review of the branch it lands on.** A clean
-merge is not a safe merge: integration can change a helper in one file while the reviewed
-change adds its caller in another. Where [recovery](subskills/recovery.md) says **re-review**, it means
-steps 1 to 3 of this review, run fresh on the merged tree.
-
-One carve-out, and only one: merging `origin/<branch>` into the same local branch needs no
-re-review, because whatever is on the remote was reviewed by whoever landed it. Every other
-merge, a feature branch into an integration branch included, is a combination nothing has
-looked at.
+Read and follow [Review](subskills/review.md) before writing the message. It defines the
+mechanical-follow-up exemption, the review gate, finding recovery, and promotion holds.
 
 ## Step 3: write the message
 
@@ -163,7 +88,7 @@ must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested`
 included only when they apply, and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the whole trailer block only for a genuinely trivial change (a
 version bump with no logic change).
 
-## Step 3.5: disclosure check
+## Step 4: disclosure check
 
 Many work repos are public, and a push publishes the diff and message to everyone. Before
 landing, decide whether everything the landing would publish should reach the remote at
@@ -173,7 +98,7 @@ no upstream. An earlier held-back commit among them holds back this landing too.
 `remoteVisibility.visibility` of `public` or `unknown` as public; `private` and `internal`
 are not.
 
-On a public remote, these must not be pushed:
+Keep these off a public remote:
 
 - A fix for an exploitable vulnerability that has not been disclosed, its regression test,
   or a message describing the attack. The diff alone shows attackers what was open.
@@ -187,9 +112,9 @@ secret or customer detail out of the tree instead, then re-review; one that alre
 reached a remote needs rotating, not just deleting.
 
 Everything else lands normally. On a public remote, still write the message as public
-text: name the defect class, never the exploit steps or the customer.
+text: name the defect class; keep exploit steps and customer identities out.
 
-## Step 4: land
+## Step 5: land
 
 Pipe the message into `land.ts` with a quoted heredoc, so nothing in the message is
 expanded by the shell:
@@ -216,11 +141,16 @@ Flags:
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
   mainline, and pushing mainline. Omit it when the
-  disclosure check held the change back, when the user asked for commit-only ("commit
-  only", "don't merge"), when `policy.afterCommit` is `pull-request`, or when there is no
+  disclosure check held the change back, when the carbon unit asked for commit-only
+  (`commit only`, `don't merge`), when `policy.afterCommit` is `pull-request`, or when there is no
   policy.
-- `--no-push`: only when the user asks for local-only work or the disclosure check held
+- `--no-push`: only when the carbon unit asks for local-only work or the disclosure check held
   the change back.
+
+## Scripts
+
+- `preflight.ts`: run first to resolve policy, freshness, branch eligibility, and scoped paths.
+- `land.ts`: run after review, message, and disclosure checks to stage, commit, push, and optionally promote.
 
 ## Outcomes
 
@@ -248,16 +178,16 @@ failures.
 | `OPERATION_IN_PROGRESS` | 12 | [Recovery](subskills/recovery.md#operation_in_progress) |
 
 `pushed: false` after successful mainline promotion is normal. Report safety-push failures
-from `warnings`; they do not change the outcome.
+from `warnings`; the outcome stays unchanged.
 
 ## After the commit
 
 Read `policy.afterCommit`:
 
-- `promote`: promotion already ran inside `land.ts`. Never merge branches
-  yourself (sole exception: [recovery](subskills/recovery.md)), even when asked to "just merge it
-  quickly"; re-run `land.ts` instead.
-- `pull-request`: never merge the feature branch anywhere. When the disclosure check held
+- `promote`: promotion already ran inside `land.ts`. Merge branches yourself only in
+  [recovery](subskills/recovery.md); even when asked to "just merge it quickly",
+  re-run `land.ts`.
+- `pull-request`: keep the feature branch unmerged everywhere. When the disclosure check held
   the change back, stop after reporting; a public pull request discloses it too. Otherwise
   offer to open a pull request against the repository's mainline with `/open-pr`. If the
   carbon unit declines, stop after reporting. `/pr-review` reviews a pull request only when asked for by name.

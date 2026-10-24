@@ -1,13 +1,13 @@
 ---
 name: pr-review
-description: Review a GitHub pull request and optionally post the result to it. Resolves the PR to a base and head SHA without touching the working tree, runs one code-review pass over that range, then asks before posting one batched review of inline comments. Never fixes anything, never loops, never pushes. Use when asked to review a PR, review somebody's changes, or leave review comments on GitHub.
+description: Reviews a GitHub pull request and optionally posts the result to it. Resolves the PR to a base and head SHA without touching the working tree, runs one code-review pass over that range, then asks before posting one batched review of inline comments. Fixes nothing, runs one pass, and pushes nothing. Use when asked to review a PR, review somebody's changes, or leave review comments on GitHub.
 ---
 
 # PR Review
 
-The pull request entry point of the review ladder. It reviews somebody's work and leaves a record; it never changes the work.
+The pull request entry point of the review ladder. It reviews somebody's work and leaves a record; it leaves the work intact.
 
-## When to use
+## Input
 
 - Reviewing another carbon unit's pull request, which is the case this exists for
 - Leaving an audit record on a pull request the local flow already opened, when asked
@@ -22,7 +22,7 @@ Accept a PR number, a PR URL, or nothing (meaning the PR for the current branch)
 gh pr view <pr-or-blank> --json number,url,title,body,baseRefName,headRefName,headRefOid,author,isDraft
 ```
 
-Fetch the refs so the lanes can run git locally, without checking anything out. Never `gh pr checkout`: it mutates the working tree, and the tree may belong to work in progress that is not yours.
+Fetch the refs so the lanes can run git locally, keeping the working tree intact rather than running `gh pr checkout`: checkout mutates the working tree, and the tree may belong to work in progress that is not yours.
 
 ```
 git fetch origin "pull/<number>/head:refs/remotes/pr/<number>"
@@ -33,7 +33,7 @@ HEAD_SHA=<headRefOid>
 
 `merge-base` and not the base branch tip: diffing against the tip includes every commit that landed on the base since the PR forked, and those are not this PR's changes to review.
 
-No PR found: say so and stop. Do not silently fall back to reviewing the working tree; that reviews a different thing than the carbon unit asked about.
+No PR found: say so and stop, keeping the working tree outside the review; it is a different thing than the carbon unit asked about.
 
 ## Step 2: Review
 
@@ -53,7 +53,7 @@ Posting is outward-facing, attributed, and hard to retract. Ask every run, inclu
 
 Show the verdict and the finding counts by severity first, so the answer is informed. Declined: the terminal report from Step 5 is the whole output.
 
-Never post on a draft PR without saying it is a draft and asking anyway.
+For a draft PR, say it is a draft and ask before posting.
 
 ## Step 4: Post the review
 
@@ -75,11 +75,11 @@ JSON
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --method POST --input <body.json>
 ```
 
-`side` is copied straight from the finding's own `side` field, never inferred here: by the time a finding reaches this step the diff is no longer in hand, and guessing puts a comment about deleted code onto whatever unrelated line now occupies that number. A finding with no `side` is `RIGHT`. A finding whose `line` is `general` has no anchor at all and goes in the review `body`.
+`side` is copied only from the finding's own `side` field: by the time a finding reaches this step the diff is no longer in hand, and guessing puts a comment about deleted code onto whatever unrelated line now occupies that number. A finding with no `side` is `RIGHT`. A finding whose `line` is `general` has no anchor at all and goes in the review `body`.
 
-Build that JSON with a script (`jq`, or `json.dumps` over the finding list), never by hand-splicing finding text into the template. Bodies contain quotes, backticks, and newlines, and a hand-built body produces invalid JSON or a mangled comment.
+Build that JSON only with a script (`jq`, or `json.dumps` over the finding list), keeping finding text out of hand-spliced templates. Bodies contain quotes, backticks, and newlines, and a hand-built body produces invalid JSON or a mangled comment.
 
-`event` stays `COMMENT`. Never `APPROVE` or `REQUEST_CHANGES`: those are the carbon unit's call to make under their own name, and an automated pass must not spend a human's review approval.
+`event` stays `COMMENT`, reserving `APPROVE` and `REQUEST_CHANGES` for the carbon unit under their own name; an automated pass leaves their review approval unspent.
 
 Failure of the batched call falls back to `gh api repos/{owner}/{repo}/pulls/{number}/comments` per anchored finding, plus one `reviews` call with the review body and no `comments` when there are `line: general` findings (the `comments` endpoint needs a path and line, so they would otherwise be lost), and the report says the fallback was used.
 
@@ -114,7 +114,7 @@ Posted: <yes, N inline + M in review body | no, declined> (fallback used, when i
 (most severe first; convergent findings marked)
 ```
 
-## Never
+## Boundaries
 
 - No file edits, no writer, no fix loop. Reviewing somebody's work does not include doing it
 - No `git` writes beyond `fetch`, and no checkout

@@ -118,6 +118,7 @@ test("instruction caps block growth at repo roots but permit shrinking and neste
 test("review-ladder writes cannot grow across runtime, alias, and worktree paths", () => {
   const ladderSuffixes = [
     "skills/commit/SKILL.md",
+    "skills/commit/subskills/review.md",
     "skills/code-review/SKILL.md",
     "skills/qa-swarm/SKILL.md",
     "agents/finding-fixer.md",

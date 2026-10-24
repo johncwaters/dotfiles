@@ -1,29 +1,31 @@
 ---
 name: code-review
-description: Internal review engine. Pins a diff to an immutable object, calls qa-swarm to find defects, gives every finding one disposition, and returns a verdict plus a dispositioned findings block. Strictly read-only, so it never edits a file, never touches git history, never posts anywhere, and never re-runs itself. Invoked by /commit and /pr-review, never as a direct entry point.
+description: Reviews diffs as the internal engine. Pins an immutable object, calls qa-swarm, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only with no edits, git history changes, posts, or repeat passes. Use when /commit or /pr-review invokes the engine; direct requests route through those entry points.
 ---
 
 # Code Review
 
 One pass. Pin, find, triage, judge, return. A change gets this pass once, so it reports what a lane proved broken and nothing a lane only suspected.
 
-## Contract with the caller
+## Input
 
 **Required input.** A target, in one of three forms: `staged`, `working` (a local tree), or a base and head ref (a branch or a pull request); the changed-file set as `-- <paths>`; and 2 to 4 sentences of context that the diff does not carry. If the caller omits paths, derive the set with `git diff --name-only` from the target diff and state the derived set in the output.
 
+## Output
+
 **Guaranteed output.** A `VERDICT` line, an `ACTIONABLE` line, a `TRUNCATED` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
 
-**Never.** No file edits. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/pr-review`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up a fresh batch of MEDIUM findings every time and the loop never converges.
+**Boundaries.** No file edits. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/pr-review`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up a fresh batch of MEDIUM findings every time and the loop cannot converge.
 
 **Not a direct entry point.** Asked to review something conversationally, route it: local work goes through `/commit`, a pull request goes through `/pr-review`. Both call this skill with a proper target.
 
 ## Step 1: Pin the target
 
-Pin to an immutable object, never a live tree. `qa-swarm` runs lanes concurrently for minutes, and `git diff --cached` re-reads the index on every call, so an edit or a `git add` mid-review silently hands later lanes a different diff.
+Pin only to an immutable object. `qa-swarm` runs lanes concurrently for minutes, and `git diff --cached` re-reads the index on every call, so an edit or a `git add` mid-review silently hands later lanes a different diff.
 
 - **staged**: `TREE=$(git write-tree)`, then `REVIEW_CMD="git diff HEAD $TREE"`. `write-tree` freezes the current index as a tree object without touching the index, the refs, or the stash stack
 
-- **working**: snapshot through a throwaway index so the live one is never mutated. Never `git add -A` against the real index to set up a review; that stages whatever the carbon unit deliberately left unstaged, and the next commit quietly carries it
+- **working**: snapshot through a throwaway index, keeping the live index intact. Use `git add -A` only against the throwaway index; using the real index stages what the carbon unit left unstaged, and the next commit quietly carries it
 
 ```
 REVIEW_INDEX=$(mktemp)
@@ -44,31 +46,31 @@ Record the changed-file set, file count, changed-line count, and touched subsyst
 
 Invoke `/qa-swarm` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and the profile-derived `codexAllowed` flag.
 
-Do not spawn a reviewer agent directly from here. All finding goes through `qa-swarm`, so there is exactly one place that knows which lanes exist and when they trigger.
+Route all finding through `qa-swarm` rather than spawning a reviewer agent directly, so there is exactly one place that knows which lanes exist and when they trigger.
 
-`qa-swarm` reporting a blocking lane death is a failed review. Return `VERDICT: FAILED` with whatever findings did arrive and a summary naming the dead lane. Never fall through to APPROVE on a dead lane, and never omit the `VERDICT` line: a caller parsing for it would hang or guess.
+`qa-swarm` reporting a blocking lane death is a failed review. Return `VERDICT: FAILED` with whatever findings did arrive and a summary naming the dead lane. Return FAILED rather than APPROVE on a dead lane, and always include the `VERDICT` line: a caller parsing for it would hang or guess.
 
 ## Step 3: Triage
 
 Every finding leaves this step with exactly one disposition. A finding with none is a bug in the run, not an acceptable outcome.
 
-Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. The scope hook's PostToolUse note on each lane result names both kinds mechanically, as `outside the current diff` and `lines the diff did not change`; a finding it names survives only when its body attributes the defect to a changed line. That note is authoritative only for a `working` target, where the hook's HEAD-versus-tree diff is the pinned diff. A `staged` target pins `git write-tree` of the index while the hook keeps diffing the live tree, so an unstaged edit above a staged defect shifts its line and the note calls a correct finding unchanged; a branch or pull request target describes the wrong tree outright, and a clean checkout leaves the note naming every finding file. Ignore it entirely for both and apply the prose rule above on its own. Mention all such removals in at most one sentence in `OVERALL_SUMMARY`, never in `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then keep at most 10 findings per lane, highest severity first, and set the `TRUNCATED` line of the return to the union of the lanes `qa-swarm`'s `truncated lanes:` phrase names and the lanes this cap dropped findings from, so the caller can tell a swept diff from a capped one. The union is what makes the line true: every agent lane caps itself at 10 before its findings reach here, so this cap firing on those lanes is the rare case, and reading `TRUNCATED` off it alone reports `none` for the swarm's own overflow.
+Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. The scope hook's PostToolUse note on each lane result names both kinds mechanically, as `outside the current diff` and `lines the diff did not change`; a finding it names survives only when its body attributes the defect to a changed line. That note is authoritative only for a `working` target, where the hook's HEAD-versus-tree diff is the pinned diff. A `staged` target pins `git write-tree` of the index while the hook keeps diffing the live tree, so an unstaged edit above a staged defect shifts its line and the note calls a correct finding unchanged; a branch or pull request target describes the wrong tree outright, and a clean checkout leaves the note naming every finding file. Ignore it entirely for both and apply the prose rule above on its own. Mention all such removals only in `OVERALL_SUMMARY`, in at most one sentence, excluding them from `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then keep at most 10 findings per lane, highest severity first, and set the `TRUNCATED` line of the return to the union of the lanes `qa-swarm`'s `truncated lanes:` phrase names and the lanes this cap dropped findings from, so the caller can tell a swept diff from a capped one. The union is what makes the line true: every agent lane caps itself at 10 before its findings reach here, so this cap firing on those lanes is the rare case, and reading `TRUNCATED` off it alone reports `none` for the swarm's own overflow.
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
 | `ACTIONABLE` | The body's `Proof:` is one the writer can run again (a command with the output it produced, or quoted lines with file:line), it shows the defect on a path the change's own callers, tests, or documented commands reach, and the fix is bounded | Hands it to a writer, who re-runs that proof before and after the edit. The only disposition a writer ever sees |
-| `NIT` | Style, preference, a duplicate of another finding, plainly out of the change's scope, or a `Proof:` that is a scenario rather than a run or a quote | Records it. Never fixed, never blocks |
+| `NIT` | Style, preference, a duplicate of another finding, plainly out of the change's scope, or a `Proof:` that is a scenario rather than a run or a quote | Records it; leaves it unfixed and nonblocking |
 | `AMBIGUOUS` | Contested between lanes, cross-cutting enough that the fix is a design decision, or the intent behind the code is unclear | Stops and asks the carbon unit, with both readings stated |
 
 Rules that decide the hard cases:
 
-- `qa-swarm` drops every row without a `Proof:` label, so the label's presence is settled before triage and its content is what triage reads. A proof that narrates what a caller could do, with no command output and no quoted lines, is a `NIT` below HIGH and `AMBIGUOUS` at HIGH or CRITICAL: the writer has nothing to re-run, and through 2026-10-12 triage was passing nearly every finding as `ACTIONABLE` while few bodies showed anything had been run.
-- A finding whose `body` carries `Confidence: low` is never `ACTIONABLE`. Only a `contested:` merge carries it now. It is `AMBIGUOUS` if it would block, `NIT` if it would not.
-- A `convergent:` finding is `ACTIONABLE` if its fix is bounded and one of its parts carries a re-runnable proof. Agreement between lanes confirms a proof and never stands in for one.
-- A CRITICAL or HIGH finding is never `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
-- Lanes no longer report LOW. A LOW finding that survives as a straggler is recorded as `NIT`, never `ACTIONABLE`. A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
+- `qa-swarm` drops every row without a `Proof:` label, so the label's presence is settled before triage and its content is what triage reads. A proof that narrates what a caller could do, with no command output and no quoted lines, is a `NIT` below HIGH and `AMBIGUOUS` at HIGH or CRITICAL: the writer needs a run or quote to recheck the defect.
+- A finding whose `body` carries `Confidence: low` is ineligible for `ACTIONABLE`. Only a `contested:` merge carries it now. It is `AMBIGUOUS` if it would block, `NIT` if it would not.
+- A `convergent:` finding is `ACTIONABLE` if its fix is bounded and one of its parts carries a re-runnable proof. Agreement between lanes confirms a proof; it requires one.
+- A CRITICAL or HIGH finding is ineligible for `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
+- Lanes no longer report LOW. A LOW finding that survives as a straggler is recorded only as `NIT`. A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
 - A finding tagged `necessity/dead` or `necessity/redundant-test` at MEDIUM whose body carries the mechanical evidence its category demands — the zero-hit grep naming both the pattern and the paths searched, plus the statement that the goal mandates no such artifact and that no convention or glob loader picks it up unnamed, or the existing test named by file and test name with its assertion quoted and the input or branch that assertion runs on named — is `ACTIONABLE`. The cut is obvious, the writer can re-run that evidence before deleting anything, and stopping to ask the carbon unit about a symbol nothing calls or a test that duplicates one already passing is noise. One whose body carries no such evidence has not earned its tag and is treated as `necessity/unasked` under the bullet below.
-- A finding tagged `necessity`, `necessity/unasked`, or any necessity category other than the two above, at MEDIUM is always `AMBIGUOUS`, never `ACTIONABLE`. It asks for a deletion nothing afterwards can verify, and whether the work was wanted is the carbon unit's call.
+- A finding tagged `necessity`, `necessity/unasked`, or any necessity category other than the two above, at MEDIUM is always `AMBIGUOUS`. It asks for a deletion nothing afterwards can verify, and whether the work was wanted is the carbon unit's call.
 - A finding tagged `code/scale`, or carrying a `convergent:` tag that names it, whose fix is a local rewrite inside the changed-file set — a keyed lookup, a single pass, a memo, or hoisting a query out of a loop — is `ACTIONABLE` at MEDIUM and above. One whose fix needs a schema, index, pagination contract, or data-model change is a design decision and is `AMBIGUOUS` at MEDIUM and above, with both readings stated.
 
 ## Step 4: Verdict
@@ -84,7 +86,7 @@ The tier is the highest severity still standing after triage and dedup:
 
 Highest-severity-wins rather than a count-weighted score, because CRITICAL and HIGH block outright; a scheme where two HIGH findings block and one does not would contradict that. Counts go in the summary, where they inform without moving the gate.
 
-A fifth value, `FAILED`, means the review could not be completed: `qa-swarm` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code and never means APPROVE. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
+A fifth value, `FAILED`, means the review could not be completed: `qa-swarm` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code; it means only an incomplete review. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
 
 State the verdict and the count of surviving `ACTIONABLE` findings at MEDIUM or higher on separate lines in the summary.
 
