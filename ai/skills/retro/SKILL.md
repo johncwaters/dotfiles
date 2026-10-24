@@ -1,11 +1,11 @@
 ---
 name: retro
-description: Reviews finished coding sessions for agent-setup friction and proposes at most five enforceable AI-config fixes, with carbon-unit picks landed through /commit. Runs headless for factory reports. Use for /retro, "retro this session", "what went wrong this session", "review my last sessions", or a SessionStart unreviewed-session reminder. Code-diff reviews belong to /commit or /pr-review; sprint retro posts belong to sprint-update.
+description: Reviews finished coding sessions for agent-setup friction and proposes at most five enforceable AI-config fixes, with carbon-unit picks landed through /commit. Use for /retro, "retro this session", "what went wrong this session", "review my last sessions", or a SessionStart unreviewed-session reminder. Code-diff reviews belong to /commit or /pr-review; sprint retro posts belong to sprint-update.
 ---
 
 # Retro
 
-Turn a session's friction into a change the setup enforces, or into nothing. Review corrections, interrupts, hook and permission denials, repeated failures, review rework, reverts, compactions, and costly subagents. Fixes take the form of a hook, test, skill edit, AGENTS.md line, or retirement; headless factory mode writes a report without edits.
+Turn a session's friction into a change the setup enforces, or into nothing. Review corrections, interrupts, hook and permission denials, repeated failures, review rework, reverts, compactions, and costly subagents. Fixes take the form of a hook, test, skill edit, AGENTS.md line, or retirement.
 
 Most sessions teach nothing durable, and saying so is a good outcome. A lesson earns a change only when it recurs or when the carbon unit corrected the agent outright; everything else waits in the ledger for a second sighting.
 
@@ -15,7 +15,6 @@ Most sessions teach nothing durable, and saying so is a good outcome. A lesson e
 /retro                           the newest transcript for this checkout
 /retro <session-id>              one session (a SessionStart reminder names it)
 /retro --since <YYYY-MM-DD>      every session since that date
-/retro --headless --report <path> <session-id>...   factory mode: no edits, no questions
 ```
 
 Scripts live beside this file:
@@ -24,7 +23,7 @@ Scripts live beside this file:
 node ~/.claude/skills/retro/digest.ts <session-id|transcript.jsonl> [--no-git]
 node ~/.claude/skills/retro/digest.ts --since <YYYY-MM-DD> [--no-git]
 node ~/.claude/skills/retro/ledger.ts show [--repo <abs path>]
-node ~/.claude/skills/retro/ledger.ts record-run <run.json> --origin focus|headless
+node ~/.claude/skills/retro/ledger.ts record-run <run.json>
 node ~/.claude/skills/retro/ledger.ts set-status <proposal-id> applied|declined
 node ~/.claude/skills/retro/validate-report.ts <report.json>
 ```
@@ -35,7 +34,7 @@ Write every intermediate file only to the scratchpad directory, keeping repos fr
 
 1. Resolve the session. With no argument, the newest `*.jsonl` directly under `~/.claude/projects/<cwd with every / and . replaced by ->/` is this session. Repo key for the ledger: the parent of `git rev-parse --path-format=absolute --git-common-dir`.
 2. Run `digest.ts` into a scratch file. Use only the digest as the transcript view in context. Open a transcript line only to settle an ambiguous incident, by line number, with `sed -n '<line>p' <path> | cut -c1-2000`.
-3. Zero incidents, zero `prompts`, and zero `specPaths`: record the session as reviewed with an empty run (`report.outcome` `nothing-durable`), tell the carbon unit there is nothing to review, and stop. Headless mode still writes the report.
+3. Zero incidents, zero `prompts`, and zero `specPaths`: record the session as reviewed with an empty run (`report.outcome` `nothing-durable`), tell the carbon unit there is nothing to review, and stop.
 
 ## Step 2: Judge in a fresh context
 
@@ -61,13 +60,11 @@ Run `validate-report.ts` on the result; on errors, send the errors back to the s
 
 ## Step 3: Record
 
-`ledger.ts record-run <run.json> --origin focus` (or `headless`). This replaces any earlier sightings for these sessions, so each sighting counts once across reruns, and marks the sessions reviewed so the SessionStart reminder drops them.
-
-Headless mode ends here: copy `run.report` to the `--report` path and exit. It edits nothing else and asks nothing.
+`ledger.ts record-run <run.json>`. This replaces any earlier sightings for these sessions, so each sighting counts once across reruns, and marks the sessions reviewed so the SessionStart reminder drops them.
 
 ## Step 4: Pick
 
-Show the proposals from this run plus every pending one from `ledger.ts show` (headless runs leave theirs pending for this step): number, `changeKind`, `target`, summary, and the incidents behind it as `session:line`. List `reported` items separately as things to file elsewhere.
+Show the proposals from this run plus every pending one from `ledger.ts show`: number, `changeKind`, `target`, summary, and the incidents behind it as `session:line`. List `reported` items separately as things to file elsewhere.
 
 Ask with AskUserQuestion, `multiSelect: true`, one option per proposal, offering at most sixteen per round: this run's first, then the newest pending. The tool takes at most four questions of two to four options each, so spread the offered proposals until no question holds a single option, and ask a lone proposal as an apply or decline pair. An offered proposal left unpicked is `declined` with `set-status`; say so, since a declined lesson can resurface only through new sightings. A proposal not offered stays `pending` for the next round; say how many.
 

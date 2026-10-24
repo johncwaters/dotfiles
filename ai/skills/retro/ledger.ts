@@ -8,26 +8,21 @@ import { validateRetroRun } from "./lib/report.ts";
 import type { ProposalEntry } from "./lib/ledger.ts";
 import type { RetroRun } from "./lib/report.ts";
 
-type Arguments = { command: string; positional: string[]; ledger: string; repo?: string; origin?: "focus" | "headless" };
+type Arguments = { command: string; positional: string[]; ledger: string; repo?: string };
 function parseArguments(argumentsList: string[]): Arguments {
   const options: Arguments = { command: "", positional: [], ledger: retroLedgerPath() };
   const seenOptions = new Set<string>();
   for (let index = 0; index < argumentsList.length; index += 1) {
     const argument = argumentsList[index] ?? "";
     if (argument.startsWith("--")) {
-      if (!["--ledger", "--repo", "--origin"].includes(argument) || seenOptions.has(argument)) throw new Error(`Unexpected option: ${argument}`);
+      if (!["--ledger", "--repo"].includes(argument) || seenOptions.has(argument)) throw new Error(`Unexpected option: ${argument}`);
       seenOptions.add(argument);
       const value = argumentsList[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`Missing value for ${argument}`);
       index += 1;
-      if (argument === "--ledger" || argument === "--repo") {
-        if (!isAbsolute(value)) throw new Error(`${argument}: must be an absolute path`);
-        if (argument === "--ledger") options.ledger = value;
-        if (argument === "--repo") options.repo = value;
-        continue;
-      }
-      if (value !== "focus" && value !== "headless") throw new Error("--origin: must be focus or headless");
-      options.origin = value;
+      if (!isAbsolute(value)) throw new Error(`${argument}: must be an absolute path`);
+      if (argument === "--ledger") options.ledger = value;
+      if (argument === "--repo") options.repo = value;
       continue;
     }
     if (argument.startsWith("-")) throw new Error(`Unexpected option: ${argument}`);
@@ -39,9 +34,8 @@ function parseArguments(argumentsList: string[]): Arguments {
   }
   if (!["show", "record-run", "set-status"].includes(options.command)) throw new Error("Supply show, record-run, or set-status");
   if (options.repo && options.command !== "show") throw new Error("--repo: only valid with show");
-  if (options.origin && options.command !== "record-run") throw new Error("--origin: only valid with record-run");
   if (options.command === "show" && options.positional.length !== 0) throw new Error("show: accepts no positional arguments");
-  if (options.command === "record-run" && (options.positional.length !== 1 || !options.origin)) throw new Error("record-run: supply one run JSON file and --origin focus|headless");
+  if (options.command === "record-run" && options.positional.length !== 1) throw new Error("record-run: supply one run JSON file");
   if (options.command === "set-status" && (options.positional.length !== 2 || !["applied", "declined"].includes(options.positional[1] ?? ""))) throw new Error("set-status: supply a proposal id and applied|declined");
   return options;
 }
@@ -91,7 +85,7 @@ function recordRun(run: RetroRun, options: Arguments): void {
     v: 1, kind: "proposal", at, id: proposal.id, lessonKey: proposal.lessonKey,
     sessionIds: [...new Set(proposal.incidents.map((incident) => incident.sessionId))],
     target: proposal.target, changeKind: proposal.changeKind, summary: proposal.summary,
-    origin: options.origin as "focus" | "headless", status: "pending",
+    origin: "focus", status: "pending",
   }));
   if (!recordProposals(proposals, options.ledger)) {
     fail(["proposals: could not append ledger proposals"]);

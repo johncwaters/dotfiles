@@ -80,7 +80,7 @@ test("record-run and show persist pending proposals and reviewed sessions withou
   const runPath = join(directory, "run.json");
   writeFileSync(runPath, JSON.stringify(run));
   for (let index = 0; index < 2; index += 1) {
-    const recordProcess = runCli("ledger.ts", ["record-run", runPath, "--origin", "focus", "--ledger", process.env.RETRO_LEDGER as string]);
+    const recordProcess = runCli("ledger.ts", ["record-run", runPath, "--ledger", process.env.RETRO_LEDGER as string]);
     equal(recordProcess.status, 0, recordProcess.stdout + recordProcess.stderr);
     equal(JSON.parse(recordProcess.stdout).recorded.proposals, index === 0 ? 1 : 0);
     const showProcess = runCli("ledger.ts", ["show", "--repo", "/repo"]);

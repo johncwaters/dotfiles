@@ -16,7 +16,7 @@ export const CHANGE_KINDS = ["hook", "test", "skill-edit", "agents-line", "retir
 export type ProposalEntry = {
   v: 1; kind: "proposal"; at: string; id: string; lessonKey: string; sessionIds: string[];
   target: string; changeKind: (typeof CHANGE_KINDS)[number];
-  summary: string; origin: "focus" | "headless"; status: "pending" | "applied" | "declined";
+  summary: string; origin: "focus"; status: "pending" | "applied" | "declined";
 };
 type RetroEntry = SessionEntry | SightingEntry | ProposalEntry;
 type RetroLedger = { sessions: SessionEntry[]; sightings: SightingEntry[]; proposals: ProposalEntry[] };
@@ -67,7 +67,7 @@ export function isProposalEntry(value: unknown): value is ProposalEntry {
   if (!hasEntryFields(value, "proposal", ["id", "lessonKey", "sessionIds", "target", "changeKind", "summary", "origin", "status"])) return false;
   return isText(value.id) && isLessonKey(value.lessonKey) && isStringList(value.sessionIds) && value.sessionIds.length > 0
     && isText(value.target) && isChangeKind(value.changeKind)
-    && isSummary(value.summary) && typeof value.origin === "string" && ["focus", "headless"].includes(value.origin)
+    && isSummary(value.summary) && value.origin === "focus"
     && typeof value.status === "string" && ["pending", "applied", "declined"].includes(value.status);
 }
 export function retroLedgerPath(): string {
