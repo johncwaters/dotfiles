@@ -189,7 +189,9 @@ h1 span,h2 span{display:block;white-space:pre}
 figure{margin:18px 0 28px}
 .scroll{overflow-x:auto;max-width:100%}
 .graph{display:block;width:100%;height:auto}
-.scroll.is-actual-size .graph{width:${width}px;max-width:none}
+#graph-view{overflow:auto;max-height:88vh;cursor:grab}
+#graph-view.is-panning{cursor:grabbing;user-select:none}
+#graph-view .graph{max-width:none}
 .view{display:flex;gap:16px;margin:0 0 10px;padding:0;list-style:none}
 .view button,.share button,.legend button,.reader button,.open-node{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 .share button:disabled{opacity:.6;cursor:progress}
@@ -224,7 +226,7 @@ ${heading('link kinds')}
 <p class="share"><button type="button" id="share-image">[share image]</button> <span id="share-status" role="status"></span></p>
 <div class="workspace" id="workspace">
 <figure>
-<ul class="view"><li><button type="button" data-view="fit" aria-pressed="true">[fit width]</button></li><li><button type="button" data-view="actual" aria-pressed="false">[actual size]</button></li></ul>
+<ul class="view"><li><button type="button" id="zoom-fit" aria-pressed="true">[fit]</button></li><li><button type="button" id="zoom-out">[zoom out]</button></li><li><button type="button" id="zoom-in">[zoom in]</button></li><li><span id="zoom-status" role="status">fit</span> <span class="tag">ctrl+wheel or pinch to zoom, drag to pan</span></li></ul>
 <div class="scroll" id="graph-view" tabindex="0" role="region" aria-label="Scrollable skill tree">
 <svg class="graph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${summary}">
 ${arrowMarkers}
@@ -256,13 +258,81 @@ ${profileRows}
 </main>
 <script>
 const graphView = document.getElementById('graph-view');
-for (const viewButton of document.querySelectorAll('.view button')) {
-  viewButton.addEventListener('click', () => {
-    graphView.classList.toggle('is-actual-size', viewButton.dataset.view === 'actual');
-    for (const otherButton of document.querySelectorAll('.view button')) otherButton.setAttribute('aria-pressed', String(otherButton === viewButton));
-  });
-}
 const graphSvg = document.querySelector('svg.graph');
+const zoomFitControl = document.getElementById('zoom-fit');
+const zoomStatus = document.getElementById('zoom-status');
+const graphWidth = ${width};
+const maxGraphScale = 4;
+const zoomStep = 1.25;
+let graphScale = 1;
+let isFitted = true;
+
+function fitScale() {
+  return Math.min(graphView.clientWidth / graphWidth, (window.innerHeight * 0.88) / ${height});
+}
+
+function setGraphScale(nextScale, anchorX = graphView.clientWidth / 2, anchorY = graphView.clientHeight / 2) {
+  const minGraphScale = fitScale();
+  const clampedScale = Math.min(maxGraphScale, Math.max(minGraphScale, nextScale));
+  const contentX = (graphView.scrollLeft + anchorX) / graphScale;
+  const contentY = (graphView.scrollTop + anchorY) / graphScale;
+  graphScale = clampedScale;
+  graphSvg.style.width = graphWidth * graphScale + 'px';
+  graphView.scrollLeft = contentX * graphScale - anchorX;
+  graphView.scrollTop = contentY * graphScale - anchorY;
+  isFitted = clampedScale === minGraphScale;
+  zoomFitControl.setAttribute('aria-pressed', String(isFitted));
+  zoomStatus.textContent = isFitted ? 'fit' : Math.round(graphScale * 100) + '%';
+}
+
+zoomFitControl.addEventListener('click', () => setGraphScale(0));
+document.getElementById('zoom-out').addEventListener('click', () => setGraphScale(graphScale / zoomStep));
+document.getElementById('zoom-in').addEventListener('click', () => setGraphScale(graphScale * zoomStep));
+graphView.addEventListener('wheel', (wheelEvent) => {
+  if (!wheelEvent.ctrlKey) return;
+  wheelEvent.preventDefault();
+  const viewBounds = graphView.getBoundingClientRect();
+  setGraphScale(graphScale * Math.exp(-wheelEvent.deltaY * 0.002), wheelEvent.clientX - viewBounds.left, wheelEvent.clientY - viewBounds.top);
+}, { passive: false });
+new ResizeObserver(() => {
+  setGraphScale(isFitted ? 0 : graphScale);
+}).observe(graphView);
+
+let dragStart;
+let didPan = false;
+graphView.addEventListener('pointerdown', (pointerEvent) => {
+  if (pointerEvent.button !== 0 || pointerEvent.pointerType === 'touch') return;
+  dragStart = { x: pointerEvent.clientX, y: pointerEvent.clientY, scrollLeft: graphView.scrollLeft, scrollTop: graphView.scrollTop };
+  didPan = false;
+});
+graphView.addEventListener('pointermove', (pointerEvent) => {
+  if (!dragStart) return;
+  if ((pointerEvent.buttons & 1) === 0) {
+    endDrag();
+    return;
+  }
+  const movedX = pointerEvent.clientX - dragStart.x;
+  const movedY = pointerEvent.clientY - dragStart.y;
+  if (!didPan && Math.hypot(movedX, movedY) < 5) return;
+  if (!didPan) {
+    didPan = true;
+    graphView.classList.add('is-panning');
+    graphView.setPointerCapture(pointerEvent.pointerId);
+  }
+  graphView.scrollLeft = dragStart.scrollLeft - movedX;
+  graphView.scrollTop = dragStart.scrollTop - movedY;
+});
+function endDrag() {
+  dragStart = undefined;
+  graphView.classList.remove('is-panning');
+}
+graphView.addEventListener('pointerup', endDrag);
+graphView.addEventListener('pointercancel', endDrag);
+graphView.addEventListener('click', (clickEvent) => {
+  if (!didPan) return;
+  didPan = false;
+  clickEvent.stopPropagation();
+}, true);
 for (const kindChip of document.querySelectorAll('.legend button')) {
   kindChip.addEventListener('click', () => {
     const isShown = kindChip.getAttribute('aria-pressed') !== 'true';
@@ -291,11 +361,19 @@ function showFile(filePath) {
   for (const fileTab of readerFiles.querySelectorAll('button')) fileTab.setAttribute('aria-pressed', String(fileTab.dataset.path === filePath));
 }
 
+function centerInGraphView(nodeBox) {
+  const boxBounds = nodeBox.getBoundingClientRect();
+  const viewBounds = graphView.getBoundingClientRect();
+  graphView.scrollLeft += boxBounds.left + boxBounds.width / 2 - (viewBounds.left + graphView.clientWidth / 2);
+  graphView.scrollTop += boxBounds.top + boxBounds.height / 2 - (viewBounds.top + graphView.clientHeight / 2);
+}
+
 function openReader(nodeId, opener) {
   const readableNode = readableNodeById[nodeId];
   readerOpener = opener;
   for (const selectedBox of graphSvg.querySelectorAll('.node.is-selected')) selectedBox.classList.remove('is-selected');
-  graphSvg.querySelector('.node[data-id="' + CSS.escape(nodeId) + '"]')?.classList.add('is-selected');
+  const selectedBox = graphSvg.querySelector('.node[data-id="' + CSS.escape(nodeId) + '"]');
+  selectedBox?.classList.add('is-selected');
   readerTitle.textContent = readableNode.name;
   const underline = document.createElement('span');
   underline.setAttribute('aria-hidden', 'true');
@@ -316,6 +394,7 @@ function openReader(nodeId, opener) {
   showFile(readableNode.files[0]);
   reader.hidden = false;
   workspace.classList.add('is-reading');
+  if (selectedBox && !isFitted) centerInGraphView(selectedBox);
   reader.scrollTop = 0;
   readerTitle.focus({ preventScroll: true });
 }
