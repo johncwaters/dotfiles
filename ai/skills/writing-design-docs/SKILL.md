@@ -1,6 +1,6 @@
 ---
 name: writing-design-docs
-description: Plans team documents through drafting, review, and shipping, including design docs, MVP specs, RFCs, proposals, and project status docs. Grounds answer-first writing in sources, history, code citations, measured rates, and real-volume costs, with independent review and respect for the author's concurrent edits. Use for "write a design doc", "MVP spec", "write up the plan for the team", "restructure this doc", "review this doc for gaps", or "make this doc shareable". Sentence-level prose style stays out of scope.
+description: Plans team documents through drafting, review, and shipping, including design docs, MVP specs, RFCs, proposals, and project status docs. Grounds answer-first writing in sources, history, code citations, measured rates, and real-volume costs, with independent review and respect for the author's concurrent edits. Use for "write a design doc", "MVP spec", "write up the plan for the team", "restructure this doc", "review this doc for gaps", or "make this doc shareable". Sentence-level style belongs to writing-in-voice.
 ---
 
 # Design docs
