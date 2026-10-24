@@ -20,9 +20,12 @@ Read each file under `subskills/` as you reach it.
 | Order | Subskill | Status it sets | The graph then holds |
 |-------|----------|----------------|----------------------|
 | 1 | `sketch.md` | `sketch` | one goal, and a branch per guess |
-| 2 | `grill.md` | `grilled` | zero branches |
-| 3 | `slice.md` | `sliced` | units with full contracts, every decision implemented or a constraint |
-| 4 | `challenge.md` | `challenged` | the challenge stamp |
+| 2 | `grill.md` | `grilled` at risk `low`, else none (stays `sketch`) | zero branches |
+| 3 | `design.md` | `grilled` | design nodes the carbon unit approved |
+| 4 | `slice.md` | `sliced` | vertical units with full contracts, every decision and design node implemented or a constraint |
+| 5 | `challenge.md` | `challenged` | the challenge stamp |
+
+Every question round runs through `subskills/ask.md`.
 
 An existing design spec resumes at the subskill after its status. A `challenged` one resumes in `grill.md` when the carbon unit brings the answer to an open question.
 
@@ -60,7 +63,7 @@ The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` fo
 
 ```
 node ~/.claude/skills/spec/validate.ts <spec.json>
-node ~/.claude/skills/spec/render.ts <spec.json> tree
+node ~/.claude/skills/spec/render.ts <spec.json> tree|design
 node ~/.claude/skills/spec/archive.ts <spec.json> built|abandoned
 node ~/.claude/skills/spec/report.ts
 ```
@@ -79,4 +82,4 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 
 ## Hand off
 
-Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision with a question round as `grill.md` steps 4 and 5 run it; a restored overturn follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once no `assumed` decision is left, cut and build without asking.
+Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision with a question round through `ask.md`; a restored overturn follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once no `assumed` decision is left, cut and build without asking.
