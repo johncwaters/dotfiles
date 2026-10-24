@@ -1,1 +1,16 @@
-{"hooks": {}}
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-else.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -24,13 +24,16 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 | `load-agents-md.mjs` | SessionStart and PostToolUse(Read) injection of AGENTS.md files a CLAUDE.md shadows (Claude Code 2.1.287 loads AGENTS.md only when no CLAUDE.md sits between it and the repo root) | `test/load-agents-md.test.mjs` |
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `retro-reminder.mjs` | SessionEnd incident count and nudge; SessionStart unreviewed-retro report | `test/retro-reminder.test.mjs` |
-| `block-comments.mjs`, `comment-scanner.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
+| `block-comments.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
+| `block-else.mjs`, `edit-judge.mjs` | PreToolUse else-growth guard; shared Write/Edit/MultiEdit growth judge | `test/block-else.test.mjs` |
+| `comment-scanner.mjs` | Shared comment and else scanners with string tracking | `test/block-comments.test.mjs`, `test/block-else.test.mjs` |
 | `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. Profile-only hooks and their evidence belong in
+to Glimmervoid sessions. `block-else.mjs` is wired the same way for Claude and in
+`ai/codex-hooks.base.json` for every Codex. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.
 `ai/test.sh` pins the installed paths; shared event wiring lives in `ai/settings.base.json`.

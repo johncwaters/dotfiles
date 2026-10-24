@@ -60,11 +60,22 @@ function countOccurrences(line, needle) {
   return line.split(needle).length - 1;
 }
 
-function stripQuotedSpans(line, preservedTokens) {
+function stripQuotedSpans(line, preservedTokens, state = {}, syntax = null) {
   let outsideQuotes = "";
-  let openDelimiter = null;
+  let openDelimiter = state.openDelimiter ?? null;
+  const quoteDelimiters = syntax?.stringTracker === makeTripleQuoteTracker
+    ? [...TRIPLE_QUOTES, '"', "'"]
+    : ['"', "'", "`"];
   let index = 0;
   while (index < line.length) {
+    if (state.isInsideBlock) {
+      const closeIndex = line.indexOf(syntax.blockClose, index);
+      if (closeIndex < 0) break;
+      state.isInsideBlock = false;
+      index = closeIndex + syntax.blockClose.length;
+      outsideQuotes += " ";
+      continue;
+    }
     const character = line[index];
     if (character === "\\") {
       index += 2;
@@ -84,18 +95,38 @@ function stripQuotedSpans(line, preservedTokens) {
         index += preserved.length;
         continue;
       }
-      if (character === openDelimiter) openDelimiter = null;
+      if (line.startsWith(openDelimiter, index)) {
+        index += openDelimiter.length;
+        openDelimiter = null;
+        continue;
+      }
       index++;
       continue;
     }
-    if (character === '"' || character === "'") {
-      openDelimiter = character;
-      index++;
+    if (syntax?.line && line.startsWith(syntax.line, index)) {
+      outsideQuotes += line.slice(index);
+      break;
+    }
+    if (syntax?.blockOpen && line.startsWith(syntax.blockOpen, index)) {
+      state.isInsideBlock = true;
+      index += syntax.blockOpen.length;
+      outsideQuotes += " ";
+      continue;
+    }
+    const openingQuote = (syntax ? quoteDelimiters : ['"', "'"])
+      .find((delimiter) => line.startsWith(delimiter, index));
+    if (openingQuote) {
+      openDelimiter = openingQuote;
+      index += openingQuote.length;
+      if (syntax) outsideQuotes += " ";
       continue;
     }
     outsideQuotes += character;
     index++;
   }
+  const isPlainQuote = openDelimiter === '"' || openDelimiter === "'";
+  const allowsMultilinePlainQuotes = syntax?.stringTracker === makeHeredocTracker;
+  state.openDelimiter = isPlainQuote && !allowsMultilinePlainQuotes ? null : openDelimiter;
   return outsideQuotes;
 }
 
@@ -306,4 +337,75 @@ function commentLinesOnlyInAfter(beforeLines, afterLines) {
   return addedLines;
 }
 
-export { commentLinesOnlyInAfter, scanCommentLines, syntaxFor };
+const STATEMENT_EXTENSIONS = new Set([
+  ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts",
+  ".java", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".go", ".rs",
+  ".swift", ".kt", ".kts", ".scala", ".dart", ".php", ".groovy",
+  ".py", ".sh", ".bash", ".zsh", ".rb", ".lua", ".pl", ".pm",
+]);
+
+function elseSyntaxFor(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (!STATEMENT_EXTENSIONS.has(extension)) return null;
+  return { ...syntaxFor(filePath), statementLanguage: extension };
+}
+
+function isExemptIndentedElse(code, language, openersByIndent) {
+  if (language !== ".py" && language !== ".rb") return false;
+  const indentation = /^\s*/.exec(code)[0].replaceAll("\t", "        ").length;
+  for (const depth of openersByIndent.keys()) {
+    if (depth > indentation) openersByIndent.delete(depth);
+  }
+  const opener = openersByIndent.get(indentation);
+  const trimmed = code.trim();
+  if (language === ".py") {
+    const isElse = /^else\s*:/.test(trimmed);
+    const opening = /^(?:async\s+)?(if|elif|for|while|try|except)\b/.exec(trimmed);
+    if (isElse) openersByIndent.delete(indentation);
+    if (opening) openersByIndent.set(indentation, opening[1]);
+    return isElse && ["for", "while", "try", "except"].includes(opener);
+  }
+  if (/^end\b/.test(trimmed)) {
+    openersByIndent.delete(indentation);
+    return false;
+  }
+  const opening = /^(begin|rescue|if|unless|case|while|until|for|def|class|module)\b/.exec(trimmed);
+  if (opening) openersByIndent.set(indentation, opening[1]);
+  return /^else\b/.test(trimmed) && opener === "rescue";
+}
+
+const IF_EXPRESSION_LANGUAGES = new Set([".kt", ".kts", ".scala"]);
+const IF_IN_EXPRESSION_POSITION_RE = /(?:=|\breturn|\(|,|->)\s*if\b/;
+
+function statementElsesIn(code, language) {
+  if (language === ".py") return code.match(/^\s*(?:else\s*:|elif\b)/g) ?? [];
+  if (IF_EXPRESSION_LANGUAGES.has(language) && IF_IN_EXPRESSION_POSITION_RE.test(code)) return [];
+  return code.match(/\b(?:else|elif|elsif)\b/g) ?? [];
+}
+
+function scanElseLines(content, syntax) {
+  const strings = (syntax.stringTracker ?? makeNoStringRegions)();
+  const state = {};
+  const openersByIndent = new Map();
+  const found = [];
+  const tail = { marker: syntax.line ?? "\u0000", needsSpaceBefore: false };
+  for (const line of String(content).split("\n")) {
+    if (strings.startsInsideString()) {
+      strings.advance(line);
+      if (!strings.startsInsideString()) state.openDelimiter = null;
+      continue;
+    }
+    const wasInsideBlock = state.isInsideBlock;
+    let code = dropCommentTail(stripQuotedSpans(line, [], state, syntax), tail);
+    if (!wasInsideBlock && !state.isInsideBlock) strings.advance(line);
+    if (!code.trim()) continue;
+    if (isExemptIndentedElse(code, syntax.statementLanguage, openersByIndent)) continue;
+    if (syntax.statementLanguage === ".rs") {
+      code = code.replace(/^(\s*let\b[^;]*?=[^;]*?)\belse(?=\s*\{)/, "$1");
+    }
+    found.push(...Array.from(statementElsesIn(code, syntax.statementLanguage), () => line.trim()));
+  }
+  return found;
+}
+
+export { commentLinesOnlyInAfter, scanCommentLines, syntaxFor, elseSyntaxFor, scanElseLines };

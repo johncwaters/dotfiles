@@ -175,7 +175,7 @@ const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
 let configText = fs.readFileSync(configPath, 'utf8');
 for (const [eventName, entries] of Object.entries(hooks)) {
   entries.forEach((entry, entryIndex) => entry.hooks.forEach((handler, handlerIndex) => {
-    if (!handler.command.includes('confine-backchannels.mjs')) return;
+    if (!/\/\.claude\/(?:profile-)?hooks\//.test(handler.command)) return;
     const stateKey = `${hooksPath}:${eventName.replace(/(?<=[a-z])(?=[A-Z])/g, '_').toLowerCase()}:${entryIndex}:${handlerIndex}`;
     const tableHeader = `[hooks.state.${JSON.stringify(stateKey)}]`;
     configText = configText.split('\n').filter((line, lineIndex, lines) => line !== tableHeader && lines[lineIndex - 1] !== tableHeader).join('\n');
@@ -369,7 +369,7 @@ check "work preserves foreign hooks and Codex trust" foreignBackchannelsNeighbou
 check "a first Codex hook render leaves backchannels disabled" codexBackchannelsIsDisabled
 check "a first Codex hook render asks for hook review" outputHas "$workMcpOutput" "review hooks with /hooks, then rerun dot"
 check "Codex owned hooks render ahead of foreign hooks" \
-  node -e 'const hooks = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks; process.exit(hooks.SessionStart[0].hooks[0].command.includes("confine-backchannels.mjs") && hooks.PreToolUse[0].hooks[0].command.includes("confine-backchannels.mjs") ? 0 : 1)' "$sandbox/.codex/hooks.json"
+  node -e 'const hooks = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks; process.exit(hooks.SessionStart[0].hooks[0].command.includes("confine-backchannels.mjs") && hooks.PreToolUse.some(entry => entry.hooks.some(handler => handler.command.includes("confine-backchannels.mjs"))) ? 0 : 1)' "$sandbox/.codex/hooks.json"
 trustCodexHooks "sha256:first-trust"
 runTopicInstall "$stagedTopicDir" work > /dev/null
 check "trusted Codex hooks enable backchannels" codexBackchannelsIsEnabled

@@ -28,6 +28,15 @@
       "enabled": true,
       "matcher": "Write|Edit|MultiEdit",
       "command": "node {{HOME}}/.claude/hooks/block-comments.mjs"
+    },
+    {
+      "id": "4582ad94-2758-4b8a-97cb-c628e71bb80f",
+      "name": "Block new else statements",
+      "event": "PreToolUse",
+      "type": "command",
+      "enabled": true,
+      "matcher": "Write|Edit|MultiEdit",
+      "command": "node {{HOME}}/.claude/hooks/block-else.mjs"
     }
   ],
   "skipPermissionsByDefault": true,

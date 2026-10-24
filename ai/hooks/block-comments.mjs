@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import fs from "node:fs";
 import path from "node:path";
-import { replayEdits } from "./edit-replay.mjs";
+import { judgeWrite, judgeEdits, samplesSuppliedByCall } from "./edit-judge.mjs";
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
-import { commentLinesOnlyInAfter, scanCommentLines, syntaxFor } from "./comment-scanner.mjs";
+import { scanCommentLines, syntaxFor } from "./comment-scanner.mjs";
 
 function deny(filePath, addedCount, samples) {
   const shown = samples.slice(0, 3).map((line) => `  ${line.slice(0, 100)}`);
@@ -20,71 +19,6 @@ function deny(filePath, addedCount, samples) {
   ].join("\n"));
 }
 
-function readBaseline(filePath) {
-  try {
-    return fs.readFileSync(filePath, "utf8");
-  } catch (readError) {
-    if (readError?.code === "ENOENT") return "";
-    return null;
-  }
-}
-
-function compareDocuments(before, after, syntax) {
-  const beforeComments = scanCommentLines(before, syntax);
-  const afterComments = scanCommentLines(after, syntax);
-  return {
-    added: afterComments.length - beforeComments.length,
-    samples: commentLinesOnlyInAfter(beforeComments, afterComments),
-  };
-}
-
-function judgeWrite(toolInput, syntax) {
-  const before = readBaseline(toolInput.file_path);
-  if (before === null) return null;
-  const content = typeof toolInput.content === "string" ? toolInput.content : "";
-  return compareDocuments(before, content, syntax);
-}
-
-function editsOf(toolInput) {
-  const edits = Array.isArray(toolInput.edits) ? toolInput.edits : [toolInput];
-  return edits.filter((edit) => edit && typeof edit === "object");
-}
-
-function judgeFragments(edits, syntax) {
-  let added = 0;
-  const samples = [];
-  for (const edit of edits) {
-    const oldString = typeof edit.old_string === "string" ? edit.old_string : "";
-    const newString = typeof edit.new_string === "string" ? edit.new_string : "";
-    const fragment = compareDocuments(oldString, newString, syntax);
-    added += fragment.added;
-    samples.push(...fragment.samples);
-  }
-  return { added, samples };
-}
-
-function samplesSuppliedByCall(toolInput, samples) {
-  const supplied = [
-    typeof toolInput.content === "string" ? toolInput.content : "",
-    ...editsOf(toolInput).map((edit) =>
-      typeof edit.new_string === "string" ? edit.new_string : "",
-    ),
-  ].join("\n");
-  return samples.filter((line) => supplied.includes(line));
-}
-
-function judgeEdits(toolInput, syntax) {
-  const edits = editsOf(toolInput);
-  const baseline = readBaseline(toolInput.file_path);
-  if (baseline === null) return null;
-  if (baseline === "" || edits.some((edit) => typeof edit.old_string !== "string" || edit.old_string === "")) {
-    return judgeFragments(edits, syntax);
-  }
-  const replay = replayEdits({ edits }, toolInput.file_path, { shouldFlagUnmatchedReplaceAll: false });
-  if (replay.hasUnmatchedOldString) return judgeFragments(edits, syntax);
-  return compareDocuments(baseline, replay.content, syntax);
-}
-
 try {
   const payload = readPayload();
   if (!payload || typeof payload !== "object") allow();
@@ -96,7 +30,7 @@ try {
   if (!syntax) allow();
   if (toolName !== "Write" && toolName !== "Edit" && toolName !== "MultiEdit") allow();
   const judge = toolName === "Write" ? judgeWrite : judgeEdits;
-  const judgement = judge(toolInput, syntax);
+  const judgement = judge(toolInput, syntax, scanCommentLines);
   if (judgement && judgement.added > 0) {
     deny(toolInput.file_path, judgement.added, samplesSuppliedByCall(toolInput, judgement.samples));
   }
