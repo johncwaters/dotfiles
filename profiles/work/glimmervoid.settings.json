@@ -164,11 +164,5 @@
   ],
   "millEnabled": false,
   "scrollback": 50000,
-  "teams": [],
-  "factory": {
-    "enabled": true,
-    "maxRisk": "critical",
-    "maxLiveWorkers": 5,
-    "mirrorHarnessRuns": true
-  }
+  "teams": []
 }
