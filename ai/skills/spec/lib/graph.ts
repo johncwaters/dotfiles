@@ -54,6 +54,7 @@ export type DesignSpec = {
 
 export const READING_BUDGET_BYTES = 200000;
 export const TICKET_CRITERION_LIMIT = 12;
+const UNIT_TITLE_LIMIT = 120;
 
 export function oneLine(text: string): string {
   return text.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim();
@@ -170,6 +171,9 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     return;
   }
   if (nodeKind !== "unit") return;
+  if (typeof value.title === "string" && value.title.length > UNIT_TITLE_LIMIT) {
+    addError(errors, 1, `${subject}.title`, `shorten the title to ${UNIT_TITLE_LIMIT} characters (has ${value.title.length}); a challenge bound belongs in the hand off`);
+  }
   for (const field of ["reads", "changes"] as const) {
     const paths = value[field];
     if (!Array.isArray(paths)) {

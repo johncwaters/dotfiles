@@ -18,9 +18,9 @@ function slicedSpec() {
     request: "Enforce the design graph",
     repoRoot,
     nodes: [
-      { id: "G1", kind: "goal", text: "Enforce the graph" },
+      { id: "G1", kind: "goal", text: "Enforce the graph", risk: "low", criteria: ["The graph validates."] },
       { id: "D1", kind: "decision", question: "Which format?", answer: "JSON", why: "Typed contracts", source: "decided" },
-      { id: "U1", kind: "unit", title: "Add validation", reads: [], changes: ["graph.ts"], checks: [{ run: "node --test" }] },
+      { id: "U1", kind: "unit", title: "Add validation", reads: [], changes: ["graph.ts"], checks: [{ run: "node --test" }], serves: [1] },
     ],
     edges: [{ from: "U1", kind: "implements", to: "D1" }],
   };
@@ -62,6 +62,9 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   unit.serves = [1];
   unit.checks = [{ run: "node --test | tee log" }];
   unit.changes = ["src/*"];
+  unit.title = "a".repeat(121);
+  assert.match(denialReason(writeSpec(spec)), /Rule 1: node U1\.title: shorten the title to 120 characters \(has 121\)/);
+  unit.title = "Add validation";
   const unitReason = denialReason(writeSpec(spec));
   assert.match(unitReason, /Rule 14: node U1\.checks\[0\]\.run/);
   assert.match(unitReason, /Rule 15: node U1/);
@@ -73,8 +76,8 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   unit.checks = [{ run: "node --test" }];
   unit.changes = ["shared"];
   spec.nodes.push(
-    { id: "U2", kind: "unit", title: "Extend validation", reads: [], changes: ["shared/graph.ts"], checks: [{ run: "node --test" }] },
-    { id: "U3", kind: "unit", title: "Connect validation", reads: [], changes: ["shared-sibling"], checks: [{ run: "node --test" }] },
+    { id: "U2", kind: "unit", title: "Extend validation", reads: [], changes: ["shared/graph.ts"], checks: [{ run: "node --test" }], serves: [1] },
+    { id: "U3", kind: "unit", title: "Connect validation", reads: [], changes: ["shared-sibling"], checks: [{ run: "node --test" }], serves: [1] },
   );
   spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U3", kind: "implements", to: "D1" });
   assert.equal(denialReason(writeSpec(spec)), "Rule 16: node U1: add a direct or transitive dependsOn path in either direction with U2 to order changes sharing shared/graph.ts");
@@ -88,7 +91,7 @@ test("units without checks are denied by id, capped with the count the next writ
   const spec = slicedSpec();
   spec.nodes.find((node) => node.id === "U1").checks = [];
   for (let unitNumber = 2; unitNumber <= 25; unitNumber++) {
-    spec.nodes.push({ id: `U${unitNumber}`, kind: "unit", title: "Add a check", reads: [], changes: [`graph-${unitNumber}.ts`], checks: [] });
+    spec.nodes.push({ id: `U${unitNumber}`, kind: "unit", title: "Add a check", reads: [], changes: [`graph-${unitNumber}.ts`], checks: [], serves: [1] });
     spec.edges.push({ from: `U${unitNumber}`, kind: "implements", to: "D1" });
   }
   const reason = denialReason(writeSpec(spec));
@@ -115,7 +118,7 @@ test("a missing repoRoot or reads path is denied instead of measuring zero bytes
   const spec = slicedSpec();
   spec.nodes.find((node) => node.id === "U1").reads = ["misspelled.ts"];
   assert.match(denialReason(writeSpec(spec)), /Rule 6: node U1: reads path misspelled\.ts is missing/);
-  spec.nodes.push({ id: "U2", kind: "unit", title: "Create the file", reads: [], changes: ["misspelled.ts"], checks: [{ run: "node --test" }] });
+  spec.nodes.push({ id: "U2", kind: "unit", title: "Create the file", reads: [], changes: ["misspelled.ts"], checks: [{ run: "node --test" }], serves: [1] });
   spec.edges.push({ from: "U2", kind: "implements", to: "D1" });
   assertAllowed(writeSpec(spec));
 });
@@ -150,7 +153,7 @@ test("a challenge stamp is denied once the units ready for work differ from the 
   spec.challengedUnitIds = ["U1"];
   spec.nodes.push(
     { id: "Q1", kind: "openQuestion", question: "Which extension?", settledBy: "The next request" },
-    { id: "U2", kind: "unit", title: "Deferred extension", reads: [], changes: ["extension.ts"], checks: [{ run: "node --test" }] },
+    { id: "U2", kind: "unit", title: "Deferred extension", reads: [], changes: ["extension.ts"], checks: [{ run: "node --test" }], serves: [1] },
   );
   spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U2", kind: "deferredBy", to: "Q1" });
   assertAllowed(writeSpec(spec));
@@ -160,7 +163,7 @@ test("a challenge stamp is denied once the units ready for work differ from the 
 
 test("Edit and MultiEdit replay detect dependency cycles without changing disk", () => {
   const spec = slicedSpec();
-  spec.nodes.push({ id: "U2", kind: "unit", title: "Render validation", reads: [], changes: ["render.ts"], checks: [{ run: "node --test" }] });
+  spec.nodes.push({ id: "U2", kind: "unit", title: "Render validation", reads: [], changes: ["render.ts"], checks: [{ run: "node --test" }], serves: [1] });
   spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U2", kind: "dependsOn", to: "U1" });
   const originalContent = JSON.stringify(spec);
   fs.writeFileSync(specPath, originalContent);
