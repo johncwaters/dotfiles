@@ -30,10 +30,6 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 - Add new dependencies only when the carbon unit explicitly requests them.
 - Keep diffs small, reversible, and smell-focused.
 
-## From /committing
-
-Clean only the files /committing passes (preflight's `paths`). Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed. Return to `/committing` for review.
-
 ## Scoped File-List Usage
 
 The pass can be bounded to an explicit file list or changed-file scope when the caller already knows the safe cleanup surface (for example, the files changed in the current commit).

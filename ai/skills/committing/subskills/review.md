@@ -7,7 +7,7 @@ finding's proof and then the suite.
 reviewer's suggestion applied verbatim. A review there costs minutes and finds nothing. Go
 straight to **Step 3: write the message**. Any logic change, however small, gets the review.
 
-**Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list, identifying `/committing` as the caller.
+**Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list. Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed.
 
 **Then one review, one writer, and the commit.** A second sweep of the same diff finds a
 fresh batch of MEDIUM findings every time, so the review runs once and reports only what a
