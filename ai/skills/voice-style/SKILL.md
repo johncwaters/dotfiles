@@ -1,19 +1,19 @@
 ---
 name: voice-style
-description: Apply the user's personal voice and messaging style to any written output. Use this skill whenever the user asks Claude to write messages, replies, Slack messages, emails, Teams chats, texts, or any communication on their behalf — including "write this in my voice," "draft a message," "help me reply," "how should I say this," or similar requests. Also trigger when the user asks to rewrite, rephrase, or adjust tone of a message. Even casual requests like "what should I say to X" or "help me word this" should use this skill. When in doubt about whether to apply the voice, apply it — the user wants consistency.
+description: Applies the carbon unit's personal voice to all written output on their behalf. Use when asked to write messages, replies, Slack messages, emails, Teams chats, texts, or any communication; to rewrite, rephrase, or adjust tone; or for "write this in my voice", "draft a message", "help me reply", "how should I say this", "what should I say to X", "help me word this", and similar requests. Applies when in doubt to keep the voice consistent.
 ---
 
 # Voice Style
 
-This skill defines the user's natural communication voice. Apply it to all written output produced on their behalf — messages, replies, Slack posts, emails, texts, etc.
+This skill defines the carbon unit's natural communication voice. Apply it to all written output produced on their behalf — messages, replies, Slack posts, emails, texts, etc.
 
 ## Core Principle
 
-The user writes like a senior engineer in casual-professional mode: warm but efficient, technically precise but never stiff. Think "the teammate everyone likes getting messages from." The voice is human-first — typos are personality, not mistakes.
+The carbon unit writes like a senior engineer in casual-professional mode: warm but efficient, technically precise while staying relaxed. Think "the teammate everyone likes getting messages from." The voice is human-first — typos are personality, not mistakes.
 
 ## Message Archetypes
 
-Pick the archetype that fits the situation. Don't blend them unless the message naturally spans two modes (e.g., a directive that ends with banter).
+Pick the archetype that fits the situation. Blend them only when the message naturally spans two modes (e.g., a directive that ends with banter).
 
 ### 1. Quick Ack
 One word or short phrase, capitalized like a sentence, no period. Optionally trail off with `...`
@@ -32,7 +32,7 @@ Pattern: `FYI <what happened>. <optional why in parenthetical>.`
 ### 3. Soft Pushback
 Lead with a hedge, end with humor or a trailing softener.
 
-> Maybe I don't understand...
+> `Maybe I don't understand...`
 > Idk what you want from me lol
 > Pretty sure its X. Not Y.
 
@@ -45,10 +45,10 @@ Use flow arrows (`>`) or bullet points. Clinical, clear, no filler.
 ### 5. Directive (Warm)
 Pattern: `Heyo` + reason + ask. Full sentences, friendly but clear.
 
-> Heyo, saw your message. To keep things organized, lets post those in 'general' instead of 'standup'. That way things don't get too cluttered
+> `Heyo, saw your message. To keep things organized, lets post those in 'general' instead of 'standup'. That way things don't get too cluttered`
 
 ### 6. Banter
-`ahahaha`, `xD` / `XD`, `:P`, `lol`, caps for mock-outrage (never real anger).
+`ahahaha`, `xD` / `XD`, `:P`, `lol`, caps for mock-outrage (reserved for jokes rather than real anger).
 
 > YAH AND??? FIX IT1!
 > Thats disgusting lol
@@ -56,7 +56,7 @@ Pattern: `Heyo` + reason + ask. Full sentences, friendly but clear.
 ### 7. Coaching / Warm Close
 Full sentences. Use `!` for warmth. No emoji or emoticons.
 
-> Hey! Wanted to let you know that I hope this first week went great. If you have any questions or need anything at all, don't hesitate to reach out!
+> `Hey! Wanted to let you know that I hope this first week went great. If you have any questions or need anything at all, don't hesitate to reach out!`
 
 ## Structural Rules
 
@@ -64,11 +64,11 @@ Full sentences. Use `!` for warmth. No emoji or emoticons.
 
 **Hedges:** pretty sure, I believe, I could be wrong, genuinely asking, in my mind, last I knew.
 
-**Asides:** Always parentheticals — never footnotes, never asterisks.
+**Asides:** Always parentheticals, excluding footnotes and asterisks.
 
 **Qualifiers:** genuinely, technically, proooobably (stretch vowels for emphasis).
 
-**Closer:** `ty` / `thanks` / `sounds good` / or just end. Never "best," "cheers," "regards," or any sign-off formula.
+**Closer:** `ty` / `thanks` / `sounds good` / or just end. Keep closers free of "best," "cheers," "regards," and any sign-off formula.
 
 ## Micro-Rules
 
@@ -79,7 +79,7 @@ These are what make the voice feel real.
 - **Apostrophe plurals:** `PR's`, not `PRs`. `API's`, not `APIs`.
 - **Trailing `...`** means "more to say" or a soft trail-off. Use it.
 - **Caps = joke, not anger.** `FIX IT1!` is playful. Context makes this obvious.
-- **Leave typos.** If a natural typo happens in the flow, keep it. Never send a correction message.
+- **Leave typos.** If a natural typo happens in the flow, keep it. Leave the original message standing without a correction message.
 - **Emoticons over emoji.** `XD` / `xD` and `:P` are frequent and natural; `>.>` shows up occasionally. Real emoji (🎉 🚀 👍 etc.) are rare — reach for the emoticon first.
 - **`lol` at end** softens a complaint or dumb-question admission.
 - **`haha` mid-sentence** warms a technical statement.
@@ -90,15 +90,15 @@ Use these words and abbreviations — not formal synonyms:
 
 `yah` `yeh` `yeppers` · `idk` `imo` `tbh` `tho` `rn` `ty` `FYI` · `Heyo` `Gotcha` `Plz` · `lil` `min` (for minute) · `ahahaha` `xD` `XD` `:P` `lol`
 
-If tempted to write "I don't know," write `idk`. If tempted to write "in my opinion," write `imo`. Match the register.
+If tempted to write `I don't know`, write `idk`. If tempted to write "in my opinion," write `imo`. Match the register.
 
-## Hard Don'ts
+## Voice-breaking patterns
 
 These kill the voice:
 
-- The words "just", "basically", and "finally" — never use them, in any sense
+- The words "just", "basically", and "finally" — excluded in every sense
 - "I hope this email finds you well" or any corporate preamble
-- Em-dashes as structural decoration (the user uses them occasionally and naturally)
+- Em-dashes as structural decoration (the carbon unit uses them occasionally and naturally)
 - "Just a friendly reminder" or passive-aggressive softening
 - Multi-paragraph walls for casual chat — keep it tight
 - Signing off with a name, "Best," "Cheers," or any formal closer
@@ -117,4 +117,4 @@ Read the situation:
 - Joking around, reacting to something funny/absurd → **Banter**
 - Onboarding, encouragement, or wrapping up something meaningful → **Coaching / Warm Close**
 
-When the situation is ambiguous, default to casual and short. The user almost never overwrites — they undershoot length and let the reader fill in context.
+When the situation is ambiguous, default to casual and short. The carbon unit overwrites only exceptionally — they undershoot length and let the reader fill in context.

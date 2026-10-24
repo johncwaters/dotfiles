@@ -1,6 +1,6 @@
 ---
 name: design-docs
-description: Plan, draft, review, and ship a document a team will read and comment on, such as a design doc, MVP spec, RFC, proposal, or project status doc. Covers gathering sources and the doc's history, an answer-first structure, backing every claim with code citations and measured numbers (cost at real volume, measured rates over guessed scenarios), independent reviewer agents before sharing, and editing a doc the author is also editing without undoing their cuts. Use for "write a design doc", "MVP spec", "write up the plan for the team", "restructure this doc", "review this doc for gaps", or "make this doc shareable". Sentence-level prose style is out of scope for this skill.
+description: Plans team documents through drafting, review, and shipping, including design docs, MVP specs, RFCs, proposals, and project status docs. Grounds answer-first writing in sources, history, code citations, measured rates, and real-volume costs, with independent review and respect for the author's concurrent edits. Use for "write a design doc", "MVP spec", "write up the plan for the team", "restructure this doc", "review this doc for gaps", or "make this doc shareable". Sentence-level prose style stays out of scope.
 ---
 
 # Design docs

@@ -7,7 +7,7 @@ An MVP spec asks the team to comment on the smallest version worth shipping, wit
 1. **TLDR.** The answer beat: what it does, its state, where the code is.
 2. **Feedback wanted.** The ask beat, as numbered questions with the number each one turns on.
 3. **Problem.** What breaks today, with one real example.
-4. **Where this fits.** The goals the MVP serves and the bigger picture from the doc's history, as a scope table: covered now, next, never.
+4. **Where this fits.** The goals the MVP serves and the bigger picture from the doc's history, as a scope table: covered now, next, permanently out of scope.
 5. **MVP scope.** What ships, and the no-gos.
 6. **Design.** The infrastructure diagram and the guarantees (idempotency, retries, what is off by default), each with its `path:line`.
 7. **Does it work.** Results on real cases with their denominators, misses included.

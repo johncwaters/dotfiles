@@ -1,9 +1,11 @@
 ---
 name: animation
-description: Make animations, both authored pieces and motion inside a running app or game. Authored pieces (narrated explainer videos, isometric "test chamber" clips, launch posters, onboarding animations, animated scenes or characters) are one self-contained SVG page rendered to MP4 or PNG and published as a downloadable Artifact. In-app animation (card attacks, enemy reveals, turn changes, celebrations, status indicators) sequences the product's own components so each event reads. Covers storyboard, scene, motion principles, narration and sound, frame checks, test-audience review, and rendering. Use for any animation request, "add animations", "make this animation better", an explainer, an animated poster or still, "make an animation like <reference>", or motion craft questions.
+description: Makes authored animations and motion inside running apps or games, covering storyboard, scene, motion principles, narration, sound, frame checks, test-audience review, and rendering. Authored pieces use one SVG page rendered to MP4 or PNG and published as a downloadable Artifact. Use for any animation request, "add animations", "make this animation better", an explainer, an animated poster or still, "make an animation like the reference", or motion craft questions.
 ---
 
 # Animation
+
+Authored pieces include narrated explainers, isometric "test chamber" clips, launch posters, onboarding animations, animated scenes, and characters. In-app animation sequences the product's own components so card attacks, enemy reveals, turn changes, celebrations, and status indicators read clearly. The reference trigger includes `make an animation like <reference>`.
 
 One animation is one self-contained HTML page: an SVG scene driven by a single clock. The same page is the interactive Artifact, the downloadable HTML, and the source for the MP4 or a still. Keeping it one file means a fix lands everywhere with one rebuild.
 
@@ -26,6 +28,11 @@ Then the subskill for the kind being made, which adds to every step above:
 ## Extensions
 
 Each installed skill whose name starts with `animation-` extends this one with a machine's conventions. Load every one listed among your available skills before step 1, then apply each section it adds at the step that section names. Extensions win over this skill's defaults.
+
+## Scripts
+
+- `scripts/frames.mjs`: Checks frame sheets and audio, resolves cues, mixes sound, and renders MP4; run at review and render steps.
+- `scripts/word-times.py`: Times narration words locally; run on voiced lines before setting caption timing.
 
 ## Boundaries
 

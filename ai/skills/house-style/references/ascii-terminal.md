@@ -7,7 +7,7 @@ Source: https://ascii.rest (gallery), https://github.com/bas3line/ascii (MIT). B
 - One monospace family for everything, prose included.
 - Controls as bracketed lowercase words: `[copy]`, `[dark]`, `[play anyway]`.
 - Section headings underlined with `---` or `===`, not set larger.
-- Index-style navigation: plain grouped lists with item counts beside each heading, never cards.
+- Index-style navigation: plain grouped lists with item counts beside each heading, keeping cards out of navigation.
 - One ink color on one ground; color only for state that text also states.
 - Box-drawing characters for frames, trees, and dividers instead of CSS borders and shadows.
 - Texture from dot ramps (`·`, `•`, `●`), not gradients or images.
@@ -21,16 +21,16 @@ Use a piece rather than hand-drawing its equivalent.
 - Type: big text, typewriter, scramble, split-flap, glitch, for one headline per page at most.
 - Scenes, nature, space, generative, effects: hero art, empty states, 404s.
 
-Plain HTML, no build step: vendor `ascii.js` into the project and load it from there; never hot-link a third-party script, since a compromised origin runs arbitrary JS on the site.
+Plain HTML, no build step: vendor `ascii.js` into the project and load it from there; load third-party scripts only from the vendored copy, since a compromised origin runs arbitrary JS on the site.
 
 ```html
 <script type="module" src="/vendor/ascii.js"></script>
 <ascii-art piece="sparkline"></ascii-art>
 ```
 
-With a bundler, `npm install github:bas3line/ascii#<commit-sha>` (always a pinned commit, never the default branch), then `ascii.rest/react` (`<Ascii piece={donut} />`), `ascii.rest/astro`, or `mount(preElement, piece)` from `ascii.rest`, which returns a stop function. Pieces come from `ascii.rest/pieces`.
+With a bundler, `npm install github:bas3line/ascii#<commit-sha>` (always a pinned commit, excluding the default branch), then `ascii.rest/react` (`<Ascii piece={donut} />`), `ascii.rest/astro`, or `mount(preElement, piece)` from `ascii.rest`, which returns a stop function. Pieces come from `ascii.rest/pieces`.
 
-## Do not copy
+## Excluded patterns
 
 - More than one animated piece in view at once; it reads as noise, not texture.
 - Full-color canvas scenes as page chrome; they are art, keep them inside a frame.

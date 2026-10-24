@@ -1,6 +1,6 @@
 ---
 name: ai-slop-cleaner
-description: Clean AI-generated code slop with a regression-safe, deletion-first workflow. Use when the carbon unit says deslop, anti-slop, or AI slop, or asks to clean up code that feels bloated, repetitive, over-abstracted, or weakly tested. Bounded cleanup, not feature work.
+description: Cleans AI-generated code slop with a regression-safe, deletion-first workflow. Use when the carbon unit says deslop, anti-slop, or AI slop, or asks to clean up code that feels bloated, repetitive, over-abstracted, or weakly tested. Bounded cleanup, not feature work.
 ---
 
 # AI Slop Cleaner
@@ -27,12 +27,12 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 - Lock behavior by running the existing tests and the code path; write a new test only as a regression test for a bug actually fixed or for an uncovered contract whose break would be silent.
 - Prefer deletion over addition.
 - Reuse existing utilities and patterns before introducing new ones.
-- Avoid new dependencies unless the carbon unit explicitly requests them.
+- Add new dependencies only when the carbon unit explicitly requests them.
 - Keep diffs small, reversible, and smell-focused.
 
 ## From /commit
 
-Clean only the files /commit passes (preflight's `paths`). Never create files, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed. Return to `/commit` for review.
+Clean only the files /commit passes (preflight's `paths`). Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed. Return to `/commit` for review.
 
 ## Scoped File-List Usage
 
@@ -40,7 +40,7 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
 
 - Good fit: `/ai-slop-cleaner src/auth/session.ts src/auth/token.ts`
 - Preserve the same regression-safe workflow even when the scope is a short file list
-- Do not expand a changed-file scope. List broader cleanup opportunities in the report instead
+- Keep a changed-file scope fixed. List broader cleanup opportunities in the report instead
 
 ## Workflow
 
@@ -58,7 +58,7 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
    - **Dead code**: unused code, unreachable branches, stale flags, debug leftovers
    - **Needless abstraction**: pass-through wrappers, speculative indirection, single-use helper layers
    - **Boundary violations**: hidden coupling, misplaced responsibilities, wrong-layer imports or side effects
-   - **Low-value tests**: assertions mirroring the implementation, mocks of the unit under test, coverage-padding per-function cases, tests of constants or config shape; never a regression test for a fixed bug or a test of a contract whose break would be silent
+   - **Low-value tests**: assertions mirroring the implementation, mocks of the unit under test, coverage-padding per-function cases, tests of constants or config shape; excluding regression tests for fixed bugs and tests of contracts whose break would be silent
 
 4. **Run one smell-focused pass at a time**
    - **Pass 1: Dead code deletion**
@@ -66,13 +66,13 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
    - **Pass 3: Naming and error-handling cleanup**
    - **Pass 4: Low-value test removal**, keeping regression tests for fixed bugs and tests of silent-break contracts
    - Re-run targeted verification after each pass.
-   - Do not bundle unrelated refactors into the same edit set.
+   - Keep each edit set limited to related refactors.
 
 5. **Run the quality gates**
    - Keep regression tests green.
    - Run the relevant lint, typecheck, and unit/integration tests for the touched area.
    - Run existing static or security checks when available.
-   - If a gate fails, fix the issue or back out the risky cleanup instead of forcing it through. Never silence a gate with ignore comments, disabled rules, or skipped tests.
+   - If a gate fails, fix the issue or back out the risky cleanup instead of forcing it through. Keep gates active, with rules enabled, tests running, and code free of gate-silencing ignore comments.
 
 6. **Close with an evidence-dense report**
    Always report:

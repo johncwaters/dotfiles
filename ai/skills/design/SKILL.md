@@ -1,6 +1,6 @@
 ---
 name: design
-description: The design process for any UI, personal or work. Use when building, styling, or reviewing a screen, a user flow, an error or empty state, a limit or quota message, or motion and animation in a UI, or when asked to make a product feel premium, less generic, or past the AI look. Owns behavior and process; the look comes from the project's taste, which the taste step resolves.
+description: Guides the design process for any UI, personal or work. Use when building, styling, or reviewing a screen, a user flow, an error or empty state, a limit or quota message, or motion and animation in a UI, or when asked to make a product feel premium, less generic, or past the AI look. Owns behavior and process; the look comes from the project's taste, which the taste step resolves.
 ---
 
 # Design

@@ -1,11 +1,13 @@
 ---
 name: storytelling
-description: Shape a piece that has to make a reader believe in something new (launch post, pitch, announcement, talk or keynote script, demo script or demo video, blog post, README intro, the framing of a feature PR or design doc) with the techniques Steve Jobs used on stage. Covers the arc (what is, villain, timeline, reveal, demo, what could be, one more thing) and the sentence techniques (analogy, concrete images, numbers in context, rapport, redefinition, soul, showmanship). Use when asked to pitch, launch, announce, demo, "tell the story", "make people care", or "make this land", or when another writing skill sends a draft here. Voice and sentence mechanics stay with the writing skill that called it.
+description: Shapes a piece that has to make a reader believe in something new (launch post, pitch, announcement, talk or keynote script, demo script or demo video, blog post, README intro, the framing of a feature PR or design doc) with the story arc Steve Jobs used on stage. Use when asked to pitch, launch, announce, demo, "tell the story", "make people care", or "make this land", or when another writing skill sends a draft here. Voice and sentence mechanics stay with the calling writing skill.
 ---
 
 # Storytelling
 
-Jobs's keynotes made people believe in a future before they could hold it. Imitators copied the turtleneck and the timeline, and their stories collapsed because the product did not do what the story said. So everything here serves a real thing, shown working.
+Use for launch posts, pitches, announcements, talk or keynote scripts, demo scripts or videos, blog posts, README intros, and the framing of feature PRs or design docs.
+
+Jobs's keynotes made carbon units believe in a future before they could hold it. Imitators copied the turtleneck and the timeline, and their stories collapsed because the product did not do what the story said. So everything here serves a real thing, shown working.
 
 ## Pick the shape
 
@@ -18,7 +20,7 @@ Jobs's keynotes made people believe in a future before they could hold it. Imita
 ## The arc
 
 1. **What is.** Open on the reader's world today, in their words, with the pain made concrete. iPhone, 2007: smartphones are "not so smart and not so easy to use", plotted on two axes.
-2. **Villain.** Name what stands in the way: an approach, a habit, a tool. "Who wants a stylus?" Aim at the approach and keep respect for the people using it.
+2. **Villain.** Name what stands in the way: an approach, a habit, a tool. "Who wants a stylus?" Aim at the approach and keep respect for the carbon units using it.
 3. **Timeline.** Place the new thing as the next step of a progression the reader already accepts: mouse, click wheel, multi-touch. Build it from real history; an invented progression costs the writer their credibility once it fails.
 4. **Reveal.** The headline: one sentence a reader could repeat to a friend. Build toward it, as with "an iPod, a phone, and an internet communicator" turning out to be one device.
 5. **Show it working.** Prove the reveal right after it lands, with output from really running the thing: a screenshot, a clip, a command and what it printed. Each later claim sits next to its own proof or a measured number.

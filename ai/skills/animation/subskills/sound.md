@@ -1,14 +1,14 @@
 # Sound
 
-Any piece with sound. Narration voice applies only to a narrated piece; an effects-only piece skips it and still carries its mix in the page. Send audio and scripts only to providers an extension's Sound section allows; earshot's Gemini critique stays off unless one allows Google, so never set `GEMINI_API_KEY` otherwise.
+Any piece with sound. Narration voice applies only to a narrated piece; an effects-only piece skips it and still carries its mix in the page. Send audio and scripts only to providers an extension's Sound section allows; earshot's Gemini critique stays off unless one allows Google, so set `GEMINI_API_KEY` only when Google is allowed.
 
 ## Narration voice
 
-- Write original lines in the chosen character voice, for example a bombastic founder. Never quote the reference work or name its characters, and never clone or imitate a real actor's voice.
+- Write original lines in the chosen character voice, for example a bombastic founder. Keep lines free of quotes from the reference work and its character names; use voices free of cloning or imitation of real actors.
 - Write each line as spoken sentences, one fact plus one joke that does not cost the fact, then split it into timed captions. Clipped subtitle fragments made the synthesized voice sound awful.
 - Swap out any line a reviewer says reads oddly or sounds like a threat. Name what is on screen ("Payments, database, CRM") rather than jokes about the narrator.
 - Audition before voicing the script: voice one line with 3 to 5 premade ElevenLabs voices (the free plan allows only premade ones), publish an audition page, and let the carbon unit pick. Then voice every line with `eleven_multilingual_v2` at stability 0.4, similarity 0.8, style 0.45, speed 1.05; `eleven_v3` at stability 0 sounded worse. The output folder must exist first.
-- Time the words locally, never through a hosted model: `uv run --with faster-whisper==1.2.1 --with numpy python <skill-dir>/scripts/word-times.py vo/line*.wav` prints each word's start in seconds. Copy each line's length into `voiceSeconds` and each caption's start into `captions: [[seconds, text], ...]`.
+- Time the words locally, excluding hosted models: `uv run --with faster-whisper==1.2.1 --with numpy python <skill-dir>/scripts/word-times.py vo/line*.wav` prints each word's start in seconds. Copy each line's length into `voiceSeconds` and each caption's start into `captions: [[seconds, text], ...]`.
 
 ## In-page audio
 
@@ -29,7 +29,7 @@ Every later `earshot` command runs through that shell function, since earshot is
 { "soundLevel": 0.45, "voices": [{ "clip": "vo/line01.wav" }], "sounds": [{ "clip": "sfx/thock.wav", "at": "SOURCES[0].connectAt + 0.1", "level": 0.45 }] }
 ```
 
-Key each cue to the timeline fields the page itself draws from, such as a scene's start plus its side's offset, never literal seconds, so retiming a scene moves its sounds. A sound on a long motion (a slide, a counter, a fill) follows the motion, not its first frame; these optional fields do that:
+Key each cue to the timeline fields the page itself draws from, such as a scene's start plus its side's offset, excluding literal seconds, so retiming a scene moves its sounds. A sound on a long motion (a slide, a counter, a fill) follows the motion, not its first frame; these optional fields do that:
 
 - `"until": "<expression>"` loops the clip until the motion ends, then fades it over 0.15 s.
 - `"align": "peak"` lands the clip's loudest moment on `at` instead of its first sample; a whoosh or riser peaks well after it starts, and start-aligned ones sounded late.

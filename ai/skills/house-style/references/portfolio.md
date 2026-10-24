@@ -12,7 +12,7 @@ Source: the carbon unit's own site, https://www.johncwaters.com, repo `~/Project
 - Stack lists as uppercase tracked small caps joined by ` / `.
 - Hairline 1px borders that warm to soft pink on hover; no shadows.
 
-## Do not copy
+## Excluded patterns
 
 - The 3px red-to-pink stripe on `.workCard::before`: it is a side-stripe accent, banned by the laws.
 - Gradient-filled buttons; one solid fill.
