@@ -229,6 +229,29 @@ test('a zero-finding lane with verified safe and no overflow converges to a cano
   assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
 })
 
+for (const firstLaneResponse of [null, 'not a findings block']) {
+  test(`a lane answering ${JSON.stringify(firstLaneResponse)} is retried once with a different prompt and the review converges`, async () => {
+    const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe claimed defect was verified safe. No overflow.'
+    const lanePrompts = []
+    const runtimeBindings = workflowRuntimeReturning((prompt) => {
+      lanePrompts.push(prompt)
+      return lanePrompts.length === 1 ? firstLaneResponse : laneResponse
+    })
+
+    const workflowResponse = await runWorkflow(baseWorkflowArgs, runtimeBindings)
+
+    assert.equal(lanePrompts.length, 2)
+    assert.notEqual(lanePrompts[1], lanePrompts[0])
+    assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
+  })
+}
+
+test('a lane still dead after its retry is the lane death', async () => {
+  const runtimeBindings = workflowRuntimeReturning(() => null)
+
+  assert.equal(await runWorkflow(baseWorkflowArgs, runtimeBindings), 'LANE_DEATH: code')
+})
+
 test('a judgment death returns the death string and a new retryAttemptId changes only the retry prompt', async () => {
   const laneResponse = '- file: src/file.js | line: 1 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: Still broken. Proof: `node guard.js` printed undefined.'
   const responsesByLabel = {

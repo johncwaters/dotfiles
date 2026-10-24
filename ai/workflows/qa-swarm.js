@@ -596,6 +596,17 @@ The checklist only adds checks; it never changes the severity ladder, finding ca
 Everything above is this run's additions. Your agent definition owns the severity ladder, the finding cap, and the output format; follow it exactly and write nothing after the block it prescribes.`
 }
 
+function isDeadLaneResponse(parsedResponse) {
+  return !parsedResponse.hasParseableBlock || parsedResponse.hasUnparseableRow
+}
+
+function describeLaneDeath(laneText) {
+  if (laneText == null) {
+    return 'the lane agent died without a response'
+  }
+  return 'the response had no parseable STRUCTURED_FINDINGS block or held an unparseable row'
+}
+
 function spawnLane(laneName, lanePrompt) {
   const laneDefinition = laneDefinitionsByName.get(laneName)
   if (!laneDefinition) {
@@ -740,15 +751,21 @@ log(`Chosen lanes: ${laneNames.join(', ')} because ${laneSelection.reason}. Cut 
 
 phase('Review')
 const lanePrompts = new Map(laneNames.map((laneName) => [laneName, buildLanePrompt(laneName, routerResult, laneNames, reviewedFileNames, args.reviewCmd)]))
-const laneTexts = await parallel(laneNames.map((laneName) => () => spawnLane(laneName, lanePrompts.get(laneName))))
+const resumeSafeRetryId = args.retryAttemptId ?? args.reviewCmd
+const firstLaneTexts = await parallel(laneNames.map((laneName) => () => spawnLane(laneName, lanePrompts.get(laneName))))
+const laneTextsByName = new Map(laneNames.map((laneName, laneIndex) => [laneName, firstLaneTexts[laneIndex]]))
+const deadLaneNames = laneNames.filter((laneName) => isDeadLaneResponse(parseLaneResponse(laneTextsByName.get(laneName))))
+if (deadLaneNames.length > 0) {
+  log(`Retrying dead lanes once: ${deadLaneNames.join(', ')}.`)
+  const retriedLaneTexts = await parallel(deadLaneNames.map((laneName) => () => spawnLane(laneName, `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${describeLaneDeath(laneTextsByName.get(laneName))}\n\n${lanePrompts.get(laneName)}`)))
+  deadLaneNames.forEach((laneName, laneIndex) => laneTextsByName.set(laneName, retriedLaneTexts[laneIndex]))
+}
 const parsedResponses = new Map()
 const degradationNotes = routeOutcome.degradationNote === '' ? [] : [routeOutcome.degradationNote]
 
-for (let laneIndex = 0; laneIndex < laneNames.length; laneIndex += 1) {
-  const laneName = laneNames[laneIndex]
-  const laneText = laneTexts[laneIndex]
-  const parsedResponse = parseLaneResponse(laneText)
-  if (!parsedResponse.hasParseableBlock || parsedResponse.hasUnparseableRow) {
+for (const laneName of laneNames) {
+  const parsedResponse = parseLaneResponse(laneTextsByName.get(laneName))
+  if (isDeadLaneResponse(parsedResponse)) {
     return `LANE_DEATH: ${laneName}`
   }
   parsedResponses.set(laneName, parsedResponse)
@@ -848,7 +865,6 @@ const firstValidationFailure = findConvergenceValidationFailure(convergedFinding
 if (!firstValidationFailure) {
   return convergedFindings
 }
-const resumeSafeRetryId = args.retryAttemptId ?? args.reviewCmd
 const retryJudgmentPrompt = `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
 const retriedConvergedFindings = withJudgmentRowsFolded(await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' }))
 if (!isConvergedBlock(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {
