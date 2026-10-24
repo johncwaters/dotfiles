@@ -7,7 +7,7 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 
-skillTreeDirectory="$topicDir/skills/skill-tree"
+skillTreeDirectory="$topicDir/skills/rendering-skill-tree"
 if [[ ! -d "$skillTreeDirectory/node_modules" ]]; then
   (cd -- "$skillTreeDirectory" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund > /dev/null)
 fi
