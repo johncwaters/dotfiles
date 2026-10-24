@@ -7,7 +7,7 @@ import { compareText, extractGraph } from './extract.ts';
 import type { EdgeKind, GraphNode, SkillGraph } from './extract.ts';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
-const dashByKind: Record<EdgeKind, string> = { mentions: '', extends: '14 6', spawns: '5 5', runs: '1 5', names: '12 5 2 5' };
+const drawnEdgeKinds: EdgeKind[] = ['mentions', 'spawns', 'runs', 'names'];
 
 const graphStyles = `svg{font:13px CommitMono,monospace;color:var(--ink)}
 text{fill:currentColor}
@@ -15,7 +15,8 @@ rect{fill:var(--ground);stroke:currentColor;stroke-width:1}
 .profile rect{fill:none;stroke-dasharray:3 5}
 .entry rect{stroke-width:2.5}
 .edge{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round}
-.signal{color:var(--signal)}`;
+.signal{color:var(--signal)}
+${drawnEdgeKinds.map((kind) => `.hide-${kind} .kind-${kind}{display:none}`).join('\n')}`;
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
@@ -38,8 +39,9 @@ function describeStart(node: GraphNode): string {
   return `▶ on ${[...new Set(node.events.map((registration) => registration.event))].join(', ')}`;
 }
 
-function nodeLines(node: GraphNode, isEntry: boolean): string[] {
+function nodeLines(node: GraphNode, isEntry: boolean, extendedBaseName: string | undefined): string[] {
   const lines = [node.name, describeNode(node)];
+  if (extendedBaseName) lines.push(`+ extends ${extendedBaseName}`);
   if (isEntry) lines.push(describeStart(node));
   return lines;
 }
@@ -50,9 +52,11 @@ function heading(text: string, level: number = 2): string {
 
 async function render(graph: SkillGraph): Promise<string> {
   const isolatedIds = new Set(graph.isolated);
-  const targetIds = new Set(graph.edges.map((edge) => edge.to));
-  const entryIds = new Set(graph.edges.map((edge) => edge.from).filter((id) => !targetIds.has(id)));
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const drawnEdges = graph.edges.filter((edge) => edge.kind !== 'extends');
+  const baseNameByExtensionId = new Map(graph.edges.filter((edge) => edge.kind === 'extends').map((edge) => [edge.to, nodesById.get(edge.from)!.name]));
+  const targetIds = new Set(drawnEdges.map((edge) => edge.to));
+  const entryIds = new Set(drawnEdges.map((edge) => edge.from).filter((id) => !targetIds.has(id)));
   const cycleByNodeId = new Map(graph.cycles.flatMap((cycle, cycleIndex) => cycle.map((id) => [id, cycleIndex] as const)));
   const profiles = [...new Set(graph.nodes.map((node) => node.profile))].sort(compareText);
   const nodesByProfile = new Map(profiles.map((profile) => [profile, graph.nodes.filter((node) => node.profile === profile)]));
@@ -81,18 +85,18 @@ async function render(graph: SkillGraph): Promise<string> {
         'elk.nodeLabels.placement': 'INSIDE V_TOP H_LEFT',
       },
       children: nodesByProfile.get(profile)!.filter((node) => !isolatedIds.has(node.id)).map((node) => {
-        const lines = nodeLines(node, entryIds.has(node.id));
+        const lines = nodeLines(node, entryIds.has(node.id), baseNameByExtensionId.get(node.id));
         const layoutOptions = entryIds.has(node.id) ? { 'elk.layered.layering.layerConstraint': 'FIRST' } : undefined;
         return { id: node.id, width: Math.ceil(Math.max(...lines.map((line) => line.length)) * 7.8 + 32), height: lines.length * 20 + 26, layoutOptions };
       }),
     })),
-    edges: graph.edges.map((edge) => ({ id: `${edge.from}|${edge.to}|${edge.kind}`, sources: [edge.from], targets: [edge.to] })),
+    edges: drawnEdges.map((edge) => ({ id: `${edge.from}|${edge.to}|${edge.kind}`, sources: [edge.from], targets: [edge.to] })),
   };
   const layout = await new ELK().layout(layoutInput);
   const groupShapes: string[] = [];
   const nodeShapes: string[] = [];
   const edgeShapes: string[] = [];
-  const graphEdgesById = new Map(graph.edges.map((edge) => [`${edge.from}|${edge.to}|${edge.kind}`, edge]));
+  const graphEdgesById = new Map(drawnEdges.map((edge) => [`${edge.from}|${edge.to}|${edge.kind}`, edge]));
   function drawEdges(edges: ElkExtendedEdge[]): void {
     for (const layoutEdge of [...edges].sort((left, right) => compareText(left.id, right.id))) {
       const edge = graphEdgesById.get(layoutEdge.id)!;
@@ -103,7 +107,7 @@ async function render(graph: SkillGraph): Promise<string> {
       for (const section of layoutEdge.sections) {
         const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((point) => `${point.x},${point.y}`).join(' ');
         const marker = section.outgoingSections?.length ? '' : ` marker-end="url(#${isCycle ? 'signal-arrow' : 'arrow'})"`;
-        edgeShapes.push(`<polyline class="edge${signal}" points="${points}" stroke-dasharray="${dashByKind[edge.kind]}"${marker}><title>${escapeHtml(title)}</title></polyline>`);
+        edgeShapes.push(`<polyline class="edge kind-${edge.kind}${signal}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}" points="${points}"${marker}><title>${escapeHtml(title)}</title></polyline>`);
       }
     }
   }
@@ -112,8 +116,8 @@ async function render(graph: SkillGraph): Promise<string> {
     const node = nodesById.get(layoutNode.id);
     if (node) {
       const isEntry = entryIds.has(node.id);
-      const textLines = nodeLines(node, isEntry).map((line, lineIndex) => `<text x="${x + 16}" y="${y + 25 + lineIndex * 20}"${lineIndex === 0 ? ' font-weight="700"' : ''}>${escapeHtml(line)}</text>`).join('');
-      nodeShapes.push(`<g class="node${isEntry ? ' entry' : ''}"><title>${escapeHtml(`${node.id} / ${node.path}`)}</title><rect x="${x}" y="${y}" width="${width}" height="${height}"/>${textLines}</g>`);
+      const textLines = nodeLines(node, isEntry, baseNameByExtensionId.get(node.id)).map((line, lineIndex) => `<text x="${x + 16}" y="${y + 25 + lineIndex * 20}"${lineIndex === 0 ? ' font-weight="700"' : ''}>${escapeHtml(line)}</text>`).join('');
+      nodeShapes.push(`<g class="node${isEntry ? ' entry' : ''}" data-id="${escapeHtml(node.id)}"><title>${escapeHtml(`${node.id} / ${node.path}`)}</title><rect x="${x}" y="${y}" width="${width}" height="${height}"/>${textLines}</g>`);
       return;
     }
     if (layoutNode.id !== 'root') {
@@ -127,7 +131,7 @@ async function render(graph: SkillGraph): Promise<string> {
   const width = Math.ceil(layout.width ?? 1);
   const height = Math.ceil(layout.height ?? 1);
   const summary = `${graph.nodes.length} nodes, ${graph.edges.length} typed edges, ${profiles.length} profiles, ${graph.isolated.length} unconnected, ${graph.cycles.length} mutual mention groups`;
-  const legend = (Object.keys(dashByKind) as EdgeKind[]).map((kind) => `<li><svg viewBox="0 0 52 12" width="52" height="12" aria-hidden="true"><line class="edge" x1="1" y1="6" x2="51" y2="6" stroke-dasharray="${dashByKind[kind]}"/></svg> ${kind}</li>`).join('');
+  const legend = drawnEdgeKinds.map((kind) => `<li><button type="button" data-kind="${kind}" aria-pressed="true">[${kind}]</button></li>`).join('');
   const isolatedList = graph.isolated.length ? profiles.flatMap((profile) => {
     const isolatedMembers = nodesByProfile.get(profile)!.filter((node) => isolatedIds.has(node.id));
     if (!isolatedMembers.length) return [];
@@ -160,9 +164,12 @@ figure{margin:18px 0 28px}
 .graph{display:block;width:100%;height:auto}
 .scroll.is-actual-size .graph{width:${width}px;max-width:none}
 .view{display:flex;gap:16px;margin:0 0 10px;padding:0;list-style:none}
-.view button,.share button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.view button,.share button,.legend button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 .share button:disabled{opacity:.6;cursor:progress}
-.view button[aria-pressed="true"]{font-weight:700;text-decoration:underline}
+.view button[aria-pressed="true"],.legend button[aria-pressed="true"]{font-weight:700;text-decoration:underline}
+.legend button[aria-pressed="false"]{opacity:.45}
+.graph.is-focusing .edge{opacity:.12}
+.graph.is-focusing .edge.is-focus{opacity:1;stroke-width:2.2}
 .tag{opacity:.75}
 ${graphStyles}
 .legend{display:flex;flex-wrap:wrap;gap:12px 24px;padding:0;list-style:none}
@@ -176,7 +183,7 @@ a{color:inherit}
 <main>
 ${heading('skill tree', 1)}
 <p>${summary}.</p>
-${heading('edge legend')}
+${heading('link kinds')}
 <ul class="legend">${legend}</ul>
 <p class="signal">signal accent: edges inside a mutual mention group, and unconnected nodes in the signals list.</p>
 <p class="share"><button type="button" id="share-image">[share image]</button> <span id="share-status" role="status"></span></p>
@@ -214,6 +221,32 @@ for (const viewButton of document.querySelectorAll('.view button')) {
   viewButton.addEventListener('click', () => {
     graphView.classList.toggle('is-actual-size', viewButton.dataset.view === 'actual');
     for (const otherButton of document.querySelectorAll('.view button')) otherButton.setAttribute('aria-pressed', String(otherButton === viewButton));
+  });
+}
+const graphSvg = document.querySelector('svg.graph');
+for (const kindChip of document.querySelectorAll('.legend button')) {
+  kindChip.addEventListener('click', () => {
+    const isShown = kindChip.getAttribute('aria-pressed') !== 'true';
+    kindChip.setAttribute('aria-pressed', String(isShown));
+    graphSvg.classList.toggle('hide-' + kindChip.dataset.kind, !isShown);
+  });
+}
+const edgesByNodeId = new Map();
+for (const edgeLine of graphSvg.querySelectorAll('.edge')) {
+  for (const endpointId of [edgeLine.dataset.from, edgeLine.dataset.to]) {
+    if (!edgesByNodeId.has(endpointId)) edgesByNodeId.set(endpointId, []);
+    edgesByNodeId.get(endpointId).push(edgeLine);
+  }
+}
+for (const nodeBox of graphSvg.querySelectorAll('.node')) {
+  const nodeEdges = edgesByNodeId.get(nodeBox.dataset.id) ?? [];
+  nodeBox.addEventListener('mouseenter', () => {
+    graphSvg.classList.add('is-focusing');
+    for (const edgeLine of nodeEdges) edgeLine.classList.add('is-focus');
+  });
+  nodeBox.addEventListener('mouseleave', () => {
+    graphSvg.classList.remove('is-focusing');
+    for (const edgeLine of nodeEdges) edgeLine.classList.remove('is-focus');
   });
 }
 const shareControl = document.getElementById('share-image');
@@ -263,7 +296,8 @@ function placeGraph(graphSvg) {
   const availableHeight = shareHeight - graphTop - shareMargin;
   const scale = Math.min(availableWidth / graphWidth, availableHeight / graphHeight);
   const placedGraph = graphSvg.cloneNode(true);
-  placedGraph.removeAttribute('class');
+  placedGraph.classList.remove('graph', 'is-focusing');
+  for (const focusedEdge of placedGraph.querySelectorAll('.is-focus')) focusedEdge.classList.remove('is-focus');
   placedGraph.setAttribute('x', String(shareMargin + (availableWidth - graphWidth * scale) / 2));
   placedGraph.setAttribute('y', String(graphTop));
   placedGraph.setAttribute('width', String(graphWidth * scale));
