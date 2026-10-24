@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { commitFile, makeRepo } from "../../skills/commit/test/helpers.ts";
+import { commitFile, makeRepo } from "../../skills/committing/test/helpers.ts";
 
-export { cleanup as removeAll } from "../../skills/commit/test/helpers.ts";
+export { cleanup as removeAll } from "../../skills/committing/test/helpers.ts";
 
 export const HOOKS_DIRECTORY = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 

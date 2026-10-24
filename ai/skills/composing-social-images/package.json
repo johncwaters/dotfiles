@@ -1,0 +1,7 @@
+{
+  "name": "composing-social-images",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": { "ffmpeg-static": "5.3.0", "playwright-core": "1.63.0" }
+}

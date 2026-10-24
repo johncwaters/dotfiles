@@ -330,7 +330,7 @@ const scan = (relativePath) => {
     return;
   }
   const text = fs.readFileSync(absolutePath, 'utf8');
-  const boundaryText = relativePath === 'ai/skills/house-style/SKILL.md'
+  const boundaryText = relativePath === 'ai/skills/applying-house-style/SKILL.md'
     ? text.replace("Not for PostHog product UI, which follows PostHog's own design system.", '') : text;
   if (/posthog|backchannels|profiles\/(work|personal|server)\b|profileName[^\n]*(?:==|!=)\s*["']?(?:work|personal|server)\b/i.test(boundaryText)) {
     throw new Error(`profile-specific shared content: ${relativePath}`);
@@ -339,7 +339,7 @@ const scan = (relativePath) => {
 for (const relativePath of ['ai', 'coder/install.sh', 'devbox/lib.sh', 'devbox/install.sh', 'vscodium/install.sh', 'script/lib']) scan(relativePath);
 NODE
 check "house style is shared without a profile copy" \
-  bash -c '[[ -f "$1/ai/skills/house-style/SKILL.md" && ! -e "$1/profiles/personal/skills/house-style" && ! -e "$1/profiles/work/skills/house-style" ]]' _ "$repoRoot"
+  bash -c '[[ -f "$1/ai/skills/applying-house-style/SKILL.md" && ! -e "$1/profiles/personal/skills/applying-house-style" && ! -e "$1/profiles/work/skills/applying-house-style" ]]' _ "$repoRoot"
 check "only the work profile carries the editor MCP and remote provision inputs" \
   bash -c '[[ -f "$1/profiles/work/vscodium-mcp.json" && -f "$1/profiles/work/devbox/provision.sh" && ! -e "$1/vscodium/mcp.json" && ! -e "$1/devbox/provision.sh" ]]' _ "$repoRoot"
 

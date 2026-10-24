@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 
-# The commit skill reads the marker, so a test run points it at a sandbox rather than repointing the machine it runs on.
+# The committing skill reads the marker, so a test run points it at a sandbox rather than repointing the machine it runs on.
 profileMarkerPath() {
   printf '%s\n' "${DOTFILES_MARKER_PATH:-$dotfilesRepo/.machine-profile}"
 }

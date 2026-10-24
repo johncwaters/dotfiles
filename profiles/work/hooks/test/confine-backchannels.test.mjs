@@ -129,7 +129,7 @@ test("a failed confinement check denies backchannels and allows other calls", (t
   const { homeDirectory } = homeWithBackchannelClone(testContext);
   const missingDirectory = path.join(temporaryDirectory(testContext, "confine-backchannels-missing-"), "does-not-exist");
   assert.equal(decisionFor({ ...BACKCHANNELS_CALLS[0], cwd: missingDirectory }, homeDirectory), "deny");
-  const otherCall = { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: "commit" }, cwd: missingDirectory };
+  const otherCall = { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: "committing" }, cwd: missingDirectory };
   assert.equal(decisionFor(otherCall, homeDirectory), "allow");
 });
 
@@ -191,7 +191,7 @@ test("other tools and skills pass untouched in a personal repository", (testCont
   const { homeDirectory } = homeWithBackchannelClone(testContext);
   const personalRepository = repositoryWithOrigin(testContext, "https://github.com/johncwaters/dotfiles");
   for (const call of [
-    { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: "commit" } },
+    { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: "committing" } },
     { hook_event_name: "PreToolUse", tool_name: "mcp__posthog__exec", tool_input: {} },
     { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git status" } },
     { hook_event_name: "PreToolUse", tool_name: "ListMcpResourcesTool", tool_input: { server: "posthog" } },

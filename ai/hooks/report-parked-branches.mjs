@@ -314,7 +314,7 @@ try {
     newestEntryPerBranch,
     parseLedger,
     supersededKeys,
-  } = await import("../skills/commit/lib/ledger.ts");
+  } = await import("../skills/committing/lib/ledger.ts");
   const atPath = ledgerPath();
   const { entries } = parseLedger(readFileSync(atPath, "utf8"));
   const addressableEntries = entries.filter(entryPathsAreAbsolute);

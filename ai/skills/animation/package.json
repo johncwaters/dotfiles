@@ -1,7 +1,0 @@
-{
-  "name": "animation",
-  "private": true,
-  "type": "module",
-  "engines": { "node": ">=22" },
-  "dependencies": { "playwright-core": "1.63.0" }
-}

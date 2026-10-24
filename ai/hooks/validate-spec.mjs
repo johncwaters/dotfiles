@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { replayEdits } from "./edit-replay.mjs";
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
-import { validateGraph } from "../skills/spec/lib/graph.ts";
+import { validateGraph } from "../skills/specifying/lib/graph.ts";
 
 function resolveExistingPath(filePath) {
   if (fs.existsSync(filePath)) return fs.realpathSync(filePath);

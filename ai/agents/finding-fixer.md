@@ -1,6 +1,6 @@
 ---
 name: finding-fixer
-description: Applies fixes for review findings already dispositioned ACTIONABLE, re-running each finding's proof before and after its edit. Never reviews, never judges severity, never runs git. Returns a structured receipt of what it fixed, could not prove fixed, and declined. Use as the writer half of the /commit review loop.
+description: Applies fixes for review findings already dispositioned ACTIONABLE, re-running each finding's proof before and after its edit. Never reviews, never judges severity, never runs git. Returns a structured receipt of what it fixed, could not prove fixed, and declined. Use as the writer half of the /committing review loop.
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: opus
 ---

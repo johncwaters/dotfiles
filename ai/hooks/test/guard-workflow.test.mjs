@@ -50,7 +50,7 @@ function editCall(filePath, transcriptPath) {
   return { tool_name: "Edit", tool_input: { file_path: filePath, old_string: "a", new_string: "b" }, transcript_path: transcriptPath };
 }
 
-test("raw git commit and push outside /commit are denied in every command position", () => {
+test("raw git commit and push outside /committing are denied in every command position", () => {
   const transcriptPath = writeTranscript([prompt("fix the typo")]);
   for (const command of [
     "git commit -m x",
@@ -80,7 +80,7 @@ test("raw git commit and push outside /commit are denied in every command positi
   ]) {
     const { decision, reason } = decisionFor(bashCall(command, transcriptPath));
     assert.equal(decision, "deny", command);
-    assert.match(reason, /\/commit/);
+    assert.match(reason, /\/committing/);
   }
 });
 
@@ -114,16 +114,16 @@ test("pkill -f with a pattern that matches its own shell is denied", () => {
   }
 });
 
-test("a /commit or /open-pr run allows raw commits until the next carbon-unit prompt", () => {
-  const commitSkillRun = writeTranscript([prompt("ship it"), ...skillRun("commit")]);
+test("a /committing or /opening-prs run allows raw commits until the next carbon-unit prompt", () => {
+  const commitSkillRun = writeTranscript([prompt("ship it"), ...skillRun("committing")]);
   assert.equal(decisionFor(bashCall('git commit -m "WIP set-aside"', commitSkillRun)).decision, "allow");
-  const slashRun = writeTranscript([prompt("<command-name>/commit</command-name>\n<command-message>commit</command-message>")]);
+  const slashRun = writeTranscript([prompt("<command-name>/committing</command-name>\n<command-message>committing</command-message>")]);
   assert.equal(decisionFor(bashCall("git push", slashRun)).decision, "allow");
-  const nextPrompt = writeTranscript([prompt("ship it"), ...skillRun("commit"), prompt("now change the colour")]);
+  const nextPrompt = writeTranscript([prompt("ship it"), ...skillRun("committing"), prompt("now change the colour")]);
   assert.equal(decisionFor(bashCall("git commit -m x", nextPrompt)).decision, "deny");
-  const openPullRequestRun = writeTranscript([prompt("open a PR"), ...skillRun("open-pr")]);
+  const openPullRequestRun = writeTranscript([prompt("open a PR"), ...skillRun("opening-prs")]);
   assert.equal(decisionFor(bashCall('git add -A && git commit -m "WIP set-aside"', openPullRequestRun)).decision, "allow");
-  const rejectedRun = writeTranscript([prompt("ship it"), toolUse("Skill", { skill: "commit" }), toolResult("The tool use was rejected.", { toolUseId: "tool-Skill" })]);
+  const rejectedRun = writeTranscript([prompt("ship it"), toolUse("Skill", { skill: "committing" }), toolResult("The tool use was rejected.", { toolUseId: "tool-Skill" })]);
   assert.equal(decisionFor(bashCall("git commit -m x", rejectedRun)).decision, "deny");
 });
 
@@ -137,7 +137,7 @@ test("subagents, unattended sessions, and unreadable input are never gated", () 
   assert.equal(malformed.stdout, "");
 });
 
-test("the first repo edit of a session without /spec is denied once", () => {
+test("the first repo edit of a session without /specifying is denied once", () => {
   const repoFile = path.join(repository, "a.txt");
   const fresh = writeTranscript([prompt("add an export button")]);
   const { decision, reason } = decisionFor(editCall(repoFile, fresh));
@@ -149,9 +149,9 @@ test("the first repo edit of a session without /spec is denied once", () => {
   assert.equal(decisionFor(editCall(repoFile, afterReadingSource)).decision, "deny");
 });
 
-test("running /spec or reading a design spec clears the spec gate", () => {
+test("running /specifying or reading a design spec clears the spec gate", () => {
   const repoFile = path.join(repository, "a.txt");
-  const specRun = writeTranscript([prompt("add an export button"), ...skillRun("spec")]);
+  const specRun = writeTranscript([prompt("add an export button"), ...skillRun("specifying")]);
   assert.equal(decisionFor(editCall(repoFile, specRun)).decision, "allow");
   const intentRead = writeTranscript([prompt("build it"), toolUse("Read", { file_path: path.join(sandboxHome, ".claude/specs/repo/export.intent.json") })]);
   assert.equal(decisionFor(editCall(repoFile, intentRead)).decision, "allow");

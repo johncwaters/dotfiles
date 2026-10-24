@@ -14,7 +14,7 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
   String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?git['"]?${GIT_GLOBAL_OPTIONS}\s+(?:(?:commit|push)(?=\s|$|[;&|)'"])|${GIT_ALIAS_TO_COMMIT_OR_PUSH})`,
   "m",
 );
-const LANDING_SKILLS = ["commit", "open-pr"];
+const LANDING_SKILLS = ["committing", "opening-prs"];
 const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
 const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
 const SHELL_WORD_ON_LINE = /(?:^|[;&|(\s])(?:\S*\/)?(?:(?:ba|z|da|k)?sh|eval)(?=$|[\s;&|)])/;
@@ -25,8 +25,8 @@ const QUOTE_AWARE_WORD = /(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"])+/g;
 const BRACKET_CLASS = /\[[^\]]+\]/;
 
 const RAW_COMMIT_REASON =
-  "Raw `git commit` and `git push` are denied outside /commit, so every landing goes through its review loop. " +
-  "Run /commit; its Step 2 already skips the review for a mechanical change such as a pure rename or a reviewer's suggestion applied verbatim. " +
+  "Raw `git commit` and `git push` are denied outside /committing, so every landing goes through its review loop. " +
+  "Run /committing; its Step 2 already skips the review for a mechanical change such as a pure rename or a reviewer's suggestion applied verbatim. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
 const PKILL_SELF_MATCH_REASON =
@@ -34,9 +34,9 @@ const PKILL_SELF_MATCH_REASON =
   "Run pgrep -f '<pattern>' and kill the PIDs it prints, or bracket one character ('[n]ode server') so the pattern no longer matches its own text.";
 
 const SPEC_GATE_REASON =
-  `${SPEC_GATE_MARKER} This is the first repo edit in a session that never ran /spec. ` +
-  "Any change that involves a choice goes through /spec first: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a non-trivial bug fix, or a multi-file change. Run /spec now. " +
-  "Retry this same edit only for a typo or mechanical edit with no decision in it, an edit the carbon unit dictated verbatim, or when the carbon unit said to skip /spec; \"small\" or \"obvious\" is not an exemption. The gate fires once per session.";
+  `${SPEC_GATE_MARKER} This is the first repo edit in a session that never ran /specifying. ` +
+  "Any change that involves a choice goes through /specifying first: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a non-trivial bug fix, or a multi-file change. Run /specifying now. " +
+  "Retry this same edit only for a typo or mechanical edit with no decision in it, an edit the carbon unit dictated verbatim, or when the carbon unit said to skip /specifying; \"small\" or \"obvious\" is not an exemption. The gate fires once per session.";
 
 async function hasLandingSkillRunSinceLastPrompt(transcriptPath) {
   let hasLandingSkillRun = false;
@@ -58,7 +58,7 @@ function isSpecGateDenial(event) {
 
 async function hasSpecGateCleared(transcriptPath, specsDirectory) {
   for await (const event of sessionEvents(transcriptPath)) {
-    if (isSkillRun(event, "spec")) return true;
+    if (isSkillRun(event, "specifying")) return true;
     if (isSpecGateDenial(event)) return true;
     if (event.kind !== "toolUse" || event.name !== "Read") continue;
     const readPath = String(event.input.file_path || "");

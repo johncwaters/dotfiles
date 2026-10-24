@@ -8,7 +8,7 @@ import {
   gitOutput,
   parkedEntryFixture,
   REAL_GIT_PATH,
-} from "../../skills/commit/test/helpers.ts";
+} from "../../skills/committing/test/helpers.ts";
 import { HOOKS_DIRECTORY, makeRepository, removeAll, runHook } from "./harness.mjs";
 
 function parkedEntry(overrides = {}) {

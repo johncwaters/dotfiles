@@ -25,7 +25,7 @@ test("rough sessions are recorded, reported on the next start, and omitted after
     }, environment);
     assert.equal(endedSession.status, 0);
     assert.equal(endedSession.stdout, "");
-    assert.equal(endedSession.stderr, `retro: 3 incidents this session (correction 2, compaction 1). Review with /retro ${sessionId}\n`);
+    assert.equal(endedSession.stderr, `retro: 3 incidents this session (correction 2, compaction 1). Review with /running-retros ${sessionId}\n`);
     const sessionEntry = JSON.parse(readFileSync(ledgerPath, "utf8").trim());
     assert.equal(sessionEntry.sessionId, sessionId);
     assert.equal(sessionEntry.transcriptPath, transcriptPath);

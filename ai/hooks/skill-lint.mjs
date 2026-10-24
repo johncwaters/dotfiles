@@ -75,6 +75,8 @@ function nameViolations(name, skillName) {
   if (!/^[a-z0-9-]+$/.test(name) || name.length > NAME_MAX_CHARACTERS) {
     found.push(violation("name-format", 1, `name '${name}' is not 1-${NAME_MAX_CHARACTERS} lowercase letters, digits, and hyphens`, "Rename to lowercase letters, digits, and hyphens."));
   }
+  const firstWord = name.split("-")[0];
+  if (firstWord.length <= 4 || !firstWord.endsWith("ing")) found.push(violation("name-gerund", 1, `name '${name}' does not start with a gerund`, "Rename to a gerund phrase, verb first (processing-pdfs, reviewing-code)."));
   if (/anthropic|claude/.test(name)) found.push(violation("name-reserved", 1, `name '${name}' uses a reserved word`, "Drop 'anthropic' or 'claude' from the name."));
   return found;
 }

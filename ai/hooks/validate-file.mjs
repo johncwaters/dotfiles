@@ -28,10 +28,10 @@ const DOC_SIZE_CAPS = {
 };
 
 const REVIEW_LADDER_PATH_SUFFIXES = [
-  "skills/commit/SKILL.md",
-  "skills/commit/subskills/review.md",
-  "skills/code-review/SKILL.md",
-  "skills/qa-swarm/SKILL.md",
+  "skills/committing/SKILL.md",
+  "skills/committing/subskills/review.md",
+  "skills/reviewing-code/SKILL.md",
+  "skills/swarming-reviews/SKILL.md",
   "agents/finding-fixer.md",
   "workflows/qa-swarm.js",
 ];

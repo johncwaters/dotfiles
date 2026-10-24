@@ -42,7 +42,7 @@ async function remind(payload) {
   if (!payload || typeof payload.cwd !== "string" || !isAbsolute(payload.cwd)) return;
   if (typeof payload.session_id !== "string" || !payload.session_id.trim()) return;
   if (!["SessionStart", "SessionEnd"].includes(payload.hook_event_name)) return;
-  const { readRetroLedger, recordSession, unreviewedSessions } = await import("../skills/retro/lib/ledger.ts");
+  const { readRetroLedger, recordSession, unreviewedSessions } = await import("../skills/running-retros/lib/ledger.ts");
   const ledger = readRetroLedger();
   const repo = repositoryKey(payload.cwd);
   const nowMs = Date.now();
@@ -53,7 +53,7 @@ async function remind(payload) {
         && nowMs - Date.parse(entry.at) < MAXIMUM_SESSION_AGE_MS)
       .slice(0, MAXIMUM_PRINTED_SESSIONS);
     if (sessions.length === 0) return;
-    const lines = ["Unreviewed rough sessions in this repo (run /retro <id> to review, or ignore):"];
+    const lines = ["Unreviewed rough sessions in this repo (run /running-retros <id> to review, or ignore):"];
     for (const entry of sessions) {
       lines.push(`\`${inert(entry.sessionId)}\`  ${inert(entry.incidentCount)} incidents  ${inert(ageSince(entry.at, nowMs))}`);
     }
@@ -63,7 +63,7 @@ async function remind(payload) {
 
   if (ledger.sessions.some((entry) => entry.sessionId === payload.session_id && entry.reviewed)) return;
   if (typeof payload.transcript_path !== "string" || !payload.transcript_path.trim()) return;
-  const { digestTranscript } = await import("../skills/retro/lib/digest.ts");
+  const { digestTranscript } = await import("../skills/running-retros/lib/digest.ts");
   const digest = await digestTranscript(payload.transcript_path, { includeGit: false });
   const incidentCount = digest.incidents.length;
   const wasRecorded = recordSession({
@@ -84,7 +84,7 @@ async function remind(payload) {
     .slice(0, 2)
     .map(([kind, count]) => `${inert(kind)} ${inert(count)}`)
     .join(", ");
-  process.stderr.write(`retro: ${incidentCount} incidents this session (${topKinds}). Review with /retro ${inert(payload.session_id)}\n`);
+  process.stderr.write(`retro: ${incidentCount} incidents this session (${topKinds}). Review with /running-retros ${inert(payload.session_id)}\n`);
 }
 
 try {

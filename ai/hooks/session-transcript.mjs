@@ -1,4 +1,4 @@
-import { asObject, asText, contentText, isSyntheticPrompt, transcriptEntries } from "../skills/retro/lib/digest.ts";
+import { asObject, asText, contentText, isSyntheticPrompt, transcriptEntries } from "../skills/running-retros/lib/digest.ts";
 
 const SLASH_COMMAND = /<command-name>\/?([^<\s]+)<\/command-name>/;
 const TASK_NOTIFICATION_TOOL_USE_ID = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;

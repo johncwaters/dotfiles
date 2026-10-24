@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { gitOutput } from "../../skills/commit/test/helpers.ts";
+import { gitOutput } from "../../skills/committing/test/helpers.ts";
 import { makeRepository, runHook } from "./harness.mjs";
 
 function findingAt(filePath, line, side) {
