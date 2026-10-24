@@ -7,7 +7,7 @@ description: Turns a feature request into a design spec, a typed and validated J
 
 Surface a feature's hidden decisions while the carbon unit is here to make them.
 
-Terms: design spec, sketch, branch, question round, decision, open question, unit of work, contract, ticket, intent, challenge stamp. Defined in `~/.dotfiles/GLOSSARY.md`; read it first.
+Terms: design spec, sketch, branch, question round, decision, design node, open question, unit of work, contract, ticket, intent, challenge stamp. Defined in `~/.dotfiles/GLOSSARY.md`; read it first.
 
 **Input.** The feature in the carbon unit's words and the repo in the working directory.
 
@@ -34,17 +34,19 @@ An existing design spec resumes at the subskill after its status. A `challenged`
   "request": "let me export my deck as csv",
   "repoRoot": "/home/me/Projects/decks",
   "nodes": [
-    { "id": "G1", "kind": "goal", "text": "A deck exports to a CSV file from the deck page.", "risk": "low", "criteria": ["The exported CSV contains the deck names, sets, and quantities."] },
+    { "id": "G1", "kind": "goal", "text": "A deck exports to a CSV file from the deck page.", "risk": "low", "criteria": ["The exported CSV contains the deck names, sets, and quantities.", "The exported CSV carries a price per row when pricing is licensed."] },
     { "id": "N1", "kind": "nonGoal", "text": "Importing a CSV." },
     { "id": "D1", "kind": "decision", "question": "Which columns?", "answer": "Name, set, quantity.", "why": "Matches what trading sites import.", "source": "decided" },
     { "id": "D2", "kind": "decision", "question": "Where is the CSV built?", "answer": "In the export module.", "why": "It already streams the JSON export.", "source": "read", "evidence": "src/export/index.ts:14" },
     { "id": "Q1", "kind": "openQuestion", "question": "Is price a column?", "settledBy": "The pricing provider's license terms." },
+    { "id": "I1", "kind": "design", "layer": "program", "title": "CSV writer", "at": "src/export/csv.ts", "code": "type CsvRow = { name: string; set: string; quantity: number };\nexport function writeDeckCsv(deck: Deck, out: Writable): Promise<void>;" },
     { "id": "U1", "kind": "unit", "title": "Add the CSV writer", "reads": ["src/export/"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }], "serves": [1] },
-    { "id": "U2", "kind": "unit", "title": "Add the price column", "reads": ["src/export/csv.ts"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }] }
+    { "id": "U2", "kind": "unit", "title": "Add the price column", "reads": ["src/export/csv.ts"], "changes": ["src/export/csv.ts"], "checks": [{ "run": "npm test -- export" }], "serves": [2] }
   ],
   "edges": [
     { "from": "U1", "kind": "implements", "to": "D1" },
     { "from": "U1", "kind": "implements", "to": "D2" },
+    { "from": "U1", "kind": "implements", "to": "I1" },
     { "from": "U2", "kind": "implements", "to": "D1" },
     { "from": "U2", "kind": "dependsOn", "to": "U1" },
     { "from": "U2", "kind": "deferredBy", "to": "Q1" }
@@ -52,7 +54,7 @@ An existing design spec resumes at the subskill after its status. A `challenged`
 }
 ```
 
-Further fields: the goal carries `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable results); a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a unit carries `"serves"`, the 1-based numbers of the goal criteria it makes true; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
+Further fields: the goal carries `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable results); a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a `design` node holds the settled `code` of one `layer` (behavior, architecture, or program), with `at` naming the path a program design lands in, and each unit `implements` the design nodes it builds; a unit carries `"serves"`, the 1-based numbers of the goal criteria it makes true, at least one each; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
 
 The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` for its status. Its denial names each rule and the fix; apply them and write again. Run the same checks, or view the graph, at any time:
 

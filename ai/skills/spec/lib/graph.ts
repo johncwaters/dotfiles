@@ -31,7 +31,15 @@ export type Unit = {
   serves?: number[];
   budgetWaiver?: string;
 };
-export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit;
+export type Design = {
+  id: `I${number}`;
+  kind: "design";
+  layer: "behavior" | "architecture" | "program";
+  title: string;
+  code: string;
+  at?: string;
+};
+export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit | Design;
 export type EdgeKind = "blocks" | "implements" | "dependsOn" | "deferredBy";
 export type Edge = { from: Node["id"]; kind: EdgeKind; to: Node["id"] };
 export type DesignSpec = {
@@ -66,6 +74,7 @@ const NODE_FIELDS = {
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint"],
   openQuestion: ["id", "kind", "question", "settledBy"],
   unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver"],
+  design: ["id", "kind", "layer", "title", "code", "at"],
 } satisfies Record<Node["kind"], string[]>;
 const NODE_ID_PATTERNS = {
   goal: /^G1$/,
@@ -74,13 +83,14 @@ const NODE_ID_PATTERNS = {
   decision: /^D[1-9]\d*$/,
   openQuestion: /^Q[1-9]\d*$/,
   unit: /^U[1-9]\d*$/,
+  design: /^I[1-9]\d*$/,
 };
 const EDGE_ENDPOINT_KINDS = {
-  blocks: ["branch", "branch"],
-  implements: ["unit", "decision"],
-  dependsOn: ["unit", "unit"],
-  deferredBy: ["unit", "openQuestion"],
-} satisfies Record<EdgeKind, [Node["kind"], Node["kind"]]>;
+  blocks: ["branch", ["branch"]],
+  implements: ["unit", ["decision", "design"]],
+  dependsOn: ["unit", ["unit"]],
+  deferredBy: ["unit", ["openQuestion"]],
+} satisfies Record<EdgeKind, [Node["kind"], Node["kind"][]]>;
 const CHALLENGE_STAMP_PATTERN = /^CHALLENGE: \d+ kept, \d+ shrunk, \d+ cut\b/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -111,7 +121,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
   }
   const kind = value.kind;
   if (typeof kind !== "string" || !Object.hasOwn(NODE_FIELDS, kind)) {
-    addError(errors, 1, subject, "set kind to goal, nonGoal, branch, decision, openQuestion, or unit");
+    addError(errors, 1, subject, "set kind to goal, nonGoal, branch, decision, openQuestion, unit, or design");
     return;
   }
   const nodeKind = kind as Node["kind"];
@@ -120,7 +130,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "risk", "criteria"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "risk", "criteria", "layer", "at"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -149,6 +159,14 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
       return;
     }
     if (Object.hasOwn(value, "evidence")) addError(errors, 1, subject, "omit evidence unless source is read");
+    return;
+  }
+  if (nodeKind === "design") {
+    if (!["behavior", "architecture", "program"].includes(value.layer as string)) {
+      addError(errors, 1, `${subject}.layer`, "set layer to behavior, architecture, or program");
+    }
+    if (Object.hasOwn(value, "at")) requireString(value.at, `${subject}.at`, errors);
+    if (value.layer === "program" && !Object.hasOwn(value, "at")) addError(errors, 1, `${subject}.at`, "supply at, the path a program design lands in");
     return;
   }
   if (nodeKind !== "unit") return;
@@ -404,9 +422,9 @@ export function validateGraph(value: unknown): string[] {
     if (seenEdges.has(edgeKey)) addError(errors, 3, subject, "remove the duplicate edge");
     seenEdges.add(edgeKey);
     if (edge.from === edge.to) addError(errors, 3, subject, "remove the self edge");
-    const [fromKind, toKind] = EDGE_ENDPOINT_KINDS[edge.kind];
+    const [fromKind, toKinds] = EDGE_ENDPOINT_KINDS[edge.kind];
     if (nodesById.get(edge.from)?.kind !== fromKind) addError(errors, 3, subject, `set from to an existing ${fromKind} node`);
-    if (nodesById.get(edge.to)?.kind !== toKind) addError(errors, 3, subject, `set to to an existing ${toKind} node`);
+    if (!(toKinds as Node["kind"][]).includes(nodesById.get(edge.to)?.kind as Node["kind"])) addError(errors, 3, subject, `set to to an existing ${toKinds.join(" or ")} node`);
   }
   validateAcyclic(spec.edges, "dependsOn", errors);
   validateAcyclic(spec.edges, "blocks", errors);
@@ -451,6 +469,10 @@ export function validateGraph(value: unknown): string[] {
   if (isSliced && units.length === 0) addError(errors, 9, "spec.nodes", "add at least one unit for sliced or challenged status");
   const implementedIds = new Set(spec.edges.filter((edge) => edge.kind === "implements").map((edge) => edge.to));
   const implementingIds = new Set(spec.edges.filter((edge) => edge.kind === "implements").map((edge) => edge.from));
+  const goal = spec.nodes.find((node): node is Goal => node.kind === "goal");
+  const goalCriteria = goal?.criteria ?? [];
+  const isGoalMissingCriteria = isSliced && goal !== undefined && goalCriteria.length === 0;
+  if (isGoalMissingCriteria) addError(errors, 17, "node G1", "add criteria, 1 to 12 observable results; every unit serves one at sliced status");
   for (const unit of units) {
     if (!isSliced) continue;
     if (unit.changes.length === 0) addError(errors, 10, `node ${unit.id}`, "add at least one changes path");
@@ -466,12 +488,12 @@ export function validateGraph(value: unknown): string[] {
       addError(errors, 15, `node ${unit.id}`, `replace changes path ${changedPath} with a literal path without wildcards`);
     }
     if (!implementingIds.has(unit.id)) addError(errors, 11, `node ${unit.id}`, "add an implements edge to a decision");
+    if (!isGoalMissingCriteria && (unit.serves ?? []).length === 0) addError(errors, 17, `node ${unit.id}`, "add serves naming the goal criteria this unit makes true; a unit serving none is a horizontal layer, so fold it into the vertical slice that needs it");
   }
-  const goalCriteria = spec.nodes.find((node): node is Goal => node.kind === "goal")?.criteria ?? [];
   const servedCriterionNumbers = new Set(units.flatMap((unit) => unit.serves ?? []));
   for (const unit of units) {
     for (const criterionNumber of unit.serves ?? []) {
-      if (criterionNumber <= goalCriteria.length) continue;
+      if (isGoalMissingCriteria || criterionNumber <= goalCriteria.length) continue;
       addError(errors, 17, `node ${unit.id}`, `remove serves ${criterionNumber}; the goal has ${goalCriteria.length} criteria`);
     }
     const ticketCriterionCount = unitTicketCriteria(unit, goalCriteria).length;
@@ -484,8 +506,14 @@ export function validateGraph(value: unknown): string[] {
   }
   for (const node of spec.nodes) {
     if (!isSliced) continue;
+    if (node.kind === "design" && !implementedIds.has(node.id)) addError(errors, 12, `node ${node.id}`, "add an implements edge from the unit that builds this design");
     if (node.kind !== "decision" || node.isConstraint === true || implementedIds.has(node.id)) continue;
     addError(errors, 12, `node ${node.id}`, "add an implements edge from a unit or mark the decision isConstraint: true");
+  }
+  const goalRisk = goal?.risk;
+  const needsDesign = goalRisk !== "low";
+  if (isSliced && needsDesign && !spec.nodes.some((node) => node.kind === "design")) {
+    addError(errors, 18, "spec.nodes", `add design nodes from subskills/design.md; a spec settles its design before slicing unless its risk is low (risk is ${goalRisk ?? "unset"})`);
   }
   if (resolvedRoot === undefined || errors.some((error) => error.startsWith("Rule 6:"))) return errors;
   if (isSliced) {

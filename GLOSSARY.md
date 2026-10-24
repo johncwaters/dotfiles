@@ -29,6 +29,12 @@ here.
   challenge overturned the answer they gave on evidence verified in the repo. Only the
   challenge may overturn a `decided` one; it then reads `assumed` and keeps the displaced
   answer in its reason, so the hand off lists both.
+- **design node**: A settled piece of a feature's design written as code rather than prose,
+  in one of three layers: behavior (a walkthrough or ASCII mockup), architecture
+  (components, contracts, data model), or program (types, signatures, call graph,
+  pseudocode). The carbon unit approves it before slicing, because review is cheapest
+  before code exists; every design spec at medium risk or above carries one, and each
+  ticket carries the design nodes its unit builds.
 - **open question**: A branch deliberately left open, recorded with what would settle it.
   A unit of work that waits on one is deferred: it stays in the graph and out of the
   challenge, and the cut into tickets waits until the question is answered, because one
