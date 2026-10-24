@@ -8,7 +8,8 @@ import { createServer } from 'node:http'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { getPlacement, isNonemptyString, launchBrowser, resolveInsideProjectRoot, writeFileRefusingSymlink } from './render.mjs'
+import { getPlacement, isNonemptyString, resolveInsideProjectRoot, writeFileRefusingSymlink } from '../../../lib/capture-files.mjs'
+import { launchCaptureBrowser } from '../../../lib/headless-chrome.mjs'
 
 const defaultFramesPerSecond = 60
 const pausedClockStartMs = 3_600_000
@@ -270,7 +271,7 @@ async function recordClip(manifestPath) {
     let browser
     try {
         server = await serveHarness(harnessDirectory)
-        browser = await launchBrowser()
+        browser = await launchCaptureBrowser((await import('playwright-core')).chromium)
         const { width, height, deviceScaleFactor } = getClipViewport(getPlacement(manifest.placement), manifest.cssWidth)
         const clipPage = await browser.newPage({ viewport: { width, height }, deviceScaleFactor })
         await clipPage.clock.install({ time: 0 })

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { escapeHtml, isNonemptyString, writeFileRefusingSymlink } from './render.mjs'
+import { escapeHtml, isNonemptyString, writeFileRefusingSymlink } from '../../../lib/capture-files.mjs'
 
 const maxSharePageBytes = 16_000_000
 const maxCaptionCount = 8

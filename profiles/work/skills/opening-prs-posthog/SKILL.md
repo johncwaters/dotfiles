@@ -9,7 +9,7 @@ PostHog opens pull requests early and often, so reviewers can steer work before 
 
 ## Step 4: visual evidence
 
-Follow [references/visual-evidence.md](references/visual-evidence.md) together with the core skill's capture guide.
+Follow [references/visual-evidence.md](references/visual-evidence.md) together with the core skill's evidence reference.
 
 ## Step 5: prose
 

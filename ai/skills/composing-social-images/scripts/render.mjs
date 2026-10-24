@@ -7,9 +7,9 @@ import { parseArgs } from 'node:util'
 import { escapeHtml, findProjectRoot, getPlacement, isGitWorktreeRoot, isLocalPath, isNonemptyString, placements, resolveInsideProjectRoot, writeFileRefusingSymlink } from '../../../lib/capture-files.mjs'
 import { launchCaptureBrowser } from '../../../lib/headless-chrome.mjs'
 
-export { escapeHtml, findProjectRoot, getPlacement, isNonemptyString, placements, resolveInsideProjectRoot, writeFileRefusingSymlink }
+export { findProjectRoot, getPlacement, placements, resolveInsideProjectRoot }
 
-export async function launchBrowser() {
+async function launchBrowser() {
     const { chromium } = await import('playwright-core')
     return launchCaptureBrowser(chromium)
 }

@@ -52,27 +52,8 @@ Run `node <skill-dir>/scripts/render.mjs --manifest marketing/social/manifest.js
 
 ## Clips
 
-A clip shows what a still cannot: an animation, a transition, a state change. Its motion craft (timing, easing, staging) follows the `animating` skill (`~/.claude/skills/animating`); this section covers recording. It runs the project's real component code and stylesheet on made-up data, excluding mocks and live sessions, because a mock shows something the product does not do and a live session shows the carbon unit's private work.
-
-1. Build a harness directory. Its `index.html` loads the project's real stylesheet and fonts plus one script, bundled with the project's own bundler from an entry file that imports the real component module and exposes a global function per behavior (`window.playScene = (sceneIndex, message) => celebrateMerge(message, scenes[sceneIndex])`). Framing copy and position overrides go only in the harness page, keeping project code unchanged. The recorder serves the directory over loopback, because real stylesheets use root-absolute font and asset URLs that `file://` cannot resolve.
-2. Write `marketing/social/clip.json` and run `node <skill-dir>/scripts/record-clip.mjs --manifest marketing/social/clip.json`. Each scene's `run` is evaluated in the page at that scene's first frame.
-
-```json
-{
-  "harness": "harness/merge-celebrations",
-  "placement": "instagram-square",
-  "cssWidth": 480,
-  "out": "out/final/merge-celebrations.mp4",
-  "scenes": [{ "run": "playScene(0, 'Merged Acme/app#1322')", "durationMs": 4800 }]
-}
-```
-
-   `cssWidth` is the viewport the component lays out in and the placement's pixels come from device scale, so small UI fills the frame sharp instead of as an upscaled bitmap. The recorder freezes the page clock and steps every animation one frame at a time, so the clip is exact at any frame rate and a timer in the component fires at its real moment; a realtime screen capture drops frames and outlives those timers. The recorder keeps every running animation paused in order to seek it, so it cannot see the page pause one that an earlier frame already showed running: `pause()` or `animation-play-state: paused` on it is ignored and it plays on. Output is H.264 MP4, the format [Buffer lists](https://support.buffer.com/article/616-uploading-and-sharing-links-to-videos) for X and LinkedIn, where WebM is absent.
-3. Read every `<out>.scene-<n>.png` the recorder writes beside the clip, one mid-scene frame each, and rerecord when a scene does not show what the caption says.
-4. Hand it over with `node <skill-dir>/scripts/share-page.mjs --clip <clip.mp4> --captions captions.json --title "<short name>" --out <page.html>`, where captions.json is `[{ "label": "LinkedIn post", "text": "..." }]` with one entry per caption and the alt text. Publish that file as an Artifact with `capabilities: {"downloads": true}` and give the carbon unit the link, because a local path cannot be opened from a phone and the Artifact viewer blocks plain download links; the page embeds the clip, saves it through the downloads capability, and puts each caption in its own copy block.
+A clip shows what a still cannot: an animation, a transition, a state change. Load `capturing-ui` to record it; its motion craft (timing, easing, staging) follows the `animating` skill (`~/.claude/skills/animating`).
 
 ## Scripts
 
 - `scripts/render.mjs`: Validates and renders image manifests; run for safe-zone review and final output.
-- `scripts/record-clip.mjs`: Records real-component harness scenes; run after writing clip.json.
-- `scripts/share-page.mjs`: Embeds a clip and captions in a downloadable page; run before publishing the handoff Artifact.

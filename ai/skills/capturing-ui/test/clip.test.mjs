@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { sep } from 'node:path'
 import { test } from 'node:test'
 import { getClipViewport, planClipFrames, resolveHarnessFile } from '../scripts/record-clip.mjs'
-import { getPlacement } from '../scripts/render.mjs'
+import { getPlacement } from '../../../lib/capture-files.mjs'
 import { buildSharePage } from '../scripts/share-page.mjs'
 
 test('the viewport lays out at the CSS width and reaches placement pixels through device scale', () => {

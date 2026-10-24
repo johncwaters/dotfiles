@@ -51,7 +51,7 @@ Read the diff against the merge-base (`git diff $(git merge-base <base> HEAD)`) 
 
 When real open questions remain, write 1 to 3 concrete questions a reviewer can answer in a sentence each. With none, omit the feedback list. Mine them from the diff: open TODOs, a dependency added, a threshold picked without evidence. "Any feedback?" is not a question; "Retries live in the task queue so a crashed client loses nothing; any caller that breaks?" is. The approach is the author's call: state the pick and why, keep the choice with the author rather than asking reviewers to choose, since reviewers stall on an open choice and move on a stated one. Questions the carbon unit supplies win over mined ones.
 
-Any visual change (frontend files, or anything a repo rule covers) requires screenshots or a recording, even when the repo is silent. Follow [references/visual-evidence.md](references/visual-evidence.md) for capture, approval, upload, and embedding; its `scripts/evidence.mjs` does the mechanical parts. Uploads are public forever, so upload only material free of customer data and internal information. No way to capture the UI: say so in the PR body, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
+Any visual change (frontend files, or anything a repo rule covers) requires screenshots or a recording, even when the repo is silent. Load `capturing-ui` to capture them, then follow [references/visual-evidence.md](references/visual-evidence.md) for approval, upload, and embedding. Uploads are public forever, so upload only material free of customer data and internal information. No way to capture the UI: say so in the PR body, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
 
 ## Step 5: Build the body
 
@@ -90,7 +90,3 @@ Opening or editing a PR notifies carbon units, so wait for approval before posti
 - The rules ask for an assignee or labels: resolve the handle from `gh api user --jq .login` and pass `--assignee`/`--label`; use only the resolved handle.
 
 Report the PR URL and draft state. Check for CLA, DCO, or contributor-check bot comments and report any that appear, along with what they ask the carbon unit to do.
-
-## Scripts
-
-- `scripts/evidence.mjs`: Captures, previews, and formats visual evidence; run during Step 4 following references/visual-evidence.md.

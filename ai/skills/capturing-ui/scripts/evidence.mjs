@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { escapeHtml } from '../../../lib/capture-files.mjs'
 import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../lib/headless-chrome.mjs'
 
 export { parseFlags }
@@ -44,7 +45,6 @@ function gridRows(area, renderCell) {
 }
 
 export function renderContactSheet(fileNames, title) {
-    const escapeHtml = (text) => text.replace(/[&<>"]/g, (character) => `&#${character.charCodeAt(0)};`)
     const present = new Set(fileNames)
     const cellHtml = (fileName) =>
         present.has(fileName)
