@@ -7,7 +7,7 @@ import { compareText, extractGraph } from './extract.ts';
 import type { EdgeKind, GraphNode, SkillGraph } from './extract.ts';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
-const drawnEdgeKinds: EdgeKind[] = ['mentions', 'spawns', 'runs', 'names'];
+const drawnEdgeKinds: EdgeKind[] = ['loads', 'mentions', 'spawns', 'runs', 'names'];
 
 const arrowMarkers = `<defs>
 <marker id="arrow" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7" fill="none" stroke="var(--ink)"/></marker>
@@ -20,6 +20,7 @@ rect{fill:var(--ground);stroke:currentColor;stroke-width:1}
 .profile rect{fill:none;stroke-dasharray:3 5}
 .entry rect{stroke-width:2.5}
 .edge{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round}
+.kind-mentions{stroke-dasharray:3 5}
 .signal{color:var(--signal)}
 ${drawnEdgeKinds.map((kind) => `.hide-${kind} .kind-${kind}{display:none}`).join('\n')}`;
 
@@ -124,7 +125,7 @@ async function render(graph: SkillGraph): Promise<string> {
         if (!layoutEdge.sections?.length) throw new Error(`Missing route for ${layoutEdge.id}`);
         for (const section of layoutEdge.sections) {
           const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((point) => `${point.x},${point.y}`).join(' ');
-          const marker = section.outgoingSections?.length ? '' : ` marker-end="url(#${isCycle ? 'signal-arrow' : 'arrow'})"`;
+          const marker = edge.kind === 'mentions' || section.outgoingSections?.length ? '' : ` marker-end="url(#${isCycle ? 'signal-arrow' : 'arrow'})"`;
           edgeShapes.push(`<polyline class="edge kind-${edge.kind}${signal}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}" points="${points}"${marker}><title>${escapeHtml(title)}</title></polyline>`);
         }
       }
@@ -157,14 +158,14 @@ async function render(graph: SkillGraph): Promise<string> {
     isGroupedByProfile: false, nodeSpacing: 14, layerSpacing: 44, edgeSpacing: 10, boxInset: 10,
   });
   const { width, height } = pageDrawing;
-  const summary = `${graph.nodes.length} nodes, ${graph.edges.length} typed edges, ${profiles.length} profiles, ${graph.isolated.length} unconnected, ${graph.cycles.length} mutual mention groups`;
+  const summary = `${graph.nodes.length} nodes, ${graph.edges.length} typed edges, ${profiles.length} profiles, ${graph.isolated.length} unconnected, ${graph.cycles.length} load cycles`;
   const legend = drawnEdgeKinds.map((kind) => `<li><button type="button" data-kind="${kind}" aria-pressed="true">[${kind}]</button></li>`).join('');
   const isolatedList = graph.isolated.length ? profiles.flatMap((profile) => {
     const isolatedMembers = nodesByProfile.get(profile)!.filter((node) => isolatedIds.has(node.id));
     if (!isolatedMembers.length) return [];
     return [`<p>${escapeHtml(profile)}</p><ul>${isolatedMembers.map((node) => `<li class="signal"><button type="button" class="open-node" data-id="${escapeHtml(node.id)}">${escapeHtml(node.name)}</button> <span class="tag">${escapeHtml(describeNode(node))}</span></li>`).join('')}</ul>`];
   }).join('\n') : '<p>unconnected: none</p>';
-  const cycleList = graph.cycles.length ? `<ul>${graph.cycles.map((cycle) => `<li class="signal">mutual mentions: ${cycle.map(escapeHtml).join(', ')}</li>`).join('')}</ul>` : '<p>cycles: none</p>';
+  const cycleList = graph.cycles.length ? `<ul>${graph.cycles.map((cycle) => `<li class="signal">load cycles: ${cycle.map(escapeHtml).join(', ')}</li>`).join('')}</ul>` : '<p>cycles: none</p>';
   const edgeRows = graph.edges.map((edge) => `<tr><td>${escapeHtml(edge.from)}</td><td>${edge.kind}</td><td>${escapeHtml(edge.to)}</td></tr>`).join('\n');
   const kinds = ['skill', 'agent', 'workflow', 'hook'] as const;
   const profileRows = profiles.map((profile) => {
@@ -222,7 +223,7 @@ ${heading('skill tree', 1)}
 <p>${summary}.</p>
 ${heading('link kinds')}
 <ul class="legend">${legend}</ul>
-<p class="signal">signal accent: edges inside a mutual mention group, and unconnected nodes in the signals list.</p>
+<p class="signal">signal accent: edges inside a load cycle, and unconnected nodes in the signals list.</p>
 <p class="share"><button type="button" id="share-image">[share image]</button> <span id="share-status" role="status"></span></p>
 <div class="workspace" id="workspace">
 <figure>
@@ -244,7 +245,7 @@ ${pageDrawing.shapes}
 </aside>
 </div>
 ${heading('signals')}
-<p>unconnected: ${graph.isolated.length} / mutual mention groups: ${graph.cycles.length}</p>
+<p>unconnected: ${graph.isolated.length} / load cycles: ${graph.cycles.length}</p>
 ${isolatedList}
 ${cycleList}
 ${heading('all edges')}
@@ -503,7 +504,7 @@ function composeStats() {
   const shownKinds = Object.keys(shareCard.linkCountByKind).filter((kind) => !hidden.includes(kind));
   const linkCount = shownKinds.reduce((total, kind) => total + shareCard.linkCountByKind[kind], 0);
   const rows = [...shareCard.countRows.slice(0, 4), ['links', linkCount], ...shareCard.countRows.slice(4)];
-  const keyLines = ['▶ starting point', 'accent: mutual mentions', shareCard.unconnectedCount + ' unconnected, not drawn'];
+  const keyLines = ['▶ starting point', 'accent: load cycles', shareCard.unconnectedCount + ' unconnected, not drawn'];
   if (hidden.length) keyLines.unshift('links shown: ' + (shownKinds.join(', ') || 'none'));
   return rows.map(([label, count], rowIndex) => countRow(label, count, 268 + rowIndex * 42)).join('')
     + keyLines.map((line, lineIndex) => '<text x="' + shareMargin + '" y="' + (shareHeight - shareMargin - (keyLines.length - 1 - lineIndex) * 28) + '" font-size="17" opacity=".7"' + (line.startsWith('accent') ? ' class="signal"' : '') + '>' + escapeXml(line) + '</text>').join('');

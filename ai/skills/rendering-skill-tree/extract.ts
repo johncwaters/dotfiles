@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export type NodeKind = 'skill' | 'agent' | 'workflow' | 'hook';
-export type EdgeKind = 'mentions' | 'extends' | 'runs' | 'spawns' | 'names';
+export type EdgeKind = 'loads' | 'mentions' | 'extends' | 'runs' | 'spawns' | 'names';
 export type GraphNode = {
   id: string;
   name: string;
@@ -37,15 +37,23 @@ function markdownFiles(directory: string): string[] {
   });
 }
 
-type MarkdownTokens = { names: Set<string>; workflows: Set<string>; agents: Set<string>; prefixes: Set<string> };
+type MarkdownTokens = { names: Set<string>; loadedNames: Set<string>; workflows: Set<string>; agents: Set<string>; prefixes: Set<string> };
 
 function tokenizeMarkdown(markdown: string): MarkdownTokens {
-  const tokens: MarkdownTokens = { names: new Set(), workflows: new Set(), agents: new Set(), prefixes: new Set() };
+  const tokens: MarkdownTokens = { names: new Set(), loadedNames: new Set(), workflows: new Set(), agents: new Set(), prefixes: new Set() };
   const pattern = /(?<!`)`\/?(?<name>[a-zA-Z0-9][a-zA-Z0-9._-]*)`(?!`)|\bWorkflow\s*\((?<workflow>[\s\S]*?)\)|\bsubagent_type[\s`'"*]*[:=][\s`'"*]*(?<agent>[a-zA-Z0-9][a-zA-Z0-9._-]*)|\b(?<prefix>[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*-)/g;
+  const loadVerb = /\b(invoke|invokes|invoking|run|runs|running|call|calls|follow|follows|load|loads|apply|applies|delegate|delegates|send|sends)\b/i;
+  const instrument = /\b(through|with|from)\s+(the\s+)?$/i;
+  const routing = /\b(goes|go|reached|route|routes|routed|offer|offers)\b/i;
+  const sentenceStarts = [0, ...Array.from(markdown.matchAll(/(?<=[.;:!?])\s+|\n/g), (boundary) => boundary.index + boundary[0].length)];
+  let sentenceIndex = 0;
   for (const match of markdown.matchAll(pattern)) {
     const { name, workflow, agent, prefix } = match.groups!;
     if (name) {
       tokens.names.add(name);
+      while (sentenceIndex + 1 < sentenceStarts.length && sentenceStarts[sentenceIndex + 1] <= match.index) sentenceIndex++;
+      const before = markdown.slice(sentenceStarts[sentenceIndex], match.index);
+      if (!routing.test(before) && (loadVerb.test(before) || instrument.test(before))) tokens.loadedNames.add(name);
       if (name.endsWith('-')) tokens.prefixes.add(name);
     }
     if (workflow !== undefined) {
@@ -205,10 +213,25 @@ export function extractGraph(repoRoot: string): SkillGraph {
     edgesById.set(`${edge.from}\n${edge.to}\n${edge.kind}`, edge);
   }
   for (const node of nodes) {
-    for (const tokens of markdownByNode.get(node) ?? []) {
+    if (node.kind === 'skill') {
+      for (let separator = node.name.indexOf('-'); separator >= 0; separator = node.name.indexOf('-', separator + 1)) {
+        const baseName = node.name.slice(0, separator);
+        for (const base of nodesByName.get(baseName) ?? []) {
+          if (base.kind === 'skill' && prefixesByNode.get(base)!.has(`${baseName}-`)) addEdge(base, node, 'extends');
+        }
+      }
+    }
+  }
+  for (const node of nodes) {
+    const tokenSets = markdownByNode.get(node) ?? [];
+    const loadedNames = new Set(tokenSets.flatMap((tokens) => [...tokens.loadedNames]));
+    for (const tokens of tokenSets) {
       for (const name of tokens.names) {
         for (const target of nodesByName.get(name) ?? []) {
-          if (target.kind === 'skill') addEdge(node, target, 'mentions');
+          if (target.kind === 'skill') {
+            const isExtensionOfTarget = edgesById.has(`${target.id}\n${node.id}\nextends`);
+            addEdge(node, target, loadedNames.has(name) && !isExtensionOfTarget ? 'loads' : 'mentions');
+          }
           if (target.kind === 'agent') addEdge(node, target, 'spawns');
         }
       }
@@ -217,14 +240,6 @@ export function extractGraph(repoRoot: string): SkillGraph {
           for (const target of nodesByName.get(name) ?? []) {
             if (target.kind === targetKind) addEdge(node, target, kind);
           }
-        }
-      }
-    }
-    if (node.kind === 'skill') {
-      for (let separator = node.name.indexOf('-'); separator >= 0; separator = node.name.indexOf('-', separator + 1)) {
-        const baseName = node.name.slice(0, separator);
-        for (const base of nodesByName.get(baseName) ?? []) {
-          if (base.kind === 'skill' && prefixesByNode.get(base)!.has(`${baseName}-`)) addEdge(base, node, 'extends');
         }
       }
     }
@@ -240,5 +255,5 @@ export function extractGraph(repoRoot: string): SkillGraph {
   }
   const edges = [...edgesById.entries()].sort(([left], [right]) => compareText(left, right)).map(([, edge]) => edge);
   const connectedIds = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
-  return { nodes, edges, isolated: nodes.filter((node) => !connectedIds.has(node.id)).map((node) => node.id), cycles: findCycles(nodes, edges) };
+  return { nodes, edges, isolated: nodes.filter((node) => !connectedIds.has(node.id)).map((node) => node.id), cycles: findCycles(nodes, edges.filter((edge) => edge.kind !== 'mentions' && edge.kind !== 'extends')) };
 }

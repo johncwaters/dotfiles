@@ -22,5 +22,6 @@ test('renders byte-identical HTML and graph with the opening-prs storytelling de
     assert.deepEqual(await readFile(path.join(firstDirectory, fileName)), await readFile(path.join(secondDirectory, fileName)));
   }
   const graph = JSON.parse(await readFile(path.join(firstDirectory, 'graph.json'), 'utf8'));
-  assert.ok(graph.edges.some((edge: { from: string; to: string; kind: string }) => edge.from === 'skill:opening-prs' && edge.to === 'skill:storytelling' && edge.kind === 'mentions'));
+  assert.ok(graph.edges.some((edge: { from: string; to: string; kind: string }) => edge.from === 'skill:opening-prs' && edge.to === 'skill:storytelling' && edge.kind === 'loads'));
+  assert.ok(!graph.cycles.some((cycle: string[]) => cycle.includes('skill:reviewing-code')));
 });
