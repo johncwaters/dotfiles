@@ -4,14 +4,16 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url))
-const workflowPath = path.join(testDirectory, '..', 'qa-swarm.js')
-
-const workflowSource = fs.readFileSync(workflowPath, 'utf8')
+export const workflowDirectory = path.join(testDirectory, '..')
 const metaExportDeclaration = /^export const meta =/
 
-assert.match(workflowSource, metaExportDeclaration, 'qa-swarm.js no longer opens with the meta export this test strips to make the workflow evaluable, so evaluating it would fail with a bare SyntaxError. Repoint the declaration pattern before running it again.')
+export function executableSourceOfWorkflow(workflowFileName) {
+  const workflowSource = fs.readFileSync(path.join(workflowDirectory, workflowFileName), 'utf8')
+  assert.match(workflowSource, metaExportDeclaration, `${workflowFileName} no longer opens with the meta export this test strips to make the workflow evaluable, so evaluating it would fail with a bare SyntaxError. Repoint the declaration pattern before running it again.`)
+  return workflowSource.replace(metaExportDeclaration, 'const meta =')
+}
 
-export const executableWorkflowSource = workflowSource.replace(metaExportDeclaration, 'const meta =')
+export const executableWorkflowSource = executableSourceOfWorkflow('qa-swarm.js')
 
 const orchestrationBoundaryMarker = '\nif (!args.reviewCmd)'
 const orchestrationStart = executableWorkflowSource.indexOf(orchestrationBoundaryMarker)

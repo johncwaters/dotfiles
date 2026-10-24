@@ -97,9 +97,27 @@ function coversEveryPlanStep(laneText, requiredStepNumbers) {
   return requiredStepNumbers.every((stepNumber) => distinctStepNumbers.has(stepNumber))
 }
 
-function runChallengeLane(laneBrief) {
-  const challengePrompt = buildChallengePrompt(laneBrief)
+function describeCoverageFailure(laneText, requiredStepNumbers) {
+  const stepNumbers = verdictStepNumbersFrom(laneText)
+  if (!stepNumbers) {
+    return 'no STEP_VERDICTS block followed by a non-empty PLAN_SUMMARY'
+  }
+  const uncoveredStepNumbers = requiredStepNumbers.filter((stepNumber) => !stepNumbers.includes(stepNumber))
+  if (uncoveredStepNumbers.length === 0) {
+    return 'a step covered more than once'
+  }
+  return `no verdict for step ${uncoveredStepNumbers.join(', ')}`
+}
+
+function runChallengeLane(laneBrief, retryPreamble = '') {
+  const challengePrompt = `${retryPreamble}${buildChallengePrompt(laneBrief)}`
   return agent(challengePrompt, { model: 'opus', label: `${laneBrief.lane} challenge`, phase: 'Challenge', agentType: 'plan-challenger' })
+}
+
+function rerunChallengeLane(laneBrief, firstLaneText, requiredStepNumbers) {
+  const resumeSafeRetryId = args.retryAttemptId ?? 'lane rerun'
+  const retryPreamble = `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${describeCoverageFailure(firstLaneText, requiredStepNumbers)}\n\n`
+  return runChallengeLane(laneBrief, retryPreamble)
 }
 
 phase('Challenge')
@@ -113,7 +131,7 @@ const laneTextsByName = new Map(laneBriefs.map((laneBrief, laneIndex) => [laneBr
 const lanesNeedingRerun = laneBriefs.filter((laneBrief) => !coversEveryPlanStep(laneTextsByName.get(laneBrief.lane), requiredStepNumbers))
 
 if (lanesNeedingRerun.length > 0) {
-  const rerunLaneTexts = await parallel(lanesNeedingRerun.map((laneBrief) => () => runChallengeLane(laneBrief)))
+  const rerunLaneTexts = await parallel(lanesNeedingRerun.map((laneBrief) => () => rerunChallengeLane(laneBrief, laneTextsByName.get(laneBrief.lane), requiredStepNumbers)))
   for (let laneIndex = 0; laneIndex < lanesNeedingRerun.length; laneIndex += 1) {
     laneTextsByName.set(lanesNeedingRerun[laneIndex].lane, rerunLaneTexts[laneIndex])
   }
