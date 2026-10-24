@@ -15,7 +15,7 @@ Jobs's keynotes made carbon units believe in a future before they could hold it.
 |---|---|
 | Launch, pitch, announcement, talk, blog post, demo | The full arc |
 | Design doc, PR body, status update, README | Answer first, then borrow: timeline framing, the problem as villain, numbers in context, show it working |
-| Short message | writing-in-voice alone |
+| Short message | `writing-in-voice` alone |
 
 ## The arc
 

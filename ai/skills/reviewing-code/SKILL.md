@@ -42,7 +42,7 @@ REVIEW_CMD="git diff HEAD $TREE"
 
 Record the changed-file set, file count, changed-line count, and touched subsystems. Report the pin and changed-file set in the summary so the caller can prove which tree and files were judged.
 
-## Step 2: Call swarming-reviews
+## Step 2: Call `swarming-reviews`
 
 Invoke `/swarming-reviews` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and the profile-derived `codexAllowed` flag.
 

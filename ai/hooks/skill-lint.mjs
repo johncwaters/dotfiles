@@ -195,6 +195,26 @@ function linkViolations(filePath, content, skillDirectory, references = skillRef
   return found;
 }
 
+function skillPathViolations(content, skillNames) {
+  return content.split("\n").flatMap((line, index) => Array.from(line.matchAll(/~\/(?:\.claude\/skills|\.dotfiles\/ai\/skills|\.dotfiles\/profiles\/[\w.-]+\/skills)\/([\w-]+(?:\.[\w-]+)*)/g))
+    .filter((match) => !skillNames.has(match[1]))
+    .map((match) => violation("skill-path-missing", index + 1, `path names no installed skill '${match[1]}'`, "Point the path at an existing skill directory.")));
+}
+
+function plainSkillReferenceViolations(content, skillName, skillNames, frontmatterLines) {
+  const found = [];
+  for (const line of proseLines(content)) {
+    if (line.number <= frontmatterLines) continue;
+    const textWithoutLinkTargets = line.text.replace(/\]\([^)]*\)/g, (target) => " ".repeat(target.length));
+    for (const match of textWithoutLinkTargets.matchAll(/(?<![^\W_]_*|-_*)([a-z\d]+(?:-[a-z\d]+)+|[a-z\d]+(?=[*_]{0,3} skills?\b))(?!_*[^\W_]|_*-)/gi)) {
+      const referencedName = match[1].toLowerCase();
+      if (referencedName === skillName || !skillNames.has(referencedName)) continue;
+      found.push(violation("skill-reference-plain", line.number, `skill '${referencedName}' named in plain text`, "Wrap the skill name in backticks."));
+    }
+  }
+  return found;
+}
+
 function backslashPathViolations(content) {
   return proseLines(content).flatMap((line) => Array.from(line.text.matchAll(/\b[\w.-]+(?:\\(?![!-\/:-@[-`{-~])[\w.-]+)+/g))
     .map((match) => violation("path-backslash", line.number, `path '${match[0]}' uses backslashes`, "Use forward slashes in prose paths.")));
@@ -264,17 +284,46 @@ function scriptViolations(body, bodyStartLine, skillDirectory) {
     .map((script) => violation(`script-purpose:${script}`, bodyStartLine + sectionStart + 1, `script '${script}' has no purpose line in '## Scripts'`, `Add '- \`${script}\`: <what it is for and when to run it>'.`));
 }
 
-function skillNamesBeside(skillDirectory) {
-  const realDirectory = realPathOrSelf(skillDirectory);
-  const repoRoot = findRepoRoot(realDirectory);
-  const skillRoots = repoRoot ? defaultSkillRoots(repoRoot) : [path.dirname(realDirectory)];
+function skillNamesIn(skillRoots) {
   return new Set(skillRoots.flatMap((root) => safeReadDirectory(root).filter((entry) => entry.isDirectory()).map((entry) => entry.name)));
 }
 
-function isExtensionSkill(skillName, skillDirectory) {
-  const siblingNames = skillNamesBeside(skillDirectory);
+function skillNamesBeside(skillDirectory) {
+  const realDirectory = realPathOrSelf(skillDirectory);
+  const repoRoot = findRepoRoot(realDirectory);
+  return skillNamesIn(repoRoot ? defaultSkillRoots(repoRoot) : [path.dirname(realDirectory)]);
+}
+
+function skillNamesInstalledWith(skillDirectory) {
+  const realDirectory = realPathOrSelf(skillDirectory);
+  const repoRoot = findRepoRoot(realDirectory);
+  if (!repoRoot) return skillNamesIn([path.dirname(realDirectory)]);
+  const sharedSkillsRoot = path.join(repoRoot, "ai", "skills");
+  const skillsRoot = path.dirname(realDirectory);
+  const profileNames = skillsRoot === sharedSkillsRoot ? [] : profileLineage(repoRoot, path.basename(path.dirname(skillsRoot)));
+  return skillNamesIn([sharedSkillsRoot, ...profileNames.map((profileName) => path.join(repoRoot, "profiles", profileName, "skills"))]);
+}
+
+function profileLineage(repoRoot, profileName, lineageSoFar = []) {
+  if (lineageSoFar.includes(profileName)) return lineageSoFar;
+  const lineage = [...lineageSoFar, profileName];
+  const parentProfileName = readParentProfileName(repoRoot, profileName);
+  if (!parentProfileName) return lineage;
+  return profileLineage(repoRoot, parentProfileName, lineage);
+}
+
+function readParentProfileName(repoRoot, profileName) {
+  try {
+    const parentProfileName = JSON.parse(fs.readFileSync(path.join(repoRoot, "profiles", profileName, "ai.json"), "utf8")).extends;
+    return typeof parentProfileName === "string" && /^[a-z0-9][a-z0-9-]*$/.test(parentProfileName) ? parentProfileName : null;
+  } catch {
+    return null;
+  }
+}
+
+function isExtensionSkill(skillName, skillNames) {
   for (let separator = skillName.indexOf("-"); separator >= 0; separator = skillName.indexOf("-", separator + 1)) {
-    if (siblingNames.has(skillName.slice(0, separator))) return true;
+    if (skillNames.has(skillName.slice(0, separator))) return true;
   }
   return false;
 }
@@ -284,6 +333,9 @@ export function lintSkillFile(filePath, rawContent) {
   const skillDirectory = skillDirectoryOf(filePath);
   if (!skillDirectory) return [];
   const isSkillFile = path.basename(filePath) === "SKILL.md";
+  const skillName = path.basename(skillDirectory);
+  const skillNames = skillNamesBeside(skillDirectory);
+  const parts = isSkillFile ? splitFrontmatter(content) : null;
   const sizeLimit = isSkillFile ? SKILL_FILE_MAX_BYTES : SKILL_MARKDOWN_MAX_BYTES;
   const size = Buffer.byteLength(rawContent, "utf8");
   const found = [];
@@ -291,16 +343,16 @@ export function lintSkillFile(filePath, rawContent) {
   found.push(...phrasingViolations(content));
   const references = skillReferences(content);
   found.push(...linkViolations(filePath, content, skillDirectory, references));
+  found.push(...skillPathViolations(content, skillNamesInstalledWith(skillDirectory)));
+  found.push(...plainSkillReferenceViolations(content, skillName, skillNames, parts?.bodyStartLine ?? 0));
   found.push(...backslashPathViolations(content));
   found.push(...tableOfContentsViolations(filePath, content));
   if (!isSkillFile) return found;
   found.push(...unreferencedFileViolations(skillDirectory, content, references));
-  const skillName = path.basename(skillDirectory);
-  const parts = splitFrontmatter(content);
   if (!parts) return [...found, violation("frontmatter", 1, "SKILL.md has no frontmatter", "Open the file with '---', name, description, '---'.")];
   found.push(...nameViolations(readFrontmatterField(parts.frontmatter, "name"), skillName));
   found.push(...descriptionViolations(readFrontmatterField(parts.frontmatter, "description")));
-  found.push(...bodyViolations(parts.body, parts.bodyStartLine, isExtensionSkill(skillName, skillDirectory)));
+  found.push(...bodyViolations(parts.body, parts.bodyStartLine, isExtensionSkill(skillName, skillNames)));
   found.push(...scriptViolations(parts.body, parts.bodyStartLine, skillDirectory));
   return found;
 }

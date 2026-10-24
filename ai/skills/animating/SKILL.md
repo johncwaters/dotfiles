@@ -36,5 +36,5 @@ Each installed skill whose name starts with `animating-` extends this one with a
 
 ## Boundaries
 
-- Interface chrome motion (buttons, panels, transitions in a product UI) follows the designing-ui skill's motion step; animated scenes, demos, characters, and in-app event animation (game actions, reveals, celebrations) follow this skill.
-- A clip recorded from a product's real components is the composing-social-images skill's clip recorder; its motion craft still follows this skill.
+- Interface chrome motion (buttons, panels, transitions in a product UI) follows the `designing-ui` skill's motion step; animated scenes, demos, characters, and in-app event animation (game actions, reveals, celebrations) follow this skill.
+- A clip recorded from a product's real components is the `composing-social-images` skill's clip recorder; its motion craft still follows this skill.

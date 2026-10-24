@@ -18,7 +18,7 @@ Follow [references/visual-evidence.md](references/visual-evidence.md) together w
 
 ## Step 5: prose
 
-Load `/writing-longform` beside `/writing-in-voice` before drafting any prose. Its work doc rules set the shape: answer first, numbers over vague quantities, and no machine-writing tells. Where it conflicts with writing-in-voice's casual quirks, writing-longform wins.
+Load `/writing-longform` beside `/writing-in-voice` before drafting any prose. Its work doc rules set the shape: answer first, numbers over vague quantities, and no machine-writing tells. Where it conflicts with `writing-in-voice`'s casual quirks, `writing-longform` wins.
 
 ## Step 7: Slack message
 

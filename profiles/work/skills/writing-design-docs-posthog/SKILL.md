@@ -5,7 +5,7 @@ description: "Extends the writing-design-docs skill on a work machine with PostH
 
 # Design docs: PostHog
 
-Each section applies at the writing-design-docs step it names.
+Each section applies at the `writing-design-docs` step it names.
 
 ## Sources
 
