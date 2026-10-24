@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
 import { reconstruct } from "./edit-replay.mjs";
+import { addedViolations, lintSkillFile, skillDirectoryOf } from "./skill-lint.mjs";
 
 const TEXT_EXTS = new Set([
   ".json", ".jsonc", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".mts", ".cts",
@@ -40,7 +41,7 @@ function deny(filePath, diagnostic) {
     diagnostic.where ? `Where: ${diagnostic.where}` : null,
     `Why: ${diagnostic.why}`,
     diagnostic.fix ? `Fix: ${diagnostic.fix}` : null,
-    "(Only syntax/format, invalid characters, and instruction-file size are gated here, not type or lint errors.)",
+    "(Only syntax/format, invalid characters, instruction-file size, and skill structure are gated here, not type or lint errors.)",
   ]
     .filter(Boolean)
     .join("\n");
@@ -188,6 +189,19 @@ function docSizeError(filePath, content) {
     where: `${size} bytes, cap ${cap}`,
     why: `${name} is loaded into every session, and this write grows it past its size cap`,
     fix: "Cut existing lines to make room, move the material into a file loaded on demand, or drop it. Raise the entry in DOC_SIZE_CAPS only when the file has genuinely earned the extra budget.",
+  };
+}
+
+function skillStructureError(filePath, content) {
+  if (!skillDirectoryOf(filePath)) return null;
+  const priorContent = exists(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  const priorViolations = priorContent ? lintSkillFile(filePath, priorContent) : [];
+  const added = addedViolations(priorViolations, lintSkillFile(filePath, content));
+  if (added.length === 0) return null;
+  return {
+    where: added.map((found) => `line ${found.line}: ${found.message}`).join("; "),
+    why: "skill files follow one parseable structure (ai/hooks/skill-lint.mjs), and this write adds violations",
+    fix: [...new Set(added.map((found) => found.fix))].join(" "),
   };
 }
 
@@ -422,6 +436,8 @@ function validate(filePath, content) {
   const ext = path.extname(filePath).toLowerCase();
   const size = docSizeError(filePath, content);
   if (size) return size;
+  const skillStructure = skillStructureError(filePath, content);
+  if (skillStructure) return skillStructure;
   if (TEXT_EXTS.has(ext)) {
     const cc = controlCharError(content);
     if (cc) return cc;

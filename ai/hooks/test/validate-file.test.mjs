@@ -154,6 +154,28 @@ test("review-ladder suffix matching normalizes separators and dot segments", () 
   }
 });
 
+function wellFormedSkill(skillName, body = "## Step 1: Act\n\nAct on the request.\n") {
+  const description = "Lands a finished change by reviewing it once, fixing what the review proved, and committing it with a typed outcome. Use when the carbon unit says commit this, land it, or ship the finished work to mainline through the review gate.";
+  return `---\nname: ${skillName}\ndescription: ${description}\n---\n\n# Title\n\n${body}`;
+}
+
+test("dotfiles skill writes are denied only when they add structure violations", () => {
+  const dotfilesRoot = path.join(validatorHome, "structure");
+  fs.mkdirSync(path.join(dotfilesRoot, "profiles"), { recursive: true });
+  const skillPath = path.join(dotfilesRoot, "ai/skills/lander/SKILL.md");
+  fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+  const foreignSkillProcess = validateWrite({ file_path: path.join(validatorHome, "project/.claude/skills/lander/SKILL.md"), content: "Do not wait.\n" });
+  assert.equal(foreignSkillProcess.stdout, "", foreignSkillProcess.stderr);
+  const newSkillProcess = validateWrite({ file_path: skillPath, content: wellFormedSkill("lander") });
+  assert.equal(newSkillProcess.stdout, "", newSkillProcess.stderr);
+  fs.writeFileSync(skillPath, wellFormedSkill("lander", "## Step 2: Act\n\nNever wait.\n"));
+  const keptViolationsProcess = validateWrite({ file_path: skillPath, content: wellFormedSkill("lander", "## Step 2: Act\n\nNever stall.\n") });
+  assert.equal(keptViolationsProcess.stdout, "", keptViolationsProcess.stderr);
+  const denialReason = readDenialReason(validateWrite({ file_path: skillPath, content: wellFormedSkill("lander", "## Step 2: Act\n\nNever stall. Never wait.\n") }));
+  assert.match(denialReason, /Where: line \d+: prohibition 'Never'\n/);
+  assert.match(denialReason, /Fix: State the action to take instead of the one to skip\./);
+});
+
 test("new review-ladder files and other skill files may grow", () => {
   const newFilePath = path.join(validatorHome, "new/skills/commit/SKILL.md");
   const otherSkillPath = path.join(validatorHome, "skills/voice-style/SKILL.md");
@@ -163,7 +185,8 @@ test("new review-ladder files and other skill files may grow", () => {
     fs.writeFileSync(filePath, "rule");
   }
   for (const filePath of [newFilePath, otherSkillPath, similarSuffixPath]) {
-    const allowedWriteProcess = validateWrite({ file_path: filePath, content: "rules" });
+    const content = filePath === newFilePath ? wellFormedSkill("commit") : "rules";
+    const allowedWriteProcess = validateWrite({ file_path: filePath, content });
     assert.equal(allowedWriteProcess.status, 0, allowedWriteProcess.stderr);
     assert.equal(allowedWriteProcess.stdout, "");
   }

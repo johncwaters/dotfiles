@@ -12,7 +12,8 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 
 | Script | Role | Evidence |
 |--------|------|----------|
-| `validate-file.mjs` | PreToolUse syntax, character, and instruction-size guard | `test/validate-file.test.mjs` |
+| `validate-file.mjs` | PreToolUse syntax, character, instruction-size, and skill-structure guard | `test/validate-file.test.mjs` |
+| `skill-lint.mjs` | Skill structure rules, shared by the guard and its CLI over every skill | `test/validate-file.test.mjs` |
 | `validate-spec.mjs` | PreToolUse design graph contract guard | `test/validate-spec.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
 | `gate-codex-dispatch.mjs` | PreToolUse subagent Codex ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
@@ -47,6 +48,7 @@ to Glimmervoid sessions. `block-else.mjs` is wired the same way for Claude and i
 - Compile workflow bodies without calling them: top-level returns are legal there, and textual wrappers can be escaped by the body's brackets.
 - Preserve real basenames for parser input because names such as `tsconfig.json` select JSONC parsing.
 - Deny instruction-file growth rather than size so oversized files can shrink; nested instructions load on demand and stay uncapped.
+- Deny only skill writes that add lint violations, so unmigrated skills stay editable one fix at a time.
 
 `test/validate-file.test.mjs` pins parser discovery and payload contracts. After validator changes,
 exercise available real parsers with valid and invalid JSON, TypeScript, Python, and commented
