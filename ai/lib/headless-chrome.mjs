@@ -111,3 +111,13 @@ export function chromeLaunchOptions() {
         env: { ...process.env, LD_LIBRARY_PATH: headlessShellLibraryDirectory },
     }
 }
+
+export async function launchCaptureBrowser(chromium) {
+    const options = { headless: true, args: ['--force-color-profile=srgb'] }
+    try {
+        return await chromium.launch({ ...options, channel: 'chrome' })
+    } catch (error) {
+        if (!/distribution 'chrome' is not found|Executable doesn't exist/i.test(error.message)) throw error
+        return chromium.launch(options)
+    }
+}
