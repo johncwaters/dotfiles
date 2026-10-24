@@ -67,6 +67,8 @@ UI/UX stage, or any visual change a repo rule covers: screenshots or a recording
 
 The body is written as the carbon unit, so load `/voice-style` before drafting any prose in it: the status block, the description sections, and testing notes. It supplies the word choice and first person ("from me setting one up myself"). The repo's template and rules from Step 2 still own section structure.
 
+Load `/storytelling` for its work-doc row: frame the change against the old behavior and put the proof (output, screenshot) right beside the claim it proves.
+
 Put the status block at the top of the template's main description section: the first of `Problem`, `Overview`, `Motivation and Context`, or `Changes` the template has, or `Problem` with no template. A lead line the repo's rules require first stays above it. Never add a new `##` heading, since some repos reject PRs that change a template's section structure.
 
 ```markdown
