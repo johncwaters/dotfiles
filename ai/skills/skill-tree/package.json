@@ -1,0 +1,7 @@
+{
+  "name": "skill-tree",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": { "elkjs": "0.12.0" }
+}
