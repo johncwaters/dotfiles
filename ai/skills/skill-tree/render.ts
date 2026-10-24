@@ -162,7 +162,7 @@ async function render(graph: SkillGraph): Promise<string> {
   const isolatedList = graph.isolated.length ? profiles.flatMap((profile) => {
     const isolatedMembers = nodesByProfile.get(profile)!.filter((node) => isolatedIds.has(node.id));
     if (!isolatedMembers.length) return [];
-    return [`<p>${escapeHtml(profile)}</p><ul>${isolatedMembers.map((node) => `<li class="signal">${escapeHtml(node.name)} <span class="tag">${escapeHtml(describeNode(node))}</span></li>`).join('')}</ul>`];
+    return [`<p>${escapeHtml(profile)}</p><ul>${isolatedMembers.map((node) => `<li class="signal"><button type="button" class="open-node" data-id="${escapeHtml(node.id)}">${escapeHtml(node.name)}</button> <span class="tag">${escapeHtml(describeNode(node))}</span></li>`).join('')}</ul>`];
   }).join('\n') : '<p>unconnected: none</p>';
   const cycleList = graph.cycles.length ? `<ul>${graph.cycles.map((cycle) => `<li class="signal">mutual mentions: ${cycle.map(escapeHtml).join(', ')}</li>`).join('')}</ul>` : '<p>cycles: none</p>';
   const edgeRows = graph.edges.map((edge) => `<tr><td>${escapeHtml(edge.from)}</td><td>${edge.kind}</td><td>${escapeHtml(edge.to)}</td></tr>`).join('\n');
@@ -191,13 +191,21 @@ figure{margin:18px 0 28px}
 .graph{display:block;width:100%;height:auto}
 .scroll.is-actual-size .graph{width:${width}px;max-width:none}
 .view{display:flex;gap:16px;margin:0 0 10px;padding:0;list-style:none}
-.view button,.share button,.legend button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.view button,.share button,.legend button,.reader button,.open-node{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 .share button:disabled{opacity:.6;cursor:progress}
-.view button[aria-pressed="true"],.legend button[aria-pressed="true"]{font-weight:700;text-decoration:underline}
+.view button[aria-pressed="true"],.legend button[aria-pressed="true"],.reader-files button[aria-pressed="true"]{font-weight:700;text-decoration:underline}
 .legend button[aria-pressed="false"]{opacity:.45}
 .graph.is-focusing .edge{opacity:.12}
 .graph.is-focusing .edge.is-focus{opacity:1;stroke-width:2.2}
 .tag{opacity:.75}
+.workspace.is-reading{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,44%);gap:28px;align-items:start}
+.reader{position:sticky;top:0;max-height:100vh;overflow:auto;padding:0 0 28px}
+.reader h2{margin-top:0}
+.reader-files{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0 0 10px;padding:0;list-style:none}
+.reader pre{margin:0;padding-top:14px;border-top:1px solid currentColor;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
+.graph .node{cursor:pointer}
+.graph .node:focus{outline:none}
+.graph .node:focus-visible rect,.graph .node.is-selected rect{stroke:var(--signal);stroke-width:3}
 ${graphStyles}
 .legend{display:flex;flex-wrap:wrap;gap:12px 24px;padding:0;list-style:none}
 figcaption{margin-top:12px}
@@ -214,6 +222,7 @@ ${heading('link kinds')}
 <ul class="legend">${legend}</ul>
 <p class="signal">signal accent: edges inside a mutual mention group, and unconnected nodes in the signals list.</p>
 <p class="share"><button type="button" id="share-image">[share image]</button> <span id="share-status" role="status"></span></p>
+<div class="workspace" id="workspace">
 <figure>
 <ul class="view"><li><button type="button" data-view="fit" aria-pressed="true">[fit width]</button></li><li><button type="button" data-view="actual" aria-pressed="false">[actual size]</button></li></ul>
 <div class="scroll" id="graph-view" tabindex="0" role="region" aria-label="Scrollable skill tree">
@@ -222,8 +231,16 @@ ${arrowMarkers}
 ${pageDrawing.shapes}
 </svg>
 </div>
-<figcaption>skill tree / arrows point from the file that names a node to that node; ▶ marks a starting point, a box nothing points into, pinned to the left edge; boxes group profiles; unconnected nodes are listed under signals. Hover a box or edge for its path or kind.</figcaption>
+<figcaption>skill tree / arrows point from the file that names a node to that node; ▶ marks a starting point, a box nothing points into, pinned to the left edge; boxes group profiles; unconnected nodes are listed under signals. Hover a box or edge for its path or kind; click a box to read its files.</figcaption>
 </figure>
+<aside class="reader" id="reader" hidden aria-labelledby="reader-title">
+<h2 id="reader-title" tabindex="-1"></h2>
+<p class="tag" id="reader-meta"></p>
+<ul class="reader-files" id="reader-files"></ul>
+<p><button type="button" id="reader-close">[close]</button></p>
+<pre id="reader-text"></pre>
+</aside>
+</div>
 ${heading('signals')}
 <p>unconnected: ${graph.isolated.length} / mutual mention groups: ${graph.cycles.length}</p>
 ${isolatedList}
@@ -260,8 +277,73 @@ for (const edgeLine of graphSvg.querySelectorAll('.edge')) {
     edgesByNodeId.get(endpointId).push(edgeLine);
   }
 }
+const readableNodeById = ${JSON.stringify(Object.fromEntries(graph.nodes.map((node) => [node.id, { name: node.name, kind: node.kind, profile: node.profile, files: node.files }]))).replace(/<\//g, '<\\/')};
+const fileTextByPath = ${JSON.stringify(Object.fromEntries(graph.nodes.flatMap((node) => node.files).map((filePath) => [filePath, fs.readFileSync(path.join(repoRoot, filePath), 'utf8')]))).replace(/<\//g, '<\\/')};
+const workspace = document.getElementById('workspace');
+const reader = document.getElementById('reader');
+const readerTitle = document.getElementById('reader-title');
+const readerFiles = document.getElementById('reader-files');
+const readerText = document.getElementById('reader-text');
+let readerOpener;
+
+function showFile(filePath) {
+  readerText.textContent = fileTextByPath[filePath];
+  for (const fileTab of readerFiles.querySelectorAll('button')) fileTab.setAttribute('aria-pressed', String(fileTab.dataset.path === filePath));
+}
+
+function openReader(nodeId, opener) {
+  const readableNode = readableNodeById[nodeId];
+  readerOpener = opener;
+  for (const selectedBox of graphSvg.querySelectorAll('.node.is-selected')) selectedBox.classList.remove('is-selected');
+  graphSvg.querySelector('.node[data-id="' + CSS.escape(nodeId) + '"]')?.classList.add('is-selected');
+  readerTitle.textContent = readableNode.name;
+  const underline = document.createElement('span');
+  underline.setAttribute('aria-hidden', 'true');
+  underline.textContent = '-'.repeat(readableNode.name.length);
+  readerTitle.append(underline);
+  document.getElementById('reader-meta').textContent = readableNode.kind + ' · ' + readableNode.profile + ' · ' + readableNode.files[0];
+  const folder = readableNode.files[0].slice(0, readableNode.files[0].lastIndexOf('/') + 1);
+  readerFiles.replaceChildren(...readableNode.files.map((filePath) => {
+    const fileTab = document.createElement('button');
+    fileTab.type = 'button';
+    fileTab.dataset.path = filePath;
+    fileTab.textContent = '[' + filePath.slice(folder.length) + ']';
+    fileTab.addEventListener('click', () => showFile(filePath));
+    const fileItem = document.createElement('li');
+    fileItem.append(fileTab);
+    return fileItem;
+  }));
+  showFile(readableNode.files[0]);
+  reader.hidden = false;
+  workspace.classList.add('is-reading');
+  reader.scrollTop = 0;
+  readerTitle.focus({ preventScroll: true });
+}
+
+function closeReader() {
+  if (reader.hidden) return;
+  reader.hidden = true;
+  workspace.classList.remove('is-reading');
+  for (const selectedBox of graphSvg.querySelectorAll('.node.is-selected')) selectedBox.classList.remove('is-selected');
+  readerOpener?.focus();
+}
+
+document.getElementById('reader-close').addEventListener('click', closeReader);
+document.addEventListener('keydown', (keyEvent) => {
+  if (keyEvent.key === 'Escape') closeReader();
+});
+for (const openButton of document.querySelectorAll('.open-node')) openButton.addEventListener('click', () => openReader(openButton.dataset.id, openButton));
 for (const nodeBox of graphSvg.querySelectorAll('.node')) {
   const nodeEdges = edgesByNodeId.get(nodeBox.dataset.id) ?? [];
+  nodeBox.setAttribute('tabindex', '0');
+  nodeBox.setAttribute('role', 'button');
+  nodeBox.setAttribute('aria-label', 'Read ' + readableNodeById[nodeBox.dataset.id].name);
+  nodeBox.addEventListener('click', () => openReader(nodeBox.dataset.id, nodeBox));
+  nodeBox.addEventListener('keydown', (keyEvent) => {
+    if (keyEvent.key !== 'Enter' && keyEvent.key !== ' ') return;
+    keyEvent.preventDefault();
+    openReader(nodeBox.dataset.id, nodeBox);
+  });
   nodeBox.addEventListener('mouseenter', () => {
     graphSvg.classList.add('is-focusing');
     for (const edgeLine of nodeEdges) edgeLine.classList.add('is-focus');

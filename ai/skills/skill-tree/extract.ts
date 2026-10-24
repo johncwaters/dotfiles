@@ -10,6 +10,7 @@ export type GraphNode = {
   profile: string;
   path: string;
   bytes: number;
+  files: string[];
   subskills?: number;
   references?: number;
   events?: { event: string; matcher: string }[];
@@ -119,8 +120,9 @@ export function extractGraph(repoRoot: string): SkillGraph {
   const prefixesByNode = new Map<GraphNode, Set<string>>();
   const sourceByNode = new Map<GraphNode, ReturnType<typeof tokenizeSource>>();
   const hooksByPath = new Map<string, GraphNode>();
+  const toRepoPath = (filePath: string) => path.relative(repoRoot, filePath).split(path.sep).join('/');
   function addNode(kind: NodeKind, name: string, profile: string, filePath: string): GraphNode {
-    const node: GraphNode = { id: `${kind}:${name}`, name, kind, profile, path: path.relative(repoRoot, filePath).split(path.sep).join('/'), bytes: fs.statSync(filePath).size };
+    const node: GraphNode = { id: `${kind}:${name}`, name, kind, profile, path: toRepoPath(filePath), bytes: fs.statSync(filePath).size, files: [toRepoPath(filePath)] };
     nodes.push(node);
     return node;
   }
@@ -140,6 +142,7 @@ export function extractGraph(repoRoot: string): SkillGraph {
       const references = markdownFiles(path.join(skillDirectory, 'references'));
       node.subskills = subskills.length;
       node.references = references.length;
+      node.files.push(...[...subskills, ...references].map(toRepoPath));
       const tokenSets = [skillPath, ...subskills, ...references].map((filePath) => tokenizeMarkdown(fs.readFileSync(filePath, 'utf8')));
       markdownByNode.set(node, tokenSets);
       prefixesByNode.set(node, tokenSets[0].prefixes);
