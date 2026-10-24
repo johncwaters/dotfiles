@@ -25,8 +25,15 @@ function describeNode(node: GraphNode): string {
   return parts.join(' · ');
 }
 
-function nodeLines(node: GraphNode): string[] {
-  return [node.name, describeNode(node)];
+function describeStart(node: GraphNode): string {
+  if (!node.events?.length) return '▶ start';
+  return `▶ on ${[...new Set(node.events.map((registration) => registration.event))].join(', ')}`;
+}
+
+function nodeLines(node: GraphNode, isEntry: boolean): string[] {
+  const lines = [node.name, describeNode(node)];
+  if (isEntry) lines.push(describeStart(node));
+  return lines;
 }
 
 function heading(text: string, level: number = 2): string {
@@ -35,6 +42,8 @@ function heading(text: string, level: number = 2): string {
 
 async function render(graph: SkillGraph): Promise<string> {
   const isolatedIds = new Set(graph.isolated);
+  const targetIds = new Set(graph.edges.map((edge) => edge.to));
+  const entryIds = new Set(graph.edges.map((edge) => edge.from).filter((id) => !targetIds.has(id)));
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const cycleByNodeId = new Map(graph.cycles.flatMap((cycle, cycleIndex) => cycle.map((id) => [id, cycleIndex] as const)));
   const profiles = [...new Set(graph.nodes.map((node) => node.profile))].sort(compareText);
@@ -64,8 +73,9 @@ async function render(graph: SkillGraph): Promise<string> {
         'elk.nodeLabels.placement': 'INSIDE V_TOP H_LEFT',
       },
       children: nodesByProfile.get(profile)!.filter((node) => !isolatedIds.has(node.id)).map((node) => {
-        const lines = nodeLines(node);
-        return { id: node.id, width: Math.ceil(Math.max(...lines.map((line) => line.length)) * 7.8 + 32), height: lines.length * 20 + 26 };
+        const lines = nodeLines(node, entryIds.has(node.id));
+        const layoutOptions = entryIds.has(node.id) ? { 'elk.layered.layering.layerConstraint': 'FIRST' } : undefined;
+        return { id: node.id, width: Math.ceil(Math.max(...lines.map((line) => line.length)) * 7.8 + 32), height: lines.length * 20 + 26, layoutOptions };
       }),
     })),
     edges: graph.edges.map((edge) => ({ id: `${edge.from}|${edge.to}|${edge.kind}`, sources: [edge.from], targets: [edge.to] })),
@@ -93,8 +103,9 @@ async function render(graph: SkillGraph): Promise<string> {
     const { x = 0, y = 0, width = 0, height = 0 } = layoutNode;
     const node = nodesById.get(layoutNode.id);
     if (node) {
-      const textLines = nodeLines(node).map((line, lineIndex) => `<text x="${x + 16}" y="${y + 25 + lineIndex * 20}"${lineIndex === 0 ? ' font-weight="700"' : ''}>${escapeHtml(line)}</text>`).join('');
-      nodeShapes.push(`<g class="node"><title>${escapeHtml(`${node.id} / ${node.path}`)}</title><rect x="${x}" y="${y}" width="${width}" height="${height}"/>${textLines}</g>`);
+      const isEntry = entryIds.has(node.id);
+      const textLines = nodeLines(node, isEntry).map((line, lineIndex) => `<text x="${x + 16}" y="${y + 25 + lineIndex * 20}"${lineIndex === 0 ? ' font-weight="700"' : ''}>${escapeHtml(line)}</text>`).join('');
+      nodeShapes.push(`<g class="node${isEntry ? ' entry' : ''}"><title>${escapeHtml(`${node.id} / ${node.path}`)}</title><rect x="${x}" y="${y}" width="${width}" height="${height}"/>${textLines}</g>`);
       return;
     }
     if (layoutNode.id !== 'root') {
@@ -148,6 +159,7 @@ svg{font:13px CommitMono,monospace;color:var(--ink)}
 text{fill:currentColor}
 rect{fill:var(--ground);stroke:currentColor;stroke-width:1}
 .profile rect{fill:none;stroke-dasharray:3 5}
+.entry rect{stroke-width:2.5}
 .edge{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round}
 .signal{color:var(--signal)}
 .legend{display:flex;flex-wrap:wrap;gap:12px 24px;padding:0;list-style:none}
@@ -177,7 +189,7 @@ ${edgeShapes.join('\n')}
 ${nodeShapes.join('\n')}
 </svg>
 </div>
-<figcaption>skill tree / arrows point from the file that names a node to that node; boxes group profiles; unconnected nodes are listed under signals. Hover a box or edge for its path or kind.</figcaption>
+<figcaption>skill tree / arrows point from the file that names a node to that node; ▶ marks a starting point, a box nothing points into, pinned to the left edge; boxes group profiles; unconnected nodes are listed under signals. Hover a box or edge for its path or kind.</figcaption>
 </figure>
 ${heading('signals')}
 <p>unconnected: ${graph.isolated.length} / mutual mention groups: ${graph.cycles.length}</p>
