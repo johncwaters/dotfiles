@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Turns a feature request into a design spec, a typed and validated JSON graph of decisions and units of work. Sketches the feature from the repo, asks the carbon unit rounds of questions until every decision and edge case is settled, cuts the result into ticket-sized units with verifiable contracts, and runs plan-challenge on them. Use for /spec, "spec this", "sharpen this", "grill me on this", and before the first edit of any change that involves a choice: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a non-trivial bug fix, or a multi-file change, whether or not plan mode would have turned on. Skip only for a typo or mechanical edit, an edit the carbon unit dictated verbatim, or when the carbon unit says to skip it.
+description: Turns a feature request into a design spec, a typed and validated JSON graph of decisions and units of work. Sketches it from the repo, asks the carbon unit rounds of questions until every decision is settled, cuts it into ticket-sized units with verifiable contracts, and runs plan-challenge on them. Use for /spec, "spec this", "sharpen this", "grill me on this", and before the first edit of any change that involves a choice, as the spec_first rule defines it.
 ---
 
 # Spec
@@ -59,16 +59,7 @@ An existing design spec resumes at the subskill after its status. A `challenged`
 
 Further fields: the goal carries `risk` (low, medium, high, critical) and `criteria` (1 to 12 observable results); a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning" }` with `blocks` edges to the branches it precedes; a decision that binds every unit carries `"isConstraint": true`; a `design` node holds the settled `code` of one `layer` (behavior, architecture, or program), with `at` naming the path a program design lands in, and each unit `implements` the design nodes it builds; a unit carries `"serves"`, the 1-based numbers of the goal criteria it makes true, at least one each; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
 
-The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` for its status. Its denial names each rule and the fix; apply them and write again. Run the same checks, or view the graph, at any time:
-
-```
-node ~/.claude/skills/spec/validate.ts <spec.json>
-node ~/.claude/skills/spec/render.ts <spec.json> tree|design
-node ~/.claude/skills/spec/archive.ts <spec.json> built|abandoned
-node ~/.claude/skills/spec/report.ts
-```
-
-Report lists archived specs with landed tickets and sweeps specs idle 14 days as abandoned; read an archive's structure with `render.ts tree`.
+The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` for its status. Its denial names each rule and the fix; apply them and write again. Run the same checks, or view the graph, at any time with the scripts below.
 
 ## Cut and build
 
@@ -83,3 +74,11 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 ## Hand off
 
 Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision with a question round through `ask.md`; a restored overturn follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once no `assumed` decision is left, cut and build without asking.
+
+## Scripts
+
+- `validate.ts`: `node ~/.claude/skills/spec/validate.ts <spec.json>` runs the same graph checks the write hook runs, at any status.
+- `render.ts`: `node ~/.claude/skills/spec/render.ts <spec.json> tree|design` draws the graph; `tree` also reads an archive's structure.
+- `cut.ts`: `node ~/.claude/skills/spec/cut.ts <spec.json>` cuts a `challenged` design spec into its intent file, or names what to settle first.
+- `archive.ts`: `node ~/.claude/skills/spec/archive.ts <spec.json> built|abandoned` archives a design spec and its intent file.
+- `report.ts`: `node ~/.claude/skills/spec/report.ts` lists archived specs with landed tickets and sweeps specs idle 14 days as abandoned.

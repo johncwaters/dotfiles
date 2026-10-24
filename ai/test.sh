@@ -1337,4 +1337,6 @@ if ((${#specTestFiles[@]} > 0)); then
   check "design spec render and documentation contracts pass" node --test --test-concurrency=1 "${specTestFiles[@]}"
 fi
 
+check "every shared and profile skill passes skill-lint" node "$topicDir/hooks/skill-lint.mjs"
+
 reportTopicResults "ai"

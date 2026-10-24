@@ -1,6 +1,6 @@
 ---
 name: posthog-querying
-description: 'Required reading before writing HogQL/SQL or calling execute-sql against PostHog. Use to search, find, or aggregate PostHog entities (insights, dashboards, cohorts, feature flags, experiments, surveys, hog flows, data warehouse, persons) and query analytics (trends, funnels, retention, lifecycle, paths, stickiness, web analytics, errors, logs, sessions, LLM traces). Uses the live PostHog MCP for schema discovery and HogQL guidance.'
+description: "Supplies required reading before writing HogQL/SQL or calling execute-sql against PostHog. Use for searching, finding, or aggregating PostHog entities (insights, dashboards, cohorts, feature flags, experiments, surveys, hog flows, data warehouse, persons) and querying analytics (trends, funnels, retention, lifecycle, paths, stickiness, web analytics, errors, logs, sessions, LLM traces). Uses the live PostHog MCP for schema discovery and HogQL guidance."
 ---
 
 # Querying data in PostHog

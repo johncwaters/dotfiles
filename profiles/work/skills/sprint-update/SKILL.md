@@ -1,6 +1,6 @@
 ---
 name: sprint-update
-description: Draft and post the user's comment on their team's weekly `[SPRINT]` GitHub issue (PostHog/company-internal, label `sprint`) from their real PRs, the issue template, and past ratings, in their voice and at the team's length. Shows the draft and posts or edits the comment only on an explicit go-ahead. Run it every Monday. Use for "fill out the sprint issue", "sprint update", "retro post", or a link to a `[SPRINT]` issue.
+description: "Drafts and posts the carbon unit's comment on their team's weekly `[SPRINT]` GitHub issue (PostHog/company-internal, label `sprint`) from their real PRs, the issue template, and past ratings, in their voice and at the team's length. Shows the draft and posts or edits the comment only on an explicit go-ahead. Run it every Monday. Use for \"fill out the sprint issue\", \"sprint update\", \"retro post\", or a link to a `[SPRINT]` issue."
 ---
 
 # Sprint Update
@@ -33,11 +33,11 @@ Teammates skim these in a minute. The user's first full draft ran 532 words and 
 Load `voice-style` and write in it.
 
 - Keep the template headings and its `>` prompt lines exactly as written.
-- Stay near 250 words and never over 300. Aim for 3 to 5 progress bullets, 1 or 2 bets, and 2 to 4 plans.
+- Stay near 250 words, capped at 300. Aim for 3 to 5 progress bullets, 1 or 2 bets, and 2 to 4 plans.
 - Group PRs by theme. Link only unfinished items.
 - Drop anything handed off to someone else.
 - During an offsite or holiday, list it first in Plans, shrink the rest to match, and add a one-line note under Updates.
-- Never @-mention anyone unless the user asks.
+- @-mention someone only when the carbon unit asks.
 
 ## Step 4: Verify every claim
 
@@ -55,6 +55,6 @@ Fix or drop every claim that fails, then list the corrections for the user when 
 - Save the draft in the scratchpad and show it in full, with each private-channel or DM source noted next to its claim so the user confirms it. Strip those notes from the file before posting.
 - Post only when the user says to:
   - New comment: `gh issue comment <n> -R PostHog/company-internal --body-file <path>`.
-  - Edit: `gh api -X PATCH repos/PostHog/company-internal/issues/comments/<id> -F body=@<path>`, where `<id>` is the number after `#issuecomment-` in the url recorded in Step 1. Never use `--edit-last`: it rewrites the user's newest comment, which may be a thread reply.
+  - Edit: `gh api -X PATCH repos/PostHog/company-internal/issues/comments/<id> -F body=@<path>`, where `<id>` is the number after `#issuecomment-` in the url recorded in Step 1. Use the recorded comment id rather than `--edit-last`: that flag rewrites the carbon unit's newest comment, which may be a thread reply.
 - Return the comment URL.
-- After the user says they edited the posted comment, fetch it, diff it against the draft, and report what they changed. When the change looks like a lasting preference, propose the skill change for the user's explicit approval; never edit this skill automatically, since others can edit that comment.
+- After the user says they edited the posted comment, fetch it, diff it against the draft, and report what they changed. When the change looks like a lasting preference, propose the skill change for the user's explicit approval; edit this skill only after that approval, since others can edit that comment.

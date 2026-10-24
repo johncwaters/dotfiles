@@ -1,6 +1,6 @@
 ---
 name: open-pr-posthog
-description: Extension for /open-pr on a work machine. Adds PostHog's PR conventions, the longform-writing pass on the body, PostHog visual-evidence uploads, and a closing Slack message for the team channel. Loaded by /open-pr itself; invoke /open-pr instead of this skill.
+description: "Extends /open-pr on a work machine with PostHog's PR conventions, the longform-writing pass on the body, PostHog visual-evidence uploads, and a closing Slack message for the team channel. Use when /open-pr loads work-machine extensions; invoke /open-pr instead of this skill."
 ---
 
 # Open PR: PostHog
@@ -9,7 +9,7 @@ PostHog opens pull requests early and often, so reviewers can steer work before 
 
 ## Step 2: PostHog repo rules
 
-- `PostHog/posthog` names PR skills such as `/writing-pr-descriptions`, `/reviewing-with-coderabbit`, and `/stacking-prs`. Invoke each one where the repo says to. The repo forbids changing a template's section structure, so the status block never gets its own `##` heading.
+- `PostHog/posthog` names PR skills such as `/writing-pr-descriptions`, `/reviewing-with-coderabbit`, and `/stacking-prs`. Invoke each one where the repo says to. The repo forbids changing a template's section structure, so keep the status block inside an existing section, without its own `##` heading.
 - `PostHog/posthog.com` routes bugs and non-content changes to issues and closes such PRs. A visual change spanning several pages also goes to an issue, and a PR that goes ahead anyway says why in its description.
 
 ## Step 4: visual evidence
@@ -22,7 +22,7 @@ Load `/longform-writing` beside `/voice-style` before drafting any prose. Its wo
 
 ## Step 7: Slack message
 
-After the PR is posted, print a short message the carbon unit can paste into their team channel, in a fenced code block so it copies cleanly. Never post it; the carbon unit sends it.
+After the PR is posted, print a short message the carbon unit can paste into their team channel, in a fenced code block so it copies cleanly. Leave sending it to the carbon unit.
 
 The team posts PRs as one casual sentence, not a restated PR body, so match that. Write it with `/voice-style`.
 

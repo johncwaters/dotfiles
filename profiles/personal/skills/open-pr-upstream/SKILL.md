@@ -1,6 +1,6 @@
 ---
 name: open-pr-upstream
-description: Extension for /open-pr on a personal machine. Adds the open-source contribution flow, which covers forking, issue-first changes, CLA and DCO sign-off, AI-use policies, and writing for maintainers who are strangers. Loaded by /open-pr itself; invoke /open-pr instead of this skill.
+description: "Extends /open-pr on a personal machine with the open-source contribution flow: forking, issue-first changes, CLA and DCO sign-off, AI-use policies, and writing for unfamiliar maintainers. Use when /open-pr loads personal-machine extensions; invoke /open-pr instead of this skill."
 ---
 
 # Open PR: upstream contributions

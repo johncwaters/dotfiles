@@ -1,6 +1,6 @@
 ---
 name: posthog-design
-description: The taste for UI in any PostHog repo, the taste the design skill resolves to there. Use when building, styling, or reviewing frontend in a PostHog repository (the PostHog app, posthog.com, or another PostHog project). Points at the repo's own design system; the design skill owns the process.
+description: "Supplies the taste for UI in any PostHog repo, which the design skill resolves to there. Use when building, styling, or reviewing frontend in a PostHog repository (the PostHog app, posthog.com, or another PostHog project). Points at the repo's own design system; the design skill owns the process."
 ---
 
 # PostHog design

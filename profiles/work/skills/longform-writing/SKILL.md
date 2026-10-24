@@ -1,9 +1,11 @@
 ---
 name: longform-writing
-description: 'Draft, edit, or critique long-form writing: blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, teaching guides (pocket guides, tutorials, docs pages), PostHog content (posthog.com docs, handbook pages, tutorials, blog posts, changelog entries, RFCs), and work docs like proposals, design docs, PR descriptions, and updates, in a Sorkin-meets-PostHog style (intention and obstacle, rhythm, strong opinions, specifics, no fluff). Use when asked to write, outline, rewrite, tighten, or review a blog, post, article, or doc, when creating or editing prose in a posthog.com `contents/` file or a handbook page, or "make this punchier". Short messages (Slack, email, texts, replies) belong to voice-style instead.'
+description: "Drafts long-form writing in a Sorkin-meets-PostHog style, and edits or critiques it: blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, teaching guides (pocket guides, tutorials, docs pages), changelog entries, RFCs, proposals, design docs, PR descriptions, updates. Use when asked to write, outline, rewrite, tighten, or review one, for prose in a posthog.com `contents/` file or handbook page, or for \"make this punchier\". Slack, email, and texts go to voice-style."
 ---
 
 # Long-form writing
+
+Covers blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, teaching guides (pocket guides, tutorials, docs pages), PostHog content (posthog.com docs, handbook pages, tutorials, blog posts, changelog entries, RFCs), and work docs (proposals, design docs, PR descriptions, updates). The style uses intention and obstacle, rhythm, strong opinions, specifics, and no fluff.
 
 Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies stakes, rhythm, and momentum; PostHog supplies opinions, candor, precision, and skimmable structure. Blogs lean on both. Teaching guides lead with the concept and spend no flourish. Work docs lead with the answer and spend at most one Sorkin flourish. When voice-style also fires on a long-form piece, this skill's structure and mechanics win over its casual message quirks (typos, apostrophe plurals, emoticons, idk or lol), while the author's word choice and warmth can still carry over. A playful social post is the exception, covered under the post template.
 
@@ -29,9 +31,9 @@ Read the template that fits the piece:
 - **Rhythm.** Dialogue is music, and music needs connected phrases, not a drum hit per beat. Most sentences run medium length and link related thoughts with "and", "but", "because", "so", or a colon; a short sentence lands only because the ones around it are longer. Read it aloud in your head; rewrite anything you'd stumble over or that sounds like ad copy.
 - **No confusion.** One idea per paragraph. Define a term before riffing on it. Tell the reader what they need to know before being clever.
 - **Progress.** Every section ends at least one step further than it started. A section that only restates is cut.
-- **Precision.** Name the tool, database, metric, date. Ban "a lot", "soon", "quickly", "better": replace each with a number. Link each external factual claim inline to a primary or first-rate source (the creator's own writing, a developer talk or interview, a credible deep-dive), never an encyclopedia or content farm, and open the page to confirm it supports the claim before linking it. First-hand numbers and internal claims stay unlinked, and so does any claim you can't confirm on an open page: list it with step 5's unverified claims rather than invent a link. The author's own projects link to where a reader can get them.
+- **Precision.** Name the tool, database, metric, date. Ban "a lot", "soon", "quickly", "better": replace each with a number. Link each external factual claim inline to a primary or first-rate source (the creator's own writing, a developer talk or interview, a credible deep-dive), excluding encyclopedias and content farms, and open the page to confirm it supports the claim before linking it. First-hand numbers and internal claims stay unlinked, and so does any claim you can't confirm on an open page: list it with step 5's unverified claims rather than invent a link. The author's own projects link to where a reader can get them.
 - **Pick a side.** No "it depends", no "ultimately it's up to you". Have an opinion, give an example, or do the research until you can.
-- **Human.** Name the people involved; use real screenshots, chat logs, quotes. Self-deprecating humor where it fits. Never perform emotion ("I was so excited to…"); show the action and let the reader feel it.
+- **Human.** Name the carbon units involved; use real screenshots, chat logs, quotes. Self-deprecating humor where it fits. Show the action and let the reader feel it instead of performing emotion ("I was so excited to…").
 - **Concise.** Omit needless words, not the connectives that carry the logic between claims. Cut or halve the intro. No transitions like "Here are five things…", no summary of what the reader just read.
 - **Mechanics.** Sentence-case headings, Oxford comma, American spelling, no em-dash decoration. Headings, lists, and tables only where they help a skimming reader.
 
@@ -41,7 +43,7 @@ Readers can tell, and PostHog asks for rewrites when it's obvious. Strip on sigh
 
 In teaching guides, reviewers flag these as "Claudish", from a PostHog docs review that marked each example below:
 
-- An aphorism standing in for the fact: "A flag at 0% is live code that nobody runs", "A rollout is only as safe as what you watch between steps", "A kill switch you've never flipped is a kill switch you hope works". State the fact or the instruction itself.
+- An aphorism standing in for the fact: "A flag at 0% is live code that nobody runs", "A rollout is only as safe as what you watch between steps", `"A kill switch you've never flipped is a kill switch you hope works"`. State the fact or the instruction itself.
 - A flourish tail on a plain claim: "you flip the flag off, and nobody waits on a revert". End on the fact: "without needing a revert".
 - A balanced contrast pair the reader must decode: "A flag decides whether someone gets a feature, and a payload lets it decide how". Say what the thing is: "A feature flag can carry a payload, which …".
 - A dramatized cost: "A rollback is a revert, a build, and a deploy, and your users see the bug for as long as all three take". Name the concrete steps plainly.
@@ -62,4 +64,4 @@ In teaching guides, reviewers flag these as "Claudish", from a PostHog docs revi
 
 ## Critique mode
 
-When asked to review rather than write, return findings in checklist order, each as quoted line, problem, rewrite. Lead with the single biggest fix (usually a missing obstacle or a buried answer), and never rewrite the whole piece unasked.
+When asked to review rather than write, return findings in checklist order, each as quoted line, problem, rewrite. Lead with the single biggest fix (usually a missing obstacle or a buried answer), and rewrite the whole piece only when asked.

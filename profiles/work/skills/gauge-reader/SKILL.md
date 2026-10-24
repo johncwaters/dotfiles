@@ -1,11 +1,6 @@
 ---
 name: gauge-reader
-description: >
-  Read Gauge Agent Experience eval runs from evidence instead of grep. Use when
-  asked to read, analyze, compare, or explain a Gauge batch or run ("what did
-  the agents do", "why did Claude fail the docs eval", "did they read the
-  docs", a cmv… batch or run id). Runs read.ts first, then answers only from its
-  per-run table, marking anything the table cannot show as inferred.
+description: "Reads Gauge Agent Experience eval runs from evidence instead of grep. Use when asked to read, analyze, compare, or explain a Gauge batch or run (\"what did the agents do\", \"why did Claude fail the docs eval\", \"did they read the docs\", a cmv… batch or run id). Runs read.ts first, then answers only from its per-run table, marking anything the table cannot show as inferred."
 ---
 
 # Reading Gauge runs
@@ -48,7 +43,7 @@ expected value.
   returned, so that origin is always inferred and always carries `?`.
 - `unlogged-skill` means a skill was loaded before the write and no logged
   output held the value. Claude Code's Skill result logs only "Launching
-  skill", so its skill content is never in the log; a shell read of any file
+  skill", so its skill content is absent from the log; a shell read of any file
   under a staged skill's directory (SKILL.md or its references) is, and counts
   as `skill`.
 - `none` means no web event, no skill load, and no sighting before the write: memory.
@@ -76,3 +71,7 @@ expected value.
 
 Go to the raw log in the cache only to quote an event the table already points
 at, by its seq.
+
+## Scripts
+
+- `read.ts`: Builds the evidence table and runs.json for Gauge batches and runs; run in Step 1 before answering.
