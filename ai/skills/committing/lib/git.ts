@@ -395,8 +395,8 @@ export class Git {
     return this.run(["restore", "--staged", "--", ...paths]);
   }
 
-  commit(message: string): GitResult {
-    return this.run(["commit", "-F", "-"], { input: message });
+  commit(message: string, { signoff }: { signoff: boolean }): GitResult {
+    return this.run(["commit", ...(signoff ? ["-s"] : []), "-F", "-"], { input: message });
   }
 
   listRemotes(): string[] {

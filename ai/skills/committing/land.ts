@@ -43,6 +43,7 @@ import {
   sleep,
   statusByBranch,
 } from "./lib/push.ts";
+import { repoRequiresSignoff } from "./lib/signoff.ts";
 import { readStdin } from "./lib/stdio.ts";
 import {
   computeScope,
@@ -360,8 +361,14 @@ class Landing {
       return stagedScanOutcome;
     }
 
+    const repositoryRoot = this.git.run(["rev-parse", "--show-toplevel"]);
+    if (repositoryRoot.code !== 0) {
+      this.warnings.push(repositoryRoot.stderr.trim());
+      return "HOOK_FAILED";
+    }
+    const signoff = repoRequiresSignoff(repositoryRoot.stdout.trim());
     const headBeforeCommit = this.git.revParseHead();
-    const proc = this.git.commit(commitMessage);
+    const proc = this.git.commit(commitMessage, { signoff });
     if (proc.code !== 0) {
       this.warnings.push(proc.stderr.trim());
       return "HOOK_FAILED";

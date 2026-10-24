@@ -91,6 +91,29 @@ test("a real commit is created from the message on stdin", () => {
   }
 });
 
+test("a repo requiring DCO lands a commit signed off with the configured identity", () => {
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    writeFile(repo, "a.txt", "two\n");
+    writeFile(repo, ".github/dco.yml", "require: true\n");
+
+    const { code, result } = land(repo, ["--no-push"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(code, 0);
+    const name = gitOutput(repo, ["config", "user.name"]);
+    const email = gitOutput(repo, ["config", "user.email"]);
+    assert.equal(
+      gitOutput(repo, ["log", "-1", "--format=%B"]),
+      `${VALID_MESSAGE}\nSigned-off-by: ${name} <${email}>`,
+    );
+    assert.deepEqual(gitOutput(repo, ["status", "--short"]), "");
+  } finally {
+    cleanup(repo);
+  }
+});
+
 test("landing on an unborn feature branch creates the root commit", () => {
   const repo = makeRepo("feature");
   try {
