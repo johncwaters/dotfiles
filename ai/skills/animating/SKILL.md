@@ -23,7 +23,7 @@ Then the subskill for the kind being made, which adds to every step above:
 - [explainer](subskills/explainer.md): a narrated, stepped instructional piece.
 - [comparison](subskills/comparison.md): a before/after piece that plays each side in turn.
 - [poster](subskills/poster.md): one still frame of a scene.
-- [in-app](subskills/in-app.md): motion inside a running app or game, built from its own components.
+- [in-app](subskills/in-app.md): motion inside a running app or game, interface chrome included, built from its own components.
 
 ## Extensions
 
@@ -36,5 +36,4 @@ Each installed skill whose name starts with `animating-` extends this one with a
 
 ## Boundaries
 
-- Interface chrome motion (buttons, panels, transitions in a product UI) follows the `designing-ui` skill's motion step; animated scenes, demos, characters, and in-app event animation (game actions, reveals, celebrations) follow this skill.
 - A clip recorded from a product's real components is the `capturing-ui` skill's clip recorder; its motion craft still follows this skill.
