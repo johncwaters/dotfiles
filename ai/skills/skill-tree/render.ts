@@ -9,6 +9,14 @@ import type { EdgeKind, GraphNode, SkillGraph } from './extract.ts';
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const dashByKind: Record<EdgeKind, string> = { mentions: '', extends: '14 6', spawns: '5 5', runs: '1 5', names: '12 5 2 5' };
 
+const graphStyles = `svg{font:13px CommitMono,monospace;color:var(--ink)}
+text{fill:currentColor}
+rect{fill:var(--ground);stroke:currentColor;stroke-width:1}
+.profile rect{fill:none;stroke-dasharray:3 5}
+.entry rect{stroke-width:2.5}
+.edge{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round}
+.signal{color:var(--signal)}`;
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
@@ -152,16 +160,11 @@ figure{margin:18px 0 28px}
 .graph{display:block;width:100%;height:auto}
 .scroll.is-actual-size .graph{width:${width}px;max-width:none}
 .view{display:flex;gap:16px;margin:0 0 10px;padding:0;list-style:none}
-.view button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.view button,.share button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.share button:disabled{opacity:.6;cursor:progress}
 .view button[aria-pressed="true"]{font-weight:700;text-decoration:underline}
 .tag{opacity:.75}
-svg{font:13px CommitMono,monospace;color:var(--ink)}
-text{fill:currentColor}
-rect{fill:var(--ground);stroke:currentColor;stroke-width:1}
-.profile rect{fill:none;stroke-dasharray:3 5}
-.entry rect{stroke-width:2.5}
-.edge{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round}
-.signal{color:var(--signal)}
+${graphStyles}
 .legend{display:flex;flex-wrap:wrap;gap:12px 24px;padding:0;list-style:none}
 figcaption{margin-top:12px}
 table{border-collapse:collapse;text-align:left;font:inherit}
@@ -176,6 +179,7 @@ ${heading('skill tree', 1)}
 ${heading('edge legend')}
 <ul class="legend">${legend}</ul>
 <p class="signal">signal accent: edges inside a mutual mention group, and unconnected nodes in the signals list.</p>
+<p class="share"><button type="button" id="share-image">[share image]</button> <span id="share-status" role="status"></span></p>
 <figure>
 <ul class="view"><li><button type="button" data-view="fit" aria-pressed="true">[fit width]</button></li><li><button type="button" data-view="actual" aria-pressed="false">[actual size]</button></li></ul>
 <div class="scroll" id="graph-view" tabindex="0" role="region" aria-label="Scrollable skill tree">
@@ -212,6 +216,111 @@ for (const viewButton of document.querySelectorAll('.view button')) {
     for (const otherButton of document.querySelectorAll('.view button')) otherButton.setAttribute('aria-pressed', String(otherButton === viewButton));
   });
 }
+const shareControl = document.getElementById('share-image');
+const shareStatus = document.getElementById('share-status');
+const shareCard = ${JSON.stringify({ title: 'skill tree', summary: `${summary}.`, graphStyles, darkPalette: '--ground:#181818;--ink:#eeece6;--signal:#ffa476' })};
+const shareWidth = 1600;
+const shareHeight = 900;
+const shareMargin = 64;
+const graphTop = 200;
+const saveStatusByErrorCode = { declined: 'Not saved.', rate_limited: 'A save prompt is already open.', too_large: 'The image is too large to save here.' };
+const downloadsReady = window.claude?.use ? window.claude.use('downloads') : Promise.resolve(undefined);
+let fontFacesReady;
+
+function escapeXml(text) {
+  return text.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
+
+function readAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function inlineFontFace(fileName, weight) {
+  const response = await fetch('fonts/' + fileName);
+  if (!response.ok) throw new Error('Font ' + fileName + ' did not load.');
+  const fontUrl = await readAsDataUrl(await response.blob());
+  return '@font-face{font-family:CommitMono;src:url(' + fontUrl + ') format("opentype");font-weight:' + weight + '}';
+}
+
+function loadFontFaces() {
+  fontFacesReady ??= Promise.all([inlineFontFace('CommitMono-400-Regular.otf', 400), inlineFontFace('CommitMono-700-Regular.otf', 700)])
+    .then((fontFaces) => fontFaces.join(''))
+    .catch((fontError) => {
+      fontFacesReady = undefined;
+      throw fontError;
+    });
+  return fontFacesReady;
+}
+
+function placeGraph(graphSvg) {
+  const [, , graphWidth, graphHeight] = graphSvg.getAttribute('viewBox').split(' ').map(Number);
+  const availableWidth = shareWidth - shareMargin * 2;
+  const availableHeight = shareHeight - graphTop - shareMargin;
+  const scale = Math.min(availableWidth / graphWidth, availableHeight / graphHeight);
+  const placedGraph = graphSvg.cloneNode(true);
+  placedGraph.removeAttribute('class');
+  placedGraph.setAttribute('x', String(shareMargin + (availableWidth - graphWidth * scale) / 2));
+  placedGraph.setAttribute('y', String(graphTop));
+  placedGraph.setAttribute('width', String(graphWidth * scale));
+  placedGraph.setAttribute('height', String(graphHeight * scale));
+  return new XMLSerializer().serializeToString(placedGraph);
+}
+
+async function composeShareSvg() {
+  const fontFaces = await loadFontFaces();
+  const title = escapeXml(shareCard.title);
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + shareWidth + '" height="' + shareHeight + '" viewBox="0 0 ' + shareWidth + ' ' + shareHeight + '">'
+    + '<style>' + fontFaces + 'svg{' + shareCard.darkPalette + '}' + shareCard.graphStyles + '</style>'
+    + '<rect width="' + shareWidth + '" height="' + shareHeight + '" style="fill:var(--ground);stroke:none"/>'
+    + '<text x="' + shareMargin + '" y="96" font-size="34" font-weight="700">' + title + '</text>'
+    + '<text x="' + shareMargin + '" y="130" font-size="34" font-weight="700">' + '='.repeat(shareCard.title.length) + '</text>'
+    + '<text x="' + shareMargin + '" y="168" font-size="20">' + escapeXml(shareCard.summary) + '</text>'
+    + placeGraph(document.querySelector('svg.graph'))
+    + '</svg>';
+}
+
+async function drawSharePng() {
+  const shareImage = new Image();
+  shareImage.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(await composeShareSvg());
+  await shareImage.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = shareWidth;
+  canvas.height = shareHeight;
+  canvas.getContext('2d').drawImage(shareImage, 0, 0);
+  return new Promise((resolve, reject) => canvas.toBlob((pngBlob) => (pngBlob ? resolve(pngBlob) : reject(new Error('The image could not be encoded.'))), 'image/png'));
+}
+
+async function saveSharePng(pngBlob) {
+  const downloads = await downloadsReady;
+  if (downloads) {
+    shareStatus.textContent = 'Waiting for your confirmation.';
+    await downloads.save({ filename: 'skill-tree.png', data: pngBlob });
+    return 'Saved skill-tree.png.';
+  }
+  if (window.claude) return 'Saving is not available in this view.';
+  const downloadLink = document.createElement('a');
+  downloadLink.href = URL.createObjectURL(pngBlob);
+  downloadLink.download = 'skill-tree.png';
+  downloadLink.click();
+  setTimeout(() => URL.revokeObjectURL(downloadLink.href), 0);
+  return 'Downloaded skill-tree.png.';
+}
+
+shareControl.addEventListener('click', async () => {
+  shareControl.disabled = true;
+  shareStatus.textContent = 'Drawing the image.';
+  try {
+    shareStatus.textContent = await saveSharePng(await drawSharePng());
+  } catch (shareError) {
+    shareStatus.textContent = saveStatusByErrorCode[shareError?.code] ?? 'Could not make the image.';
+  }
+  shareControl.disabled = false;
+});
 </script>
 <footer><p>CommitMono, SIL OFL 1.1, (c) 2023 Eigil Nikolajsen. Licence at <a href="fonts/OFL.txt">fonts/OFL.txt</a>.</p></footer>
 </body>
