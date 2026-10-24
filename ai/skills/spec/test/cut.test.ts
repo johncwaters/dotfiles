@@ -41,6 +41,7 @@ test("cut refuses the deferred example and renders its challenged tickets within
     assert.equal(intentText, `${JSON.stringify(intent, null, 2)}\n`);
     assert.deepEqual(intent.tickets.map((ticket: { id: string }) => ticket.id), ["U1", "U2"]);
     assert.deepEqual(intent.tickets[1].dependsOn, ["U1"]);
+    assert.match(intent.tickets[0].objective, /\nDesign:\nCSV writer \(src\/export\/csv\.ts\):\ntype CsvRow = [^\n]+;\nexport function writeDeckCsv\(/);
     for (const ticket of intent.tickets) {
       for (const scope of ticket.writeScopes) {
         assert.ok(intent.writeScopes.some((intentScope: string) => scope === intentScope || scope.startsWith(`${intentScope}/`)));
@@ -49,7 +50,8 @@ test("cut refuses the deferred example and renders its challenged tickets within
     function verifyTexts(value: unknown): void {
       if (typeof value === "string") {
         assert.ok(value.length <= 4096);
-        assert.equal(value, value.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim());
+        const [proseText] = value.split("\nDesign:\n");
+        assert.equal(proseText, proseText.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim());
         assert.ok(!value.startsWith("-"));
         return;
       }

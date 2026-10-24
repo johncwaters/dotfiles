@@ -17,7 +17,7 @@ function planChallengeStepDetector(): (planText: string) => number[] {
   return Function("args", `${functionDefinitions}\nreturn numberedStepsFrom`)({});
 }
 
-test("plan renders active units in dependency order with exactly one challenge step per unit", () => {
+test("plan renders active units in dependency order with exactly one challenge step per unit, and design renders each layer's code", () => {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spec-render-"));
   try {
     const spec: DesignSpec = {
@@ -30,10 +30,12 @@ test("plan renders active units in dependency order with exactly one challenge s
         { id: "Q1", kind: "openQuestion", question: "Which later extension?", settledBy: "Next request" },
         { id: "U2", kind: "unit", title: "Render the plan", reads: ["1. existing.ts"], changes: ["render.ts"], checks: [{ run: "node --test\n2. keep this command indented" }], serves: [1] },
         { id: "U3", kind: "unit", title: "Deferred extension", reads: [], changes: ["extension.ts"], checks: [{ run: "node --test" }], serves: [1] },
+        { id: "I1", kind: "design", layer: "program", title: "Graph types", at: "graph.ts", code: "type Node = Goal | Unit;\n  function validate(spec: Spec): string[];" },
         { id: "U1", kind: "unit", title: "Add graph types", reads: [], changes: ["graph.ts"], checks: [{ run: "node --test" }], serves: [1] },
       ],
       edges: [
         { from: "U1", kind: "implements", to: "D1" },
+        { from: "U1", kind: "implements", to: "I1" },
         { from: "U2", kind: "implements", to: "D1" },
         { from: "U3", kind: "implements", to: "D1" },
         { from: "U2", kind: "dependsOn", to: "U1" },
@@ -54,6 +56,9 @@ test("plan renders active units in dependency order with exactly one challenge s
       if (planLine.length > 0) assert.match(planLine, /^(?:\d+\. U\d+ | {3}- )/);
     }
     assert.deepEqual(planChallengeStepDetector()(planText), [1, 2]);
+    const designProcess = spawnSync("node", [path.resolve(import.meta.dirname, "../render.ts"), specPath, "design"], { encoding: "utf8" });
+    assert.equal(designProcess.status, 0, designProcess.stderr ?? "");
+    assert.equal(designProcess.stdout, "program\n  I1 Graph types (graph.ts)\n    type Node = Goal | Unit;\n      function validate(spec: Spec): string[];\n    built by U1\n");
   } finally {
     fs.rmSync(repoRoot, { recursive: true, force: true });
   }

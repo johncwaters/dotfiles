@@ -55,6 +55,11 @@ function renderIntent(spec: DesignSpec, specPath: string) {
   }
   const tickets = unitsInDependencyOrder(spec).map((unit) => {
     const outgoingEdges = edgesByFrom.get(unit.id) ?? [];
+    const designs = outgoingEdges.flatMap((edge) => {
+      const design = edge.kind === "implements" ? nodesById.get(edge.to) : undefined;
+      return design?.kind === "design" ? [design] : [];
+    });
+    const designBlock = designs.map((design) => `${oneLine(design.title)}${design.at ? ` (${oneLine(design.at)})` : ""}:\n${design.code}`).join("\n\n");
     const decisions = outgoingEdges.flatMap((edge) => {
       if (edge.kind !== "implements") return [];
       const decision = nodesById.get(edge.to);
@@ -67,7 +72,7 @@ function renderIntent(spec: DesignSpec, specPath: string) {
       + (unit.reads.length > 0 ? ` Read first: ${unit.reads.join(", ")}` : "");
     return {
       id: unit.id,
-      objective: oneLine(objective),
+      objective: oneLine(objective) + (designBlock === "" ? "" : `\nDesign:\n${designBlock}`),
       criteria: unitTicketCriteria(unit, goal.criteria ?? []),
       dependsOn: outgoingEdges.filter((edge) => edge.kind === "dependsOn").map((edge) => edge.to),
       writeScopes: [...new Set(unit.changes.map(normalizeScope))],

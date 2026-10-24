@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { DesignSpec } from "./lib/graph.ts";
+import type { Design, DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
 import { unitsInDependencyOrder } from "./lib/unit-order.ts";
 
@@ -19,6 +19,7 @@ function render(spec: DesignSpec, mode: string): string {
       spec.nodes.flatMap((node) => node.kind === "decision" ? [`${node.id}: ${node.question} -> ${node.answer} (${node.source})`] : []),
     ).map(oneLine).join("\n");
   }
+  if (mode === "design") return renderDesign(spec);
   const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
   const lines: string[] = [];
   let stepNumber = 0;
@@ -50,14 +51,35 @@ function render(spec: DesignSpec, mode: string): string {
   return lines.join("\n");
 }
 
+function renderDesign(spec: DesignSpec): string {
+  const unitIdsByDesignId = new Map<string, string[]>();
+  for (const edge of spec.edges) {
+    if (edge.kind !== "implements") continue;
+    unitIdsByDesignId.set(edge.to, [...(unitIdsByDesignId.get(edge.to) ?? []), edge.from]);
+  }
+  const designs = spec.nodes.filter((node): node is Design => node.kind === "design");
+  const lines: string[] = [];
+  for (const layer of ["behavior", "architecture", "program"] as const) {
+    const designsInLayer = designs.filter((design) => design.layer === layer);
+    if (designsInLayer.length === 0) continue;
+    lines.push(layer);
+    for (const design of designsInLayer) {
+      lines.push(`  ${design.id} ${oneLine(design.title)}${design.at ? ` (${oneLine(design.at)})` : ""}`);
+      lines.push(...design.code.split("\n").map((codeLine) => `    ${codeLine}`));
+      lines.push(`    built by ${(unitIdsByDesignId.get(design.id) ?? []).join(", ") || "no unit yet"}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function renderSpec(specArgument: string | undefined, mode: string | undefined): number {
   const { report, spec } = readRenderableSpec(specArgument);
   if (!spec) {
     process.stdout.write(`${JSON.stringify(report)}\n`);
     return 1;
   }
-  if (mode !== "tree" && mode !== "plan" && mode !== "goal") {
-    process.stdout.write(`${JSON.stringify({ outcome: "INVALID", errors: ["Rule 1: render mode: supply tree, plan, or goal"] })}\n`);
+  if (mode !== "tree" && mode !== "plan" && mode !== "goal" && mode !== "design") {
+    process.stdout.write(`${JSON.stringify({ outcome: "INVALID", errors: ["Rule 1: render mode: supply tree, plan, goal, or design"] })}\n`);
     return 1;
   }
   process.stdout.write(`${render(spec, mode)}\n`);
