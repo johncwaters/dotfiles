@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { test } from 'node:test'
 import { executableWorkflowSource, workflowFunctionNamed } from './qa-swarm-source.mjs'
 
@@ -10,75 +14,33 @@ function runWorkflow(workflowArgs, runtimeBindings = {}) {
   return AsyncFunction('args', ...bindingNames, executableWorkflowSource)(workflowArgs, ...bindingValues)
 }
 
-const codeLaneOnlyRouterResult = { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: 'fixture' }
-
-function workflowRuntimeReturning(agentResponseFor) {
+function workflowRuntimeReturning(agentResponseFor, routerAnswer = { lanes: [] }) {
   return {
     phase: () => {},
     log: () => {},
     parallel: async (tasks) => Promise.all(tasks.map((task) => task())),
     agent: async (prompt, options) => {
       if (options.phase === 'Route') {
-        return codeLaneOnlyRouterResult
+        return routerAnswer
       }
       return agentResponseFor(prompt, options)
     }
   }
 }
 
-async function emittedRoutingPrompts(workflowArgs) {
-  const emittedPrompts = []
-  const routerResult = {
-    danger: 'LOW',
-    complexity: 'LOW',
-    dangerFact: 'The test fixture is low risk.',
-    fileClasses: [],
-    lanes: [],
-    laneJustifications: [],
-    findings: [],
-    route: 'fixture'
-  }
-  const runtimeBindings = {
-    phase: () => {},
-    agent: async (prompt) => {
-      emittedPrompts.push(prompt)
-      return routerResult
-    }
-  }
-  const routeReview = workflowFunctionNamed('routeReview', workflowArgs, runtimeBindings)
-  await routeReview(workflowArgs.changedFiles)
-  const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', workflowArgs)
-  emittedPrompts.push(buildLanePrompt('code', routerResult, ['code'], workflowArgs.changedFiles, workflowArgs.reviewCmd))
-  const buildJudgmentPrompt = workflowFunctionNamed('buildJudgmentPrompt', workflowArgs)
-  const convergenceFacts = {
-    lanesRun: 'code',
-    lanesSkipped: 'none',
-    degraded: 'none',
-    routerRatings: 'LOW/LOW via fixture',
-    droppedFindingCount: 0,
-    droppedBelowMediumCount: 0,
-    droppedUnprovenCount: 0,
-    droppedOutOfLaneCount: 0,
-    droppedOutOfLaneTags: 'none',
-    truncatedLanes: 'none'
-  }
-  emittedPrompts.push(buildJudgmentPrompt(convergenceFacts, [], [], [], workflowArgs.changedFiles, workflowArgs.reviewCmd))
-  return emittedPrompts
-}
-
 const baseWorkflowArgs = {
   reviewCmd: 'git diff base..head',
   repoPath: '/repo',
   context: 'Test routing behavior.',
-  changedFiles: ['src/file.js']
+  changedFiles: ['src/file.js'],
+  ruleLanes: { lanes: ['code'], filesByLane: { code: ['src/file.js'] } }
 }
 
 test('each lane receives its own review checklist heading', () => {
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
-  const laneNames = ['code', 'structure']
 
-  for (const laneName of ['code', 'security', 'redteam', 'structure', 'necessity']) {
-    const lanePrompt = buildLanePrompt(laneName, null, laneNames, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd)
+  for (const laneName of ['code', 'security', 'redteam']) {
+    const lanePrompt = buildLanePrompt(laneName, baseWorkflowArgs.changedFiles, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd)
 
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
     assert.ok(lanePrompt.includes(`## ${laneName} as extra checks`))
@@ -89,10 +51,10 @@ test('a lane or the router reviewing a range executes none of its code while a w
   const rangeReviewCommand = 'git diff aaaa..bbbb'
   const workingTreeReviewCommand = 'git diff HEAD 974f5015bf125022fe199e6fca39041a5fb7b8a4'
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
-  const rangeLanePrompt = buildLanePrompt('code', null, ['code'], baseWorkflowArgs.changedFiles, rangeReviewCommand)
-  const workingTreeLanePrompt = buildLanePrompt('code', null, ['code'], baseWorkflowArgs.changedFiles, workingTreeReviewCommand)
-  const rangeRouterPrompt = workflowFunctionNamed('buildRouterAssessmentPrompt', { ...baseWorkflowArgs, reviewCmd: rangeReviewCommand })(baseWorkflowArgs.changedFiles, 'Route this review.')
-  const workingTreeRouterPrompt = workflowFunctionNamed('buildRouterAssessmentPrompt', { ...baseWorkflowArgs, reviewCmd: workingTreeReviewCommand })(baseWorkflowArgs.changedFiles, 'Route this review.')
+  const rangeLanePrompt = buildLanePrompt('code', [], baseWorkflowArgs.changedFiles, rangeReviewCommand)
+  const workingTreeLanePrompt = buildLanePrompt('code', [], baseWorkflowArgs.changedFiles, workingTreeReviewCommand)
+  const rangeRouterPrompt = workflowFunctionNamed('buildRouterPrompt', { ...baseWorkflowArgs, reviewCmd: rangeReviewCommand })(['security'], baseWorkflowArgs.changedFiles)
+  const workingTreeRouterPrompt = workflowFunctionNamed('buildRouterPrompt', { ...baseWorkflowArgs, reviewCmd: workingTreeReviewCommand })(['security'], baseWorkflowArgs.changedFiles)
 
   assert.match(rangeLanePrompt, /execute none of its code and extract nothing/)
   assert.doesNotMatch(rangeLanePrompt, /git archive/)
@@ -231,3 +193,58 @@ test('a zero-finding lane discussing arithmetic overflow stays out of the trunca
   assert.match(workflowResponse, /truncated lanes: none$/)
 })
 
+
+test('a run without rule lanes is refused before any agent starts', async () => {
+  let agentCallCount = 0
+  const runtimeBindings = workflowRuntimeReturning(() => {
+    agentCallCount += 1
+    return null
+  })
+
+  assert.equal(await runWorkflow({ ...baseWorkflowArgs, ruleLanes: undefined }, runtimeBindings), 'No rule lanes, no run.')
+  assert.equal(agentCallCount, 0)
+})
+
+test('the router only adds an unpicked lane naming a changed file, even as a diff path, and a dead router leaves the rule lanes running', async () => {
+  const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nNo overflow.'
+  const addingRouterAnswer = { lanes: [{ lane: 'redteam', file: 'b/src/file.js' }, { lane: 'security', file: 'src/elsewhere.js' }, { lane: 'code', file: 'src/file.js' }] }
+  const spawnedLabels = []
+  const addingRuntime = workflowRuntimeReturning((prompt, options) => {
+    spawnedLabels.push(options.label)
+    return laneResponse
+  }, addingRouterAnswer)
+
+  const addingResponse = await runWorkflow(baseWorkflowArgs, addingRuntime)
+
+  assert.deepEqual(spawnedLabels.sort(), ['Code review', 'Red-team review'])
+  assert.match(addingResponse, /Lanes run: code, redteam\. Lanes skipped: security\./)
+
+  const deadRouterResponse = await runWorkflow(baseWorkflowArgs, workflowRuntimeReturning(() => laneResponse, null))
+
+  assert.match(deadRouterResponse, /Lanes run: code\..*Degraded: router unavailable; rule lanes only\./)
+})
+
+test('route-lanes picks the same lanes from a pinned diff on every run, docs alone getting only code', (context) => {
+  const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'route-lanes-'))
+  context.after(() => fs.rmSync(repoPath, { recursive: true, force: true }))
+  const git = (...gitArguments) => execFileSync('git', ['-C', repoPath, '-c', 'user.name=t', '-c', 'user.email=t@t', ...gitArguments], { encoding: 'utf8' }).trim()
+  git('init', '-q')
+  fs.mkdirSync(path.join(repoPath, 'src'))
+  fs.writeFileSync(path.join(repoPath, 'README.md'), 'start\n')
+  git('add', '-A')
+  git('commit', '-qm', 'base')
+  const baseCommit = git('rev-parse', 'HEAD')
+  fs.writeFileSync(path.join(repoPath, 'src/quota-gate.js'), 'export const bearerToken = process.env.API_TOKEN\n')
+  fs.appendFileSync(path.join(repoPath, 'README.md'), 'more\n')
+  git('add', '-A')
+  git('commit', '-qm', 'change')
+  const routeLanesScript = path.join(import.meta.dirname, '../../skills/swarming-reviews/scripts/route-lanes.mjs')
+  const routeLanes = (reviewCmd, changedFiles) => JSON.parse(execFileSync(process.execPath, [routeLanesScript, '--review-cmd', reviewCmd, '--repo', repoPath, '--', ...changedFiles], { encoding: 'utf8' }))
+
+  const codeChange = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'])
+
+  assert.deepEqual(codeChange, routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js']))
+  assert.deepEqual(codeChange.lanes, ['code', 'security', 'redteam'])
+  assert.deepEqual(codeChange.filesByLane.redteam, ['src/quota-gate.js'])
+  assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md']).lanes, ['code'])
+})

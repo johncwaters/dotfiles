@@ -7,7 +7,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 
 const workflowArgsByFileName = {
   'plan-challenge.js': { goal: 'Ship the fixture.', planText: '1. First step\n2. Second step\n', repoPath: '/repo' },
-  'qa-swarm.js': { reviewCmd: 'git diff HEAD', repoPath: '/repo', context: 'fixture', changedFiles: ['src/file.js'] }
+  'qa-swarm.js': { reviewCmd: 'git diff HEAD', repoPath: '/repo', context: 'fixture', changedFiles: ['src/file.js'], ruleLanes: { lanes: ['code', 'security'], filesByLane: { code: ['src/file.js'], security: ['src/file.js'] } } }
 }
 
 function runWorkflowWithFailingAgents(workflowFileName, workflowArgs) {
