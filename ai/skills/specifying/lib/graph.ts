@@ -360,6 +360,26 @@ function findSharedRepoPathsByUnitPair(rootPath: string, changedPathsById: Map<s
 
 type ReadingMeasurement = { totalBytes: number; unmeasurablePaths: string[] };
 
+const BINARY_SNIFF_BYTES = 8000;
+const WIDE_TEXT_BYTE_ORDER_MARKS = [
+  Buffer.from([0x00, 0x00, 0xfe, 0xff]),
+  Buffer.from([0xff, 0xfe]),
+  Buffer.from([0xfe, 0xff]),
+];
+
+function isBinaryFile(filePath: string): boolean {
+  const fileDescriptor = fs.openSync(filePath, "r");
+  try {
+    const leadingBytes = Buffer.alloc(BINARY_SNIFF_BYTES);
+    const bytesRead = fs.readSync(fileDescriptor, leadingBytes, 0, BINARY_SNIFF_BYTES, 0);
+    const sniffedBytes = leadingBytes.subarray(0, bytesRead);
+    const startsWithWideTextMark = WIDE_TEXT_BYTE_ORDER_MARKS.some((byteOrderMark) => sniffedBytes.subarray(0, byteOrderMark.length).equals(byteOrderMark));
+    return !startsWithWideTextMark && sniffedBytes.includes(0);
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
+}
+
 function measureReadingBytes(resolvedRoot: string, listedPaths: string[]): ReadingMeasurement {
   const visitedPaths = new Set<string>();
   const unmeasurablePaths: string[] = [];
@@ -369,7 +389,7 @@ function measureReadingBytes(resolvedRoot: string, listedPaths: string[]): Readi
       if (!staysInside(resolvedRoot, resolvedTarget) || visitedPaths.has(resolvedTarget)) return 0;
       visitedPaths.add(resolvedTarget);
       const fileStatus = fs.statSync(resolvedTarget);
-      if (fileStatus.isFile()) return fileStatus.size;
+      if (fileStatus.isFile()) return isBinaryFile(resolvedTarget) ? 0 : fileStatus.size;
       if (!fileStatus.isDirectory()) return 0;
       return fs.readdirSync(resolvedTarget)
         .filter((entry: string) => entry !== ".git" && entry !== "node_modules")

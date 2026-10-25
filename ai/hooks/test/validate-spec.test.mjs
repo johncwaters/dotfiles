@@ -190,6 +190,21 @@ test("a real reading budget excess requires a waiver and deduplicates overlappin
   assertAllowed(writeSpec(spec));
 });
 
+test("binary files in a unit cost no reading budget", () => {
+  fs.mkdirSync(path.join(repoRoot, "media"));
+  const regeneratedVideo = Buffer.alloc(300000, 0x41);
+  regeneratedVideo[16] = 0;
+  fs.writeFileSync(path.join(repoRoot, "media", "demo.webm"), regeneratedVideo);
+  const spec = slicedSpec();
+  const unit = spec.nodes.find((node) => node.id === "U1");
+  unit.changes = ["media/demo.webm"];
+  assertAllowed(writeSpec(spec));
+  const wideTextNotes = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("readable text line\r\n".repeat(8000), "utf16le")]);
+  fs.writeFileSync(path.join(repoRoot, "media", "notes.txt"), wideTextNotes);
+  unit.changes = ["media/notes.txt"];
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*320002 bytes.*budgetWaiver/);
+});
+
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {
   assertAllowed(writeSpec({}, path.join(temporaryHome, "outside.json")));
   const unreadableSpecPath = path.join(temporaryHome, ".claude", "specs", "unreadable.json");
