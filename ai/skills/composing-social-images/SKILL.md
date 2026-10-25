@@ -50,6 +50,10 @@ List vars other than highlights are arrays of 1-6 nonempty strings rendered as e
 
 Run `node <skill-dir>/scripts/render.mjs --manifest marketing/social/manifest.json --safe-zones --sheet`. Inspect every PNG and `out/review/preview.html`; fix overlap, clipping, low contrast and unused space. Change shot outputs to `out/final/`, then render with `--sheet` without safe zones. Both runs must exit 0. The renderer enforces shapes, assets/fonts, text size and safe insets, PNG dimensions and the 1,000,000-byte ceiling; inspect screenshot readability visually. `alt.json` and sibling `sources.json` merge by filename. These files support publication; rendering does not authorize publishing.
 
+## Handoff
+
+Hand over the final PNGs somewhere the carbon unit can open them from a phone, which cannot open a path on this machine. When the host offers an Artifact publishing tool, publish a private page that shows each PNG with its alt text and saves it through `capabilities: {"downloads": true}`, since the viewer blocks plain download links, and give the link. Without that tool, give the `out/final/` paths.
+
 ## Clips
 
 A clip shows what a still cannot: an animation, a transition, a state change. Load `capturing-ui` to record it; its motion craft (timing, easing, staging) follows the `animating` skill (`~/.claude/skills/animating`).
