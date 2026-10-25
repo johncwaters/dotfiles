@@ -1,6 +1,6 @@
 <routing>
 Main session loop only; subagents skip per `<scope>`. This section overrides the `<routing>` rules injected from `~/.claude/ROUTING.md` per their precedence rule: apply them as written, amended for a work machine as follows.
-- Claude and Codex models only. Rules 0, 1, and 1a apply as written. Never dispatch to Gemini or another non-Claude, non-Codex model CLI because work code may go only to company-sanctioned providers. Rule 1b may route only among Claude and Codex.
+- Claude and Codex models only. Never dispatch to Gemini or another non-Claude, non-Codex model CLI because work code may go only to company-sanctioned providers. Rule 1b may route only among Claude and Codex.
 - The enforce-spawn-model PreToolUse hook denies any spawn with a missing model, so every spawn names its tier deliberately.
 </routing>
 
