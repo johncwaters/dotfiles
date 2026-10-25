@@ -126,10 +126,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node {{HOME}}/.claude/hooks/inject-routing.mjs"
-          },
-          {
-            "type": "command",
             "command": "node {{HOME}}/.claude/hooks/load-agents-md.mjs"
           },
           {

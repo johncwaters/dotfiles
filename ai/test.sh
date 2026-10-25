@@ -516,7 +516,7 @@ check "converge skips npm ci while a skill's installed lock is current" \
   test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq "$lockedSkillCount"
 
 linkedDestinations=(
-  ".claude/AGENTS.md" ".claude/ROUTING.md" ".claude/tsconfig.json" ".claude/types"
+  ".claude/AGENTS.md" ".claude/MODELS.md" ".claude/tsconfig.json" ".claude/types"
   ".claude/hooks" ".claude/hud"
 )
 
@@ -833,7 +833,7 @@ check "work-server installs every settings hook at a present script" settingsHoo
 check "work-server inherits work rules for Claude" \
   test "$(readlink "$sandbox/.claude/AGENTS.profile.md")" = "$sandbox/.dotfiles/profiles/work/AGENTS.md"
 check "work-server inherits work rules for Codex" \
-  grep -q 'company-sanctioned providers' "$sandbox/.codex/AGENTS.md"
+  grep -q 'Prefer working in a dedicated git worktree' "$sandbox/.codex/AGENTS.md"
 for skillName in "${workSkillNames[@]}"; do
   check "work-server inherits $skillName without a copy" \
     test "$(readlink "$sandbox/.claude/skills/$skillName")" = "$sandbox/.dotfiles/profiles/work/skills/$skillName"
@@ -933,7 +933,7 @@ mkdir -p "$stagedRepo/profiles/minimal"
 printf '@AGENTS.md\n' > "$stagedRepo/profiles/minimal/CLAUDE.md"
 runTopicInstall "$stagedTopicDir" minimal > /dev/null
 check "a profile without an overlay still gets shared hooks" \
-  grep -q inject-routing.mjs "$sandbox/.claude/settings.json"
+  grep -q load-agents-md.mjs "$sandbox/.claude/settings.json"
 check "a profile without an overlay gets no work hooks" \
   bash -c '! grep -q profile-hooks "$1"' _ "$sandbox/.claude/settings.json"
 check "a profile without declarations retires another profile's artifacts" backchannelsArtifactsAreAbsent
@@ -1047,29 +1047,16 @@ workflowCarriesDelegationMarkers() {
     && grep -qF 'Definition of done:' "$workflowPath"
 }
 
-workflowModelIdsComeFromRouting() {
+workflowModelIdsComeFromModels() {
   local workflowPath="$1"
   local modelId
   while read -r modelId; do
     [[ -n "$modelId" ]] || continue
-    grep -qF -- "$modelId" "$topicDir/ROUTING.md" || return 1
+    grep -qF -- "$modelId" "$topicDir/MODELS.md" || return 1
   done < <(
     {
       grep -oE 'gpt-[a-z0-9]+([.-][a-z0-9]+)*' "$workflowPath" || true
       grep -oE "model: '[^']+'" "$workflowPath" | sed -E "s/^model: '(.*)'$/\1/" || true
-    } | sort -u
-  )
-}
-
-workflowCliCommandsComeFromRouting() {
-  local workflowPath="$1"
-  local cliCommand
-  while read -r cliCommand; do
-    [[ -n "$cliCommand" ]] || continue
-    grep -qF -- "$cliCommand" "$topicDir/ROUTING.md" || return 1
-  done < <(
-    {
-      grep -oE -- "codex exec [^']*" "$workflowPath" || true
     } | sort -u
   )
 }
@@ -1086,8 +1073,7 @@ for workflowPath in "${workflowScripts[@]}"; do
   workflowName="$(basename -- "$workflowPath")"
   check "$workflowName pins every agent model" workflowPinsEveryAgentCall "$workflowPath"
   check "$workflowName carries delegation markers" workflowCarriesDelegationMarkers "$workflowPath"
-  check "$workflowName names only models ROUTING.md lists" workflowModelIdsComeFromRouting "$workflowPath"
-  check "$workflowName names only CLI invocations ROUTING.md lists" workflowCliCommandsComeFromRouting "$workflowPath"
+  check "$workflowName names only models MODELS.md lists" workflowModelIdsComeFromModels "$workflowPath"
   check "$workflowName avoids calls the workflow runtime rejects" workflowAvoidsResumeBreakingCalls "$workflowPath"
 done
 
@@ -1134,10 +1120,10 @@ check "settings.json rendered" test -f "$settingsPath"
 check "settings.json is valid JSON" node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$settingsPath"
 check "settings.json keeps the base deny list through the overlay merge" \
   node --input-type=module -e 'import {readFileSync} from "node:fs";import {pathToFileURL} from "node:url";const {buildClaudeProtectedReadRules}=await import(pathToFileURL(process.argv[3]));const readJson=(path)=>JSON.parse(readFileSync(path,"utf8"));const baseDenyList=readJson(process.argv[1]).permissions.deny;const renderedDenyList=readJson(process.argv[2]).permissions.deny;process.exit(baseDenyList.length>0&&JSON.stringify(renderedDenyList)===JSON.stringify([...baseDenyList,...buildClaudeProtectedReadRules()])?0:1)' "$topicDir/settings.base.json" "$settingsPath" "$topicDir/protected-paths.mjs"
-check "settings.json pins the sonnet alias to the model ROUTING.md names" \
-  node -e 'const fs=require("fs");const routedSonnetModel=(fs.readFileSync(process.argv[1],"utf8").match(/^\| `sonnet` \(([^)]+)\)/m)||[])[1];const pinnedSonnetModel=JSON.parse(fs.readFileSync(process.argv[2],"utf8")).env.ANTHROPIC_DEFAULT_SONNET_MODEL;process.exit(routedSonnetModel&&routedSonnetModel===pinnedSonnetModel?0:1)' "$topicDir/ROUTING.md" "$settingsPath"
-check "settings.json pins the haiku alias to the model ROUTING.md names" \
-  node -e 'const fs=require("fs");const routedHaikuModel=(fs.readFileSync(process.argv[1],"utf8").match(/^\| `haiku` \(([^)]+)\)/m)||[])[1];const pinnedHaikuModel=JSON.parse(fs.readFileSync(process.argv[2],"utf8")).env.ANTHROPIC_DEFAULT_HAIKU_MODEL;process.exit(routedHaikuModel&&routedHaikuModel===pinnedHaikuModel?0:1)' "$topicDir/ROUTING.md" "$settingsPath"
+check "settings.json pins the sonnet alias to the model MODELS.md names" \
+  node -e 'const fs=require("fs");const routedSonnetModel=(fs.readFileSync(process.argv[1],"utf8").match(/^\| `sonnet` \(([^)]+)\)/m)||[])[1];const pinnedSonnetModel=JSON.parse(fs.readFileSync(process.argv[2],"utf8")).env.ANTHROPIC_DEFAULT_SONNET_MODEL;process.exit(routedSonnetModel&&routedSonnetModel===pinnedSonnetModel?0:1)' "$topicDir/MODELS.md" "$settingsPath"
+check "settings.json pins the haiku alias to the model MODELS.md names" \
+  node -e 'const fs=require("fs");const routedHaikuModel=(fs.readFileSync(process.argv[1],"utf8").match(/^\| `haiku` \(([^)]+)\)/m)||[])[1];const pinnedHaikuModel=JSON.parse(fs.readFileSync(process.argv[2],"utf8")).env.ANTHROPIC_DEFAULT_HAIKU_MODEL;process.exit(routedHaikuModel&&routedHaikuModel===pinnedHaikuModel?0:1)' "$topicDir/MODELS.md" "$settingsPath"
 
 renderProfileSettings() {
   HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \

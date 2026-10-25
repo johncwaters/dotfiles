@@ -23,8 +23,6 @@ const FIX_CTRL =
 const DOC_SIZE_CAPS = {
   "agents.md": 16384,
   "claude.md": 16384,
-  // inject-routing.mjs prints this to stdout; Claude Code persists hook stdout over ~10000 bytes and injects only a 2KB preview.
-  "routing.md": 9216,
 };
 
 const REVIEW_LADDER_PATH_SUFFIXES = [

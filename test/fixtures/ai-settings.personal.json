@@ -149,10 +149,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /fixture/home/.claude/hooks/inject-routing.mjs"
-          },
-          {
-            "type": "command",
             "command": "node /fixture/home/.claude/hooks/load-agents-md.mjs"
           },
           {

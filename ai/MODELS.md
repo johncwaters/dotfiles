@@ -1,6 +1,3 @@
-<routing>
-Main session loop only; subagents skip per `<scope>`. Single source of truth for model selection and delegation. A profile `<routing>` section wins and may amend this by reference.
-
 Rows verified live 2026-09-25 on Claude Code 2.1.282; `sonnet` and `fable` 2026-09-28 on 2.1.284; `haiku` 2026-10-07 on 2.1.293. Re-verify a row (run its Access command, update this stamp) when its id errors, a newer tier ships, a plan or price changes, or the stamp is over 90 days old.
 
 Int and speed 1 (low) to 10 (high). Cost is list API price, USD per 1M tokens in / out.
@@ -14,10 +11,9 @@ Int and speed 1 (low) to 10 (high). Cost is list API price, USD per 1M tokens in
 
 The table is a map, not a gate: an unlisted model is routable under rule 1b when you name why and its id verifiably works.
 
-
 First ask whether a model is needed at all: grep, sed, scripts, SQL, formatters, linters, type checkers, and `git log` are free and cannot hallucinate. Spend a model on judgment only.
 
-Decision order for any delegated task:
+Choosing a model for a spawn:
 1b. Structural fit outranks quota and price: when only one model can do the job (live web, a context window nothing else holds, multimodal input), route there and skip rule 2. Nothing fits: say so and propose the tool.
 2. `opus` by default, including anything of uncertain complexity. `sonnet` only for one-shot slices with simple checkable output where opus changes nothing; a cheaper tier that fails once costs more than one that one-shots. `haiku` only for one-shot short answers checkable at a glance (classify, label, extract a field) and pure relays that run one fixed command and return its output, never code, debugging, review, or a completion-gating judgment.
 3. A concrete failure on a lower tier reruns one tier up (`haiku`, `sonnet`, `opus`), never the same tier again, never a tier below these floors.
@@ -25,9 +21,3 @@ Decision order for any delegated task:
 5. Change a default only on eval evidence: the same tasks run through the competing routes with judged output. No eval covers the slice: write the task first, then reroute.
 
 Delegation prompts: the target cannot see this conversation, so carry objective, definition of done, paths, prior decisions, constraints, an output contract that fits back into context, and boundaries. Agent prompts carry literal `Scope:`, `Out of scope:`, and `Definition of done:` lines or `hooks/enforce-spawn-model.mjs` denies them. Do not restate AGENTS.md rules Claude subagents already read (global plus repo copy).
-
-Posture by session model:
-- Opus (default): do Claude-side work in the main loop. Spawning Claude subagents to orchestrate did not pay: 2026-09/10 logs showed delegating sessions costing about 3x per edit with no drop in review findings, because the main loop's context, not the subagents, carries the spend. Spawn a Claude subagent only for independent slices worth running in parallel, broad read-only sweeps (`Explore`, rule 4), or digging whose transcript would bloat the main context more than its answer. Skills and workflows that spawn agents by their own instructions (`/committing`, `qa-swarm`, `plan-challenge`) run as written; this posture governs only discretionary spawns.
-- Fable (opt-in): same posture as Opus; spend it where top judgment beats cost.
-- Other: apply the decision order directly.
-</routing>

@@ -18,7 +18,6 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `require-commit-on-stop.mjs` | Stop hook: blocks once a turn ending with uncommitted session edits and no /committing, unless a background launch has not reported back | `test/require-commit-on-stop.test.mjs` |
 | `session-transcript.mjs` | Shared transcript event stream for the workflow gates | `test/guard-workflow.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
-| `inject-routing.mjs` | SessionStart routing context | `test/inject-routing.test.mjs` |
 | `load-agents-md.mjs` | SessionStart and PostToolUse(Read) injection of AGENTS.md files a CLAUDE.md shadows (Claude Code 2.1.287 loads AGENTS.md only when no CLAUDE.md sits between it and the repo root) | `test/load-agents-md.test.mjs` |
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `retro-reminder.mjs` | SessionEnd incident count and nudge; SessionStart unreviewed-retro report | `test/retro-reminder.test.mjs` |

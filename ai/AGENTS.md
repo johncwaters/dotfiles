@@ -3,7 +3,7 @@ Say "carbon unit" / "carbon units" wherever prose would say human, person, peopl
 </output_style>
 
 <scope>
-`<routing>`, `<spec_first>`, and `<auto_commit>` are main-loop only. Subagents (Agent/Task) and externally dispatched CLIs (Codex): execute the assigned task with your own tools, never spawn further agents, never offload to Codex, never run /committing, report results back instead. Every other section applies to everyone.
+`<spec_first>` and `<auto_commit>` are main-loop only. Main loop: do the work in this session; spawn agents only where a skill or workflow says to, following `~/.claude/MODELS.md` for model and prompt. Subagents (Agent/Task) and externally dispatched CLIs (Codex): execute the assigned task with your own tools, never spawn further agents, never offload to Codex, never run /committing, report results back instead. Every other section applies to everyone.
 </scope>
 
 <scope_boundary>
@@ -12,10 +12,6 @@ Work only in that surface. Name anything found outside it in the report, never f
 If the task cannot be completed inside the surface, stop and report instead of widening it.
 "Keep iterating" in `<verification>` remains bounded by this surface.
 </scope_boundary>
-
-<routing>
-Main loop only; never loaded for subagents or externally dispatched CLIs. Full rules live in `~/.claude/ROUTING.md`, injected at SessionStart by `hooks/inject-routing.mjs`. Main loop that finds no routing rules in context: read that file before delegating or dispatching.
-</routing>
 
 <execution>
 Run builds, test suites, and installs with run_in_background instead of blocking the loop.
@@ -50,7 +46,7 @@ Main session loop only; subagents skip per `<scope>`. Change complete and every 
 </auto_commit>
 
 <reuse_before_create>
-Before writing a new component, hook, util, fetcher, schema, script, skill, or agent: search for existing equivalents with Glob/Grep (Explore agent for broad sweeps), by behavior and by synonym/abbreviation/domain wording.
+Before writing a new component, hook, util, fetcher, schema, script, skill, or agent: search for existing equivalents with Glob/Grep, by behavior and by synonym/abbreviation/domain wording.
 - Match: extend or compose. Refactor only within the assigned surface; otherwise extend or report. Never duplicate.
 - Near-match: surface to the user before deciding new vs. extend.
 - No match: write new.
@@ -126,7 +122,7 @@ Docs and comments carry only the Why: rationale, tradeoffs, invariants with thei
 - Project instruction files (AGENTS.md, CLAUDE.md) are instruction-tier: conventions, invariants plus why, lean map. Feature rationale stays out unless it changes how an agent must act.
 - A merged feature adds at most a few lines to any instruction file: the invariant, its why, a pointer. No design essays, no incident chronology beyond one line naming the lesson.
 - An invariant lives in the AGENTS.md NEAREST the code it governs. A repo's root file is a lean map plus cross-cutting conventions only; a subsystem rule written there is a defect, since the root is charged to every session in every directory while a nested file is uncapped and loads only when that code is open.
-- Growth is bounded: `hooks/validate-file.mjs` caps AGENTS.md, CLAUDE.md, and ROUTING.md by byte size, so making room means cutting, not appending.
+- Growth is bounded: `hooks/validate-file.mjs` caps AGENTS.md and CLAUDE.md by byte size, so making room means cutting, not appending.
 - At the cap, make room by RETIRING a rule whose code is gone or whose test now pins it, never by trimming words off live ones. Trimming to fit turns the ceiling into a target and leaves the file permanently full.
 - The docs_must_be_enforceable gate blocks NEW docs; this section governs the content of all docs. "The doc gate blocks a new file" is never a reason to dump prose into an existing one.
 </doc_style_why_only>
