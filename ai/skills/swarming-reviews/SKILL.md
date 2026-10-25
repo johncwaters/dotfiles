@@ -7,15 +7,15 @@ description: Finds defects for the review ladder from an already-pinned diff. Ru
 
 Find, converge, return. Every lane emits the same structured format so the merge is mechanical, and every finding carries a `Proof:` the script checks for, so unrun scenarios stay out of triage.
 
-Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAllowed: boolean, dispatchNonce?: string, retryAttemptId?: string }`.
+Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], retryAttemptId?: string }`.
 
 ## Input
 
-**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, the changed-file set that `REVIEW_CMD` produces as repo-relative paths from `git diff --name-only`, the `codexAllowed` flag read off the profile routing rule, and 2 to 4 sentences of context the lanes cannot derive from the diff. The changed-file set is what lanes are scoped to and what the script drops findings against, so a run without it reviews nothing and returns an empty block that reads as clean. Optionally a scope restriction (`-- <paths>`). A change is swept once: no input carries findings from an earlier run.
+**Required input.** A `REVIEW_CMD` that resolves to an immutable diff (a tree object or a SHA range), the repo path, the changed-file set that `REVIEW_CMD` produces as repo-relative paths from `git diff --name-only`, and 2 to 4 sentences of context the lanes cannot derive from the diff. The changed-file set is what lanes are scoped to and what the script drops findings against, so a run without it reviews nothing and returns an empty block that reads as clean. Optionally a scope restriction (`-- <paths>`). A change is swept once: no input carries findings from an earlier run.
 
 **No `REVIEW_CMD`, no run.** Say so and stop. Pinning scope is `reviewing-code`'s job, and computing a second pin here would let two layers review two different trees while believing they reviewed one.
 
-**No changed-file set, no run. No routing flag, no run.** The script refuses an absent or empty `changedFiles` or a non-boolean `codexAllowed`, because an empty set drops every finding into a block that reads as clean, and a missing flag could send a work diff to a forbidden CLI.
+**No changed-file set, no run.** The script refuses an absent or empty `changedFiles`, because an empty set drops every finding into a block that reads as clean.
 
 ## Output
 
@@ -25,7 +25,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], codexAll
 
 ## Step 1: Run the workflow
 
-Build `args` from the caller's inputs. When `codexAllowed` is true, set `dispatchNonce` to the output of `openssl rand -hex 8`, run fresh for every call: it makes the `/tmp` prompt path unguessable to other local accounts, and the script refuses a Codex-allowed run without one. Call `Workflow({name: 'qa-swarm', args})`, and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Always call by `name`: the `Workflow(qa-swarm)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
+Build `args` from the caller's inputs. Call `Workflow({name: 'qa-swarm', args})`, and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Always call by `name`: the `Workflow(qa-swarm)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
 
 To re-run a dead retry under `resumeFromRunId` without replaying its cached output, pass a new `retryAttemptId`.
 
@@ -41,8 +41,6 @@ The summary paragraph says: how many findings survived convergence, which lanes 
 
 Lane definitions and selection belong to `~/.claude/workflows/qa-swarm.js`.
 `security` stays on fable because security judgment outranks cost.
-
-**CLI routing flag.** Read the profile `<routing>` rule in context yourself: a rule forbidding Codex sets `codexAllowed` false, and no such rule means true. Keep detection in this session rather than a spawned agent, which is told routing does not bind it. Sending a work diff to a forbidden CLI is a confidentiality breach, not a routing preference. The router is the only step that reaches Codex (`gpt-6.1-sol`), so a run has a read on a different model only when Codex routes; either way it returns the defects it proved while classifying. A false flag emits no Codex instruction and routes on `opus` with the same prompt.
 
 ## Reviewer output format
 

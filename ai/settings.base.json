@@ -92,15 +92,6 @@
         ]
       },
       {
-        "matcher": "^(Bash|Write)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node {{HOME}}/.claude/hooks/gate-codex-dispatch.mjs"
-          }
-        ]
-      },
-      {
         "matcher": "^(Bash|Write|Edit|MultiEdit)$",
         "hooks": [
           {

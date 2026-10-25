@@ -5,8 +5,6 @@ payloads, unreadable files, and unavailable decision engines must allow silently
 A guard failure must never wedge a session; catches that allow are intentional.
 Fork spawns stay exempt from model pinning because the harness ignores their
 model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
-`gate-codex-dispatch.mjs` fails closed for `codex-dispatcher` calls only: that agent skips
-CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 
 ## Map
 
@@ -16,7 +14,6 @@ CLAUDE.md, so this hook is its sole confinement to a read-only Codex relay.
 | `skill-lint.mjs` | Skill structure rules, shared by the guard and its CLI over every skill | `test/validate-file.test.mjs` |
 | `validate-spec.mjs` | PreToolUse design graph contract guard | `test/validate-spec.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
-| `gate-codex-dispatch.mjs` | PreToolUse subagent Codex ban; read-only relay for `codex-dispatcher` | `test/gate-codex-dispatch.test.mjs` |
 | `guard-workflow.mjs` | PreToolUse attended main-loop gate: raw git commit/push outside /committing (quoted and literal heredoc text masked), self-matching `pkill -f`, first repo edit without /specifying | `test/guard-workflow.test.mjs` |
 | `require-commit-on-stop.mjs` | Stop hook: blocks once a turn ending with uncommitted session edits and no /committing, unless a background launch has not reported back | `test/require-commit-on-stop.test.mjs` |
 | `session-transcript.mjs` | Shared transcript event stream for the workflow gates | `test/guard-workflow.test.mjs` |

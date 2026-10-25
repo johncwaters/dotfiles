@@ -1,33 +1,5 @@
 export const meta = { name: 'qa-swarm', description: 'Routes a pinned review through the required lanes and converges their findings.', phases: [{ title: 'Route', detail: 'Rate the touched surface and select lanes.' }, { title: 'Review', detail: 'Run the selected review lanes concurrently.' }, { title: 'Converge', detail: 'Normalize and converge the lane findings.' }] }
 
-const codexReviewSandboxProfile = `'permissions.qa_review={extends=":read-only", filesystem={"~/.ssh"="deny", "~/.gnupg"="deny", "~/.aws"="deny", "~/.kube"="deny", "~/.docker"="deny", "~/.netrc"="deny", "~/.git-credentials"="deny", "~/.config/gh"="deny", "~/.codex/auth.json"="deny", "~/.claude/.credentials.json"="deny", "~/.glimmervoid/config.json*"="deny", "~/.glimmervoid/secrets.env"="deny", "~/.npmrc"="deny", "~/.azure"="deny", "~/.local/share/keyrings"="deny", "~/.mozilla"="deny", "~/.config/google-chrome"="deny", "~/.config/chromium"="deny", "~/.pki"="deny"}}'`
-
-const dispatchNoncePattern = /^[0-9a-f]{16}$/
-
-function dispatchPromptStem(taskLabel) {
-  return `/tmp/codex-dispatch-${taskLabel}-${args.dispatchNonce}`
-}
-
-function codexDispatchCommand(model, reasoningEffort, promptStem) {
-  const effortOption = reasoningEffort ? ` -c model_reasoning_effort="${reasoningEffort}"` : ''
-  return 'codex exec -c ' + codexReviewSandboxProfile + ` -c 'default_permissions="qa_review"' -C ${args.repoPath} -m ${model}${effortOption} < ${promptStem}.txt 2> ${promptStem}.err`
-}
-
-function codexDispatchInstruction(promptName, taskLabel, model, reasoningEffort) {
-  const promptStem = dispatchPromptStem(taskLabel)
-  return `Write the ${promptName}, byte for byte, to ${promptStem}.txt. Then run exactly the one-line command below, nothing added or removed:\n${codexDispatchCommand(model, reasoningEffort, promptStem)}\n`
-}
-
-async function spawnCodexDispatcher(dispatchPrompt, options) {
-  try {
-    return await agent(dispatchPrompt, { model: 'haiku', agentType: 'codex-dispatcher', ...options })
-  } catch (spawnError) {
-    log(`codex-dispatcher unavailable (${spawnError.message}); rerun the ai installer and start a new session`)
-    return null
-  }
-}
-const dispatchedRouterModel = 'gpt-6.1-sol'
-
 const laneDefinitions = [
   {
     name: 'code',
@@ -486,46 +458,15 @@ The code lane always runs, so it is not recommendable here. Put bare lane names 
 ${JSON.stringify(routerSchema)}`
 }
 
-async function routeReviewOnOpus(filesToClassify, fallbackReason) {
-  const fallbackRouteInstruction = `Act as the router because the Codex route reported ${fallbackReason}. Read the repo and run the exact REVIEW_CMD. Do not spawn or dispatch anything.`
-  const fallbackRoute = args.codexAllowed ? 'opus' : 'opus-codex-substitute'
-  const fallbackPrompt = buildRouterAssessmentPrompt(filesToClassify, fallbackRouteInstruction, `Set route to ${fallbackRoute}. `)
-  const fallbackRouter = await agent(fallbackPrompt, { model: 'opus', label: 'Route review fallback', phase: 'Route', schema: routerSchema })
-  if (!fallbackRouter) {
-    return null
-  }
-  return { ...fallbackRouter, route: fallbackRoute }
-}
-
-function describeRouterDispatchFailure(dispatchedRouter) {
-  if (!dispatchedRouter) {
-    return 'router agent death'
-  }
-  return String(dispatchedRouter.dangerFact || '').trim()
-}
-
-function hasClassifiedAnyFile(routerAnswer) {
-  if (!routerAnswer || !Array.isArray(routerAnswer.fileClasses)) {
-    return false
-  }
-  return routerAnswer.fileClasses.length > 0
-}
-
 async function routeReview(filesToClassify) {
   phase('Route')
-  if (!args.codexAllowed) {
-    return { routerResult: await routeReviewOnOpus(filesToClassify, 'Codex CLI disabled by session routing'), degradationNote: '' }
+  const routeInstruction = 'Read the repo and run the exact REVIEW_CMD. Do not spawn or dispatch anything.'
+  const routerPrompt = buildRouterAssessmentPrompt(filesToClassify, routeInstruction, 'Set route to opus. ')
+  const routerAnswer = await agent(routerPrompt, { model: 'opus', label: 'Route review', phase: 'Route', schema: routerSchema })
+  if (!routerAnswer) {
+    return null
   }
-  const dispatchRouteInstruction = `You are a dispatcher only. Do not answer the router questions yourself. ${codexDispatchInstruction('dispatched router prompt below', 'router', dispatchedRouterModel, 'medium')}On any failure, return the required placeholder object with route OPUS_REQUIRED. The placeholder uses LOW for both ratings, your one-line failure report as dangerFact, empty arrays, and no guessed review answer. On success, return the Codex JSON verbatim.\n\nDispatched router prompt:`
-  const dispatchPrompt = buildRouterAssessmentPrompt(filesToClassify, dispatchRouteInstruction)
-  const dispatchedRouter = await spawnCodexDispatcher(dispatchPrompt, { label: 'Route review', phase: 'Route', schema: routerSchema })
-  if (hasClassifiedAnyFile(dispatchedRouter)) {
-    return { routerResult: { ...dispatchedRouter, route: dispatchedRouterModel }, degradationNote: '' }
-  }
-  const dispatchFailureDetail = describeRouterDispatchFailure(dispatchedRouter)
-  const routeFailureReason = dispatchFailureDetail === '' ? 'a failed dispatch with no reported detail' : dispatchFailureDetail
-  const fallbackRouterResult = await routeReviewOnOpus(filesToClassify, routeFailureReason)
-  return { routerResult: fallbackRouterResult, degradationNote: `Codex router failed with ${routeFailureReason}, so opus routed instead and the routing row for this run is stale` }
+  return { ...routerAnswer, route: 'opus' }
 }
 
 function securityIsForcedBy(routerResult) {
@@ -731,18 +672,9 @@ if (!Array.isArray(args.changedFiles) || args.changedFiles.length === 0) {
   return 'No changed-file set, no run.'
 }
 
-if (typeof args.codexAllowed !== 'boolean') {
-  return 'No valid codexAllowed routing flag, no run.'
-}
-
-if (args.codexAllowed && !dispatchNoncePattern.test(String(args.dispatchNonce ?? ''))) {
-  return 'No valid dispatchNonce for a Codex-allowed run, no run.'
-}
-
 const reviewedFileNameSet = new Set(args.changedFiles.map(normalizeFilePath))
 const reviewedFileNames = [...reviewedFileNameSet]
-const routeOutcome = await routeReview(args.changedFiles)
-const routerResult = routeOutcome.routerResult
+const routerResult = await routeReview(args.changedFiles)
 const laneSelection = selectLaneNames(routerResult)
 const laneNames = laneSelection.laneNames
 const laneNamesCutByCap = laneSelection.laneNamesCutByCap
@@ -761,7 +693,7 @@ if (deadLaneNames.length > 0) {
   deadLaneNames.forEach((laneName, laneIndex) => laneTextsByName.set(laneName, retriedLaneTexts[laneIndex]))
 }
 const parsedResponses = new Map()
-const degradationNotes = routeOutcome.degradationNote === '' ? [] : [routeOutcome.degradationNote]
+const degradationNotes = []
 
 for (const laneName of laneNames) {
   const parsedResponse = parseLaneResponse(laneTextsByName.get(laneName))

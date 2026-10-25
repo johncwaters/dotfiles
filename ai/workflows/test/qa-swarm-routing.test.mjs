@@ -70,9 +70,7 @@ const baseWorkflowArgs = {
   reviewCmd: 'git diff base..head',
   repoPath: '/repo',
   context: 'Test routing behavior.',
-  changedFiles: ['src/file.js'],
-  codexAllowed: true,
-  dispatchNonce: '0123456789abcdef'
+  changedFiles: ['src/file.js']
 }
 
 test('each lane receives its own review checklist heading', () => {
@@ -103,117 +101,6 @@ test('a lane or the router reviewing a range executes none of its code while a w
   assert.match(rangeRouterPrompt, /execute none of its code and extract nothing/)
   assert.match(workingTreeRouterPrompt, /Run commands in the repo/)
 })
-
-test('the workflow refuses to run when the Codex routing flag is missing', async () => {
-  const refusalMessage = 'No valid codexAllowed routing flag, no run.'
-
-  assert.equal(await runWorkflow({ ...baseWorkflowArgs, codexAllowed: undefined }), refusalMessage)
-})
-
-test('a Codex-allowed run refuses a missing or malformed dispatch nonce', async () => {
-  const refusalMessage = 'No valid dispatchNonce for a Codex-allowed run, no run.'
-
-  assert.equal(await runWorkflow({ ...baseWorkflowArgs, dispatchNonce: undefined }), refusalMessage)
-  assert.equal(await runWorkflow({ ...baseWorkflowArgs, dispatchNonce: '../../etc/passwd' }), refusalMessage)
-})
-
-test('disabling Codex emits no Codex execution instruction in any prompt', async () => {
-  const emittedPrompts = await emittedRoutingPrompts({ ...baseWorkflowArgs, codexAllowed: false, dispatchNonce: undefined })
-
-  assert.doesNotMatch(emittedPrompts.join('\n'), /codex exec/)
-  assert.match(emittedPrompts.join('\n'), /Codex CLI/)
-})
-
-const everyChangedFileClassified = baseWorkflowArgs.changedFiles.map((file) => ({ file, class: 'logic' }))
-
-async function routedAfterDispatcherReturns(dispatcherRoute, dispatcherFileClasses) {
-  const routerResultFor = (route, fileClasses) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses, lanes: [], laneJustifications: [], findings: [], route })
-  const spawnedModels = []
-  const runtimeBindings = {
-    phase: () => {},
-    agent: async (prompt, options) => {
-      spawnedModels.push(options.model)
-      if (options.model === 'haiku') {
-        return routerResultFor(dispatcherRoute, dispatcherFileClasses)
-      }
-      return routerResultFor('ignored', everyChangedFileClassified)
-    }
-  }
-  const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
-  const routed = await routeReview(baseWorkflowArgs.changedFiles)
-  return { ...routed, spawnedModels }
-}
-
-for (const placeholderRoute of ['OPUS_REQUIRED', 'opus_required']) {
-  test(`a dispatcher failure placeholder with route ${JSON.stringify(placeholderRoute)} and empty fileClasses falls back to opus with its reported detail in the degradation note`, async () => {
-    const routed = await routedAfterDispatcherReturns(placeholderRoute, [])
-
-    assert.deepEqual(routed.spawnedModels, ['haiku', 'opus'])
-    assert.equal(routed.routerResult.route, 'opus')
-    assert.match(routed.degradationNote, /Codex router failed with fixture/)
-  })
-}
-
-test('a Codex router answer classifying only some changed files is accepted without an opus fallback', async () => {
-  const routeReview = workflowFunctionNamed('routeReview', { ...baseWorkflowArgs, changedFiles: ['src/file.js', 'src/other.js'] }, {
-    phase: () => {},
-    agent: async (prompt, options) => ({ danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [{ file: 'src/file.js', class: 'logic' }], lanes: [], laneJustifications: [], findings: [], route: options.model === 'haiku' ? 'gpt-6.1-sol' : 'ignored' })
-  })
-  const routed = await routeReview(['src/file.js', 'src/other.js'])
-
-  assert.equal(routed.routerResult.route, 'gpt-6.1-sol')
-  assert.equal(routed.degradationNote, '')
-})
-
-test('Codex dispatch goes through the codex-dispatcher agent under the read-only credential-denying profile', async () => {
-  const dispatchSpawns = []
-  const runtimeBindings = {
-    phase: () => {},
-    agent: async (prompt, options) => {
-      dispatchSpawns.push({ prompt, options })
-      return { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route: 'gpt-6.1-sol' }
-    }
-  }
-  const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
-  await routeReview(baseWorkflowArgs.changedFiles)
-  const dispatchedRouterPrompt = dispatchSpawns[0].prompt
-
-  assert.equal(dispatchSpawns[0].options.agentType, 'codex-dispatcher')
-  assert.match(dispatchedRouterPrompt, /codex exec -c 'permissions\.qa_review=\{extends=":read-only"/)
-  assert.match(dispatchedRouterPrompt, /"~\/\.ssh"="deny".* -c 'default_permissions="qa_review"' -C \/repo -m gpt-6\.1-sol/)
-  assert.doesNotMatch(dispatchedRouterPrompt, /dangerously/)
-})
-
-test('a session without the codex-dispatcher agent type routes on opus instead of crashing', async () => {
-  const spawnedModels = []
-  const runtimeBindings = {
-    phase: () => {},
-    log: () => {},
-    agent: async (prompt, options) => {
-      spawnedModels.push(options.model)
-      if (options.agentType === 'codex-dispatcher') {
-        throw new Error("agent type 'codex-dispatcher' not found")
-      }
-      return { danger: 'LOW', complexity: 'LOW', dangerFact: 'fixture', fileClasses: [], lanes: [], laneJustifications: [], findings: [], route: 'ignored' }
-    }
-  }
-  const routeReview = workflowFunctionNamed('routeReview', baseWorkflowArgs, runtimeBindings)
-  const routed = await routeReview(baseWorkflowArgs.changedFiles)
-
-  assert.deepEqual(spawnedModels, ['haiku', 'opus'])
-  assert.equal(routed.routerResult.route, 'opus')
-  assert.match(routed.degradationNote, /router agent death/)
-})
-
-for (const codexWrittenRoute of ['gpt-6.1-sol', 'code', 'Run code review with security and necessity lanes.']) {
-  test(`a Codex router answer with route ${JSON.stringify(codexWrittenRoute)} is accepted and stamped with the dispatched model`, async () => {
-    const routed = await routedAfterDispatcherReturns(codexWrittenRoute, everyChangedFileClassified)
-
-    assert.deepEqual(routed.spawnedModels, ['haiku'])
-    assert.equal(routed.routerResult.route, 'gpt-6.1-sol')
-    assert.equal(routed.degradationNote, '')
-  })
-}
 
 test('a zero-finding lane with verified safe and no overflow converges to a canonical empty block', async () => {
   const laneResponse = 'STRUCTURED_FINDINGS:\n(none)\n\nOVERALL_SUMMARY:\nThe claimed defect was verified safe. No overflow.'
@@ -344,9 +231,3 @@ test('a zero-finding lane discussing arithmetic overflow stays out of the trunca
   assert.match(workflowResponse, /truncated lanes: none$/)
 })
 
-test('the Codex router runs at medium effort rather than the CLI default', async () => {
-  const emittedPrompts = await emittedRoutingPrompts(baseWorkflowArgs)
-  const routerPrompt = emittedPrompts.find(prompt => prompt.includes('Dispatched router prompt:'))
-
-  assert.match(routerPrompt, /-m gpt-6\.1-sol -c model_reasoning_effort="medium" </)
-})

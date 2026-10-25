@@ -44,7 +44,7 @@ Record the changed-file set, file count, changed-line count, and touched subsyst
 
 ## Step 2: Call `swarming-reviews`
 
-Invoke `/swarming-reviews` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and the profile-derived `codexAllowed` flag.
+Invoke `/swarming-reviews` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, and the changed-file set.
 
 Route all finding through `swarming-reviews` rather than spawning a reviewer agent directly, so there is exactly one place that knows which lanes exist and when they trigger.
 

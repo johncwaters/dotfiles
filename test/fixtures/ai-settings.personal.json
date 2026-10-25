@@ -122,15 +122,6 @@
             "command": "node /fixture/home/.claude/hooks/enforce-spawn-model.mjs"
           }
         ]
-      },
-      {
-        "matcher": "^(Bash|Write)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /fixture/home/.claude/hooks/gate-codex-dispatch.mjs"
-          }
-        ]
       }
     ],
     "PostToolUse": [
