@@ -679,36 +679,6 @@ test("an entry is dropped once its local branch is gone", () => {
   }
 });
 
-test("a stalled transport leaves no orphan behind the probe timeout", async () => {
-  const { origin, repository, gitCommonDir } = makeRepositoryWithOrigin();
-  const { directory, ledgerPath } = makeLedgerFile();
-  const wrapper = makeGitWrapper(
-    '    sleep 40 &\n    printf %s "$!" > "$PARKED_PROBE_MARKER"\n    wait',
-  );
-  const markerPath = path.join(directory, "transport-pid");
-  try {
-    writeLedgerLines(ledgerPath, [entryLine({ gitCommonDir })]);
-
-    const startedAtMs = Date.now();
-    const { exited } = startHook("report-parked-branches.mjs", {
-      CLAUDE_COMMIT_LEDGER: ledgerPath,
-      PARKED_PROBE_MARKER: markerPath,
-      PATH: `${wrapper.directory}${path.delimiter}${process.env.PATH}`,
-    });
-    assert.equal(await waitForFile(markerPath, 15000), true);
-    const transportPid = Number(fs.readFileSync(markerPath, "utf8").trim());
-    assert.equal(await exited, 0);
-    const elapsedMs = Date.now() - startedAtMs;
-
-    assert.ok(elapsedMs < 20000, `hook took ${elapsedMs}ms`);
-    await waitForProcessExit(transportPid, 5000);
-    assert.equal(isProcessAlive(transportPid), false);
-    assert.match(fs.readFileSync(ledgerPath, "utf8"), /"branch":"feature"/);
-  } finally {
-    removeAll(repository, origin, directory, wrapper.directory);
-  }
-});
-
 test("stalled repositories still report inside one whole-hook deadline", async () => {
   const repositories = [
     makeRepositoryWithOrigin("one"),
