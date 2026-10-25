@@ -38,7 +38,6 @@ Write few tests; the default for a change is zero new ones. Agent-written unit t
 - Extend an existing test before adding one. One end-to-end check beats many unit tests of its parts.
 - Verification is running the change and the existing suite, not writing a test for it.
 - A repo's own instruction file that requires tests wins.
-- The `necessity` lane of /committing, when it runs, flags net-new tests that fail this bar.
 </tests>
 
 <auto_commit>

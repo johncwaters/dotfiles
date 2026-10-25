@@ -1,6 +1,6 @@
 # Fix
 
-Fix the `ACTIONABLE` findings at MEDIUM or higher yourself, in this session. Nothing reviews these edits afterwards, so each finding's own proof is the check.
+Fix the `ACTIONABLE` findings at HIGH or higher yourself, in this session. Nothing reviews these edits afterwards, so each finding's own proof is the check.
 
 Each finding's `body` names the defect, the `Proof:` that shows it, and usually the fix. Take the fix as a strong suggestion: a better one is fine when its blast radius is equal or smaller and every edit stays inside the changed-file list; say so in the commit report.
 

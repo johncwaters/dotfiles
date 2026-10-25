@@ -22,13 +22,13 @@ and you re-run that proof in place of a confirming review.
 2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
    - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
      and report; a failed review counts only as failed.
-   - An `AMBIGUOUS` finding at MEDIUM or higher: stop and put it to the carbon unit with
+   - An `AMBIGUOUS` finding at HIGH or higher: stop and put it to the carbon unit with
      both readings stated. Fix it makes it `ACTIONABLE`, with the answer written into its
      body, and it joins the batch below; leave it makes it a `NIT`. Report lower severity
      `AMBIGUOUS` findings without interrupting.
-   - `ACTIONABLE` at MEDIUM or higher: fix exactly those by [Fix](fix.md). LOW findings
+   - `ACTIONABLE` at HIGH or higher: fix exactly those by [Fix](fix.md). MEDIUM findings
      and `NIT`s are listed in the commit report and left alone.
-   - No `ACTIONABLE` finding at MEDIUM or higher: go to **Step 3: write the message**.
+   - No `ACTIONABLE` finding at HIGH or higher: go to **Step 3: write the message**.
 3. Report each fixed finding's outcome, then run the test suite that covers the changed
    files, since the fixes postdate the review:
    - `FIXED`: one line in the commit report.

@@ -444,14 +444,14 @@ function proofRunClauseFor(reviewCmd) {
 function buildLanePrompt(laneName, matchedFiles, reviewedFileNames, reviewCmd) {
   return `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: pre-existing issues outside that set; unchanged lines inside it are read, never anchored
-Definition of done: this lane's STRUCTURED_FINDINGS block followed by one OVERALL_SUMMARY paragraph
+Definition of done: this lane's STRUCTURED_FINDINGS block then one OVERALL_SUMMARY paragraph
 
 Repo path: ${args.repoPath}
 Exact REVIEW_CMD: ${reviewCmd}
 Caller context, verbatim:
 ${args.context}
 
-Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped before triage, so a suspicion you could not prove gets one summary sentence naming what would prove it. This is the only review the change gets: report what is proven broken, and leave what might break to that sentence.
+Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped before triage, so a suspicion you could not prove gets one summary sentence naming what would prove it. Design, placement, naming, duplication, and style concerns are not findings; put at most one summary sentence on them.
 
 Files matched for this lane: ${formatLines(matchedFiles)}
 

@@ -36,7 +36,7 @@ const baseWorkflowArgs = {
   ruleLanes: { lanes: ['code'], filesByLane: { code: ['src/file.js'] } }
 }
 
-test('each lane receives its own review checklist heading', () => {
+test('each lane receives its own review checklist heading and the finding bar', () => {
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
 
   for (const laneName of ['code', 'security', 'redteam']) {
@@ -44,6 +44,7 @@ test('each lane receives its own review checklist heading', () => {
 
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
     assert.ok(lanePrompt.includes(`## ${laneName} as extra checks`))
+    assert.match(lanePrompt, /style concerns are not findings/)
   }
 })
 

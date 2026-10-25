@@ -69,9 +69,7 @@ Rules that decide the hard cases:
 - A `convergent:` finding is `ACTIONABLE` if its fix is bounded and one of its parts carries a re-runnable proof. Agreement between lanes confirms a proof; it requires one.
 - A CRITICAL or HIGH finding is ineligible for `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
 - Lanes no longer report LOW. A LOW finding that survives as a straggler is recorded only as `NIT`. A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
-- A finding tagged `necessity/dead` or `necessity/redundant-test` at MEDIUM whose body carries the mechanical evidence its category demands — the zero-hit grep naming both the pattern and the paths searched, plus the statement that the goal mandates no such artifact and that no convention or glob loader picks it up unnamed, or the existing test named by file and test name with its assertion quoted and the input or branch that assertion runs on named — is `ACTIONABLE`. The cut is obvious, the writer can re-run that evidence before deleting anything, and stopping to ask the carbon unit about a symbol nothing calls or a test that duplicates one already passing is noise. One whose body carries no such evidence has not earned its tag and is treated as `necessity/unasked` under the bullet below.
-- A finding tagged `necessity`, `necessity/unasked`, or any necessity category other than the two above, at MEDIUM is always `AMBIGUOUS`. It asks for a deletion nothing afterwards can verify, and whether the work was wanted is the carbon unit's call.
-- A finding tagged `code/scale`, or carrying a `convergent:` tag that names it, whose fix is a local rewrite inside the changed-file set — a keyed lookup, a single pass, a memo, or hoisting a query out of a loop — is `ACTIONABLE` at MEDIUM and above. One whose fix needs a schema, index, pagination contract, or data-model change is a design decision and is `AMBIGUOUS` at MEDIUM and above, with both readings stated.
+- A finding tagged `code/scale`, or carrying a `convergent:` tag that names it, whose fix is a local rewrite inside the changed-file set — a keyed lookup, a single pass, a memo, or hoisting a query out of a loop — is `ACTIONABLE` at HIGH and above. One whose fix needs a schema, index, pagination contract, or data-model change is a design decision and is `AMBIGUOUS` at HIGH and above, with both readings stated.
 
 ## Step 4: Verdict
 
@@ -88,7 +86,7 @@ Highest-severity-wins rather than a count-weighted score, because CRITICAL and H
 
 A fifth value, `FAILED`, means the review could not be completed: `swarming-reviews` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code; it means only an incomplete review. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
 
-State the verdict and the count of surviving `ACTIONABLE` findings at MEDIUM or higher on separate lines in the summary.
+State the verdict and the count of surviving `ACTIONABLE` findings at HIGH or higher on separate lines in the summary.
 
 ## Step 5: Return
 
