@@ -47,4 +47,4 @@ Lane definitions belong to `~/.claude/workflows/qa-swarm.js`; manual lanes use `
 
 ## Scripts
 
-- `scripts/route-lanes.mjs`: picks lanes from changed paths and added lines; run in Step 1 before every workflow call.
+- `scripts/route-lanes.mjs`: picks lanes from changed paths and changed lines; run in Step 1 before every workflow call.
