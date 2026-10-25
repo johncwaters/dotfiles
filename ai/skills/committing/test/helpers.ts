@@ -102,8 +102,10 @@ export function makeBareOrigin(): string {
   return origin;
 }
 
+const CLONE_PARENT_PREFIX = "commit-skill-clone-";
+
 export function cloneRepo(origin: string): string {
-  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-clone-"));
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), CLONE_PARENT_PREFIX));
   const dest = path.join(parent, "repo");
   const proc = spawnSync("git", ["clone", "-q", origin, dest], { encoding: "utf8" });
   if ((proc.status ?? 1) !== 0) {
@@ -133,9 +135,15 @@ export function commitFile(repo: string, filePath: string, content: string, mess
   runGit(repo, ["commit", "-q", "-m", message]);
 }
 
+function isInsideCloneParent(target: string): boolean {
+  const parent = path.dirname(target);
+  return path.dirname(parent) === os.tmpdir() && path.basename(parent).startsWith(CLONE_PARENT_PREFIX);
+}
+
 export function cleanup(...paths: string[]): void {
   for (const target of paths) {
-    fs.rmSync(target, { recursive: true, force: true });
+    const removable = isInsideCloneParent(target) ? path.dirname(target) : target;
+    fs.rmSync(removable, { recursive: true, force: true });
   }
 }
 

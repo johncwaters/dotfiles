@@ -506,7 +506,7 @@ test("an unwritable ledger keeps the promotion outcome and adds a warning", () =
 });
 
 test("a mainline checked out in a clean worktree is fast-forwarded there", () => {
-  const { origin, seed } = seedOrigin();
+  const { origin, seed, local } = seedOrigin();
   const holder = cloneRepo(origin);
   const session = path.join(path.dirname(holder), "session");
   try {
@@ -519,13 +519,13 @@ test("a mainline checked out in a clean worktree is fast-forwarded there", () =>
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
     assert.match((result.warnings as string[]).join("\n"), /fast-forwarded in its holding worktree/);
   } finally {
-    cleanup(origin, seed, path.dirname(holder));
+    cleanup(origin, seed, local, path.dirname(holder));
   }
 });
 
 for (const readOnlyPart of ["index", "working tree"] as const) {
   test(`a mainline checked out with a read-only ${readOnlyPart} is pushed to origin without touching that checkout`, () => {
-    const { origin, seed } = seedOrigin();
+    const { origin, seed, local } = seedOrigin();
     const holder = cloneRepo(origin);
     const session = path.join(path.dirname(holder), "session");
     const readOnlyPath = readOnlyPart === "index" ? path.join(holder, ".git", "index") : holder;
@@ -545,7 +545,7 @@ for (const readOnlyPart of ["index", "working tree"] as const) {
       assert.match((result.warnings as string[]).join("\n"), /checked out read-only/);
     } finally {
       fs.chmodSync(readOnlyPath, 0o755);
-      cleanup(origin, seed, path.dirname(holder));
+      cleanup(origin, seed, local, path.dirname(holder));
     }
   });
 }
@@ -556,7 +556,7 @@ for (const [readOnlyPart, readOnlyMode, restoredMode] of [
   ["server/core.txt", 0o444, 0o644],
 ] as const) {
   test(`a mainline checkout writable at its top but read-only below at ${readOnlyPart} is pushed to origin without a partial merge`, () => {
-    const { origin, seed } = seedOrigin();
+    const { origin, seed, local } = seedOrigin();
     const holder = cloneRepo(origin);
     const session = path.join(path.dirname(holder), "session");
     const readOnlyPath = path.join(holder, readOnlyPart);
@@ -582,13 +582,13 @@ for (const [readOnlyPart, readOnlyMode, restoredMode] of [
       assert.match((result.warnings as string[]).join("\n"), /checked out read-only/);
     } finally {
       fs.chmodSync(readOnlyPath, restoredMode);
-      cleanup(origin, seed, path.dirname(holder));
+      cleanup(origin, seed, local, path.dirname(holder));
     }
   });
 }
 
 test("a mainline checked out read-only stops promotion under --no-push", () => {
-  const { origin, seed } = seedOrigin();
+  const { origin, seed, local } = seedOrigin();
   const holder = cloneRepo(origin);
   const session = path.join(path.dirname(holder), "session");
   try {
@@ -604,7 +604,7 @@ test("a mainline checked out read-only stops promotion under --no-push", () => {
     assert.equal(gitOutput(holder, ["rev-parse", "main"]), localMainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
   } finally {
-    cleanup(origin, seed, path.dirname(holder));
+    cleanup(origin, seed, local, path.dirname(holder));
   }
 });
 
@@ -628,7 +628,7 @@ test("a mainline checked out read-only stops promotion without an origin", () =>
 });
 
 test("a mainline checked out in a dirty worktree stops promotion", () => {
-  const { origin, seed } = seedOrigin();
+  const { origin, seed, local } = seedOrigin();
   const holder = cloneRepo(origin);
   const session = path.join(path.dirname(holder), "session");
   try {
@@ -644,7 +644,7 @@ test("a mainline checked out in a dirty worktree stops promotion", () => {
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
     assert.match((result.warnings as string[]).join("\n"), /has uncommitted changes/);
   } finally {
-    cleanup(origin, seed, path.dirname(holder));
+    cleanup(origin, seed, local, path.dirname(holder));
   }
 });
 
