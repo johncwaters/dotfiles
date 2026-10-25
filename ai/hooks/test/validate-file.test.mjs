@@ -121,7 +121,7 @@ test("review-ladder writes cannot grow across runtime, alias, and worktree paths
     "skills/committing/subskills/review.md",
     "skills/reviewing-code/SKILL.md",
     "skills/swarming-reviews/SKILL.md",
-    "agents/finding-fixer.md",
+    "skills/committing/subskills/fix.md",
     "workflows/qa-swarm.js",
   ];
   const ladderRoots = [".claude", ".dotfiles/ai", "worktree/ai"];
@@ -223,7 +223,7 @@ test("review-ladder Edit checks explicit content and replayed replacements", () 
 });
 
 test("review-ladder MultiEdit checks the final full content", () => {
-  const filePath = path.join(validatorHome, "multi/agents/finding-fixer.md");
+  const filePath = path.join(validatorHome, "multi/skills/committing/subskills/fix.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, "rule rule");
   for (const replacement of ["rules", "rule", "rul"]) {
@@ -264,7 +264,7 @@ test("untracked review-ladder files fall back to the on-disk size", () => {
   const repository = makeRepo();
   after(() => removeAll(repository));
   commitFile(repository, "README.md", "readme\n");
-  const filePath = path.join(repository, "agents/finding-fixer.md");
+  const filePath = path.join(repository, "skills/committing/subskills/fix.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, "rule");
   const denialReason = readDenialReason(validateWrite({ file_path: filePath, content: "rules" }));

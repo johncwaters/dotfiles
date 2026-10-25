@@ -30,7 +30,7 @@ const REVIEW_LADDER_PATH_SUFFIXES = [
   "skills/committing/subskills/review.md",
   "skills/reviewing-code/SKILL.md",
   "skills/swarming-reviews/SKILL.md",
-  "agents/finding-fixer.md",
+  "skills/committing/subskills/fix.md",
   "workflows/qa-swarm.js",
 ];
 

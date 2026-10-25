@@ -1,6 +1,6 @@
 # Review
 
-One review is the gate. What the writer changes after it is checked by re-running each
+One review is the gate. What you fix after it is checked by re-running each
 finding's proof and then the suite.
 
 **Skip the review** for a mechanical follow-up with passing tests: a pure rename, or a
@@ -9,10 +9,10 @@ straight to **Step 3: write the message**. Any logic change, however small, gets
 
 **Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list. Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed.
 
-**Then one review, one writer, and the commit.** A second sweep of the same diff finds a
+**Then one review, the fixes, and the commit.** A second sweep of the same diff finds a
 fresh batch of MEDIUM findings every time, so the review runs once and reports only what a
 lane proved: every finding carries a `Proof:`, a command with its output or quoted lines,
-and the writer re-runs that proof in place of a confirming review.
+and you re-run that proof in place of a confirming review.
 
 1. Invoke `/reviewing-code` with target `working`, the repo path, preflight's `paths`
    as `--paths`, and one or two sentences of what changed and the goal
@@ -26,29 +26,16 @@ and the writer re-runs that proof in place of a confirming review.
      both readings stated. Fix it makes it `ACTIONABLE`, with the answer written into its
      body, and it joins the batch below; leave it makes it a `NIT`. Report lower severity
      `AMBIGUOUS` findings without interrupting.
-   - `ACTIONABLE` at MEDIUM or higher: hand exactly those findings plus the changed-file
-     list to the `finding-fixer` agent in a single spawn, and state that `Scope:` is that
-     list, `Out of scope:` is pre-existing issues outside it, and `Definition of done:` is
-     its finding-fixer receipt. LOW findings and `NIT`s are listed in the commit report and
-     left alone.
+   - `ACTIONABLE` at MEDIUM or higher: fix exactly those by [Fix](fix.md). LOW findings
+     and `NIT`s are listed in the commit report and left alone.
    - No `ACTIONABLE` finding at MEDIUM or higher: go to **Step 3: write the message**.
-3. Read the receipt, one line per finding, then run the test suite that covers the changed
-   files, since the writer's edits postdate the review:
-   - `FIXED`: the writer re-ran the finding's proof and the defect is gone. One line in the
-     commit report.
-   - `UNVERIFIED`: an edit whose proof the writer could not run. Run that proof yourself.
-     Gone makes it `FIXED`; still unrunnable puts the finding in the message's `Not-tested`
-     trailer, and `Confidence` stays below `high` while that trailer names one.
-   - `DECLINED`: the writer reports no edit. Run the finding's proof yourself. A proof that
-     shows no defect refutes the finding, which goes in the commit report; one that still
-     shows it leaves a live defect, named in the commit report.
-   - Snapshot the tree again the way `/reviewing-code` pins a `working` target, then read
-     `git diff <pin> <new tree>`, with `<pin>` the tree `/reviewing-code`'s summary reported.
-     That diff is everything the writer changed, and a hunk no `FIXED` or `UNVERIFIED` row
-     accounts for goes in the `Not-tested` trailer, since a declined finding can leave a
-     half-applied edit behind.
-   - A missing, unparseable, or incomplete receipt counts every finding
-     missing from it as `DECLINED`.
+3. Report each fixed finding's outcome, then run the test suite that covers the changed
+   files, since the fixes postdate the review:
+   - `FIXED`: one line in the commit report.
+   - `UNVERIFIED`: the finding goes in the message's `Not-tested` trailer, and
+     `Confidence` stays below `high` while that trailer names one.
+   - `DECLINED`: a proof that shows no defect refutes the finding; one that still shows
+     it leaves a live defect. Either goes in the commit report.
    - A failing suite is yours to fix at the root cause before the commit. Re-run every
      `FIXED` finding's proof after that edit, since it postdates them; the review is not
      run again for it.

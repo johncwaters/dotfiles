@@ -17,7 +17,6 @@
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"persisted","content":"<persisted-output>\nOutput too large (2MB). Full output saved to: /synthetic/tool-results/persisted.txt\n</persisted-output>"}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"agent-1","name":"Agent","input":{"subagent_type":"Explore","model":"synthetic"}}]}}
 {"type":"user","toolUseResult":{"agentType":"Explore","totalTokens":150000,"totalDurationMs":5000,"totalToolUseCount":2,"status":"completed"},"message":{"content":[{"type":"tool_result","tool_use_id":"agent-1","content":"Synthetic agent completed"}]}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"fixer","name":"Agent","input":{"subagent_type":"finding-fixer"}}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"review-1","name":"Skill","input":{"skill":"reviewing-code"}}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"review-2","name":"Skill","input":{"skill":"reviewing-code"}}]}}
 {"type":"system","subtype":"compact_boundary"}

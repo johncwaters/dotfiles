@@ -260,9 +260,6 @@ export async function digestTranscript(
       }
     }
     if (typeof block.id === "string") toolsById.set(block.id, { name, command });
-    if (name === "Agent" && input?.subagent_type === "finding-fixer") {
-      addIncident("review-rework", asText(input.subagent_type), { toolName: name });
-    }
     if (name !== "Skill" || input?.skill !== "reviewing-code") return;
     reviewCount += 1;
     if (reviewCount > 1) addIncident("review-rework", "reviewing-code", { toolName: name });

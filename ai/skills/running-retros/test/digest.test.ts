@@ -54,7 +54,7 @@ test("CLI reduces a synthetic session to ordered incidents without counting meta
   const digest = JSON.parse(digestProcess.stdout) as SessionDigest;
   deepEqual(digest.counts, {
     correction: 2, interrupt: 1, "permission-denial": 1, "hook-denial": 1,
-    "tool-error": 4, "repeated-failure": 1, "review-rework": 2, compaction: 1,
+    "tool-error": 4, "repeated-failure": 1, "review-rework": 1, compaction: 1,
     "costly-subagent": 1, "oversized-result": 2, revert: 0,
   });
   deepEqual(digest.incidents.filter((incident) => incident.kind === "correction")
@@ -63,10 +63,10 @@ test("CLI reduces a synthetic session to ordered incidents without counting meta
   ]);
   equal(digest.malformedLineCount, 1);
   equal(digest.promptCount, 5);
-  equal(digest.lineCount, 28);
+  equal(digest.lineCount, 27);
   deepEqual(digest.prompts, [
     { line: 4, excerpt: "Actually, keep it deterministic" }, { line: 6, excerpt: "Continue with streaming" },
-    { line: 27, excerpt: "Finish the digest" }, { line: 28, excerpt: "I see the diagram tho" },
+    { line: 26, excerpt: "Finish the digest" }, { line: 27, excerpt: "I see the diagram tho" },
   ]);
   equal(digest.sessionId, "synthetic-session");
   equal(digest.startedAt, "2026-10-01T10:00:00Z");

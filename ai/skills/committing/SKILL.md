@@ -60,8 +60,8 @@ tell the carbon unit to run `~/.dotfiles/script/bootstrap --profile <name>` from
 
 ## Step 2: review
 
-Read and follow [Review](subskills/review.md) before writing the message. It defines the
-mechanical-follow-up exemption, the review gate, finding recovery, and promotion holds.
+Read and follow [Review](subskills/review.md), which routes findings to
+[Fix](subskills/fix.md), before writing the message.
 
 ## Step 3: write the message
 
