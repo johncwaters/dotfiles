@@ -34,6 +34,7 @@ case "$1" in
   ssh)
     printf '%s %s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" "${CODER_SSH_USAGE_APP:-}" >> "$DOTFILES_TEST_STATE/ssh-safety"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
+    [[ ! -f "$DOTFILES_TEST_STATE/ssh-hangs" ]] || exec sleep 30
     if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" && "${7:-}" == sync-repos ]]; then
       cat > /dev/null
       DOTFILES_TEST_REMOTE=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
@@ -164,7 +165,7 @@ runInstall() {
 }
 
 runDevbox() {
-  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work bash -c 'source "$1/commands.bash"; shift; devbox "$@"' _ "$topicDirectory" "$@"
+  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 bash -c 'source "$1/commands.bash"; shift; devbox "$@"' _ "$topicDirectory" "$@"
 }
 
 dotfilesConvergeSitsBetweenPrepareAndProvision() {
@@ -244,36 +245,40 @@ for workspaceStatus in stopped starting failed; do
   check "ensure never starts a $workspaceStatus workspace" logLacks 'coder start'
 done
 
-runEnsureInWorkingHours() {
-  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 \
-    bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory"
+runEnsureOutsideWorkingHours() {
+  writeStub date <<'STUB'
+#!/usr/bin/env bash
+printf '6 03\n'
+STUB
+  provideCommand date
+  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory"
+  withdrawCommand date
 }
 
 node -e 'console.log(new Date().toISOString())' > "$stubState/workspace-completed-at"
 printf 'failed\n' > "$stubState/workspace-status"
 : > "$commandLog"
-runEnsureInWorkingHours >/dev/null
+runDevbox ensure >/dev/null
 check "ensure waits out a fresh failed build" logLacks 'coder start'
 
 node -e 'console.log(new Date(Date.now() - 2 * 3600 * 1000).toISOString())' > "$stubState/workspace-completed-at"
-writeStub date <<'STUB'
-#!/usr/bin/env bash
-printf '6 03\n'
-STUB
-provideCommand date
-: > "$commandLog"
-runDevbox ensure >/dev/null
-check "ensure leaves a failed workspace down outside working hours" logLacks 'coder start'
-withdrawCommand date
+for workspaceStatus in failed running; do
+  printf '%s\n' "$workspaceStatus" > "$stubState/workspace-status"
+  : > "$commandLog"
+  outsideHoursOutput="$(runEnsureOutsideWorkingHours)"
+  check "ensure outside working hours never contacts a $workspaceStatus workspace" logLacks 'coder '
+  check "ensure outside working hours names the skip" outputHas "$outsideHoursOutput" 'devbox ensure: skipped; outside working hours'
+done
+printf 'failed\n' > "$stubState/workspace-status"
 
 printf 'delete\n' > "$stubState/workspace-transition"
 : > "$commandLog"
-runEnsureInWorkingHours >/dev/null
+runDevbox ensure >/dev/null
 check "ensure never starts a workspace whose delete failed" logLacks 'coder start'
 rm -f "$stubState/workspace-transition"
 
 : > "$commandLog"
-runEnsureInWorkingHours >/dev/null
+runDevbox ensure >/dev/null
 check "ensure starts a failed workspace in working hours" logHas 'coder start devbox-fixture --yes'
 check "ensure provisions a recovered workspace in the same run" logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 rm -f "$stubState/workspace-completed-at"
@@ -285,7 +290,7 @@ runningOutput="$(runInstall)"
 check "running converge pushes with the profile workspace domain" logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 check "running converge pipes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "SSH cannot auto-start a box after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
-check "converge SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
+check "converge SSH skips the CLI usage report" grep -qx disable "$stubState/ssh-usage-app"
 check "converge runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
 check "running converge does not start a workspace" logLacks 'coder start'
 check "an unchanged provision reports no laptop changes" reportsNoChanges "$runningOutput"
@@ -311,7 +316,7 @@ check "ensure provisions a running workspace with the profile workspace domain" 
   logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
 check "ensure pushes the exact standalone script" cmp -s "$repoRoot/profiles/work/devbox/provision.sh" "$stubState/pushed-script"
 check "ensure disables SSH autostart after a status race" grep -qx true "$stubState/ssh-autostart-disabled"
-check "ensure SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
+check "ensure SSH skips the CLI usage report" grep -qx disable "$stubState/ssh-usage-app"
 check "ensure runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
 check "ensure never starts a running workspace" logLacks 'coder start'
 
@@ -322,6 +327,14 @@ for failureMarker in list-failed ssh-failed; do
   check "ensure propagates $failureMarker" test "$ensureFailureStatus" -ne 0
   rm -f "$stubState/$failureMarker"
 done
+
+touch "$stubState/ssh-hangs"
+hungEnsureStatus=0
+hungEnsureError="$(runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 DEVBOX_SSH_DEADLINE_SECONDS=1 \
+  bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory" 2>&1 >/dev/null)" || hungEnsureStatus=$?
+rm -f "$stubState/ssh-hangs"
+check "a hung coder ssh fails ensure" test "$hungEnsureStatus" -ne 0
+check "a hung coder ssh is killed at its deadline" outputHas "$hungEnsureError" 'coder ssh ran past 1 seconds; killed'
 
 ensureUsageStatus=0
 runDevbox ensure extra >/dev/null 2>&1 || ensureUsageStatus=$?
@@ -496,7 +509,7 @@ check "pair defaults to the laptop hostname" test "$(tail -1 "$stubState/remote-
 rm -f "$stubState/ssh-usage-app"
 statusOutput="$(runDevbox status)"
 check "status reports the workspace" outputHas "$statusOutput" 'workspace devbox-fixture: running'
-check "status SSH never reports workspace activity" grep -qx disable "$stubState/ssh-usage-app"
+check "status SSH skips the CLI usage report" grep -qx disable "$stubState/ssh-usage-app"
 check "status uses the shared remote status action" logHas "status $workspaceDomain"
 check "status never starts a workspace" logLacks 'coder start'
 writeStub ssh <<'STUB'
@@ -788,7 +801,7 @@ check "the mainline guard names the branch in the bootstrap log" grep -qF 'is on
 check "a refused converge keeps the last converge record" \
   remoteConvergeRecordIsCleanAt "$("$testGitPath" -C "$dotfilesOriginRepo" rev-parse HEAD)"
 "$testGitPath" -C "$remoteClone" checkout -q main
-check "every automated SSH disables autostart and activity reporting" \
+check "every automated SSH disables autostart and the CLI usage report" \
   bash -c '! grep -vx "true disable" "$1"' _ "$stubState/ssh-safety"
 
 rm -rf "$dotfilesOriginRepo"
@@ -1416,6 +1429,7 @@ startupFailureOutput="$(runRemoteProvision restart)" || startupFailureStatus=$?
 check "startup fails when both listeners do not become ready" test "$startupFailureStatus" -ne 0
 check "startup failure names the server log" outputHas "$startupFailureOutput" 'listeners not ready after 15s; see ~/.glimmervoid/server.log'
 check "startup readiness waits are bounded to 15 seconds" test "$(countLogLines '^sleep 0.5$')" -eq 30
+withdrawCommand sleep
 
 definitionsPath="$stubState/provision-functions.sh"
 awk '$0 == "case \"$devboxAction\" in" { exit } { print }' "$repoRoot/profiles/work/devbox/provision.sh" > "$definitionsPath"

@@ -81,8 +81,26 @@ resolveDevboxWorkspace() {
   devboxDashboardUrl="https://3457--dev--$devboxWorkspaceName--$coderUsername.${devboxWorkspaceDomain}/"
 }
 
+# A hung coder ssh holds an agent connection, and Coder bumps the deadline on any connection, so the box never autostops.
 runDevboxSsh() {
-  CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- "$@"
+  local deadlineSeconds="${DEVBOX_SSH_DEADLINE_SECONDS:-1200}"
+  CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- "$@" <&0 &
+  local sshPid=$!
+  (
+    sleep "$deadlineSeconds" &
+    trap "kill $! 2>/dev/null; exit 0" TERM
+    wait $!
+    kill -9 "$sshPid"
+  ) </dev/null >/dev/null 2>&1 &
+  local watchdogPid=$!
+  local sshStatus=0
+  wait "$sshPid" 2>/dev/null || sshStatus=$?
+  kill "$watchdogPid" 2>/dev/null
+  wait "$watchdogPid" 2>/dev/null
+  if ((sshStatus == 137)); then
+    printf 'devbox: coder ssh ran past %s seconds; killed\n' "$deadlineSeconds" >&2
+  fi
+  return "$sshStatus"
 }
 
 # Under launchd SSH_AUTH_SOCK names Apple's agent, which never holds the Secretive signing key.
@@ -112,8 +130,7 @@ isDevboxForwardHour() {
 isDevboxFailedBuildRetryable() {
   [[ "$devboxWorkspaceStatus" == failed ]] || return 1
   [[ "$devboxLatestBuildTransition" != delete ]] || return 1
-  ((devboxLatestBuildAgeSeconds >= devboxFailedBuildRetryDelaySeconds)) || return 1
-  isDevboxForwardHour
+  ((devboxLatestBuildAgeSeconds >= devboxFailedBuildRetryDelaySeconds))
 }
 
 startDevbox() {
@@ -291,6 +308,10 @@ runDevboxCommand() {
       ;;
     *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure|forward-agent|collect [--diff|--accept <hash>]}\n' >&2; return 1 ;;
   esac
+  if [[ "$subcommand" == ensure ]] && ! isDevboxForwardHour; then
+    printf 'devbox ensure: skipped; outside working hours\n'
+    return 0
+  fi
   local lookupStatus=0
   resolveDevboxWorkspace || lookupStatus=$?
   if [[ "$subcommand" == ensure ]] && ((lookupStatus == 1)); then
