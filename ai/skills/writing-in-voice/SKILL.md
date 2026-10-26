@@ -104,6 +104,7 @@ These kill the voice:
 - Signing off with a name, "Best," "Cheers," or any formal closer
 - Bullet-point lists where a sentence would do (save bullets for technical explains only)
 - Overly polished grammar that removes personality
+- Dramatic kicker clauses tacked onto a sentence (", and nobody drew a single frame by hand"). They read as AI-written, so end the sentence at the fact
 
 ## Choosing the Right Archetype
 
@@ -118,3 +119,5 @@ Read the situation:
 - Onboarding, encouragement, or wrapping up something meaningful → **Coaching / Warm Close**
 
 When the situation is ambiguous, default to casual and short. The carbon unit overwrites only exceptionally — they undershoot length and let the reader fill in context.
+
+Sharing something (a demo, a doc, a PR)? Settle first whether the audience already saw it. If they did, skip the intro and recap of what it is, and lead with the new part.
