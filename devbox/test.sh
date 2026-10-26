@@ -26,8 +26,9 @@ case "$1" in
   list)
     if [[ -f "$DOTFILES_TEST_STATE/list-failed" ]]; then exit 1; fi
     if [[ -f "$DOTFILES_TEST_STATE/no-workspace" ]]; then printf '[]\n'; exit; fi
-    printf '[{"name":"devbox-fixture","owner_name":"fixture","latest_build":{"status":"%s"}}]\n' \
-      "$(cat "$DOTFILES_TEST_STATE/workspace-status")"
+    printf '[{"name":"devbox-fixture","owner_name":"fixture","latest_build":{"status":"%s","transition":"%s","job":{"completed_at":"%s"}}}]\n' \
+      "$(cat "$DOTFILES_TEST_STATE/workspace-status")" "$(cat "$DOTFILES_TEST_STATE/workspace-transition" 2>/dev/null || printf stop)" \
+      "$(cat "$DOTFILES_TEST_STATE/workspace-completed-at" 2>/dev/null || true)"
     ;;
   start) printf 'running\n' > "$DOTFILES_TEST_STATE/workspace-status" ;;
   ssh)
@@ -237,10 +238,45 @@ for workspaceStatus in stopped starting failed; do
   check "$workspaceStatus workspace names its status" outputHas "$skippedOutput" "is $workspaceStatus"
   check "$workspaceStatus workspace never connects" logLacks 'coder ssh'
   check "$workspaceStatus workspace never starts from converge" logLacks 'coder start'
-  runDevbox ensure >/dev/null
+  skippedEnsureOutput="$(runDevbox ensure)"
+  check "ensure names the $workspaceStatus skip" outputHas "$skippedEnsureOutput" "devbox ensure: skipped; workspace is $workspaceStatus"
   check "ensure skips $workspaceStatus without connecting" logLacks 'coder ssh'
   check "ensure never starts a $workspaceStatus workspace" logLacks 'coder start'
 done
+
+runEnsureInWorkingHours() {
+  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 \
+    bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory"
+}
+
+node -e 'console.log(new Date().toISOString())' > "$stubState/workspace-completed-at"
+printf 'failed\n' > "$stubState/workspace-status"
+: > "$commandLog"
+runEnsureInWorkingHours >/dev/null
+check "ensure waits out a fresh failed build" logLacks 'coder start'
+
+node -e 'console.log(new Date(Date.now() - 2 * 3600 * 1000).toISOString())' > "$stubState/workspace-completed-at"
+writeStub date <<'STUB'
+#!/usr/bin/env bash
+printf '6 03\n'
+STUB
+provideCommand date
+: > "$commandLog"
+runDevbox ensure >/dev/null
+check "ensure leaves a failed workspace down outside working hours" logLacks 'coder start'
+withdrawCommand date
+
+printf 'delete\n' > "$stubState/workspace-transition"
+: > "$commandLog"
+runEnsureInWorkingHours >/dev/null
+check "ensure never starts a workspace whose delete failed" logLacks 'coder start'
+rm -f "$stubState/workspace-transition"
+
+: > "$commandLog"
+runEnsureInWorkingHours >/dev/null
+check "ensure starts a failed workspace in working hours" logHas 'coder start devbox-fixture --yes'
+check "ensure provisions a recovered workspace in the same run" logHas "coder ssh devbox-fixture -- bash -s -- provision $workspaceDomain"
+rm -f "$stubState/workspace-completed-at"
 
 printf 'running\n' > "$stubState/workspace-status"
 : > "$commandLog"
@@ -428,6 +464,10 @@ check "up starts before it connects" outputMatches "$(grep -E 'coder start|coder
 : > "$commandLog"
 runDevbox up >/dev/null
 check "up does not start a running workspace" logLacks 'coder start'
+printf 'failed\n' > "$stubState/workspace-status"
+: > "$commandLog"
+runDevbox up >/dev/null
+check "up starts a failed workspace" logHas 'coder start devbox-fixture --yes'
 
 : > "$commandLog"
 restartStatus=0

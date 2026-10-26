@@ -2,6 +2,7 @@ devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
 devboxLookupUnauthenticated=3
 devboxFallbackReleaseStatus=75
+devboxFailedBuildRetryDelaySeconds=1800
 source "$devboxTopicDirectory/../script/lib/profile.sh"
 
 readDevboxProfile() {
@@ -59,15 +60,20 @@ resolveDevboxWorkspace() {
     printf 'devbox: cannot list Coder workspaces\n' >&2
     return 2
   fi
-  if ! devboxWorkspaceStatus="$(printf '%s' "$workspacesJson" | node -e '
+  local workspaceBuildSummary
+  if ! workspaceBuildSummary="$(printf '%s' "$workspacesJson" | node -e '
     const workspaces = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
     if (!Array.isArray(workspaces)) process.exit(1);
     const workspace = workspaces.find((workspace) => workspace.name === process.argv[1] && (!workspace.owner_name || workspace.owner_name === process.argv[2]));
-    if (workspace) console.log(workspace.latest_build.status);
+    if (!workspace) process.exit(0);
+    const buildCompletedAt = Date.parse(workspace.latest_build.job?.completed_at ?? "");
+    const buildAgeSeconds = Number.isNaN(buildCompletedAt) ? -1 : Math.floor((Date.now() - buildCompletedAt) / 1000);
+    console.log(workspace.latest_build.status, workspace.latest_build.transition ?? "unknown", buildAgeSeconds);
   ' "$devboxWorkspaceName" "$coderUsername")"; then
     printf 'devbox: cannot read Coder workspace status\n' >&2
     return 2
   fi
+  read -r devboxWorkspaceStatus devboxLatestBuildTransition devboxLatestBuildAgeSeconds <<< "$workspaceBuildSummary"
   if [[ -z "$devboxWorkspaceStatus" ]]; then
     devboxSkipReason="no workspace named $devboxWorkspaceName"
     return 1
@@ -100,6 +106,19 @@ isDevboxForwardHour() {
   local weekday hour
   read -r weekday hour < <(date '+%u %H')
   ((weekday <= 5 && 10#$hour >= 5 && 10#$hour < 19))
+}
+
+# Coder never autostarts a failed workspace and posthog-linux sets no failure_ttl, so ensure retries it.
+isDevboxFailedBuildRetryable() {
+  [[ "$devboxWorkspaceStatus" == failed ]] || return 1
+  [[ "$devboxLatestBuildTransition" != delete ]] || return 1
+  ((devboxLatestBuildAgeSeconds >= devboxFailedBuildRetryDelaySeconds)) || return 1
+  isDevboxForwardHour
+}
+
+startDevbox() {
+  "$devboxCoderPath" start "$devboxWorkspaceName" --yes || return
+  provisionDevbox
 }
 
 holdDevboxAgentForward() {
@@ -288,7 +307,12 @@ runDevboxCommand() {
   fi
   case "$subcommand" in
     ensure)
+      if isDevboxFailedBuildRetryable; then
+        startDevbox
+        return
+      fi
       if [[ "$devboxWorkspaceStatus" != running ]]; then
+        printf 'devbox ensure: skipped; workspace is %s\n' "$devboxWorkspaceStatus"
         return 0
       fi
       provisionDevbox
@@ -296,7 +320,7 @@ runDevboxCommand() {
       ;;
     up)
       case "$devboxWorkspaceStatus" in
-        stopped) "$devboxCoderPath" start "$devboxWorkspaceName" --yes || return ;;
+        stopped | failed) startDevbox; return ;;
         running | starting) ;;
         *) printf 'devbox: workspace is %s; cannot provision\n' "$devboxWorkspaceStatus" >&2; return 1 ;;
       esac
