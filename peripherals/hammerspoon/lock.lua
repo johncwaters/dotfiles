@@ -1,14 +1,10 @@
 local lock = {}
 
-local microphone = nil
 local presence = nil
-local wasMicrophoneMutedBeforeLock = nil
 local wasSpeakerMutedBeforeLock = nil
 local screenLockWatcher = nil
 
 local function onScreenLocked()
-  wasMicrophoneMutedBeforeLock = microphone.isMuted()
-  microphone.setMuted(true)
   local speaker = hs.audiodevice.defaultOutputDevice()
   if presence.isAtHome() or not speaker then
     return
@@ -23,14 +19,9 @@ local function onScreenUnlocked()
     speaker:setOutputMuted(wasSpeakerMutedBeforeLock)
   end
   wasSpeakerMutedBeforeLock = nil
-  if wasMicrophoneMutedBeforeLock ~= nil and not microphone.isInUse() then
-    microphone.setMuted(wasMicrophoneMutedBeforeLock)
-  end
-  wasMicrophoneMutedBeforeLock = nil
 end
 
-function lock.start(microphoneModule, presenceModule)
-  microphone = microphoneModule
+function lock.start(presenceModule)
   presence = presenceModule
   screenLockWatcher = hs.caffeinate.watcher.new(function(event)
     if event == hs.caffeinate.watcher.screensDidLock then

@@ -3,13 +3,17 @@ local calls = {}
 local pollIntervalSeconds = 2
 local callEndGraceSeconds = 10
 
-local microphone = nil
 local isCallActive = false
 local secondsSinceMicrophoneReleased = 0
 local microphonePollTimer = nil
 
+local function isMicrophoneInUse()
+  local device = hs.audiodevice.defaultInputDevice()
+  return device ~= nil and device:inUse()
+end
+
 local function pollMicrophone()
-  if microphone.isInUse() then
+  if isMicrophoneInUse() then
     secondsSinceMicrophoneReleased = 0
     isCallActive = true
     return
@@ -27,8 +31,7 @@ function calls.isActive()
   return isCallActive
 end
 
-function calls.start(microphoneModule)
-  microphone = microphoneModule
+function calls.start()
   microphonePollTimer = hs.timer.doEvery(pollIntervalSeconds, pollMicrophone)
   pollMicrophone()
 end
