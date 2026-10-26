@@ -29,7 +29,11 @@ function isInsideProjectRoot(manifestDirectory, localPath) {
 
 export const maxCodeLines = 12
 
-export const templateKinds = Object.freeze(['hook', 'carousel', 'screenshot', 'stat', 'features', 'code', 'release'])
+export const templateKinds = Object.freeze(['hook', 'carousel', 'screenshot', 'stat', 'features', 'code', 'release', 'chart'])
+
+const chartWordCaps = Object.freeze({ headline: 8, subline: 10, note: 8, label: 3 })
+
+const chartRefusedSlots = Object.freeze(['eyebrow', 'items', 'highlights', 'code', 'command'])
 
 export function readTemplateKind(templateSource, templatePath) {
     const declaredKind = /<html\b[^>]*\bdata-template\s*=\s*["']?([\w-]+)/i.exec(templateSource)?.[1]
@@ -68,6 +72,33 @@ function isHighlightList(value) {
 
 function isStringList(value) {
     return Array.isArray(value) && value.length >= 1 && value.length <= 6 && value.every(isNonemptyString)
+}
+
+function countWords(text) {
+    return text.trim().split(/\s+/).length
+}
+
+function isChartGroupList(value) {
+    return Array.isArray(value) && value.length >= 1 && value.length <= 4 && value.every((group) => isRecord(group)
+        && Object.keys(group).every((name) => ['label', 'values'].includes(name))
+        && isNonemptyString(group.label)
+        && Array.isArray(group.values) && group.values.every((barValue) => Number.isFinite(barValue) && barValue >= 0))
+}
+
+function buildChartViolations(slots) {
+    const violations = chartRefusedSlots.filter((name) => slots[name] !== undefined).map((name) => `chart refuses the ${name} slot; put longer copy in the caption`)
+    const hasValidSeries = isStringList(slots.series) && slots.series.length <= 3
+    if (!hasValidSeries) violations.push('chart requires 1-3 series names')
+    if (!isChartGroupList(slots.groups)) return [...violations, 'chart requires 1-4 groups of { label, values } with finite non-negative values']
+    if (hasValidSeries && slots.groups.some((group) => group.values.length !== slots.series.length)) violations.push('every chart group needs one value per series')
+    if (slots.groups.every((group) => group.values.every((barValue) => barValue === 0))) violations.push('chart needs at least one nonzero value')
+    if (slots.unit !== undefined && !isNonemptyString(slots.unit)) violations.push('unit must be a nonempty string')
+    for (const name of ['headline', 'subline', 'note']) {
+        if (isNonemptyString(slots[name]) && countWords(slots[name]) > chartWordCaps[name]) violations.push(`chart ${name} exceeds ${chartWordCaps[name]} words; put longer copy in the caption`)
+    }
+    const labels = [...(hasValidSeries ? slots.series : []), ...slots.groups.map((group) => group.label)]
+    for (const label of labels.filter((label) => countWords(label) > chartWordCaps.label)) violations.push(`chart label exceeds ${chartWordCaps.label} words: ${label}`)
+    return violations
 }
 
 function assertPublishableCodeFile(manifestDirectory, localPath) {
@@ -109,7 +140,8 @@ function buildShotViolations(shot, manifestDirectory, templateKind) {
     const slots = shot.vars ?? {}
     if (templateKind !== undefined && !templateKinds.includes(templateKind)) violations.push(`unknown template kind: ${templateKind}`)
     if (shot.source !== undefined && !isNonemptyString(shot.source)) violations.push('source must be a nonempty string')
-    if (templateKind === 'stat' && !isNonemptyString(shot.source)) violations.push('stat requires a cited repo source')
+    if (['stat', 'chart'].includes(templateKind) && !isNonemptyString(shot.source)) violations.push(`${templateKind} requires a cited repo source`)
+    if (templateKind === 'chart') violations.push(...buildChartViolations(slots))
     if (slots.code !== undefined) {
         try {
             validateCodeRange(slots.code, manifestDirectory)
@@ -127,7 +159,7 @@ function buildShotViolations(shot, manifestDirectory, templateKind) {
         if (!Number.isSafeInteger(slots.slideNumber) || !Number.isSafeInteger(slots.slideCount) || slots.slideNumber < 1 || slots.slideCount < slots.slideNumber || slots.slideCount > 20) violations.push('slideNumber/slideCount must be ordered integers from 1 to 20')
     }
     if (templateKind === 'features' && (!isStringList(slots.items) || slots.items.length < 2 || slots.items.length > 4)) violations.push('features requires 2-4 items')
-    const requiredStringsByTemplateKind = { stat: ['figure', 'label', 'context'], release: ['version', 'date'], features: ['headline'] }
+    const requiredStringsByTemplateKind = { stat: ['figure', 'label', 'context'], release: ['version', 'date'], features: ['headline'], chart: ['headline'] }
     for (const name of requiredStringsByTemplateKind[templateKind] ?? []) {
         if (!isNonemptyString(slots[name])) violations.push(`${name} must be a nonempty string`)
     }
@@ -164,11 +196,12 @@ export function validateManifest(manifest, { manifestDirectory = process.cwd(), 
         const templateKind = hasTemplate ? readTemplateKind(readTemplateSource(shot.template), shot.template) : undefined
         violations.push(...buildShotViolations(shot, manifestDirectory, templateKind).map((violation) => `${label}: ${violation}`))
         for (const [name, value] of Object.entries(shot.vars ?? {})) {
-            const isValidList = name === 'highlights' ? isHighlightList(value) : isStringList(value)
+            const listValidators = { highlights: isHighlightList, groups: isChartGroupList }
+            const isValidList = (listValidators[name] ?? isStringList)(value)
             if (!/^[a-z][a-z\d-]*$/i.test(name) || !(name === 'code' || isValidList || ['string', 'number', 'boolean'].includes(typeof value))) {
                 violations.push(`${label}: invalid slot: ${name}`)
             }
-            if (Array.isArray(value) && !isValidList) violations.push(`${label}: ${name} requires 1-6 nonempty strings or valid highlights`)
+            if (Array.isArray(value) && !isValidList && name !== 'groups') violations.push(`${label}: ${name} requires 1-6 nonempty strings or valid highlights`)
             if (['image', 'logo'].includes(name) && !isInsideProjectRoot(manifestDirectory, value)) violations.push(`${label}: ${name} must be a local asset path`)
             if (name === 'deviceFrame' && typeof value !== 'boolean') violations.push(`${label}: deviceFrame must be boolean`)
         }
@@ -340,6 +373,34 @@ async function preparePage(page, { brand, placement, scale, manifestDirectory, s
             }))
         }
         for (const element of document.querySelectorAll('[data-slot-code]')) element.textContent = slots.code ?? ''
+        for (const element of document.querySelectorAll('[data-slot-chart]')) {
+            const groups = slots.groups ?? []
+            const largestValue = Math.max(0, ...groups.flatMap((group) => group.values))
+            element.replaceChildren(...groups.map((group) => {
+                const groupElement = document.createElement('div')
+                groupElement.className = 'chart-group'
+                const groupLabel = document.createElement('p')
+                groupLabel.className = 'chart-label'
+                groupLabel.textContent = group.label
+                const bars = document.createElement('div')
+                bars.className = 'chart-bars'
+                bars.append(...group.values.map((barValue, seriesIndex) => {
+                    const row = document.createElement('div')
+                    row.className = 'chart-row'
+                    row.dataset.series = String(seriesIndex + 1)
+                    row.style.setProperty('--bar-fraction', String(largestValue ? barValue / largestValue : 0))
+                    const bar = document.createElement('span')
+                    bar.className = 'chart-bar'
+                    const valueLabel = document.createElement('span')
+                    valueLabel.className = 'chart-value'
+                    valueLabel.textContent = slots.unit ? `${barValue} ${slots.unit}` : String(barValue)
+                    row.append(bar, valueLabel)
+                    return row
+                }))
+                groupElement.append(groupLabel, bars)
+                return groupElement
+            }))
+        }
         for (const element of document.querySelectorAll('[data-carousel-progress]')) {
             element.replaceChildren(...Array.from({ length: slots.slideCount ?? 0 }, (_, index) => {
                 const dot = document.createElement('span')

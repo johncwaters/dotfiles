@@ -36,6 +36,7 @@ Template picker:
 - [features.html](templates/features.html): headline and `items`, 2-4 short strings.
 - [code.html](templates/code.html): real code/terminal excerpt or quickstart command, with headline and supporting copy.
 - [release.html](templates/release.html): `version`, `date`, and `highlights` from release notes; prefer `{ "title": "Short title", "detail": "One-line detail" }` objects, with plain strings also accepted.
+- [chart.html](templates/chart.html): grouped horizontal bars of cited figures; `series` (1-3 names), `groups` (1-4 `{ "label", "values" }`, one number per series), optional `unit`, `subline` and `note` (a data credit); `source` is mandatory. Caps: headline 8 words, subline 10, note 8, each label 3; eyebrow, items, highlights and code are refused.
 
 Placement picker:
 - `instagram-portrait` 1080x1350 / `instagram-square` 1080x1080: feed posts and carousel sets.

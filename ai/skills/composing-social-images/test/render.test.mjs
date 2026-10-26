@@ -270,12 +270,26 @@ test('carousel progress needs a valid slide pair even on a code CTA', () => {
     assert.throws(() => validateManifest(createManifest({ vars: { slideNumber: 1 } })), /slideNumber\/slideCount/)
 })
 
-test('stat cards require a source and figure, label and context strings', () => {
+test('stat cards and charts require a source, their slot shapes and chart copy caps', () => {
     const statShot = { template: 'templates/stat.html', source: 'README.md, Supported agents', vars: { figure: '3', label: 'Named agent CLIs', context: 'Claude Code, Codex and Grok' } }
     assert.doesNotThrow(() => validateManifest(createManifest(statShot)))
     for (const source of [undefined, '', '  ', 3, {}]) assert.throws(() => validateManifest(createManifest({ ...statShot, source })), /source/)
     for (const name of ['figure', 'label', 'context']) assert.throws(() => validateManifest(createManifest({ ...statShot, vars: { ...statShot.vars, [name]: 3 } })), /nonempty string/)
     assert.throws(() => validateManifest(createManifest({ source: [] })), /source/)
+    const chartShot = { template: 'templates/chart.html', source: 'harness/load-cost run at f9f5387d', vars: { headline: 'We lost. For now.', unit: 's', note: 'Their numbers from their published graphic.', series: ['glimmervoid', 't3code'], groups: [{ label: 'Cold connect', values: [39.7, 3.6] }, { label: 'Reconnect', values: [4.9, 1.3] }] } }
+    assert.doesNotThrow(() => validateManifest(createManifest(chartShot)))
+    assert.throws(() => validateManifest(createManifest({ ...chartShot, source: undefined })), /chart requires a cited repo source/)
+    const rejectedChartVars = [
+        [{ headline: 'We ran their exact benchmark on our own dashboard and lost' }, /headline exceeds 8 words/],
+        [{ subline: 'Four hundred kilobits per second, four hundred milliseconds round trip, median of three runs' }, /subline exceeds 10 words/],
+        [{ eyebrow: 'Benchmark' }, /refuses the eyebrow slot/],
+        [{ items: ['Shell is uncompressed'] }, /refuses the items slot/],
+        [{ series: ['glimmervoid', 't3code', 'old', 'older'] }, /1-3 series/],
+        [{ groups: [{ label: 'Cold connect', values: [39.7] }] }, /one value per series/],
+        [{ groups: [{ label: 'Cold connect', values: [-1, 3.6] }] }, /finite non-negative/],
+        [{ groups: [{ label: 'Cold connect on a slow link', values: [39.7, 3.6] }] }, /label exceeds 3 words/],
+    ]
+    for (const [overrides, expectedError] of rejectedChartVars) assert.throws(() => validateManifest(createManifest({ ...chartShot, vars: { ...chartShot.vars, ...overrides } })), expectedError)
 })
 
 test('features and releases enforce their template slot shapes', () => {
