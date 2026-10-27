@@ -287,6 +287,58 @@ test("--paths still commits Coherence journal files opened during review", () =>
   }
 });
 
+async function waitUntil(isDone: () => boolean): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (!isDone() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+test("in a Coherence repo a follower lands the run journal written after the commit, never past uncommitted work, a moved HEAD, or --no-push", async () => {
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, ".coherence/.gitignore", "/*\n!/.gitignore\n!/runs/\n");
+    const followerPidPath = path.join(repo, ".git", "coherence-journal-follower.pid");
+    const readFollowerPid = () => (fs.existsSync(followerPidPath) ? fs.readFileSync(followerPidPath, "utf8") : "");
+    const landAndAwaitFollower = async (filePath: string, args: string[] = []) => {
+      const previousFollowerPid = readFollowerPid();
+      writeFile(repo, filePath, "one\n");
+      assert.equal(land(repo, [...args, "--paths", filePath], VALID_MESSAGE).result.outcome, "COMMITTED");
+      await waitUntil(() => readFollowerPid() !== previousFollowerPid);
+    };
+    const journalSubject = "chore(coherence): record run journal";
+
+    await landAndAwaitFollower("a.txt");
+    writeFile(repo, ".coherence/runs/turn-end.jsonl", "{}\n");
+    await waitUntil(() => gitOutput(repo, ["log", "-1", "--format=%s"]) === journalSubject);
+    assert.deepEqual(gitOutput(repo, ["show", "--name-only", "--format=%s", "HEAD"]).split("\n").filter(Boolean), [
+      journalSubject,
+      ".coherence/runs/turn-end.jsonl",
+    ]);
+
+    await landAndAwaitFollower("b.txt");
+    writeFile(repo, "c.txt", "in progress\n");
+    writeFile(repo, ".coherence/runs/turn-end-2.jsonl", "{}\n");
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    assert.match(gitOutput(repo, ["status", "--short"]), /turn-end-2\.jsonl/);
+    fs.rmSync(path.join(repo, "c.txt"));
+
+    await landAndAwaitFollower("d.txt");
+    commitFile(repo, "e.txt", "unreviewed\n", "wip: unreviewed");
+    writeFile(repo, ".coherence/runs/turn-end-3.jsonl", "{}\n");
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    assert.equal(gitOutput(repo, ["log", "-1", "--format=%s"]), "wip: unreviewed");
+
+    const followerPidBeforeLocalOnlyLanding = readFollowerPid();
+    writeFile(repo, "f.txt", "one\n");
+    assert.equal(land(repo, ["--no-push", "--paths", "f.txt"], VALID_MESSAGE).result.outcome, "COMMITTED");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    assert.equal(readFollowerPid(), followerPidBeforeLocalOnlyLanding);
+  } finally {
+    cleanup(repo);
+  }
+});
+
 test("--paths naming an already staged deletion still stages the other scoped changes", () => {
   const repo = makeRepo("feature");
   try {

@@ -9,6 +9,7 @@ import {
   entryPathsAreAbsolute,
   type ParkedEntry,
 } from "./lib/ledger.ts";
+import { isCoherenceOnly, startJournalFollower, tracksCoherence } from "./lib/journal-follower.ts";
 import { isTreeContained } from "./lib/merge-proof.ts";
 import { normalizeMessage, validateMessage } from "./lib/message.ts";
 import {
@@ -212,6 +213,8 @@ class Landing {
       }
     }
 
+    this.followCoherenceJournal();
+
     return committed({
       commit: this.commitHash ?? "",
       pushed: this.pushed,
@@ -221,6 +224,14 @@ class Landing {
         : {}),
       warnings: this.warnings,
     });
+  }
+
+  private followCoherenceJournal(): void {
+    if (this.config.noPush || isCoherenceOnly(this.config.paths) || !tracksCoherence(this.git)) {
+      return;
+    }
+    startJournalFollower(this.git, this.config.promote);
+    this.warnings.push("journal follower started: lands the next .coherence run journal within 30 minutes unless other files are uncommitted");
   }
 
   private landNothing(): Result {

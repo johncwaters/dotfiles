@@ -62,7 +62,7 @@ export function localPathMatches(addedLines: AddedLine[], localPrefixes: string[
     .map((addedLine) => `${addedLine.filePath}:${addedLine.lineNumber}`);
 }
 
-const COHERENCE_DIR = ".coherence";
+export const COHERENCE_DIR = ".coherence";
 
 function isNewFileStatus(statusCode: string): boolean {
   return statusCode === "??" || statusCode.includes("A");
