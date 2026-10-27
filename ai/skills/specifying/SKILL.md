@@ -73,7 +73,7 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 
 ## Hand off
 
-Show the `tree` rendering, then reply with the path, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision and each changed design node, keep or restore, with a question round through `ask.md`; a restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once none is left, cut and build without asking, unless the carbon unit asked for the design spec alone.
+Show the `tree` rendering, then reply with the path, the goal's criteria, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision and each changed design node, keep or restore, with a question round through `ask.md`; a restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once none is left, cut and build without asking, unless the carbon unit asked for the design spec alone.
 
 ## Scripts
 
