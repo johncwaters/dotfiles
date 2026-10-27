@@ -105,6 +105,7 @@ These kill the voice:
 - Bullet-point lists where a sentence would do (save bullets for technical explains only)
 - Overly polished grammar that removes personality
 - Dramatic kicker clauses tacked onto a sentence (", and nobody drew a single frame by hand"). They read as AI-written, so end the sentence at the fact
+- Naming who caused a bug ("came in with #19560", "added by @x") when writing up a cause. It reads as blame and pings them, so name the code and why it exists instead
 
 ## Choosing the Right Archetype
 
