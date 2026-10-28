@@ -498,7 +498,23 @@ rm -f -- "$reviewChecklistPath"
 profileAgentsPath="$sandbox/.claude/AGENTS.profile.md"
 printf '#!/bin/sh\nexit 0\n' > "$skillDependencyStubBin/kimi"
 chmod +x "$skillDependencyStubBin/kimi"
+mkdir -p "$sandbox/.kimi-code"
+printf '{"mcpServers":{"foreign":{"url":"https://unmanaged.invalid/mcp"}},"keepMe":true}\n' > "$sandbox/.kimi-code/mcp.json"
+kimiMcpServersMatch() {
+  node - "$sandbox/.kimi-code/mcp.json" "$1" <<'NODE'
+const fs = require('node:fs');
+const { isDeepStrictEqual } = require('node:util');
+const [mcpConfigPath, expectsWorkServers] = process.argv.slice(2);
+const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf8'));
+const expectedServers = { foreign: { url: 'https://unmanaged.invalid/mcp' } };
+if (expectsWorkServers === 'work') expectedServers.posthog = { url: 'https://mcp.posthog.com/mcp' };
+if (expectsWorkServers === 'work') expectedServers.gauge = { url: 'https://app.withgauge.com/mcp' };
+process.exit(isDeepStrictEqual(mcpConfig.mcpServers, expectedServers) && mcpConfig.keepMe === true ? 0 : 1);
+NODE
+}
 runTopicInstall "$stagedTopicDir" work > /dev/null
+check "work Kimi mcp.json gains the unconfined servers, keeps hand-added ones, and never gets backchannels" \
+  kimiMcpServersMatch work
 check "work profile links its own AGENTS.md through the alias" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
   "$profileAgentsPath" "$sandbox/.dotfiles/profiles/work/AGENTS.md"
@@ -517,6 +533,7 @@ for toolName in codex kimi-code; do
   check "personal $toolName AGENTS.md holds only the shared rules" \
     cmp -s "$sandbox/.$toolName/AGENTS.md" "$stagedRepo/ai/AGENTS.md"
 done
+check "personal Kimi mcp.json drops the work servers and keeps hand-added ones" kimiMcpServersMatch personal
 rm -f "$skillDependencyStubBin/kimi"
 rm -rf "$sandbox/.kimi-code"
 runTopicInstall "$stagedTopicDir" personal > /dev/null

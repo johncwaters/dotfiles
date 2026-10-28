@@ -354,6 +354,51 @@ mcpPlanNeedsClaude() {
   return 1
 }
 
+planMcpConvergence() {
+  node - "$profileMcpServersSource" "$@" 2>/dev/null <<'NODE'
+const fs = require('node:fs');
+const { isDeepStrictEqual } = require('node:util');
+const [declarationPath, runtimePath, managedNames, withheldServerNames, removedNames, runtimeShape] = process.argv.slice(2);
+const declaredServers = fs.existsSync(declarationPath)
+  ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')) : {};
+if (!declaredServers || typeof declaredServers !== 'object' || Array.isArray(declaredServers)) process.exit(1);
+for (const serverName of withheldServerNames.split("\n").filter(Boolean)) delete declaredServers[serverName];
+let currentServers = {};
+try {
+  currentServers = JSON.parse(fs.readFileSync(runtimePath, 'utf8'))?.mcpServers ?? {};
+} catch {}
+if (!currentServers || typeof currentServers !== 'object' || Array.isArray(currentServers)) currentServers = {};
+const managedNameSet = new Set(managedNames.split('\n').filter(Boolean));
+const removedServerNames = [...removedNames.split("\n"), ...withheldServerNames.split("\n")].filter(Boolean);
+const serverNames = new Set([...managedNameSet, ...Object.keys(declaredServers), ...removedServerNames]);
+// Kimi infers HTTP from `url` and names SSE through `transport` (moonshotai.github.io/kimi-code customization/mcp).
+function kimiServerConfig({ type, ...serverConfig }) {
+  return type === 'sse' ? { ...serverConfig, transport: 'sse' } : serverConfig;
+}
+const plan = [];
+for (const serverName of serverNames) {
+  if (!serverName || /[\t\r\n]/.test(serverName)) process.exit(1);
+  const isDeclared = Object.hasOwn(declaredServers, serverName);
+  const isPresent = Object.hasOwn(currentServers, serverName);
+  if (!isDeclared) {
+    plan.push([serverName, isPresent ? 'remove' : 'forget', '']);
+    continue;
+  }
+  const declaredConfig = declaredServers[serverName];
+  if (!declaredConfig || typeof declaredConfig !== 'object' || Array.isArray(declaredConfig)) process.exit(1);
+  const serverConfig = runtimeShape === 'kimi' ? kimiServerConfig(declaredConfig) : declaredConfig;
+  const matchesDeclaration = isPresent && isDeepStrictEqual(currentServers[serverName], serverConfig);
+  if (isPresent && !matchesDeclaration && !managedNameSet.has(serverName)) {
+    plan.push([serverName, 'blocked', '']);
+    continue;
+  }
+  const serverAction = isPresent ? (matchesDeclaration ? 'keep' : 'replace') : 'add';
+  plan.push([serverName, serverAction, JSON.stringify(serverConfig)]);
+}
+process.stdout.write(plan.map(entry => entry.join('\t')).join('\n'));
+NODE
+}
+
 convergeMcpServers() {
   local convergencePlan
   local managedNames
@@ -372,44 +417,7 @@ convergeMcpServers() {
     noteWarned "MCP $withheldServerNames" "withheld until Claude confinement converges"
   fi
   managedNames="$(readDotfilesState ai-managed-mcp-servers || true)"
-  if ! convergencePlan="$(node - "$profileMcpServersSource" "$HOME/.claude.json" "$managedNames" "$withheldServerNames" "$(profilePlanNames remove-server)" 2>/dev/null <<'NODE'
-const fs = require('node:fs');
-const { isDeepStrictEqual } = require('node:util');
-const [declarationPath, runtimePath, managedNames, withheldServerNames, removedNames] = process.argv.slice(2);
-const declaredServers = fs.existsSync(declarationPath)
-  ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')) : {};
-if (!declaredServers || typeof declaredServers !== 'object' || Array.isArray(declaredServers)) process.exit(1);
-for (const serverName of withheldServerNames.split("\n").filter(Boolean)) delete declaredServers[serverName];
-let currentServers = {};
-try {
-  currentServers = JSON.parse(fs.readFileSync(runtimePath, 'utf8'))?.mcpServers ?? {};
-} catch {}
-if (!currentServers || typeof currentServers !== 'object' || Array.isArray(currentServers)) currentServers = {};
-const managedNameSet = new Set(managedNames.split('\n').filter(Boolean));
-const removedServerNames = [...removedNames.split("\n"), ...withheldServerNames.split("\n")].filter(Boolean);
-const serverNames = new Set([...managedNameSet, ...Object.keys(declaredServers), ...removedServerNames]);
-const plan = [];
-for (const serverName of serverNames) {
-  if (!serverName || /[\t\r\n]/.test(serverName)) process.exit(1);
-  const isDeclared = Object.hasOwn(declaredServers, serverName);
-  const isPresent = Object.hasOwn(currentServers, serverName);
-  if (!isDeclared) {
-    plan.push([serverName, isPresent ? 'remove' : 'forget', '']);
-    continue;
-  }
-  const serverConfig = declaredServers[serverName];
-  if (!serverConfig || typeof serverConfig !== 'object' || Array.isArray(serverConfig)) process.exit(1);
-  const matchesDeclaration = isPresent && isDeepStrictEqual(currentServers[serverName], serverConfig);
-  if (isPresent && !matchesDeclaration && !managedNameSet.has(serverName)) {
-    plan.push([serverName, 'blocked', '']);
-    continue;
-  }
-  const serverAction = isPresent ? (matchesDeclaration ? 'keep' : 'replace') : 'add';
-  plan.push([serverName, serverAction, JSON.stringify(serverConfig)]);
-}
-process.stdout.write(plan.map(entry => entry.join('\t')).join('\n'));
-NODE
-)"; then
+  if ! convergencePlan="$(planMcpConvergence "$HOME/.claude.json" "$managedNames" "$withheldServerNames" "$(profilePlanNames remove-server)" claude)"; then
     noteWarned "MCP servers" "could not read profile declarations, convergence skipped"
     return 0
   fi
@@ -453,6 +461,77 @@ NODE
     noteWarned "MCP $serverName" "add failed"
   done <<< "$convergencePlan"
   writeDotfilesState ai-managed-mcp-servers "$remainingNames"
+}
+
+# Kimi hooks are fail-open, so no confined server ever reaches Kimi.
+convergeKimiMcpServers() {
+  local mcpConfigPath="$kimiHome/mcp.json"
+  local convergencePlan
+  local managedNames
+  local recordedNames=""
+  local remainingNames=""
+  local serverName
+  local serverAction
+  local serverConfig
+  if ! command -v node > /dev/null 2>&1; then
+    noteWarned "Kimi MCP servers" "node not found, convergence skipped"
+    return 0
+  fi
+  if ! pathIsPlainFileOrAbsent "$mcpConfigPath"; then
+    noteWarned "Kimi MCP servers" "mcp.json is not a plain file, convergence skipped"
+    return 0
+  fi
+  managedNames="$(readDotfilesState ai-managed-kimi-mcp-servers || true)"
+  if ! convergencePlan="$(planMcpConvergence "$mcpConfigPath" "$managedNames" "$(profilePlanNames confine-server)" "$(profilePlanNames remove-server)" kimi)"; then
+    noteWarned "Kimi MCP servers" "could not read profile declarations, convergence skipped"
+    return 0
+  fi
+  while IFS=$'\t' read -r serverName serverAction serverConfig; do
+    [[ -n "$serverName" ]] || continue
+    if [[ "$serverAction" == blocked ]]; then
+      noteWarned "Kimi MCP $serverName" "an unmanaged server with this name blocks convergence"
+      continue
+    fi
+    recordedNames+="${recordedNames:+$'\n'}$serverName"
+    case "$serverAction" in
+      keep | add | replace) remainingNames+="${remainingNames:+$'\n'}$serverName" ;;
+    esac
+  done <<< "$convergencePlan"
+  writeDotfilesState ai-managed-kimi-mcp-servers "$recordedNames"
+  if [[ "$(readDotfilesState ai-managed-kimi-mcp-servers || true)" != "$recordedNames" ]]; then
+    noteWarned "Kimi MCP servers" "could not record managed names, convergence skipped"
+    return 0
+  fi
+  mkdir -p -- "$kimiHome"
+  local stagedPath
+  stagedPath="$(mktemp "$kimiHome/.dotfiles-mcp.XXXXXX")"
+  if ! node - "$mcpConfigPath" "$stagedPath" "$convergencePlan" 2>/dev/null <<'NODE'
+const fs = require('node:fs');
+const [mcpConfigPath, stagedPath, convergencePlan] = process.argv.slice(2);
+const mcpConfig = fs.existsSync(mcpConfigPath) ? JSON.parse(fs.readFileSync(mcpConfigPath, 'utf8')) : {};
+if (!mcpConfig || typeof mcpConfig !== 'object' || Array.isArray(mcpConfig)) process.exit(1);
+mcpConfig.mcpServers ??= {};
+for (const planLine of convergencePlan.split('\n').filter(Boolean)) {
+  const [serverName, serverAction, serverConfig] = planLine.split('\t');
+  if (serverAction === 'remove') delete mcpConfig.mcpServers[serverName];
+  if (serverAction === 'add' || serverAction === 'replace') mcpConfig.mcpServers[serverName] = JSON.parse(serverConfig);
+}
+fs.writeFileSync(stagedPath, `${JSON.stringify(mcpConfig, null, 2)}\n`);
+NODE
+  then
+    rm -f -- "$stagedPath"
+    noteWarned "Kimi MCP servers" "could not read mcp.json, convergence skipped"
+    return 0
+  fi
+  chmod 600 "$stagedPath"
+  if [[ ! -f "$mcpConfigPath" && -z "$remainingNames" ]] || filesAreIdentical "$stagedPath" "$mcpConfigPath"; then
+    rm -f -- "$stagedPath"
+    writeDotfilesState ai-managed-kimi-mcp-servers "$remainingNames"
+    return 0
+  fi
+  mv -f -- "$stagedPath" "$mcpConfigPath"
+  writeDotfilesState ai-managed-kimi-mcp-servers "$remainingNames"
+  noteApplied "Kimi MCP servers" "converged"
 }
 
 removeExcludedSkills() {
@@ -787,6 +866,9 @@ if command -v codex > /dev/null 2>&1 && [[ -f "$profileCodexHooksSource" ]] && (
 fi
 convergeCodexServers
 convergeMcpServers
+if command -v kimi > /dev/null 2>&1; then
+  convergeKimiMcpServers
+fi
 
 upgradeEnabledClaudePlugins() {
   [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
