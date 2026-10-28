@@ -24,6 +24,9 @@ installDevbox() {
     noteWarned "devbox" "workspace lookup failed"
     return 0
   fi
+  if [[ "$devboxWorkspaceIsOutdated" == 1 ]]; then
+    noteDetail "devbox" "$devboxWorkspaceName runs an outdated Coder template; coder update $devboxWorkspaceName rebuilds it"
+  fi
   if [[ "$devboxWorkspaceStatus" != running ]]; then
     notePresent "devbox" "skipped; $devboxWorkspaceName is $devboxWorkspaceStatus"
     noteDetail "devbox" "run devbox up when needed"

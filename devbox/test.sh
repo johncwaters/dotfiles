@@ -26,7 +26,8 @@ case "$1" in
   list)
     if [[ -f "$DOTFILES_TEST_STATE/list-failed" ]]; then exit 1; fi
     if [[ -f "$DOTFILES_TEST_STATE/no-workspace" ]]; then printf '[]\n'; exit; fi
-    printf '[{"name":"devbox-fixture","owner_name":"fixture","latest_build":{"status":"%s","transition":"%s","job":{"completed_at":"%s"}}}]\n' \
+    printf '[{"name":"devbox-fixture","owner_name":"fixture","outdated":%s,"latest_build":{"status":"%s","transition":"%s","job":{"completed_at":"%s"}}}]\n' \
+      "$([[ -f "$DOTFILES_TEST_STATE/workspace-outdated" ]] && printf true || printf false)" \
       "$(cat "$DOTFILES_TEST_STATE/workspace-status")" "$(cat "$DOTFILES_TEST_STATE/workspace-transition" 2>/dev/null || printf stop)" \
       "$(cat "$DOTFILES_TEST_STATE/workspace-completed-at" 2>/dev/null || true)"
     ;;
@@ -295,6 +296,13 @@ check "converge runs the box dotfiles converge and repo sync after prepare and b
 check "running converge does not start a workspace" logLacks 'coder start'
 check "an unchanged provision reports no laptop changes" reportsNoChanges "$runningOutput"
 check "an unchanged provision reports the devbox as present" outputMatches "$runningOutput" '\[ -- \] devbox +devbox-fixture provisioned'
+check "a box on the current template gets no outdated-template line" outputLacks "$runningOutput" 'outdated Coder template'
+: > "$stubState/workspace-outdated"
+outdatedOutput="$(runInstall)"
+rm -f "$stubState/workspace-outdated"
+check "a box on an outdated template gets exactly one line naming coder update" \
+  test "$(grep -c 'devbox-fixture runs an outdated Coder template; coder update devbox-fixture rebuilds it' <<< "$outdatedOutput")" -eq 1
+check "an outdated template still reports no laptop changes" reportsNoChanges "$outdatedOutput"
 
 printf '[installed] config: merged; runtime records preserved\nhttps://fixture.invalid/\n' > "$stubState/provision-output"
 installedOutput="$(runInstall)"

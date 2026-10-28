@@ -68,12 +68,12 @@ resolveDevboxWorkspace() {
     if (!workspace) process.exit(0);
     const buildCompletedAt = Date.parse(workspace.latest_build.job?.completed_at ?? "");
     const buildAgeSeconds = Number.isNaN(buildCompletedAt) ? -1 : Math.floor((Date.now() - buildCompletedAt) / 1000);
-    console.log(workspace.latest_build.status, workspace.latest_build.transition ?? "unknown", buildAgeSeconds);
+    console.log(workspace.latest_build.status, workspace.latest_build.transition ?? "unknown", buildAgeSeconds, workspace.outdated === true ? 1 : 0);
   ' "$devboxWorkspaceName" "$coderUsername")"; then
     printf 'devbox: cannot read Coder workspace status\n' >&2
     return 2
   fi
-  read -r devboxWorkspaceStatus devboxLatestBuildTransition devboxLatestBuildAgeSeconds <<< "$workspaceBuildSummary"
+  read -r devboxWorkspaceStatus devboxLatestBuildTransition devboxLatestBuildAgeSeconds devboxWorkspaceIsOutdated <<< "$workspaceBuildSummary"
   if [[ -z "$devboxWorkspaceStatus" ]]; then
     devboxSkipReason="no workspace named $devboxWorkspaceName"
     return 1
@@ -82,9 +82,10 @@ resolveDevboxWorkspace() {
 }
 
 # A hung coder ssh holds an agent connection, and Coder bumps the deadline on any connection, so the box never autostops.
+# coder ssh prints its outdated-template banner on every call when stderr is a TTY (coder cli/ssh.go), so stderr goes through a pipe.
 runDevboxSsh() {
   local deadlineSeconds="${DEVBOX_SSH_DEADLINE_SECONDS:-1200}"
-  CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- "$@" <&0 &
+  CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- "$@" <&0 2> >(cat >&2) &
   local sshPid=$!
   (
     sleep "$deadlineSeconds" &
