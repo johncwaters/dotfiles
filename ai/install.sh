@@ -13,6 +13,7 @@ fi
 
 claudeHome="$HOME/.claude"
 codexHome="$HOME/.codex"
+kimiHome="$HOME/.kimi-code"
 claudeSkillsDirectory="$claudeHome/skills"
 repoSkillsDirectory="$dotfilesRepo/ai/skills"
 profilePlanNames() {
@@ -283,26 +284,31 @@ profileMcpServersSource="$(profilePlanNames source-mcp-servers.json)"
 convergeProfileEntryDirectory skills skill
 installProfileSkillDependencies
 
-# Codex reads one global AGENTS.md with no imports, so the profile rules are rendered into it.
-renderCodexAgents() {
-  local codexAgentsPath="$codexHome/AGENTS.md"
+# Codex and Kimi read one global AGENTS.md with no imports, so the profile rules are rendered into it.
+renderProfileAgents() {
+  local label="$1"
+  local toolHome="$2"
+  local agentsPath="$toolHome/AGENTS.md"
   local profileAgentsPath="$(profilePlanNames source-AGENTS.md)"
-  mkdir -p -- "$codexHome"
-  if pathIsLinkIntoThisRepo "$codexAgentsPath"; then
-    rm -f -- "$codexAgentsPath"
+  mkdir -p -- "$toolHome"
+  if pathIsLinkIntoThisRepo "$agentsPath"; then
+    rm -f -- "$agentsPath"
   fi
-  clearDestinationIfNotPlainFile "Codex AGENTS.md" "$codexAgentsPath" || return 0
+  clearDestinationIfNotPlainFile "$label" "$agentsPath" || return 0
   local stagedPath
-  stagedPath="$(mktemp "$codexHome/.dotfiles-render.XXXXXX")"
+  stagedPath="$(mktemp "$toolHome/.dotfiles-render.XXXXXX")"
   cat -- "$dotfilesRepo/ai/AGENTS.md" > "$stagedPath"
   if [[ -n "${profileName:-}" && -f "$profileAgentsPath" ]]; then
     printf '\n' >> "$stagedPath"
     cat -- "$profileAgentsPath" >> "$stagedPath"
   fi
-  commitStagedFile "Codex AGENTS.md" "$stagedPath" "$codexAgentsPath" "rendered"
+  commitStagedFile "$label" "$stagedPath" "$agentsPath" "rendered"
 }
 
-renderCodexAgents
+renderProfileAgents "Codex AGENTS.md" "$codexHome"
+if command -v kimi > /dev/null 2>&1; then
+  renderProfileAgents "Kimi AGENTS.md" "$kimiHome"
+fi
 
 serversLackingWiredConfinement() {
   local renderedHooksPath="$1"

@@ -496,21 +496,31 @@ check "personal profile preserves a non-repo review checklist" \
   grep -qx 'local review notes' "$reviewChecklistPath"
 rm -f -- "$reviewChecklistPath"
 profileAgentsPath="$sandbox/.claude/AGENTS.profile.md"
-codexAgentsPath="$sandbox/.codex/AGENTS.md"
+printf '#!/bin/sh\nexit 0\n' > "$skillDependencyStubBin/kimi"
+chmod +x "$skillDependencyStubBin/kimi"
 runTopicInstall "$stagedTopicDir" work > /dev/null
 check "work profile links its own AGENTS.md through the alias" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
   "$profileAgentsPath" "$sandbox/.dotfiles/profiles/work/AGENTS.md"
-check "work Codex AGENTS.md is a rendered plain file" \
-  bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$codexAgentsPath"
-check "work Codex AGENTS.md carries the shared rules then the work rules" \
-  bash -c 'diff -q "$1" <(cat "$2"; printf "\n"; cat "$3") > /dev/null' _ \
-  "$codexAgentsPath" "$stagedRepo/ai/AGENTS.md" "$stagedRepo/profiles/work/AGENTS.md"
+for toolName in codex kimi-code; do
+  toolAgentsPath="$sandbox/.$toolName/AGENTS.md"
+  check "work $toolName AGENTS.md is a rendered plain file" \
+    bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$toolAgentsPath"
+  check "work $toolName AGENTS.md carries the shared rules then the work rules" \
+    bash -c 'diff -q "$1" <(cat "$2"; printf "\n"; cat "$3") > /dev/null' _ \
+    "$toolAgentsPath" "$stagedRepo/ai/AGENTS.md" "$stagedRepo/profiles/work/AGENTS.md"
+done
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile removes the work AGENTS.profile.md link" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$profileAgentsPath"
-check "personal Codex AGENTS.md holds only the shared rules" \
-  cmp -s "$codexAgentsPath" "$stagedRepo/ai/AGENTS.md"
+for toolName in codex kimi-code; do
+  check "personal $toolName AGENTS.md holds only the shared rules" \
+    cmp -s "$sandbox/.$toolName/AGENTS.md" "$stagedRepo/ai/AGENTS.md"
+done
+rm -f "$skillDependencyStubBin/kimi"
+rm -rf "$sandbox/.kimi-code"
+runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "a converge without kimi on PATH leaves ~/.kimi-code absent" test ! -e "$sandbox/.kimi-code"
 lockedSkillCount="$(find "$stagedTopicDir/skills" "$stagedRepo/profiles/work/skills" -mindepth 2 -maxdepth 2 -name package-lock.json | wc -l)"
 check "converge skips npm ci while a skill's installed lock is current" \
   test "$(grep -c '^npm ci ' "$skillDependencyLog")" -eq "$lockedSkillCount"
