@@ -481,6 +481,14 @@ convergeKimiMcpServers() {
     noteWarned "Kimi MCP servers" "mcp.json is not a plain file, convergence skipped"
     return 0
   fi
+  # The planner reads an unparseable file as empty and would claim hand-added names before the write fails.
+  if [[ -f "$mcpConfigPath" ]] && ! node -e '
+const isPlainObject = value => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+const mcpConfig = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+process.exit(isPlainObject(mcpConfig) && (mcpConfig.mcpServers === undefined || isPlainObject(mcpConfig.mcpServers)) ? 0 : 1)' "$mcpConfigPath" 2>/dev/null; then
+    noteWarned "Kimi MCP servers" "could not read mcp.json, convergence skipped"
+    return 0
+  fi
   managedNames="$(readDotfilesState ai-managed-kimi-mcp-servers || true)"
   if ! convergencePlan="$(planMcpConvergence "$mcpConfigPath" "$managedNames" "$(profilePlanNames confine-server)" "$(profilePlanNames remove-server)" kimi)"; then
     noteWarned "Kimi MCP servers" "could not read profile declarations, convergence skipped"

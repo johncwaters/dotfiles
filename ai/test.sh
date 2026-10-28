@@ -534,9 +534,24 @@ for toolName in codex kimi-code; do
     cmp -s "$sandbox/.$toolName/AGENTS.md" "$stagedRepo/ai/AGENTS.md"
 done
 check "personal Kimi mcp.json drops the work servers and keeps hand-added ones" kimiMcpServersMatch personal
+printf '{"mcpServers":{"posthog":{"url":"https://mine.invalid/mcp"}},}\n' > "$sandbox/.kimi-code/mcp.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null || true
+printf '{"mcpServers":{"posthog":{"url":"https://mine.invalid/mcp"}}}\n' > "$sandbox/.kimi-code/mcp.json"
+runTopicInstall "$stagedTopicDir" work > /dev/null || true
+check "a Kimi mcp.json that failed to parse never hands its hand-added server to dotfiles" \
+  grep -qF 'https://mine.invalid/mcp' "$sandbox/.kimi-code/mcp.json"
+printf '{"mcpServers":[]}\n' > "$sandbox/.kimi-code/mcp.json"
+arrayServersOutput="$(runTopicInstall "$stagedTopicDir" work)" || true
+check "a Kimi mcp.json whose mcpServers is not an object warns instead of converging" \
+  outputHas "$arrayServersOutput" "could not read mcp.json"
 rm -f "$skillDependencyStubBin/kimi"
 rm -rf "$sandbox/.kimi-code"
-runTopicInstall "$stagedTopicDir" personal > /dev/null
+kimilessBin="$sandbox/kimiless-bin"
+mkdir -p "$kimilessBin"
+linkCoreUtilities --into "$kimilessBin" bash basename dirname cat cmp cp chmod find git grep head \
+  ln ls mkdir mktemp mv readlink rm rmdir sed stat tail tr uname wc node
+env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$skillDependencyStubBin:$kimilessBin" \
+  bash "$stagedTopicDir/install.sh" > /dev/null || true
 check "a converge without kimi on PATH leaves ~/.kimi-code absent" test ! -e "$sandbox/.kimi-code"
 lockedSkillCount="$(find "$stagedTopicDir/skills" "$stagedRepo/profiles/work/skills" -mindepth 2 -maxdepth 2 -name package-lock.json | wc -l)"
 check "converge skips npm ci while a skill's installed lock is current" \
