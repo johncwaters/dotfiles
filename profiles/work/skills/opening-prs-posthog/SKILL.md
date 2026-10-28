@@ -1,6 +1,6 @@
 ---
 name: opening-prs-posthog
-description: "Extends /opening-prs on a work machine with PostHog's PR conventions, the writing-longform pass on the body, PostHog visual-evidence uploads, and a closing Slack message for the team channel. Use when /opening-prs loads work-machine extensions; invoke /opening-prs instead of this skill."
+description: "Extends /opening-prs on a work machine with PostHog's PR conventions, the writing-longform pass on the body, PostHog visual-evidence uploads, and a closing Slack message for the product area's channel. Use when /opening-prs loads work-machine extensions; invoke /opening-prs instead of this skill."
 ---
 
 # Open PR: PostHog
@@ -17,7 +17,9 @@ Load `/writing-longform` beside `/writing-in-voice` before drafting any prose. I
 
 ## Step 7: Slack message
 
-After the PR is posted, print a short message the carbon unit can paste into their team channel, in a fenced code block so it copies cleanly. Leave sending it to the carbon unit.
+After the PR is posted, print a short message the carbon unit can paste into the channel named above the block, in a fenced code block so it copies cleanly. Leave sending it to the carbon unit.
+
+Name the channel to post in, as `#channel-name`, on the line above the block. The right channel is the one where PRs for the touched product area already get posted, and that often isn't the carbon unit's own team channel. Find it with the Slack MCP's `slack_search_public`: search the product's name together with `github.com/PostHog`, look at the last two months, and give the carbon unit's own past posts first weight. Name only a channel the search returned. When the search finds none, say so and ask the carbon unit.
 
 The team posts PRs as one casual sentence, not a restated PR body, so match that. Write it with `/writing-in-voice`.
 
