@@ -22,9 +22,12 @@ Lead with the verdict in bold, in one or two sentences. Then:
 3. **Customer reply**: draft it with the `writing-in-voice` skill, not the MCP's
    `compose-draft-reply`, since the carbon unit sends it in their own voice. Say whether anything was
    misconfigured, what to do next, and the cost or impact in their numbers. State
-   timestamps in the customer's timezone, or say which timezone they're in. End every
-   support reply with `Thanks!` and then `John` on its own line, overriding
-   `writing-in-voice`'s no-sign-off rule. A pre-close follow-up is a bare check-in: ask
+   timestamps in the customer's timezone, or say which timezone they're in. Describe only
+   what their own data shows, and put platform-wide reach ("others hit this since Oct 14")
+   in the Owning team message. When the fix sits with another team, close with
+   `I'll let you know!`. End every support reply with `Thanks!`, then `John` on its own
+   line except on a posthog.com forum reply, which already shows the author. This
+   overrides `writing-in-voice`'s no-sign-off rule. A pre-close follow-up is a bare check-in: ask
    whether the last reply covered everything, say the ticket resolves in a few days
    without a reply, and say replying reopens it. Anything else worth telling the customer
    goes to the carbon unit, not into the follow-up.
