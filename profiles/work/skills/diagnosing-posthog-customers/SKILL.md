@@ -33,7 +33,12 @@ Lead with the verdict in bold, in one or two sentences. Then:
    goes to the carbon unit, not into the follow-up.
 4. **Owning team**: when the cause is a PostHog bug or a misleading UI, write a short
    message for the owning team with the PR or file, the evidence, and the fix options.
-   Promise the customer a fix only after the team agrees to it.
+   Promise the customer a fix only after the team agrees to it. Draft it with
+   `writing-in-voice` for the team's own internal channel, not a channel shared with a
+   partner. Open with the customer's symptom and the exact error, put the numbers in
+   bullets, and tie a suspect PR to the change by timing alone. Introduce the options
+   with "From what I saw, we can:", close with `Appreciate it! :thankyou:`, and keep the
+   caveats in Not proven.
 
 Neither the Customer reply nor the Owning team message ever contains any other customer's
 identifiers or values.
