@@ -92,7 +92,8 @@ function runCommandLine(argumentList) {
   const draftSources = draftPaths.length > 0 ? draftPaths : [0];
   const flags = draftSources.flatMap((source) => lintDraft(fs.readFileSync(source, "utf8"), { isLongform }).map((flag) => ({ ...flag, source })));
   for (const flag of flags) console.log(`${draftPaths.length > 1 ? `${flag.source}:` : ""}${flag.line}: ${flag.rule}: ${flag.text}`);
-  console.log(`${flags.length} flag(s). Rewrite each flagged sentence and rerun until 0.`);
+  if (flags.some((flag) => flag.rule === "comma-splice")) console.log("comma-splice: delete the whole sentence. A spliced line is usually a fluff acknowledgement, and splitting it with a period or joining it with 'and' keeps the fluff. Rewrite it only when it carries a fact the reader needs.");
+  console.log(`${flags.length} flag(s). Delete or rewrite each flagged sentence and rerun until 0.`);
   process.exitCode = flags.length > 0 ? 1 : 0;
 }
 

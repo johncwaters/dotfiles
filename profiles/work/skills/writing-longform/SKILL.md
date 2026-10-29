@@ -15,7 +15,7 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 2. **Title first.** Specific beats clever: a number, a concrete claim, a real dollar figure. Generic test: if a bland B2B SaaS blog would publish this title, rewrite it.
 3. **Draft with the template** that fits under [Templates](#templates).
 4. **Revise** against the checklist. Rewriting is easier than writing because now there is a problem to solve.
-5. **Lint.** Run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs --longform <draft-file>`, rewrite each flagged sentence, and rerun until it exits 0.
+5. **Lint.** Run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs --longform <draft-file>`, delete or rewrite each flagged sentence as its output says, and rerun until it exits 0.
 6. **Deliver** the piece, then at most three lines on the choices made and any open questions (missing numbers, unverified claims).
 
 ## Templates
