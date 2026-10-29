@@ -36,6 +36,7 @@ export type GraphPage = {
   fileSlug: string;
   nodes: PageNode[];
   groups: string[];
+  boxedGroups?: string[];
   edges: PageEdge[];
   edgeKinds: string[];
   unmarkedKinds: string[];
@@ -145,6 +146,9 @@ export async function renderGraphPage(page: GraphPage, layout: LayoutFunction): 
   const drawnNodesOf = (group: string) => page.nodes.filter((node) => node.isDrawn && node.group === group);
   const drawnGroups = page.groups.filter((group) => drawnNodesOf(group).length > 0);
   const isColumnLayout = page.layout === 'columns';
+  const groupIdPrefix = isColumnLayout ? 'box:' : 'profile:';
+  const boxedGroups = isColumnLayout ? drawnGroups.filter((group) => page.boxedGroups?.includes(group)) : drawnGroups;
+  const unboxedGroups = drawnGroups.filter((group) => !boxedGroups.includes(group));
   const pageEdgesById = new Map(page.edges.map((edge) => [`${edge.from}|${edge.to}|${edge.kind}`, edge]));
   async function drawGraph(drawing: GraphDrawing): Promise<{ width: number; height: number; shapes: string }> {
     function boxLayoutOptions(node: PageNode): Record<string, string> | undefined {
@@ -173,15 +177,16 @@ export async function renderGraphPage(page: GraphPage, layout: LayoutFunction): 
         'elk.json.edgeCoords': 'ROOT',
         ...(isColumnLayout ? { 'elk.partitioning.activate': 'true' } : {}),
       },
-      children: drawing.hasGroupBoxes ? drawnGroups.map((group) => ({
-        id: `profile:${group}`,
+      children: drawing.hasGroupBoxes || isColumnLayout ? [...unboxedGroups.flatMap(drawnNodesOf).map(layOutBox), ...boxedGroups.map((group) => ({
+        id: `${groupIdPrefix}${group}`,
         labels: [{ text: group, width: group.length * 7.8, height: 18 }],
         layoutOptions: {
           'elk.padding': '[top=65,left=35,bottom=35,right=35]',
           'elk.nodeLabels.placement': 'INSIDE V_TOP H_LEFT',
+          ...(isColumnLayout ? { 'elk.partitioning.partition': String(drawnNodesOf(group)[0]!.column ?? 0) } : {}),
         },
         children: drawnNodesOf(group).map(layOutBox),
-      })) : drawnGroups.flatMap(drawnNodesOf).map(layOutBox),
+      }))] : drawnGroups.flatMap(drawnNodesOf).map(layOutBox),
       edges: page.edges.map((edge) => ({ id: `${edge.from}|${edge.to}|${edge.kind}`, sources: [edge.from], targets: [edge.to] })),
     };
     const laidOut = await layout(layoutInput);
@@ -209,7 +214,7 @@ export async function renderGraphPage(page: GraphPage, layout: LayoutFunction): 
         return;
       }
       if (layoutNode.id !== 'root') {
-        const group = layoutNode.id.slice('profile:'.length);
+        const group = layoutNode.id.slice(groupIdPrefix.length);
         groupShapes.push(`<g class="profile"><rect x="${x}" y="${y}" width="${width}" height="${height}"/><text x="${x + 20}" y="${y + 25}" font-weight="700">${escapeHtml(group)}</text><text x="${x + 20}" y="${y + 43}" aria-hidden="true">${'-'.repeat(group.length)}</text></g>`);
       }
       for (const child of [...(layoutNode.children ?? [])].sort((left, right) => compareText(left.id, right.id))) drawNode(child);

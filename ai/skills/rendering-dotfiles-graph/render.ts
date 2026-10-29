@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
-import { escapeHtml, heading, renderGraphPage, writeGraphPage } from '../../lib/graph-page.mts';
+import { compareText, escapeHtml, heading, renderGraphPage, writeGraphPage } from '../../lib/graph-page.mts';
 import type { LayoutNode } from '../../lib/graph-page.mts';
 import { extractDotfilesGraph } from './extract.ts';
 import type { DotfilesGraph, EdgeKind, NodeKind } from './extract.ts';
@@ -12,6 +12,7 @@ const edgeKinds: EdgeKind[] = ['runs', 'extends', 'installs', 'sources', 'loads'
 const nodeKinds: NodeKind[] = ['profile', 'topic', 'lib', 'profileFile', 'packageGroup', 'shellFragment', 'target'];
 const columnNames = ['profiles', 'topics', 'libs and files', 'home targets'];
 const maxBoxesPerSubcolumn = 14;
+const topicColumn = 1;
 
 async function layOutWithElk(input: LayoutNode): Promise<LayoutNode> {
   const options = { ...input.layoutOptions, 'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX' };
@@ -23,10 +24,19 @@ function partitionsByNodeId(graph: DotfilesGraph, drawnIds: Set<string>): Map<st
   let firstPartitionOfColumn = 0;
   for (let column = 0; column < columnNames.length; column++) {
     const columnNodes = graph.nodes.filter((node) => node.column === column && drawnIds.has(node.id));
-    columnNodes.forEach((node, nodeIndex) => partitionById.set(node.id, firstPartitionOfColumn + Math.floor(nodeIndex / maxBoxesPerSubcolumn)));
-    firstPartitionOfColumn += Math.max(1, Math.ceil(columnNodes.length / maxBoxesPerSubcolumn));
+    const boxesPerSubcolumn = column === topicColumn ? columnNodes.length : maxBoxesPerSubcolumn;
+    columnNodes.forEach((node, nodeIndex) => partitionById.set(node.id, firstPartitionOfColumn + Math.floor(nodeIndex / boxesPerSubcolumn)));
+    firstPartitionOfColumn += Math.max(1, Math.ceil(columnNodes.length / boxesPerSubcolumn));
   }
   return partitionById;
+}
+
+function sharingSetsByTopicId(graph: DotfilesGraph): Map<string, string> {
+  const profileNamesByTopicId = new Map<string, string[]>();
+  for (const edge of graph.edges.filter((runsEdge) => runsEdge.kind === 'runs')) {
+    profileNamesByTopicId.set(edge.to, [...(profileNamesByTopicId.get(edge.to) ?? []), edge.from.slice('profile:'.length)]);
+  }
+  return new Map([...profileNamesByTopicId].map(([topicId, profileNames]) => [topicId, `run by ${[...profileNames].sort(compareText).join(' + ')}`]));
 }
 
 function signalList(label: string, items: string[]): string {
@@ -39,6 +49,21 @@ async function render(graph: DotfilesGraph): Promise<string> {
   const targetIds = new Set(graph.edges.map((edge) => edge.to));
   const entryIds = new Set(graph.edges.map((edge) => edge.from).filter((id) => !targetIds.has(id)));
   const partitionById = partitionsByNodeId(graph, connectedIds);
+  const sharingSetByTopicId = sharingSetsByTopicId(graph);
+  const sharingSets = [...new Set(sharingSetByTopicId.values())].sort((left, right) => right.split(' + ').length - left.split(' + ').length || compareText(left, right));
+  const topicCount = graph.nodes.filter((node) => node.kind === 'topic').length;
+  const sourcingTopicCountByLibId = new Map<string, number>();
+  for (const edge of graph.edges.filter((sourcesEdge) => sourcesEdge.kind === 'sources' && sourcesEdge.from.startsWith('topic:'))) {
+    sourcingTopicCountByLibId.set(edge.to, (sourcingTopicCountByLibId.get(edge.to) ?? 0) + 1);
+  }
+  const hubLibIds = new Set([...sourcingTopicCountByLibId].filter(([, sourcingTopicCount]) => sourcingTopicCount * 2 >= topicCount).map(([libId]) => libId));
+  const drawnEdges = [
+    ...graph.edges.filter((edge) => edge.kind !== 'runs' && !(edge.kind === 'sources' && hubLibIds.has(edge.to))),
+    ...[...new Set(graph.edges.filter((edge) => edge.kind === 'runs').map((edge) => `${edge.from}\n${sharingSetByTopicId.get(edge.to)}`))].map((profileAndSet) => {
+      const [profileId, sharingSet] = profileAndSet.split('\n') as [string, string];
+      return { from: profileId, to: `box:${sharingSet}`, kind: 'runs' as const };
+    }),
+  ];
   const cycleByNodeId = new Map(graph.signals.sourceCycles.flatMap((cycle, cycleIndex) => cycle.map((id) => [id, cycleIndex] as const)));
   const { unrunTopics, unsourcedLibs, unreferencedFiles, sourceCycles } = graph.signals;
   const edgeRows = graph.edges.map((edge) => `<tr><td>${escapeHtml(edge.from)}</td><td>${edge.kind}${edge.order ? ` #${edge.order}` : ''}</td><td>${escapeHtml(edge.to)}</td></tr>`).join('\n');
@@ -65,17 +90,18 @@ ${kindRows}
       id: node.id,
       name: node.name,
       kind: node.kind,
-      group: columnNames[node.column]!,
+      group: sharingSetByTopicId.get(node.id) ?? columnNames[node.column]!,
       column: partitionById.get(node.id) ?? 0,
       hoverTitle: `${node.id} / ${node.path}`,
-      detailLines: node.lines,
+      detailLines: hubLibIds.has(node.id) ? [...node.lines, `sourced by ${sourcingTopicCountByLibId.get(node.id)} topics`] : node.lines,
       cardLine: node.name,
       files: node.files,
       isEntry: entryIds.has(node.id),
       isDrawn: connectedIds.has(node.id),
     })),
-    groups: columnNames,
-    edges: graph.edges.map((edge) => {
+    groups: [...columnNames, ...sharingSets],
+    boxedGroups: sharingSets,
+    edges: drawnEdges.map((edge) => {
       const isCycle = edge.kind === 'sources' && cycleByNodeId.has(edge.from) && cycleByNodeId.get(edge.from) === cycleByNodeId.get(edge.to);
       return { from: edge.from, to: edge.to, kind: edge.kind, title: `${edge.from} ${edge.kind}${edge.order ? ` #${edge.order}` : ''} ${edge.to}${isCycle ? ' (cycle)' : ''}`, isSignal: isCycle };
     }),
