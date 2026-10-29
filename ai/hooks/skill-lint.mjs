@@ -321,6 +321,11 @@ function readParentProfileName(repoRoot, profileName) {
   }
 }
 
+function draftLintViolations(body, bodyStartLine, skillName, isExtension) {
+  if (!skillName.startsWith("writing-") || isExtension || body.includes("lint-draft.mjs")) return [];
+  return [violation("draft-lint", bodyStartLine, `writing skill '${skillName}' never tells the agent to run lint-draft.mjs`, "Add a step running `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs` on every external draft and rewriting until it exits 0.")];
+}
+
 function isExtensionSkill(skillName, skillNames) {
   for (let separator = skillName.indexOf("-"); separator >= 0; separator = skillName.indexOf("-", separator + 1)) {
     if (skillNames.has(skillName.slice(0, separator))) return true;
@@ -354,6 +359,7 @@ export function lintSkillFile(filePath, rawContent) {
   found.push(...descriptionViolations(readFrontmatterField(parts.frontmatter, "description")));
   found.push(...bodyViolations(parts.body, parts.bodyStartLine, isExtensionSkill(skillName, skillNames)));
   found.push(...scriptViolations(parts.body, parts.bodyStartLine, skillDirectory));
+  found.push(...draftLintViolations(parts.body, parts.bodyStartLine, skillName, isExtensionSkill(skillName, skillNames)));
   return found;
 }
 
