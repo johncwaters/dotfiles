@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { archiveSpec } from "./archive.ts";
 import type { DesignSpec } from "./lib/graph.ts";
+import { readTicketHistory } from "./lib/ticket-history.ts";
+import type { TicketHistory } from "./lib/ticket-history.ts";
 
-type TicketHistory = Map<string, Map<string, number[]>>;
 type StoredSpec = { specPath: string; repo: string; spec: Partial<DesignSpec> };
 
 function warn(message: string): void {
@@ -20,7 +20,7 @@ function readStoredSpecs(directory: string): StoredSpec[] {
     if (!repo.isDirectory()) continue;
     const repoDirectory = path.join(directory, repo.name);
     for (const entry of fs.readdirSync(repoDirectory, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".json") || entry.name.endsWith(".intent.json")) continue;
+      if (!entry.isFile() || entry.name.startsWith(".") || !entry.name.endsWith(".json") || entry.name.endsWith(".intent.json")) continue;
       const specPath = path.join(repoDirectory, entry.name);
       try {
         const spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
@@ -36,28 +36,12 @@ function readStoredSpecs(directory: string): StoredSpec[] {
 
 export function reportSpecs(now = new Date()): void {
   const historyByRepoRoot = new Map<string, TicketHistory | undefined>();
-  function readTicketHistory(repoRoot: string | undefined): TicketHistory | undefined {
+  function readCachedTicketHistory(repoRoot: string | undefined): TicketHistory | undefined {
     if (typeof repoRoot !== "string" || repoRoot.trim() === "") return undefined;
     if (historyByRepoRoot.has(repoRoot)) return historyByRepoRoot.get(repoRoot);
-    const historyProcess = spawnSync("git", ["-C", repoRoot, "log", "--all", "--format=%x1e%ct%x1f%(trailers:key=Ticket,valueonly)"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-    if (historyProcess.status !== 0) {
-      historyByRepoRoot.set(repoRoot, undefined);
-      warn(`Cannot read ticket history for ${repoRoot}: ${historyProcess.error?.message ?? historyProcess.stderr.trim()}`);
-      return undefined;
-    }
-    const history: TicketHistory = new Map();
-    for (const commit of historyProcess.stdout.split("\x1e").slice(1)) {
-      const [timestamp, trailers = ""] = commit.split("\x1f");
-      const committedAtMs = Number(timestamp) * 1000;
-      for (const trailer of trailers.trim().split(/\r?\n/)) {
-        const ticket = trailer.trim().match(/^([^\s/]+)\/([^\s/]+)$/);
-        if (!ticket) continue;
-        const [, slug, unitId] = ticket;
-        const commitTimesByUnitId = history.get(slug) ?? new Map<string, number[]>();
-        commitTimesByUnitId.set(unitId, [...(commitTimesByUnitId.get(unitId) ?? []), committedAtMs]);
-        history.set(slug, commitTimesByUnitId);
-      }
-    }
+    const historyRead = readTicketHistory(repoRoot);
+    if (historyRead.outcome === "UNREADABLE") warn(`Cannot read ticket history for ${repoRoot}: ${historyRead.reason}`);
+    const history = historyRead.outcome === "READ" ? historyRead.history : undefined;
     historyByRepoRoot.set(repoRoot, history);
     return history;
   }
@@ -74,7 +58,7 @@ export function reportSpecs(now = new Date()): void {
       if (specModifiedAtMs >= staleBeforeMs) continue;
       const intentPath = specPath.replace(/\.json$/, ".intent.json");
       if (fs.existsSync(intentPath) && fs.statSync(intentPath).mtimeMs >= staleBeforeMs) continue;
-      const history = readTicketHistory(spec.repoRoot);
+      const history = readCachedTicketHistory(spec.repoRoot);
       if (!history) continue;
       const slug = path.basename(specPath, ".json");
       if ([...(history.get(slug)?.values() ?? [])].flat().some((committedAtMs) => committedAtMs > specModifiedAtMs)) continue;
@@ -104,7 +88,7 @@ export function reportSpecs(now = new Date()): void {
     const slugInRepo = `${repo}/${slug}`;
     const windowStartMs = previousArchiveEndMsBySlugInRepo.get(slugInRepo) ?? -Infinity;
     previousArchiveEndMsBySlugInRepo.set(slugInRepo, archiveDayEndMs);
-    const history = readTicketHistory(spec.repoRoot);
+    const history = readCachedTicketHistory(spec.repoRoot);
     const nodes = spec.nodes ?? [];
     const units = nodes.filter((node) => node.kind === "unit");
     const isLandedInWindow = (committedAtMs: number) => committedAtMs >= windowStartMs && committedAtMs < archiveDayEndMs;

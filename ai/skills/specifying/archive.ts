@@ -3,10 +3,28 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { readTicketHistory } from "./lib/ticket-history.ts";
 
 type ArchiveReport =
   | { outcome: "ARCHIVED"; specPath: string; intentPath: string | null }
   | { outcome: "REFUSED"; errors: string[] };
+
+function findPreviousArchiveMs(archiveDirectory: string, slug: string): number | undefined {
+  if (!fs.existsSync(archiveDirectory)) return undefined;
+  const archiveTimes = fs.readdirSync(archiveDirectory)
+    .filter((name) => name.match(/^(.+)\.(?:built|abandoned)\.\d{4}-\d{2}-\d{2}(?:\.\d+)?\.json$/)?.[1] === slug)
+    .map((name) => fs.statSync(path.join(archiveDirectory, name)).mtimeMs);
+  return archiveTimes.length === 0 ? undefined : Math.max(...archiveTimes);
+}
+
+function findUnlandedUnitErrors(spec: { repoRoot: string; nodes?: { id: string; kind: string }[] }, slug: string, sinceMs: number | undefined): string[] {
+  const historyRead = readTicketHistory(spec.repoRoot, { sinceMs, isPushedOnly: true });
+  if (historyRead.outcome === "UNREADABLE") return [`cannot read Ticket trailers in ${spec.repoRoot}: ${historyRead.reason}`];
+  const landedUnitIds = historyRead.history.get(slug) ?? new Map<string, number[]>();
+  return (spec.nodes ?? [])
+    .filter((node) => node.kind === "unit" && !landedUnitIds.has(node.id))
+    .map((unit) => `${unit.id}: no pushed commit carries trailer Ticket: ${slug}/${unit.id}; land it or archive abandoned`);
+}
 
 export function archiveSpec(specArgument: string | undefined, outcome: string | undefined, now = new Date()): ArchiveReport {
   const errors: string[] = [];
@@ -33,6 +51,11 @@ export function archiveSpec(specArgument: string | undefined, outcome: string | 
     const intentBytes = fs.existsSync(intentPath) ? fs.readFileSync(intentPath) : null;
     const archiveDirectory = path.join(os.homedir(), ".claude", "spec-archive", repo);
     const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    if (outcome === "built") {
+      if (intentBytes === null) return { outcome: "REFUSED", errors: [`built needs ${slug}.intent.json; cut the spec first or archive abandoned`] };
+      const unlandedUnitErrors = findUnlandedUnitErrors(spec, slug, findPreviousArchiveMs(archiveDirectory, slug));
+      if (unlandedUnitErrors.length > 0) return { outcome: "REFUSED", errors: unlandedUnitErrors };
+    }
     fs.mkdirSync(archiveDirectory, { recursive: true });
 
     for (let sequence = 1; ; sequence += 1) {
