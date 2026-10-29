@@ -27,6 +27,8 @@ test("sensitive PostHog writes ask before running", () => {
     "call experiment-reset {}",
     "call survey-launch {}",
     "call workflows-enable {}",
+    "call conversations-tickets-compose-create {}",
+    "call conversations-tickets-reply-create {}",
     "  call  Insight-Delete {}",
   ]) {
     assert.equal(decisionFor(execCall(command)), "ask", command);
@@ -38,6 +40,7 @@ test("routine writes and reads run without a prompt", () => {
     "call insight-create {}",
     "call dashboard-update {}",
     "call experiment-pause {}",
+    "call conversations-tickets-notes-create {}",
     "call feature-flag-get-all {}",
     "call feature-flags-list {}",
     "call execute-sql {\"query\":\"select delete from events\"}",

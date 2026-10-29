@@ -6,7 +6,7 @@ const CALLED_POSTHOG_TOOL = /^\s*call\s+(?:--json\s+)?([A-Za-z0-9_-]+)/;
 const WRITE_VERB =
   /(?:^|-)(?:archive|cancel|create|delete|destroy|disable|duplicate|enable|end|invocations|launch|materialize|merge|move|partial-update|pause|rearrange|reload|rename|reorder|reset|restore|resume|resync|retry|set|ship|unarchive|unmaterialize|update)(?:-|$)/i;
 const SENSITIVE_WRITE =
-  /feature-flag|delete|destroy|^(?:experiment-launch|experiment-ship-variant|experiment-reset|survey-launch|workflows-enable)$/i;
+  /feature-flag|delete|destroy|^(?:experiment-launch|experiment-ship-variant|experiment-reset|survey-launch|workflows-enable|conversations-tickets-compose-create|conversations-tickets-reply-create)$/i;
 
 function sensitivePosthogWrite(payload) {
   if (!POSTHOG_EXEC_TOOL.test(String(payload.tool_name || ""))) return "";
