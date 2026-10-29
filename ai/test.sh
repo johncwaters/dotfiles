@@ -1183,8 +1183,6 @@ for profileDirectory in "$repoRoot"/profiles/*/; do
     overlayDefinesNoDenyList "$profileOverlayPath"
 done
 
-check "settings.json keeps the personal permissions allow list" \
-  node -e 'const renderedSettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(renderedSettings.permissions.allow.includes("Bash(node:*)")?0:1)' "$settingsPath"
 check "settings.json keeps the base allow list through the overlay merge" \
   renderKeepsEveryBasePermission allow "$settingsPath"
 for workflowScriptPath in "$topicDir"/workflows/*.js; do

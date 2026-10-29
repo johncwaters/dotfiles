@@ -60,7 +60,8 @@
       "Bash(gh auth status* --show-token*)",
       "Bash(gh auth status* -t*)",
       "Bash(gh config get* oauth_token*)"
-    ]
+    ],
+    "defaultMode": "auto"
   },
   "hooks": {
     "PreToolUse": [
@@ -178,5 +179,6 @@
   "awaySummaryEnabled": false,
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark"
 }

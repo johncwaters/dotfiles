@@ -14,11 +14,7 @@
   },
   "enabledPlugins": {
     "caveman@caveman": true,
-    "cc-plugin-diff@builtin": false,
-    "typescript-lsp@claude-plugins-official": true,
-    "posthog@claude-plugins-official": false,
-    "github@claude-plugins-official": false,
-    "postiz@skills-dir": false
+    "cc-plugin-diff@builtin": false
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -26,21 +22,12 @@
         "source": "github",
         "repo": "JuliusBrussee/caveman"
       }
-    },
-    "claude-community": {
-      "source": {
-        "source": "github",
-        "repo": "anthropics/claude-plugins-community"
-      }
     }
   },
   "permissions": {
     "allow": [
       "Workflow(plan-challenge)",
-      "Workflow(qa-swarm)",
-      "Bash(node:*)",
-      "Bash(ls:*)",
-      "WebFetch(domain:unpkg.com)"
+      "Workflow(qa-swarm)"
     ],
     "deny": [
       "EnterPlanMode",
@@ -211,7 +198,5 @@
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
-  "spinnerTipsEnabled": false,
-  "alwaysThinkingEnabled": true,
-  "theme": "auto"
+  "theme": "dark"
 }
