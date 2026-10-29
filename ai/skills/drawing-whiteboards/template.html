@@ -7,35 +7,37 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <style>
-  :root { --ink:#1f2937; --paper:#fbfaf6; --muted:#6b7280; --ghost:#9ca3af; }
+  :root { --ink:#e6e3dc; --paper:#2a2e35; --board:#343a43; --box:#3f4651; --frame:#39404a; --ext:#353b44; --border:#4a515c; --muted:#a7adb6; --label:#c4c8ce; --ghost:#7d8591; --fail:#f07272; --join:#5cc28a; color-scheme:dark; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--paper); color:var(--ink); font-family:Inter, system-ui, sans-serif; }
   main { max-width:1640px; margin:0 auto; padding:28px 24px 60px; }
   h1 { font-family:Kalam, cursive; font-weight:700; font-size:34px; margin:0 0 4px; }
   .sub { color:var(--muted); margin:0 0 18px; font-size:15px; }
   .sub a { color:inherit; }
-  figure { margin:0; background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:12px; overflow-x:auto; box-shadow:0 1px 0 #0000000a; }
+  figure { margin:0; background:var(--board); border:1px solid var(--border); border-radius:14px; padding:12px; overflow-x:auto; box-shadow:0 1px 0 #00000033; }
   svg { display:block; width:100%; min-width:1100px; height:auto; color:var(--ink); }
   figcaption { font-size:14px; color:var(--muted); padding:10px 6px 2px; }
   svg text { font-family:Kalam, cursive; fill:currentColor; }
   .t { font-size:17px; font-weight:700; }
   .s { font-size:13.5px; }
   .x { font-size:12.5px; fill:var(--muted); }
-  .box { fill:#fff; stroke:currentColor; stroke-width:1.8; }
+  .box { fill:var(--box); stroke:currentColor; stroke-width:1.8; }
   .final { stroke-width:2.6; }
   .ghost { fill:none; stroke:var(--ghost); stroke-width:1.6; stroke-dasharray:6 5; }
   .ghost-t { fill:var(--ghost); }
-  .ext { fill:#f3f4f6; stroke:var(--muted); stroke-width:1.4; }
+  .ext { fill:var(--ext); stroke:var(--muted); stroke-width:1.4; }
+  .frame { fill:var(--frame); stroke:currentColor; stroke-width:2; }
+  .junction { fill:var(--ink); }
   .wire { fill:none; stroke:currentColor; stroke-width:1.7; }
   .dash { stroke-dasharray:6 5; }
   {{laneCss}}
-  .tag text { fill:#fff; font-family:Inter, sans-serif; font-size:11px; font-weight:600; }
+  .tag text { fill:var(--paper); font-family:Inter, sans-serif; font-size:11px; font-weight:600; }
   section.notes { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:18px; margin-top:24px; }
-  .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px 18px; }
+  .card { background:var(--board); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
   .card h2 { font-family:Kalam, cursive; font-size:22px; margin:0 0 8px; }
   .card ul { margin:0; padding-left:18px; font-size:14.5px; line-height:1.5; }
   .card li { margin-bottom:6px; }
-  code { font-size:13px; background:#f3f4f6; padding:1px 4px; border-radius:4px; }
+  code { font-size:13px; background:var(--ext); padding:1px 4px; border-radius:4px; }
 </style>
 </head>
 <body>

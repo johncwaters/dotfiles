@@ -77,16 +77,16 @@ const paddingBottomPx = 12;
 const labelGapPx = 5;
 const textClearancePx = 2;
 const labelSlideFractions = [0.5, 0.35, 0.65, 0.2, 0.8];
-const labelFillByStyle: Partial<Record<EdgeStyle, string>> = { fail: '#b91c1c', join: '#15803d', ghost: '#9ca3af' };
+const labelFillByStyle: Partial<Record<EdgeStyle, string>> = { fail: 'var(--fail)', join: 'var(--join)', ghost: 'var(--ghost)' };
 const pathStyleByEdgeStyle: Record<EdgeStyle, { attributes: string; marker: string }> = {
   solid: { attributes: 'class="wire"', marker: 'arrow' },
   dashed: { attributes: 'class="wire dash"', marker: 'arrow' },
-  fail: { attributes: 'class="wire dash" style="stroke:#b91c1c"', marker: 'arrow-red' },
-  join: { attributes: 'class="wire dash" style="stroke:#15803d"', marker: 'arrow-green' },
-  ghost: { attributes: 'class="wire dash" style="stroke:#9ca3af"', marker: 'arrow-grey' },
+  fail: { attributes: 'class="wire dash" style="stroke:var(--fail)"', marker: 'arrow-red' },
+  join: { attributes: 'class="wire dash" style="stroke:var(--join)"', marker: 'arrow-green' },
+  ghost: { attributes: 'class="wire dash" style="stroke:var(--ghost)"', marker: 'arrow-grey' },
 };
-const arrowMarkers = ([['arrow', '#1f2937'], ['arrow-red', '#b91c1c'], ['arrow-green', '#15803d'], ['arrow-grey', '#9ca3af']] as const)
-  .map(([name, color]) => `<marker id="${name}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker>`)
+const arrowMarkers = ([['arrow', 'var(--ink)'], ['arrow-red', 'var(--fail)'], ['arrow-green', 'var(--join)'], ['arrow-grey', 'var(--ghost)']] as const)
+  .map(([name, color]) => `<marker id="${name}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:${color}"/></marker>`)
   .join('');
 
 function boxHeight(box: Box): number {
@@ -278,7 +278,7 @@ function labelCandidates(edge: Edge, owner: string, points: Point[], extraSegmen
   const segments = pathSegments(points);
   const preferred = { first: segments.slice(0, 1), last: segments.slice(-1), longest: [] }[edge.labelOn ?? 'first'];
   const byLength = [...segments].sort((first, second) => segmentLengthPx(second) - segmentLengthPx(first));
-  const fill = labelFillByStyle[edge.style ?? 'solid'] ?? '#4b5563';
+  const fill = labelFillByStyle[edge.style ?? 'solid'] ?? 'var(--label)';
   const label = edge.label!;
   return [...preferred, ...byLength, ...extraSegments].flatMap(([[x1, y1], [x2, y2]]) => labelSlideFractions.flatMap((fraction) => {
     const middleX = x1 + (x2 - x1) * fraction;
@@ -471,7 +471,7 @@ export function layOut(board: Board): Layout {
 }
 
 function renderBoxShape(box: PlacedBox): string {
-  if (box.kind === 'frame') return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="16" fill="#f8fafc" stroke="currentColor" stroke-width="2"/>`;
+  if (box.kind === 'frame') return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="16" class="frame"/>`;
   const shapeClass = { box: 'box', ext: 'ext', ghost: 'ghost', final: 'box final' }[box.kind];
   const laneClass = box.lane ? ` lane-${box.lane}` : '';
   return `<rect class="${shapeClass}${laneClass}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10"/>`;
@@ -488,7 +488,7 @@ function renderSvg(layout: Layout, board: Board): string {
   const parts = [
     ...boxes.filter((box) => box.kind === 'frame').map(renderBoxShape),
     ...layout.paths.map(renderPath),
-    ...layout.junctions.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="#1f2937"/>`),
+    ...layout.junctions.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="junction"/>`),
     ...boxes.filter((box) => box.kind !== 'frame').map(renderBoxShape),
     ...layout.tags.map((tag) => `<g class="tag"><rect class="lane-fill-${tag.lane}" x="${tag.x}" y="${tag.box.y + 8}" width="40" height="18" rx="9"/><text x="${tag.x + 10}" y="${tag.box.y + 21}">${escapeHtml(tag.label)}</text></g>`),
     ...layout.texts.map(renderText),

@@ -47,7 +47,7 @@ export default function drawBoard({ boxBottom, row, stack }: BoardHelpers): Boar
       steps: { x: 665, width: 280 },
       delivery: { x: 1020, width: 260 },
     },
-    lanes: { web: { color: '#2563eb', tag: 'web' }, billing: { color: '#c2410c', tag: 'bill' } },
+    lanes: { web: { color: '#6b9cf5', tag: 'web' }, billing: { color: '#f0915a', tag: 'bill' } },
     headings: [
       { x: 20, y: 40, text: 'SOURCES' },
       { x: 280, y: 40, text: 'ADAPTERS · plain code' },
