@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { compareText, findCycles } from '../../lib/graph-page.mts';
 
 export type NodeKind = 'skill' | 'agent' | 'workflow' | 'hook';
 export type EdgeKind = 'loads' | 'mentions' | 'extends' | 'runs' | 'spawns' | 'names';
@@ -17,12 +18,6 @@ export type GraphNode = {
 };
 export type GraphEdge = { from: string; to: string; kind: EdgeKind };
 export type SkillGraph = { nodes: GraphNode[]; edges: GraphEdge[]; isolated: string[]; cycles: string[][] };
-
-export function compareText(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
-}
 
 function entries(directory: string): fs.Dirent[] {
   if (!fs.existsSync(directory)) return [];
@@ -82,44 +77,6 @@ function tokenizeSource(source: string): { literals: Set<string>; agents: Set<st
     isAgentValue = false;
   }
   return { literals, agents };
-}
-
-function findCycles(nodes: GraphNode[], edges: GraphEdge[]): string[][] {
-  const outgoingById = new Map(nodes.map((node) => [node.id, [] as string[]]));
-  for (const edge of edges) outgoingById.get(edge.from)!.push(edge.to);
-  const discoveryById = new Map<string, number>();
-  const lowLinkById = new Map<string, number>();
-  const stack: string[] = [];
-  const stackedIds = new Set<string>();
-  const cycles: string[][] = [];
-  let nextIndex = 0;
-  function visit(id: string): void {
-    discoveryById.set(id, nextIndex);
-    lowLinkById.set(id, nextIndex++);
-    stack.push(id);
-    stackedIds.add(id);
-    for (const target of outgoingById.get(id)!) {
-      if (!discoveryById.has(target)) {
-        visit(target);
-        lowLinkById.set(id, Math.min(lowLinkById.get(id)!, lowLinkById.get(target)!));
-        continue;
-      }
-      if (stackedIds.has(target)) lowLinkById.set(id, Math.min(lowLinkById.get(id)!, discoveryById.get(target)!));
-    }
-    if (lowLinkById.get(id) !== discoveryById.get(id)) return;
-    const component: string[] = [];
-    while (stack.length > 0) {
-      const member = stack.pop()!;
-      stackedIds.delete(member);
-      component.push(member);
-      if (member === id) break;
-    }
-    if (component.length > 1) cycles.push(component.sort(compareText));
-  }
-  for (const node of nodes) {
-    if (!discoveryById.has(node.id)) visit(node.id);
-  }
-  return cycles.sort((left, right) => compareText(left.join('\n'), right.join('\n')));
 }
 
 export function extractGraph(repoRoot: string): SkillGraph {
@@ -255,5 +212,5 @@ export function extractGraph(repoRoot: string): SkillGraph {
   }
   const edges = [...edgesById.entries()].sort(([left], [right]) => compareText(left, right)).map(([, edge]) => edge);
   const connectedIds = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
-  return { nodes, edges, isolated: nodes.filter((node) => !connectedIds.has(node.id)).map((node) => node.id), cycles: findCycles(nodes, edges.filter((edge) => edge.kind !== 'mentions' && edge.kind !== 'extends')) };
+  return { nodes, edges, isolated: nodes.filter((node) => !connectedIds.has(node.id)).map((node) => node.id), cycles: findCycles(nodes.map((node) => node.id), edges.filter((edge) => edge.kind !== 'mentions' && edge.kind !== 'extends')) };
 }
