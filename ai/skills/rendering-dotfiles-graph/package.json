@@ -1,0 +1,7 @@
+{
+  "name": "rendering-dotfiles-graph",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": { "elkjs": "0.12.0" }
+}
