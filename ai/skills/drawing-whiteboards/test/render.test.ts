@@ -6,8 +6,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import exampleBoard from '../examples/webhook-to-email.ts';
-import { layOut } from '../render.ts';
+import drawExampleBoard from '../examples/webhook-to-email.ts';
+import { boardHelpers, layOut } from '../render.ts';
 
 const executeFile = promisify(execFile);
 const rendererPath = fileURLToPath(new URL('../render.ts', import.meta.url));
@@ -20,7 +20,7 @@ test('renders the example board to a page, and refuses a copy with an overlappin
   await executeFile(process.execPath, [rendererPath, examplePath, outputPath]);
   assert.match(await readFile(outputPath, 'utf8'), /<svg viewBox="0 0 1300 770"/);
 
-  const brokenBoard = structuredClone(exampleBoard);
+  const brokenBoard = drawExampleBoard(boardHelpers);
   brokenBoard.boxes.push({ id: 'stray', column: 'steps', y: 150, title: 'a box dropped on step 1' });
   brokenBoard.edges.push({ from: 'inbox', to: 'nowhere' });
   assert.deepEqual(layOut(brokenBoard).problems, ['inbox->nowhere: unknown box "nowhere"']);

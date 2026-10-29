@@ -14,7 +14,7 @@ The answer and the ask both sit above the fold: a reader who stops after the fir
 ## Rules
 
 - **Cut what does not move a decision.** Methodology narration, "how we got here" stories, and source lists go to the appendix or go away. When the author deletes a section, the doc did not need it.
-- **One diagram per question.** A logical flow ("what happens to a PR") and an infrastructure map ("what runs where, across which trust boundary") answer different questions; a design section needs the second. Every box names where it runs, and every edge names what crosses it.
+- **One diagram per question.** A logical flow ("what happens to a PR") and an infrastructure map ("what runs where, across which trust boundary") answer different questions; a design section needs the second. Every box names where it runs, and every edge names what crosses it. Draw it with `drawing-whiteboards`.
 - **Scope in a table.** What the MVP covers, what comes later, and what is permanently out of scope, side by side, so a reader sees the edges without reading prose.
 - **Mark the author's decisions as theirs.** Where a choice is still the author's to make, leave a visible TODO naming the choice for the author to fill in.
 - **Borrow the story, keep the answer first.** Load `storytelling` for its work-doc row: frame the change on a real timeline, name the problem as the villain, give each number a comparison, and show it working.

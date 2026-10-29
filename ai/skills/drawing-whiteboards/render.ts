@@ -97,6 +97,9 @@ export function boxBottom(box: Box): number {
   return box.y + boxHeight(box);
 }
 
+export type BoardHelpers = { stack: typeof stack; row: typeof row; boxBottom: typeof boxBottom };
+export type DrawBoard = (helpers: BoardHelpers) => Board;
+
 export function stack(boxes: Box[], startY: number, gapPx: number): Box[] {
   let nextY = startY;
   for (const box of boxes) {
@@ -409,8 +412,10 @@ function checkBoxes(layout: Layout): void {
 function checkSharedEndpoints(layout: Layout): void {
   const ownerByPoint = new Map<string, string>();
   for (const drawn of layout.paths) {
-    if (drawn.id.startsWith('bus:') || layout.edges[Number(drawn.id.slice(4))].bus) continue;
-    for (const point of [drawn.points[0], drawn.points[drawn.points.length - 1]]) {
+    const isBusTrunk = drawn.id.startsWith('bus:');
+    if (!isBusTrunk && layout.edges[Number(drawn.id.slice(4))].bus) continue;
+    const endpoints = isBusTrunk ? [drawn.points[drawn.points.length - 1]] : [drawn.points[0], drawn.points[drawn.points.length - 1]];
+    for (const point of endpoints) {
       const key = `${Math.round(point[0])},${Math.round(point[1])}`;
       const owner = ownerByPoint.get(key);
       if (owner) layout.problems.push(`${describePath(drawn.id, layout)} and ${describePath(owner, layout)} share the point ${key}`);
@@ -514,13 +519,33 @@ function renderPage(board: Board, svg: string): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, slot: string) => slots[slot]);
 }
 
+export const boardHelpers: BoardHelpers = { stack, row, boxBottom };
+
+async function screenshotPage(pagePath: string, screenshotPath: string, board: Board): Promise<void> {
+  const { chromium } = await import('playwright-core');
+  const { launchCaptureBrowser } = await import('../../lib/headless-chrome.mjs');
+  const browser = await launchCaptureBrowser(chromium);
+  try {
+    const page = await browser.newPage({ viewport: { width: board.width + 100, height: 900 } });
+    await page.goto(pathToFileURL(path.resolve(pagePath)).href, { waitUntil: 'networkidle' });
+    await page.evaluate(() => document.fonts.ready);
+    const hasKalam = await page.evaluate(() => document.fonts.check('17px Kalam'));
+    if (!hasKalam) console.log('warning: Kalam did not load, so text widths in the screenshot differ from the ones the checks measured');
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main(): Promise<void> {
-  const [boardPath, outputPath] = process.argv.slice(2);
-  if (!boardPath || !outputPath) {
-    console.error('usage: node render.ts <board.ts> <out.html>');
+  const [boardPath, outputPath, flag, screenshotPath] = process.argv.slice(2);
+  const hasValidScreenshotFlag = flag === undefined || (flag === '--screenshot' && screenshotPath !== undefined);
+  if (!boardPath || !outputPath || !hasValidScreenshotFlag) {
+    console.error('usage: node render.ts <board.ts> <out.html> [--screenshot <out.png>]');
     process.exit(2);
   }
-  const board: Board = (await import(pathToFileURL(path.resolve(boardPath)).href)).default;
+  const drawBoard: DrawBoard = (await import(pathToFileURL(path.resolve(boardPath)).href)).default;
+  const board = drawBoard(boardHelpers);
   const layout = layOut(board);
   for (const warning of layout.warnings) console.log(warning);
   if (layout.problems.length) {
@@ -530,6 +555,7 @@ async function main(): Promise<void> {
   fs.mkdirSync(path.dirname(path.resolve(outputPath)), { recursive: true });
   fs.writeFileSync(outputPath, renderPage(board, renderSvg(layout, board)));
   console.log(`ok: ${layout.boxesById.size} boxes, ${layout.paths.length} paths, ${layout.texts.length} text items, no overlaps`);
+  if (screenshotPath) await screenshotPage(outputPath, screenshotPath, board);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) main();
