@@ -21,7 +21,9 @@ Lead with the verdict in bold, in one or two sentences. Then:
    region you couldn't query.
 3. **Customer reply**: draft it with the `writing-in-voice` skill, not the MCP's
    `compose-draft-reply`, since the carbon unit sends it in their own voice. Say whether anything was
-   misconfigured, what to do next, and the cost or impact in their numbers. State
+   misconfigured, what to do next, and the cost or impact in their numbers. Check their
+   plan before naming a support route: a free org often can't open a ticket from Help, so
+   when PostHog has to act, say we'll open an email ticket on their behalf. State
    timestamps in the customer's timezone, or say which timezone they're in. Describe only
    what their own data shows, and put platform-wide reach ("others hit this since Oct 14")
    in the Owning team message. When the fix sits with another team, close with
