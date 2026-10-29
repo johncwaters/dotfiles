@@ -669,19 +669,7 @@ for repoSkillPath in "$stagedTopicDir"/skills/*; do
 done
 retiredSkillPath="$skillsPath/retired-skill-test"
 ln -s "$sandbox/.dotfiles/ai/skills/retired-skill-test" "$retiredSkillPath"
-retiredCommandPath="$sandbox/.claude/commands/seo-audit.md"
-mkdir -p "$sandbox/.claude/commands"
-ln -s "$sandbox/.dotfiles/ai/commands/seo-audit.md" "$retiredCommandPath"
-printf 'foreign command\n' > "$sandbox/.claude/commands/foreign.md"
-ln -s "$sandbox/.claude/commands/foreign.md" "$sandbox/.claude/commands/foreign-link.md"
 runTopicInstall "$stagedTopicDir" > /dev/null
-check "a retired command link is removed without displacing foreign commands" \
-  bash -c '[[ ! -e "$1" && ! -L "$1" && -L "$3" ]] && grep -qx "foreign command" "$2"' _ \
-  "$retiredCommandPath" "$sandbox/.claude/commands/foreign.md" "$sandbox/.claude/commands/foreign-link.md"
-ln -s "$stagedRepo/ai/commands/seo-audit.md" "$retiredCommandPath"
-runTopicInstall "$stagedTopicDir" > /dev/null
-check "a retired command link through the clone path is removed" \
-  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$retiredCommandPath"
 check "a retired repo skill link is removed" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$retiredSkillPath"
 

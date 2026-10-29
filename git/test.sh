@@ -194,21 +194,6 @@ check "the relative include was rebased onto the XDG dir" \
   grep -qF "path = $sandbox/.config/git/identity" "$sandbox/.gitconfig.local"
 check "the sibling include still applies after retirement" test "$(gitConfigValue user.name)" = "Sibling Author"
 
-startGitSandbox "git-retired-stub"
-printf '[user]\n\tname = Stub Author\n' > "$sandbox/.gitconfig.local"
-printf '[include]\n\tpath = ~/.dotfiles/git/gitconfig\n\tpath = ~/.gitconfig.local\n[commit]\n\tgpgsign = true\n' \
-  > "$sandbox/.gitconfig"
-retiredStubStatus=0
-runInstall > /dev/null || retiredStubStatus=$?
-check "a retired stub migrates clean" test "$retiredStubStatus" -eq 0
-check "the retired stub lost its include of the repo config" \
-  bash -c '! grep -qF ".dotfiles" "$1"' _ "$sandbox/.gitconfig"
-check "what was appended to the retired stub survives" test "$(gitConfigValue commit.gpgsign)" = "true"
-check "the retired stub still reaches the local config" test "$(gitConfigValue user.name)" = "Stub Author"
-check "the retired stub machine still sees the shared defaults" test "$(gitConfigValue pull.rebase)" = "true"
-check "the retired stub was not backed up as foreign" bash -c '! test -e "$1"' _ "$sandbox/.gitconfig.pre-dotfiles.bak"
-checkRerunIsQuiet "a migrated stub reruns quiet" "$(runInstall)"
-
 startGitSandbox "git-moved-clone"
 mkdir -p "$sandbox/before-move"
 cp -R "$repoRoot/script" "$repoRoot/profiles" "$topicDir" "$sandbox/before-move/"

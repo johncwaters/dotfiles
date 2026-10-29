@@ -252,16 +252,11 @@ installProfileSkillDependencies() {
 
 convergeSharedEntryDirectory skills skill
 convergeSharedEntryDirectory agents agent
-removeRetiredEntryLinks shared commands command
 convergeSharedEntryDirectory workflows workflow
 installSharedSkillDependencies
 
 linkEntry "AGENTS.md" "ai/AGENTS.md" "$claudeHome/AGENTS.md"
 linkEntry "MODELS.md" "ai/MODELS.md" "$claudeHome/MODELS.md"
-if pathIsLinkIntoThisRepo "$claudeHome/ROUTING.md"; then
-  rm -f -- "$claudeHome/ROUTING.md"
-  noteApplied "ROUTING.md" "retired link removed"
-fi
 linkEntry "tsconfig.json" "ai/tsconfig.json" "$claudeHome/tsconfig.json"
 linkEntry "types" "ai/types" "$claudeHome/types"
 linkEntry "hooks" "ai/hooks" "$claudeHome/hooks"

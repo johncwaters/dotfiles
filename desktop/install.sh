@@ -96,11 +96,6 @@ convergeDefaultsValue "screensaver idle time" -int 600 600 com.apple.screensaver
 convergeAcPowerSetting "display sleep on power" displaysleep 60
 convergeAcPowerSetting "system sleep on power" sleep 1
 
-retiredWallpaperPath="$HOME/Pictures/Wallpapers/posthog-dynamic.heic"
-if pathIsLinkIntoThisRepo "$retiredWallpaperPath"; then
-  rm -f -- "$retiredWallpaperPath"
-  noteApplied "old wallpaper file" "retired link removed"
-fi
 wallpaperPath="$HOME/Pictures/Wallpapers/posthog-clock.heic"
 wallpaperAgentNeedsRestart=0
 if [[ -L "$wallpaperPath" ]] || ! filesAreIdentical "$dotfilesRepo/desktop/posthog-clock.heic" "$wallpaperPath"; then

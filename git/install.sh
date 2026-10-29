@@ -11,7 +11,6 @@ localGitconfigPath="$HOME/.gitconfig.local"
 xdgGitconfigPath="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
 
 gitconfigStubMarker='# Shared settings come from ~/.config/git/config, linked by dotfiles.'
-retiredGitconfigStubMarker=$'\tpath = ~/.dotfiles/git/gitconfig'
 
 # git reads both files but ~/.gitconfig outranks the XDG config, so the seed prefers it.
 previousGitconfigPath() {
@@ -90,22 +89,12 @@ seedLocalGitconfigFromPrevious() {
   retireSeedSourceIfXdg "$previousPath"
 }
 
-# Sandboxes that allow reading ~/.gitconfig deny an include outside it, which broke PostHog's dev-sandbox uv sync.
-migrateRetiredGitconfigStub() {
-  fileHoldsLine "$gitconfigPath" "$retiredGitconfigStubMarker" || return 0
-  local keptLines
-  keptLines="$(grep -vxF -- "$retiredGitconfigStubMarker" "$gitconfigPath" || true)"
-  printf '%s\n%s\n' "$gitconfigStubMarker" "$keptLines" > "$gitconfigPath"
-  noteApplied ".gitconfig" "shared include moved to ${xdgGitconfigPath/#$HOME/\~}"
-}
-
 removeDanglingGitconfigLinkFromMovedClone() {
   [[ -L "$xdgGitconfigPath" && ! -e "$xdgGitconfigPath" ]] || return 0
   [[ "$(symlinkTargetOf "$xdgGitconfigPath")" == */git/gitconfig ]] || return 0
   rm -f -- "$xdgGitconfigPath"
 }
 
-migrateRetiredGitconfigStub
 seedLocalGitconfigFromPrevious
 ensureStubFile ".gitconfig" "$gitconfigPath" "$gitconfigStubMarker" <<STUB
 $gitconfigStubMarker
