@@ -87,15 +87,17 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   assertAllowed(writeSpec(spec));
 });
 
-test("units without checks are denied by id, capped with the count the next write shows", () => {
+test("checks repeating the repo gate are denied by id, capped with the count the next write shows", () => {
   const spec = slicedSpec();
   spec.nodes.find((node) => node.id === "U1").checks = [];
+  assertAllowed(writeSpec(spec));
+  spec.nodes.find((node) => node.id === "U1").checks = [{ run: "npm run typecheck" }];
   for (let unitNumber = 2; unitNumber <= 25; unitNumber++) {
-    spec.nodes.push({ id: `U${unitNumber}`, kind: "unit", title: "Add a check", reads: [], changes: [`graph-${unitNumber}.ts`], checks: [], serves: [1] });
+    spec.nodes.push({ id: `U${unitNumber}`, kind: "unit", title: "Add a check", reads: [], changes: [`graph-${unitNumber}.ts`], checks: [{ run: "pnpm test" }], serves: [1] });
     spec.edges.push({ from: `U${unitNumber}`, kind: "implements", to: "D1" });
   }
   const reason = denialReason(writeSpec(spec));
-  assert.match(reason, /Rule 10: node U1: add at least one check/);
+  assert.match(reason, /Rule 14: node U1\.checks\[0\]\.run: drop npm run typecheck: build\.md already runs/);
   assert.match(reason, /\n5 more errors; they show on the next write/);
   assert.doesNotMatch(reason, /validate\.ts/);
 });
@@ -137,9 +139,9 @@ test("an unmeasurable entry is reported beside the other rule errors and skipped
   const spec = slicedSpec();
   const unit = spec.nodes.find((node) => node.id === "U1");
   unit.reads = ["looped"];
-  unit.checks = [];
+  unit.checks = [{ run: "npm test" }];
   const reason = denialReason(writeSpec(spec));
-  assert.match(reason, /Rule 10: node U1: add at least one check/);
+  assert.match(reason, /Rule 14: node U1\.checks\[0\]\.run: drop npm test/);
   assert.match(reason, /Rule 13: node U1: path \S*looped[/]cycle \(ELOOP\) cannot be measured/);
   unit.checks = [{ run: "node --test" }];
   unit.budgetWaiver = "The migration reads the whole directory";
@@ -201,8 +203,20 @@ test("binary files in a unit cost no reading budget", () => {
   assertAllowed(writeSpec(spec));
   const wideTextNotes = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("readable text line\r\n".repeat(8000), "utf16le")]);
   fs.writeFileSync(path.join(repoRoot, "media", "notes.txt"), wideTextNotes);
-  unit.changes = ["media/notes.txt"];
+  unit.reads = ["media/notes.txt"];
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*320002 bytes.*budgetWaiver/);
+});
+
+test("a large file the unit only changes counts at the changed-only cap", () => {
+  fs.writeFileSync(path.join(repoRoot, "CHANGELOG.md"), "x".repeat(400000));
+  fs.writeFileSync(path.join(repoRoot, "core.ts"), "x".repeat(179000));
+  const spec = slicedSpec();
+  const unit = spec.nodes.find((node) => node.id === "U1");
+  unit.reads = ["core.ts"];
+  unit.changes = ["core.ts", "CHANGELOG.md"];
+  assertAllowed(writeSpec(spec));
+  unit.reads = ["core.ts", "CHANGELOG.md"];
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*579000 bytes.*budgetWaiver/);
 });
 
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {

@@ -41,6 +41,8 @@ test("cut refuses the deferred example and renders its challenged tickets", () =
     assert.equal(intentText, `${JSON.stringify(intent, null, 2)}\n`);
     assert.deepEqual(intent.tickets.map((ticket: { id: string }) => ticket.id), ["U1", "U2"]);
     assert.deepEqual(intent.tickets[1].dependsOn, ["U1"]);
+    assert.match(intent.tickets[0].objective, /^Add the CSV writer\. Decisions: Which columns\? Name, set, quantity\. Context: In the export module\. \(src\/export\/index\.ts:14\) Read first: src\/export\//);
+    assert.ok(intent.tickets.every((ticket: { criteria: string[] }) => !ticket.criteria.some((criterion) => criterion.startsWith("Add the"))));
     assert.match(intent.tickets[0].objective, /\nDesign:\nCSV writer \(src\/export\/csv\.ts\):\ntype CsvRow = [^\n]+;\nexport function writeDeckCsv\(/);
     for (const ticket of intent.tickets) {
       for (const scope of ticket.writeScopes) {

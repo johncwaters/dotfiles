@@ -53,6 +53,8 @@ export type DesignSpec = {
 };
 
 export const READING_BUDGET_BYTES = 200000;
+const CHANGED_ONLY_PATH_CAP_BYTES = 20000;
+const REPO_GATE_COMMAND = /^(npm|pnpm|yarn)\s+(run\s+)?(typecheck|lint|test)$/;
 const UNIT_TITLE_LIMIT = 120;
 
 export function oneLine(text: string): string {
@@ -61,7 +63,6 @@ export function oneLine(text: string): string {
 
 export function unitTicketCriteria(unit: Unit, goalCriteria: string[]): string[] {
   return [...new Set([
-    oneLine(unit.title),
     ...(unit.serves ?? []).map((criterionNumber) => oneLine(goalCriteria[criterionNumber - 1] ?? "")),
     ...unit.checks.map((check) => oneLine(`The command ${check.run} exits 0.`)),
   ])];
@@ -499,11 +500,13 @@ export function validateGraph(value: unknown): string[] {
   for (const unit of units) {
     if (!isSliced) continue;
     if (unit.changes.length === 0) addError(errors, 10, `node ${unit.id}`, "add at least one changes path");
-    if (unit.checks.length === 0) addError(errors, 10, `node ${unit.id}`, "add at least one check with a run command");
     for (const [checkIndex, check] of unit.checks.entries()) {
       const normalizedCommand = check.run.replace(/[\t\r\n]/g, " ");
       if (/[;&|<>$`'"\x00-\x1f\x7f-\x9f]/.test(normalizedCommand)) {
         addError(errors, 14, `node ${unit.id}.checks[${checkIndex}].run`, "supply one command without shell operators, quotes, or control characters");
+      }
+      if (REPO_GATE_COMMAND.test(normalizedCommand.trim())) {
+        addError(errors, 14, `node ${unit.id}.checks[${checkIndex}].run`, `drop ${oneLine(check.run)}: build.md already runs the repo typecheck, lint and tests; name a check specific to the unit or none`);
       }
     }
     for (const changedPath of unit.changes) {
@@ -566,13 +569,19 @@ export function validateGraph(value: unknown): string[] {
   }
   for (const unit of units) {
     if (!isSliced || unit.budgetWaiver !== undefined) continue;
-    const listedPaths = [...unit.reads, ...unit.changes].map((candidate) => path.resolve(spec.repoRoot, candidate));
-    const { totalBytes, unmeasurablePaths } = measureReadingBytes(resolvedRoot, listedPaths);
+    const readPaths = unit.reads.map((candidate) => path.resolve(spec.repoRoot, candidate));
+    const changedOnlyPaths = unit.changes
+      .map((candidate) => path.resolve(spec.repoRoot, candidate))
+      .filter((changedPath) => !readPaths.some((readPath) => staysInside(readPath, changedPath)));
+    const readMeasurement = measureReadingBytes(resolvedRoot, readPaths);
+    const changedOnlyMeasurements = [...new Set(changedOnlyPaths)].map((changedPath) => measureReadingBytes(resolvedRoot, [changedPath]));
+    const totalBytes = changedOnlyMeasurements.reduce((runningBytes, measurement) => runningBytes + Math.min(measurement.totalBytes, CHANGED_ONLY_PATH_CAP_BYTES), readMeasurement.totalBytes);
+    const unmeasurablePaths = [readMeasurement, ...changedOnlyMeasurements].flatMap((measurement) => measurement.unmeasurablePaths);
     for (const unmeasurablePath of unmeasurablePaths) {
       addError(errors, 13, `node ${unit.id}`, `path ${unmeasurablePath} cannot be measured; narrow reads and changes to readable paths or supply budgetWaiver`);
     }
     if (totalBytes <= READING_BUDGET_BYTES) continue;
-    addError(errors, 13, `node ${unit.id}`, `reads and changes total ${totalBytes} bytes above ${READING_BUDGET_BYTES} bytes; narrow the paths or supply budgetWaiver`);
+    addError(errors, 13, `node ${unit.id}`, `reads plus capped changes total ${totalBytes} bytes above ${READING_BUDGET_BYTES} bytes; narrow the paths or supply budgetWaiver`);
   }
   return errors;
 }

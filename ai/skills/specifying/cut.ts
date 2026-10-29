@@ -37,11 +37,15 @@ function renderIntent(spec: DesignSpec, specPath: string) {
       if (edge.kind !== "implements") return [];
       const decision = nodesById.get(edge.to);
       if (decision?.kind !== "decision" || decision.isConstraint === true) return [];
-      return [decision.answer];
+      return [decision];
     });
+    const choices = decisions.filter((decision) => decision.source !== "read").map((decision) => `${decision.question} ${decision.answer}`);
+    const context = decisions.filter((decision) => decision.source === "read")
+      .map((decision) => decision.evidence ? `${decision.answer} (${decision.evidence})` : decision.answer);
     const title = oneLine(unit.title);
     const objective = `${title}${title.endsWith(".") ? "" : "."}`
-      + (decisions.length > 0 ? ` Decisions: ${decisions.join(" ")}` : "")
+      + (choices.length > 0 ? ` Decisions: ${choices.join(" ")}` : "")
+      + (context.length > 0 ? ` Context: ${context.join(" ")}` : "")
       + (unit.reads.length > 0 ? ` Read first: ${unit.reads.join(", ")}` : "");
     return {
       id: unit.id,
