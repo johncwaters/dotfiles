@@ -1181,6 +1181,7 @@ check "all behavior test groups are present" \
 if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
   check "hook, workflow, committing, running-retros, releasing, capturing-ui, composing-social-images, rendering-skill-tree, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${skillTreeTestFiles[@]}" "${hudTestFiles[@]}"
 fi
+check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"
 if ((${#workSkillTestFiles[@]} > 0)); then
   check "work profile skill behavior tests pass" node --test "${workSkillTestFiles[@]}"
 fi

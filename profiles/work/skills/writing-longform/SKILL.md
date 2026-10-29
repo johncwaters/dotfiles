@@ -15,7 +15,8 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 2. **Title first.** Specific beats clever: a number, a concrete claim, a real dollar figure. Generic test: if a bland B2B SaaS blog would publish this title, rewrite it.
 3. **Draft with the template** that fits under [Templates](#templates).
 4. **Revise** against the checklist. Rewriting is easier than writing because now there is a problem to solve.
-5. **Deliver** the piece, then at most three lines on the choices made and any open questions (missing numbers, unverified claims).
+5. **Lint.** Run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs --longform <draft-file>`, rewrite each flagged sentence, and rerun until it exits 0.
+6. **Deliver** the piece, then at most three lines on the choices made and any open questions (missing numbers, unverified claims).
 
 ## Templates
 
@@ -31,7 +32,7 @@ Read the template that fits the piece:
 - **Rhythm.** Dialogue is music, and music needs connected phrases, not a drum hit per beat. Most sentences run medium length and link related thoughts with "and", "but", "because", "so", or a colon; a short sentence lands only because the ones around it are longer. Read it aloud in your head; rewrite anything you'd stumble over or that sounds like ad copy.
 - **No confusion.** One idea per paragraph. Define a term before riffing on it. Tell the reader what they need to know before being clever.
 - **Progress.** Every section ends at least one step further than it started. A section that only restates is cut.
-- **Precision.** Name the tool, database, metric, date. Ban "a lot", "soon", "quickly", "better": replace each with a number. Link each external factual claim inline to a primary or first-rate source (the creator's own writing, a developer talk or interview, a credible deep-dive), excluding encyclopedias and content farms, and open the page to confirm it supports the claim before linking it. First-hand numbers and internal claims stay unlinked, and so does any claim you can't confirm on an open page: list it with step 5's unverified claims rather than invent a link. The author's own projects link to where a reader can get them.
+- **Precision.** Name the tool, database, metric, date. Ban "a lot", "soon", "quickly", "better": replace each with a number. Link each external factual claim inline to a primary or first-rate source (the creator's own writing, a developer talk or interview, a credible deep-dive), excluding encyclopedias and content farms, and open the page to confirm it supports the claim before linking it. First-hand numbers and internal claims stay unlinked, and so does any claim you can't confirm on an open page: list it with step 6's unverified claims rather than invent a link. The author's own projects link to where a reader can get them.
 - **Pick a side.** No "it depends", no "ultimately it's up to you". Have an opinion, give an example, or do the research until you can.
 - **Human.** Name the carbon units involved; use real screenshots, chat logs, quotes. Self-deprecating humor where it fits. Show the action and let the reader feel it instead of performing emotion ("I was so excited to…").
 - **Concise.** Omit needless words, not the connectives that carry the logic between claims. Cut or halve the intro. No transitions like "Here are five things…", no summary of what the reader just read.

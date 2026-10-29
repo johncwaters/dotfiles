@@ -22,11 +22,11 @@ function violation(rule, line, message, fix, measure = 0) {
   return { rule, line, message, fix, measure };
 }
 
-function maskInlineCode(line) {
+export function maskInlineCode(line) {
   return line.replace(/`[^`]*`/g, (span) => " ".repeat(span.length));
 }
 
-function proseLines(markdown) {
+export function proseLines(markdown) {
   const lines = markdown.split("\n");
   const prose = [];
   let fenceMarker = null;
