@@ -10,6 +10,10 @@ hasUpdatedApt=0
 hasFailedGlimmervoidInstall=0
 devboxFallbackReleaseStatus=75
 devboxPublicHostName=""
+devboxSelfProvisionScript="${DEVBOX_SELF_PROVISION_SCRIPT:-$HOME/Projects/dotfiles/profiles/work/devbox/provision.sh}"
+devboxSelfProvisionLog="$HOME/.local/state/dotfiles/devbox-self-provision.log"
+devboxAgentScriptBin="${DEVBOX_AGENT_SCRIPT_BIN:-/tmp/coder-script-data/bin}"
+devboxAgentWaitSeconds=600
 
 reportDevboxItem() {
   printf '[%s] %s: %s\n' "$1" "$2" "$3"
@@ -568,23 +572,70 @@ installDevboxModernGit() {
   reportDevboxItem warned git "older than 2.45 and the git-core PPA install failed; see ~/.glimmervoid/provision.log"
 }
 
+replaceDevboxCronLines() {
+  local marker="$1" item="$2" description="$3"
+  shift 3
+  local currentCrontab keptCrontab desiredCrontab
+  currentCrontab="$(crontab -l 2>/dev/null)" || currentCrontab=""
+  if [[ "$(grep -F -- "$marker" <<< "$currentCrontab" || true)" == "$(printf '%s\n' "$@")" ]]; then
+    reportDevboxItem present "$item" "cron entry"
+    return 0
+  fi
+  keptCrontab="$(grep -vF -- "$marker" <<< "$currentCrontab" || true)"
+  desiredCrontab="$([[ -z "$keptCrontab" ]] || printf '%s\n' "$keptCrontab"; printf '%s\n' "$@")"
+  if printf '%s\n' "$desiredCrontab" | crontab -; then
+    reportDevboxItem installed "$item" "$description"
+    return 0
+  fi
+  reportDevboxItem warned "$item" "could not write the cron entry"
+}
+
 installDevboxDocauditSchedule() {
   local docauditHome="$HOME/docaudit"
   if [[ ! -x "$docauditHome/run.sh" ]]; then
     return 0
   fi
-  local currentCrontab
-  currentCrontab="$(crontab -l 2>/dev/null)" || currentCrontab=""
-  if grep -qF "docaudit/run.sh" <<< "$currentCrontab"; then
-    reportDevboxItem present docaudit "cron entry"
-    return 0
+  replaceDevboxCronLines "docaudit/run.sh" docaudit "cron entry, weekdays 15:00 UTC" \
+    "0 15 * * 1-5 flock -n $docauditHome/.lock $docauditHome/run.sh >> $docauditHome/docaudit.log 2>&1"
+}
+
+installDevboxSelfProvisionSchedule() {
+  local selfProvisionCommand
+  selfProvisionCommand="$(printf 'CODER_WORKSPACE_AGENT_NAME=%q CODER_WORKSPACE_NAME=%q CODER_WORKSPACE_OWNER_NAME=%q bash %q self %q' \
+    "$CODER_WORKSPACE_AGENT_NAME" "$CODER_WORKSPACE_NAME" "$CODER_WORKSPACE_OWNER_NAME" \
+    "$devboxSelfProvisionScript" "$devboxWorkspaceDomain")"
+  mkdir -p -- "${devboxSelfProvisionLog%/*}"
+  local logRedirect=">> $devboxSelfProvisionLog 2>&1"
+  replaceDevboxCronLines "devbox/provision.sh self" "self-provision" "cron entries, at boot and hourly" \
+    "@reboot $selfProvisionCommand boot $logRedirect" \
+    "17 * * * * $selfProvisionCommand $logRedirect"
+}
+
+waitForDevboxAgent() {
+  local waitedSeconds=0
+  while [[ ! -d "$devboxAgentScriptBin" ]]; do
+    if ((waitedSeconds >= devboxAgentWaitSeconds)); then
+      reportDevboxItem warned "self-provision" "Coder agent not ready after ${devboxAgentWaitSeconds}s; retried next hour"
+      exit 1
+    fi
+    sleep 5
+    waitedSeconds=$((waitedSeconds + 5))
+  done
+}
+
+runDevboxSelfProvision() {
+  printf '== %s self-provision\n' "$(date -u +%FT%TZ)"
+  if [[ "${3:-}" == boot ]]; then
+    waitForDevboxAgent
   fi
-  local scheduleLine="0 15 * * 1-5 flock -n $docauditHome/.lock $docauditHome/run.sh >> $docauditHome/docaudit.log 2>&1"
-  if { [[ -z "$currentCrontab" ]] || printf '%s\n' "$currentCrontab"; printf '%s\n' "$scheduleLine"; } | crontab -; then
-    reportDevboxItem installed docaudit "cron entry, weekdays 15:00 UTC"
-    return 0
+  local prepareStatus=0
+  bash "$devboxSelfProvisionScript" prepare "$devboxWorkspaceDomain" || prepareStatus=$?
+  if ((prepareStatus != 0 && prepareStatus != devboxFallbackReleaseStatus)); then
+    exit "$prepareStatus"
   fi
-  reportDevboxItem warned docaudit "could not write the cron entry"
+  bash "$devboxSelfProvisionScript" dotfiles "$devboxWorkspaceDomain" || true
+  bash "$devboxSelfProvisionScript" sync-repos "$devboxWorkspaceDomain" || true
+  exec bash "$devboxSelfProvisionScript" provision "$devboxWorkspaceDomain"
 }
 
 installDevboxPrerequisites() {
@@ -598,6 +649,7 @@ installDevboxPrerequisites() {
   installDevboxPersonalGitAuth
   installDevboxModernGit
   installDevboxDocauditSchedule
+  installDevboxSelfProvisionSchedule
 }
 
 mergeDevboxConfig() {
@@ -830,6 +882,7 @@ case "$devboxAction" in
     ((hasFailedGlimmervoidInstall == 0)) || exit "$devboxFallbackReleaseStatus"
     exit 0
     ;;
+  self) runDevboxSelfProvision "$@" ;;
   provision) ;;
   *) printf 'devbox: unknown remote action\n' >&2; exit 1 ;;
 esac

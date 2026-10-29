@@ -662,6 +662,15 @@ STUB
 for stubName in node npm apt-get add-apt-repository setsid uname; do
   provideCommand "$stubName"
 done
+writeStub crontab <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  -l) [[ -f "$DOTFILES_TEST_STATE/crontab" ]] && cat "$DOTFILES_TEST_STATE/crontab" ;;
+  -) cat > "$DOTFILES_TEST_STATE/crontab" ;;
+  *) exit 1 ;;
+esac
+STUB
+provideCommand crontab
 
 instrumentedProvisionPath="$stubState/provision-with-test-listeners.sh"
 hasProcCommandLines=0
@@ -1704,5 +1713,37 @@ check "the shipped extraction script leaves box bytes unchanged" cmp -s "$stubSt
 check "the shipped extraction script preserves update preferences and drops loader secrets" \
   "$testNodePath" -e 'const assert=require("node:assert/strict");const {stagedAgainstSettingsSha256,...staged}=require(process.argv[1]);assert.deepEqual(staged,{scrollback:200,checkForUpdates:false,posthog:{enabled:true}})' "$stagedSettingsPath"
 rm -f "$stubState/execute-collect"
+
+printf '0 * * * * other-job\n@reboot bash /stale/profiles/work/devbox/provision.sh self old.invalid boot\n' > "$stubState/crontab"
+runSelfProvisionSchedule() {
+  runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture CODER_WORKSPACE_OWNER_NAME=fixture \
+    bash -c 'source "$1" prepare coder.dev.posthog.dev; installDevboxDocauditSchedule; installDevboxSelfProvisionSchedule' _ "$definitionsPath"
+}
+mkdir -p "$sandbox/docaudit"
+printf '#!/bin/sh\n' > "$sandbox/docaudit/run.sh"
+chmod +x "$sandbox/docaudit/run.sh"
+runSelfProvisionSchedule >/dev/null
+selfProvisionCommand="CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture CODER_WORKSPACE_OWNER_NAME=fixture bash $sandbox/Projects/dotfiles/profiles/work/devbox/provision.sh self coder.dev.posthog.dev"
+check "prepare schedules box self-provision at boot and hourly with the workspace env, replacing stale entries and keeping others" \
+  diff <(printf '%s\n' '0 * * * * other-job' \
+    "0 15 * * 1-5 flock -n $sandbox/docaudit/.lock $sandbox/docaudit/run.sh >> $sandbox/docaudit/docaudit.log 2>&1" \
+    "@reboot $selfProvisionCommand boot >> $sandbox/.local/state/dotfiles/devbox-self-provision.log 2>&1" \
+    "17 * * * * $selfProvisionCommand >> $sandbox/.local/state/dotfiles/devbox-self-provision.log 2>&1") "$stubState/crontab"
+cp "$stubState/crontab" "$stubState/crontab-before-rerun"
+scheduleRerunOutput="$(runSelfProvisionSchedule)"
+check "a rerun beside the docaudit entry leaves every cron entry as it is" bash -c '
+  [[ "$1" == *"[present] docaudit: cron entry"* && "$1" == *"[present] self-provision: cron entry"* ]] && cmp -s "$2" "$3"' \
+  _ "$scheduleRerunOutput" "$stubState/crontab-before-rerun" "$stubState/crontab"
+rm -rf "$sandbox/docaudit"
+
+selfProvisionStub="$stubState/self-provision-step.sh"
+printf '#!/usr/bin/env bash\nprintf "step %%s %%s %%s\\n" "$1" "$2" "$CODER_WORKSPACE_NAME" >> "$DOTFILES_TEST_LOG"\n' > "$selfProvisionStub"
+mkdir -p "$stubState/agent-script-bin"
+: > "$commandLog"
+runInStubbedSandbox "$sandbox" CODER_WORKSPACE_AGENT_NAME=dev CODER_WORKSPACE_NAME=devbox-fixture CODER_WORKSPACE_OWNER_NAME=fixture \
+  DEVBOX_SELF_PROVISION_SCRIPT="$selfProvisionStub" DEVBOX_AGENT_SCRIPT_BIN="$stubState/agent-script-bin" \
+  bash "$instrumentedProvisionPath" self "$workspaceDomain" boot >/dev/null
+check "a box self-provision run prepares, converges dotfiles, syncs repos and provisions in order with the workspace env" \
+  diff <(printf 'step %s coder.dev.posthog.dev devbox-fixture\n' prepare dotfiles sync-repos provision) <(grep '^step ' "$commandLog")
 
 reportTopicResults devbox
