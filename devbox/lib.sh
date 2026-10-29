@@ -127,7 +127,7 @@ isDevboxForwardHour() {
   ((weekday <= 5 && 10#$hour >= 5 && 10#$hour < 19))
 }
 
-# Coder never autostarts a failed workspace and posthog-linux sets no failure_ttl, so ensure retries it.
+# Coder never autostarts a failed workspace and the workspace template sets no failure_ttl, so ensure retries it.
 isDevboxFailedBuildRetryable() {
   [[ "$devboxWorkspaceStatus" == failed ]] || return 1
   [[ "$devboxLatestBuildTransition" != delete ]] || return 1

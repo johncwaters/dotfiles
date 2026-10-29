@@ -122,6 +122,15 @@
             "command": "node /fixture/home/.claude/hooks/enforce-spawn-model.mjs"
           }
         ]
+      },
+      {
+        "matcher": "^(Bash|Write|Edit|MultiEdit)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/guard-workflow.mjs"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -158,6 +167,16 @@
           {
             "type": "command",
             "command": "node /fixture/home/.claude/hooks/retro-reminder.mjs"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /fixture/home/.claude/hooks/require-commit-on-stop.mjs"
           }
         ]
       }
