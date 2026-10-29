@@ -623,7 +623,7 @@ mergeDevboxConfig() {
     }
     const parsedOriginal = structuredClone(config);
     if (!config || Array.isArray(config) || typeof config !== "object") throw new Error("config.json must contain an object");
-    const settingsPath = path.join(process.env.HOME, ".dotfiles", "profiles/work/glimmervoid.settings.json");
+    const settingsPath = path.join(process.env.HOME, ".dotfiles", "glimmervoid/settings.json");
     const syncPath = path.join(process.env.HOME, ".dotfiles", "glimmervoid/sync-settings.mjs");
     const settingsSync = await import(syncPath);
     const basePath = path.join(directory, "dotfiles-settings-base.json");

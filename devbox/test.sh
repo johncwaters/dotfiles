@@ -990,7 +990,7 @@ mergeConfigWithoutWorkspaceName() {
 
 mkdir -p "$sandbox/.glimmervoid" "$sandbox/.dotfiles/glimmervoid" "$sandbox/.dotfiles/profiles/work"
 cp "$repoRoot/glimmervoid/sync-settings.mjs" "$sandbox/.dotfiles/glimmervoid/"
-cp "$repoRoot/profiles/work/glimmervoid.settings.json" "$sandbox/.dotfiles/profiles/work/"
+cp "$repoRoot/glimmervoid/settings.json" "$sandbox/.dotfiles/glimmervoid/"
 cat > "$sandbox/.glimmervoid/config.json" <<'JSON'
 {"projects":[{"id":"existing","name":"kept","path":"/another/project"}],"sessions":[{"id":"active","transcript":"keep me"}],"unrelated":{"keep":true},"port":3000,"remote":{"ownerLogin":"retired"}}
 JSON
@@ -1377,7 +1377,7 @@ cp -R "$repoRoot/script" "$repoRoot/bin" "$dotfilesOriginRepo/"
 printf '{"platform":"linux","topics":["fresh-box-probe"]}\n' > "$dotfilesOriginRepo/profiles/work-server/profile.json"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$dotfilesOriginRepo/fresh-box-probe/install.sh"
 cp "$repoRoot/glimmervoid/sync-settings.mjs" "$dotfilesOriginRepo/glimmervoid/"
-cp "$repoRoot/profiles/work/glimmervoid.settings.json" "$dotfilesOriginRepo/profiles/work/"
+cp "$repoRoot/glimmervoid/settings.json" "$dotfilesOriginRepo/glimmervoid/"
 "$testGitPath" -C "$dotfilesOriginRepo" init -q -b main
 commitDotfilesOrigin fresh-box
 startEmptyRemoteHome
@@ -1393,7 +1393,7 @@ check "a fresh box prepares prerequisites once and starts its server once" \
   bash -c '[[ "$(grep -c "^setsid nohup " "$1")" -eq 1 && "$(grep -c "^npm view glimmervoid@latest version$" "$1")" -eq 1 ]]' _ "$commandLog"
 check "a fresh box reports no pending config" outputLacks "$freshBoxOutput" 'changes pending'
 check "a fresh box starts its server with the imported operator defaults" \
-  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/profiles/work/glimmervoid.settings.json" "$remoteHome" <<'JS'
+  "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/settings.json" "$remoteHome" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -1589,7 +1589,7 @@ check "an unreachable GitHub does not fail provisioning" test "$unreachableProbe
 printf '{"projects":[],"checkForUpdates":false,"scrollback":100}\n' > "$sandbox/.glimmervoid/config.json"
 mkdir -p "$sandbox/.dotfiles/profiles/work"
 cp "$repoRoot/glimmervoid/sync-settings.mjs" "$sandbox/.dotfiles/glimmervoid/sync-settings.mjs"
-printf '{"scrollback":100,"checkForUpdates":true}\n' > "$sandbox/.dotfiles/profiles/work/glimmervoid.settings.json"
+printf '{"scrollback":100,"checkForUpdates":true}\n' > "$sandbox/.dotfiles/glimmervoid/settings.json"
 printf '{"scrollback":100,"checkForUpdates":false}\n' > "$sandbox/.glimmervoid/dotfiles-settings-base.json"
 "$testNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.scrollback=100;fs.writeFileSync(process.argv[1], JSON.stringify(config))' "$sandbox/.glimmervoid/config.json"
 cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-shared-settings"
@@ -1603,7 +1603,7 @@ check "stopped box applies shared update checks without forcing them" \
   "$testNodePath" -e 'if (require(process.argv[1]).checkForUpdates !== true) process.exit(1)' "$sandbox/.glimmervoid/config.json"
 
 collectionRepo="$stubState/collection-repo"
-collectionSettingsPath="$collectionRepo/profiles/work/glimmervoid.settings.json"
+collectionSettingsPath="$collectionRepo/glimmervoid/settings.json"
 stagedSettingsPath="$sandbox/.local/state/dotfiles/devbox-collected-glimmervoid-settings.json"
 mkdir -p "$collectionRepo/glimmervoid" "$collectionRepo/profiles/work"
 cp "$repoRoot/glimmervoid/sync-settings.mjs" "$collectionRepo/glimmervoid/sync-settings.mjs"

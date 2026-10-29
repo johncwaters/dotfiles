@@ -6,5 +6,5 @@ source "$topicDirectory/../script/lib/context.sh"
 [[ "$profileName" == work ]] || exit 0
 [[ -f "$HOME/.glimmervoid/config.json" ]] || exit 0
 node "$topicDirectory/sync-settings.mjs" collect "$HOME/.glimmervoid/config.json" \
-  "$dotfilesRepo/profiles/work/glimmervoid.settings.json" \
+  "$dotfilesRepo/glimmervoid/settings.json" \
   "$HOME/.glimmervoid/dotfiles-settings-base.json" "$HOME"

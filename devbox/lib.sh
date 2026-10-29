@@ -201,7 +201,7 @@ devboxCollectedSettingsPath() {
 }
 
 devboxSharedSettingsPath() {
-  printf '%s/profiles/%s/glimmervoid.settings.json\n' "$dotfilesCheckout" "$devboxProfileName"
+  printf '%s/glimmervoid/settings.json\n' "$dotfilesCheckout"
 }
 
 showCollectedDevboxSettings() (
@@ -235,7 +235,7 @@ collectDevboxSettings() (
   chmod 600 "$packetPath" "$scriptPath"
   printf '%s\n' "node --input-type=module <<'SETTINGS_MODULE'" > "$scriptPath"
   cat "$dotfilesCheckout/glimmervoid/sync-settings.mjs" >> "$scriptPath"
-  printf 'const trackedProjectPaths = %s;\n' "$(node -e 'const fs=require("node:fs");console.log(JSON.stringify((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).projects ?? []).map(project=>project.path)))' "$dotfilesCheckout/profiles/$devboxProfileName/glimmervoid.settings.json")" >> "$scriptPath"
+  printf 'const trackedProjectPaths = %s;\n' "$(node -e 'const fs=require("node:fs");console.log(JSON.stringify((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).projects ?? []).map(project=>project.path)))' "$(devboxSharedSettingsPath)")" >> "$scriptPath"
   cat >> "$scriptPath" <<'REMOTE'
 const home = process.env.HOME;
 const live = settingsFrom(readJson(`${home}/.glimmervoid/config.json`));

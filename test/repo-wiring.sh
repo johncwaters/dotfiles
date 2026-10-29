@@ -168,9 +168,9 @@ if (missingRepoPaths.length > 0 || duplicatedPaths.length > 0) { console.error({
 }
 
 check "every work-server repo except the template posthog checkout is a glimmervoid project in the shared settings" \
-  everyListedRepoIsAGlimmervoidProject "$repoRoot/profiles/work-server/repos.txt" "$repoRoot/profiles/work/glimmervoid.settings.json"
-check "work and work-server share one glimmervoid settings file through the sync engine" \
-  bash -c 'test -f "$1/profiles/work/glimmervoid.settings.json" && test ! -e "$1/profiles/work-server/glimmervoid.settings.json" && grep -q "profiles/work/glimmervoid.settings.json" "$1/glimmervoid/install.sh" "$1/profiles/work/devbox/provision.sh"' _ "$repoRoot"
+  everyListedRepoIsAGlimmervoidProject "$repoRoot/profiles/work-server/repos.txt" "$repoRoot/glimmervoid/settings.json"
+check "every profile shares one glimmervoid settings file through the sync engine" \
+  bash -c 'test -f "$1/glimmervoid/settings.json" && ! compgen -G "$1/profiles/*/glimmervoid.settings.json" > /dev/null && grep -q "glimmervoid/settings.json" "$1/glimmervoid/install.sh" "$1/profiles/work/devbox/provision.sh" "$1/devbox/lib.sh"' _ "$repoRoot"
 for examplePath in repos/repos.example.txt glimmervoid/config.example.json \
   git/gitconfig.local.example shell/localrc.example; do
   check "the README names $examplePath" grep -qF "\`$examplePath\`" "$repoRoot/README.md"
@@ -180,7 +180,7 @@ check "glimmervoid reads tracked inputs through the checkout root" \
 check "glimmervoid uses the shared JSON merger" \
   grep -qF 'script/lib/merge-json.mjs' "$repoRoot/glimmervoid/install.sh"
 check "the glimmervoid seed has one shared home token" \
-  bash -c '! grep -q "__HOME__" "$1/glimmervoid/config.example.json" && grep -q "{{HOME}}" "$1/glimmervoid/config.example.json"' \
+  bash -c '! grep -q "__HOME__" "$1/glimmervoid/config.example.json" "$1/glimmervoid/settings.json" && grep -q "{{HOME}}" "$1/glimmervoid/settings.json"' \
   _ "$repoRoot"
 check "glimmervoid has no seed kind selector" \
   bash -c '! grep -q "glimmervoidSeedInputsFor" "$1/glimmervoid/install.sh"' _ "$repoRoot"
@@ -196,7 +196,7 @@ check "the generic glimmervoid seed renderer has no server-only name" \
 
 mergedWithoutOverlayPath="$sandbox/merged-without-overlay.json"
 HOME="$sandbox" node "$repoRoot/script/lib/merge-json.mjs" \
-  "$repoRoot/glimmervoid/config.example.json" "" "$mergedWithoutOverlayPath" /fixture/home
+  "$repoRoot/glimmervoid/settings.json" "" "$mergedWithoutOverlayPath" /fixture/home
 check "the shared merger accepts a missing overlay" \
   grep -qF '"/fixture/home/Projects"' "$mergedWithoutOverlayPath"
 
@@ -205,7 +205,7 @@ mergerAliasPath="$sandbox/merge-json-alias.mjs"
 ln -sf "$repoRoot/script/lib/merge-json.mjs" "$mergerAliasPath"
 mergedThroughAliasPath="$sandbox/merged-through-alias.json"
 HOME="$sandbox" node "$mergerAliasPath" \
-  "$repoRoot/glimmervoid/config.example.json" "" "$mergedThroughAliasPath" /fixture/home
+  "$repoRoot/glimmervoid/settings.json" "" "$mergedThroughAliasPath" /fixture/home
 check "the shared merger renders when reached through a symlink" \
   grep -qF '"/fixture/home/Projects"' "$mergedThroughAliasPath"
 check "the shared merger escapes home paths inside JSON strings" \
@@ -217,13 +217,13 @@ const { mergeJsonFiles } = await import(`${repoRoot}/script/lib/merge-json.mjs`)
 const destinationPath = `${sandbox}/escaped-home.json`;
 for (const homePath of ['/fixture/carbon "unit"', '/fixture/line\nbreak', '/fixture/tab\tstop']) {
   mergeJsonFiles({
-    basePath: `${repoRoot}/glimmervoid/config.example.json`,
+    basePath: `${repoRoot}/glimmervoid/settings.json`,
     destinationPath,
     home: homePath,
   });
   const settings = JSON.parse(fs.readFileSync(destinationPath, "utf8"));
   assert.equal(settings.repoRoots[0], `${homePath}/Projects`);
-  assert.equal(settings.projects[0].path, `${homePath}/Projects/glimmervoid`);
+  assert.equal(settings.projects[0].path, `${homePath}/Projects`);
 }
 JS
 check "glimmervoid creates no temporary empty overlay" \

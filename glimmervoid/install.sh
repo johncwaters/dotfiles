@@ -555,7 +555,7 @@ applyGlimmervoidSharedSettings() {
     return 0
   fi
   if ! settingsSyncOutput="$("$nodePath" "$dotfilesRepo/glimmervoid/sync-settings.mjs" apply \
-    "$glimmervoidConfigPath" "$dotfilesRepo/profiles/work/glimmervoid.settings.json" \
+    "$glimmervoidConfigPath" "$dotfilesRepo/glimmervoid/settings.json" \
     "$glimmervoidConfigDirectory/dotfiles-settings-base.json" "$HOME" 2> "$settingsSyncErrorPath")"; then
     settingsSyncReason="$(sed -nE 's/^[A-Za-z]*Error: //p' "$settingsSyncErrorPath" | head -n 1)"
     rm -f -- "$settingsSyncErrorPath"
@@ -582,9 +582,7 @@ fi
 if [[ "$profileName" != work ]]; then
   seedGlimmervoidConfig
 fi
-if [[ "$profileName" == work ]]; then
-  applyGlimmervoidSharedSettings
-fi
+applyGlimmervoidSharedSettings
 copyGlimmervoidSoundsAsRegularFiles
 protectGlimmervoidConfig
 

@@ -288,14 +288,14 @@ check('script collect discovers the work glimmervoid collector and updates its s
   fs.mkdirSync(path.join(fixtureHome, '.glimmervoid'), { recursive: true });
   for (const fileName of ['collect.sh', 'install.sh', 'sync-settings.mjs']) fs.copyFileSync(path.join(repoRoot, 'glimmervoid', fileName), path.join(fixtureRepo, 'glimmervoid', fileName));
   writeJson(path.join(fixtureRepo, 'profiles/work/profile.json'), { topics: ['glimmervoid'] });
-  writeJson(path.join(fixtureRepo, 'profiles/work/glimmervoid.settings.json'), { scrollback: 100 });
+  writeJson(path.join(fixtureRepo, 'glimmervoid/settings.json'), { scrollback: 100 });
   writeJson(path.join(fixtureHome, '.glimmervoid/config.json'), { scrollback: 200, port: 3456, apiToken: 'private' });
   writeJson(path.join(fixtureHome, '.glimmervoid/dotfiles-settings-base.json'), { scrollback: 100 });
   const execution = spawnSync(bashPath, [path.join(fixtureRepo, 'script/collect')], {
     env: { ...process.env, HOME: fixtureHome, DOTFILES_PROFILE: 'work', PATH: `${path.dirname(bashPath)}:${process.env.PATH}` }, encoding: 'utf8',
   });
   assert.equal(execution.status, 0, execution.stderr);
-  assert.deepEqual(readJson(path.join(fixtureRepo, 'profiles/work/glimmervoid.settings.json')), { scrollback: 200 });
+  assert.deepEqual(readJson(path.join(fixtureRepo, 'glimmervoid/settings.json')), { scrollback: 200 });
   assert.deepEqual(readJson(path.join(fixtureHome, '.glimmervoid/dotfiles-settings-base.json')), { scrollback: 200 });
   assert.match(execution.stdout, /1 of 1 topics/);
 });

@@ -14,8 +14,6 @@ check "a fresh personal home warns that the seed needs editing" \
   outputMatches "$personalOutput" '\[warn\].*seeding from config.example.json'
 check "a seed that needs editing exits non-zero" test "$personalStatus" -eq 1
 check "the personal config is seeded" test -f "$personalHome/.glimmervoid/config.json"
-check "the seed resolves the home token to this home" \
-  test "$(configValue "$personalHome" 'require(process.argv[1]).repoRoots[0]')" = "$personalHome/Projects"
 check "no placeholder survives the seed" \
   bash -c '! grep -q "{{HOME}}" "$1/.glimmervoid/config.json"' _ "$personalHome"
 check "the personal seed carries no remote block" \
@@ -38,6 +36,16 @@ check "a personal machine publishes nothing on the tailnet" logLacks "serve --bg
 check "a personal machine probes only the local listener" logHas "http://127.0.0.1:3000/"
 check "a personal machine never probes the remote listener" logLacks "http://127.0.0.1:3001/"
 
+"$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=Number(process.argv[2]);fs.writeFileSync(process.argv[1], JSON.stringify(config))' \
+  "$personalHome/.glimmervoid/config.json" "$isolatedWorkPort"
+runInstall "$personalHome" personal > /dev/null || true
+check "a personal machine converges the shared glimmervoid hooks" \
+  test "$(configValue "$personalHome" 'require(process.argv[1]).hooks.map(hook => hook.command).join(" ")')" = "node $personalHome/.claude/hooks/block-comments.mjs node $personalHome/.claude/hooks/block-else.mjs"
+check "the shared settings resolve the home token to this home" \
+  test "$(configValue "$personalHome" 'require(process.argv[1]).repoRoots[0]')" = "$personalHome/Projects"
+"$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=3000;fs.writeFileSync(process.argv[1], JSON.stringify(config))' \
+  "$personalHome/.glimmervoid/config.json"
+runInstall "$personalHome" personal > /dev/null || true
 personalRerunStatus=0
 personalRerunOutput="$(runInstall "$personalHome" personal)" || personalRerunStatus=$?
 check "a second personal run reports no change" reportsNoChanges "$personalRerunOutput"
@@ -91,8 +99,7 @@ mkdir -p "$workHome/.local/bin"
 ln -sf "$stubBin/node" "$workHome/.local/bin/node"
 makeGlimmervoidApp "$workHome"
 mkdir -p "$workHome/.glimmervoid"
-"$realNodePath" "$repoRoot/script/lib/merge-json.mjs" "$repoRoot/glimmervoid/config.example.json" \
-  "$repoRoot/profiles/work/glimmervoid.overlay.json" "$workHome/.glimmervoid/config.json" "$workHome"
+cp "$repoRoot/glimmervoid/config.example.json" "$workHome/.glimmervoid/config.json"
 "$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=Number(process.argv[2]);fs.writeFileSync(process.argv[1], JSON.stringify(config))' \
   "$workHome/.glimmervoid/config.json" "$isolatedWorkPort"
 : > "$commandLog"
