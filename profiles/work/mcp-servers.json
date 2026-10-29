@@ -3,10 +3,6 @@
     "type": "http",
     "url": "https://mcp.posthog.com/mcp"
   },
-  "backchannels": {
-    "type": "http",
-    "url": "https://api.backchannels.dev/mcp"
-  },
   "gauge": {
     "type": "http",
     "url": "https://app.withgauge.com/mcp"

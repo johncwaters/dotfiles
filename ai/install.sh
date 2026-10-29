@@ -305,40 +305,6 @@ if command -v kimi > /dev/null 2>&1; then
   renderProfileAgents "Kimi AGENTS.md" "$kimiHome"
 fi
 
-serversLackingWiredConfinement() {
-  local renderedHooksPath="$1"
-  shift
-  node --input-type=module - "$dotfilesRepo/ai/profile-config.mjs" "$renderedHooksPath" "$claudeHome/profile-hooks" "$@" <<'NODE'
-import fs from 'node:fs';
-import { pathToFileURL } from 'node:url';
-const [profileConfigPath, renderedHooksPath, profileHooksDirectory, ...serverNames] = process.argv.slice(2);
-const { confiningHookScriptName, wiresConfiningHook } = await import(pathToFileURL(profileConfigPath));
-let hooksByEvent = {};
-try {
-  hooksByEvent = JSON.parse(fs.readFileSync(renderedHooksPath, 'utf8')).hooks ?? {};
-} catch {}
-for (const serverName of serverNames) {
-  const confiningScriptPath = `${profileHooksDirectory}/${confiningHookScriptName(serverName)}`;
-  if (fs.existsSync(confiningScriptPath) && wiresConfiningHook(hooksByEvent, confiningScriptPath, serverName)) continue;
-  console.log(serverName);
-}
-NODE
-}
-
-serversWithoutConfinementIn() {
-  local renderedHooksPath="$1"
-  local isClientConfined="$2"
-  local confinedServerNames=()
-  local unconfinedServerNames
-  mapfile -t confinedServerNames < <(profilePlanNames confine-server)
-  ((${#confinedServerNames[@]} > 0)) || return 0
-  if ((isClientConfined == 1)) && unconfinedServerNames="$(serversLackingWiredConfinement "$renderedHooksPath" "${confinedServerNames[@]}")"; then
-    printf '%s' "$unconfinedServerNames"
-    return 0
-  fi
-  printf '%s\n' "${confinedServerNames[@]}"
-}
-
 mcpPlanNeedsClaude() {
   local serverAction
   while IFS=$'\t' read -r _ serverAction _; do
@@ -353,19 +319,17 @@ planMcpConvergence() {
   node - "$profileMcpServersSource" "$@" 2>/dev/null <<'NODE'
 const fs = require('node:fs');
 const { isDeepStrictEqual } = require('node:util');
-const [declarationPath, runtimePath, managedNames, withheldServerNames, removedNames, runtimeShape] = process.argv.slice(2);
+const [declarationPath, runtimePath, managedNames, runtimeShape] = process.argv.slice(2);
 const declaredServers = fs.existsSync(declarationPath)
   ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')) : {};
 if (!declaredServers || typeof declaredServers !== 'object' || Array.isArray(declaredServers)) process.exit(1);
-for (const serverName of withheldServerNames.split("\n").filter(Boolean)) delete declaredServers[serverName];
 let currentServers = {};
 try {
   currentServers = JSON.parse(fs.readFileSync(runtimePath, 'utf8'))?.mcpServers ?? {};
 } catch {}
 if (!currentServers || typeof currentServers !== 'object' || Array.isArray(currentServers)) currentServers = {};
 const managedNameSet = new Set(managedNames.split('\n').filter(Boolean));
-const removedServerNames = [...removedNames.split("\n"), ...withheldServerNames.split("\n")].filter(Boolean);
-const serverNames = new Set([...managedNameSet, ...Object.keys(declaredServers), ...removedServerNames]);
+const serverNames = new Set([...managedNameSet, ...Object.keys(declaredServers)]);
 // Kimi infers HTTP from `url` and names SSE through `transport` (moonshotai.github.io/kimi-code customization/mcp).
 function kimiServerConfig({ type, ...serverConfig }) {
   return type === 'sse' ? { ...serverConfig, transport: 'sse' } : serverConfig;
@@ -406,13 +370,8 @@ convergeMcpServers() {
     noteWarned "MCP servers" "node not found, convergence skipped"
     return 0
   fi
-  local withheldServerNames
-  withheldServerNames="$(serversWithoutConfinementIn "$claudeHome/settings.json" "$isClaudeConfined")"
-  if [[ -n "$withheldServerNames" ]]; then
-    noteWarned "MCP $withheldServerNames" "withheld until Claude confinement converges"
-  fi
   managedNames="$(readDotfilesState ai-managed-mcp-servers || true)"
-  if ! convergencePlan="$(planMcpConvergence "$HOME/.claude.json" "$managedNames" "$withheldServerNames" "$(profilePlanNames remove-server)" claude)"; then
+  if ! convergencePlan="$(planMcpConvergence "$HOME/.claude.json" "$managedNames" claude)"; then
     noteWarned "MCP servers" "could not read profile declarations, convergence skipped"
     return 0
   fi
@@ -458,7 +417,6 @@ convergeMcpServers() {
   writeDotfilesState ai-managed-mcp-servers "$remainingNames"
 }
 
-# Kimi hooks are fail-open, so no confined server ever reaches Kimi.
 convergeKimiMcpServers() {
   local mcpConfigPath="$kimiHome/mcp.json"
   local convergencePlan
@@ -485,7 +443,7 @@ process.exit(isPlainObject(mcpConfig) && (mcpConfig.mcpServers === undefined || 
     return 0
   fi
   managedNames="$(readDotfilesState ai-managed-kimi-mcp-servers || true)"
-  if ! convergencePlan="$(planMcpConvergence "$mcpConfigPath" "$managedNames" "$(profilePlanNames confine-server)" "$(profilePlanNames remove-server)" kimi)"; then
+  if ! convergencePlan="$(planMcpConvergence "$mcpConfigPath" "$managedNames" kimi)"; then
     noteWarned "Kimi MCP servers" "could not read profile declarations, convergence skipped"
     return 0
   fi
@@ -537,7 +495,7 @@ NODE
   noteApplied "Kimi MCP servers" "converged"
 }
 
-removeExcludedSkills() {
+removeRetiredSkills() {
   local skillName skillPath
   while IFS= read -r skillName; do
     [[ -n "$skillName" ]] || continue
@@ -549,66 +507,23 @@ removeExcludedSkills() {
       fi
       noteWarned "skill $skillName" "could not remove $skillPath"
     done
-  done < <(profilePlanNames remove-skill)
-}
-
-renderCodexHooksWithEpoch() {
-  dotfilesStatePath ai-codex-owned-hook-commands || return 1
-  codexOwnedHooksManifest="$(node "$dotfilesRepo/ai/render-codex-hooks.mjs" "$1" "$codexHome/hooks.json" "$2" "$3" "$dotfilesStatePathValue")"
-}
-
-newCodexHookTrustEpoch() {
-  node -e 'process.stdout.write(require("node:crypto").randomUUID())'
-}
-
-# Codex hashes are deterministic per definition, so a baseline is only recorded alongside a fresh epoch that forces re-trust.
-recordCodexHookTrustBaseline() {
-  local manifestLines=()
-  local currentTrust
-  mapfile -t manifestLines <<< "$codexOwnedHooksManifest"
-  if ! currentTrust="$(readCodexTrustedHashes "${manifestLines[@]:1}" 2>/dev/null)"; then
-    noteWarned "Codex hooks" "could not read hook trust from config.toml"
-    return 0
-  fi
-  writeDotfilesState ai-codex-hook-trust-epoch "$1"
-  writeDotfilesState ai-codex-hook-trust-baseline "${manifestLines[0]}"$'\n'"$currentTrust"
+  done < "$dotfilesRepo/ai/skills-remove.txt"
 }
 
 renderCodexHooks() {
   local declarationPath="$dotfilesRepo/ai/codex-hooks.base.json"
   local hooksPath="$codexHome/hooks.json"
   local stagedPath
-  local trustEpoch=""
-  local recordedTrustBaseline
-  local isTrustBaselineOwed=0
-  areCodexHooksRendered=0
-  codexOwnedHooksManifest=""
   if ! command -v node > /dev/null 2>&1; then
     noteWarned "Codex hooks" "node not on PATH"
     return 0
   fi
   if [[ -f "$profileCodexHooksSource" ]]; then
     declarationPath="$profileCodexHooksSource"
-    trustEpoch="$(readDotfilesState ai-codex-hook-trust-epoch || true)"
   fi
-  if [[ -f "$profileCodexHooksSource" && -z "$trustEpoch" ]]; then
-    isTrustBaselineOwed=1
-    trustEpoch="$(newCodexHookTrustEpoch)"
-  fi
+  dotfilesStatePath ai-codex-owned-hook-commands || return 0
   stagedPath="$(mktemp "$codexHome/.dotfiles-hooks.XXXXXX")"
-  if ! renderCodexHooksWithEpoch "$declarationPath" "$stagedPath" "$trustEpoch"; then
-    rm -f -- "$stagedPath"
-    noteWarned "Codex hooks" "could not render hooks, convergence skipped"
-    return 0
-  fi
-  if [[ -f "$profileCodexHooksSource" ]] && ((isTrustBaselineOwed == 0)); then
-    recordedTrustBaseline="$(readDotfilesState ai-codex-hook-trust-baseline || true)"
-    if [[ "${recordedTrustBaseline%%$'\n'*}" != "${codexOwnedHooksManifest%%$'\n'*}" ]]; then
-      isTrustBaselineOwed=1
-      trustEpoch="$(newCodexHookTrustEpoch)"
-    fi
-  fi
-  if ((isTrustBaselineOwed == 1)) && ! renderCodexHooksWithEpoch "$declarationPath" "$stagedPath" "$trustEpoch"; then
+  if ! node "$dotfilesRepo/ai/render-codex-hooks.mjs" "$declarationPath" "$hooksPath" "$stagedPath" "$dotfilesStatePathValue"; then
     rm -f -- "$stagedPath"
     noteWarned "Codex hooks" "could not render hooks, convergence skipped"
     return 0
@@ -618,78 +533,8 @@ renderCodexHooks() {
     return 0
   fi
   commitStagedFile "Codex hooks" "$stagedPath" "$hooksPath" "rendered"
-  areCodexHooksRendered=1
-  ((isTrustBaselineOwed == 1)) || return 0
-  recordCodexHookTrustBaseline "$trustEpoch"
-}
-
-readCodexTrustedHashes() {
-  node - "$codexHome/config.toml" "$@" <<'NODE'
-const fs = require('node:fs');
-const [configPath, ...stateKeys] = process.argv.slice(2);
-const configText = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
-const quotedString = String.raw`"(?:[^"\\]|\\.)*"|'[^']*'`;
-const unquote = (token) => (token.startsWith("'") ? token.slice(1, -1) : JSON.parse(token));
-const keyedStateTable = new RegExp(String.raw`^\[\s*hooks\s*\.\s*state\s*\.\s*(${quotedString})\s*\]$`);
-const sharedStateTable = /^\[\s*hooks\s*\.\s*state\s*\]$/;
-const trustedHashAssignment = new RegExp(String.raw`^trusted_hash\s*=\s*(${quotedString})`);
-const inlineStateEntry = new RegExp(String.raw`^(${quotedString})\s*=\s*\{.*\btrusted_hash\s*=\s*(${quotedString})`);
-const trustedHashByKey = new Map();
-let keyedTableName;
-let isInSharedStateTable = false;
-for (const line of configText.split(/\r?\n/).map((rawLine) => rawLine.trim())) {
-  if (line.startsWith('[')) {
-    const keyedTable = keyedStateTable.exec(line);
-    keyedTableName = keyedTable ? unquote(keyedTable[1]) : undefined;
-    isInSharedStateTable = sharedStateTable.test(line);
-    continue;
-  }
-  const keyedAssignment = keyedTableName === undefined ? null : trustedHashAssignment.exec(line);
-  if (keyedAssignment) trustedHashByKey.set(keyedTableName, unquote(keyedAssignment[1]));
-  const inlineEntry = isInSharedStateTable ? inlineStateEntry.exec(line) : null;
-  if (inlineEntry) trustedHashByKey.set(unquote(inlineEntry[1]), unquote(inlineEntry[2]));
-}
-for (const stateKey of stateKeys) process.stdout.write(`${stateKey}\t${trustedHashByKey.get(stateKey) ?? ''}\n`);
-NODE
-}
-
-# Codex skips changed hooks until trusted and keeps its hash private, so trust counts once each owned hash moves off the value recorded at the last change.
-confirmCodexHookTrust() {
-  local manifestLines=()
-  local currentTrust
-  local recordedTrustLines=()
-  local recordedTrustLine
-  local stateKey
-  local trustedHash
-  declare -A recordedHashByKey=()
-  isCodexHookTrustConfirmed=0
-  mapfile -t manifestLines <<< "$codexOwnedHooksManifest"
-  if ((${#manifestLines[@]} < 2)); then
-    noteWarned "Codex hooks" "no confinement hooks declared"
-    return 0
-  fi
-  if ! currentTrust="$(readCodexTrustedHashes "${manifestLines[@]:1}" 2>/dev/null)"; then
-    noteWarned "Codex hooks" "could not read hook trust from config.toml"
-    return 0
-  fi
-  mapfile -t recordedTrustLines <<< "$(readDotfilesState ai-codex-hook-trust-baseline || true)"
-  if [[ "${recordedTrustLines[0]:-}" != "${manifestLines[0]}" ]]; then
-    noteWarned "Codex hooks" "open codex, review hooks with /hooks, then rerun dot"
-    return 0
-  fi
-  for recordedTrustLine in "${recordedTrustLines[@]:1}"; do
-    IFS=$'\t' read -r stateKey trustedHash <<< "$recordedTrustLine"
-    [[ -n "$stateKey" ]] || continue
-    recordedHashByKey["$stateKey"]="$trustedHash"
-  done
-  while IFS=$'\t' read -r stateKey trustedHash; do
-    [[ -n "$stateKey" ]] || continue
-    if [[ -z "$trustedHash" || "$trustedHash" == "${recordedHashByKey[$stateKey]:-}" ]]; then
-      noteWarned "Codex hooks" "open codex, review hooks with /hooks, then rerun dot"
-      return 0
-    fi
-  done <<< "$currentTrust"
-  isCodexHookTrustConfirmed=1
+  clearDotfilesState ai-codex-hook-trust-epoch
+  clearDotfilesState ai-codex-hook-trust-baseline
 }
 
 codexConfigDeclaresServer() {
@@ -697,139 +542,45 @@ codexConfigDeclaresServer() {
   grep -qE "^[[:space:]]*\[[[:space:]]*mcp_servers[[:space:]]*\.[[:space:]]*[\"']?$1[\"']?[[:space:]]*[].]" "$codexHome/config.toml"
 }
 
-convergeCodexServer() {
+retireCodexServer() {
   local serverName="$1"
-  local shouldRemove="$2"
-  local isConfinementMissing="$3"
-  local serverConfiguration=""
-  local isServerPresent=0
-  local configPath="$codexHome/config.toml"
-  local stagedDirectory
-  local stagedPath
-  local urlAssignment
-  local isServerEnabled=0
-  local enabledAssignment="enabled = false"
-  if [[ "$shouldRemove" == 0 ]] && ((isConfinementMissing == 0)); then
-    isServerEnabled=1
-    enabledAssignment="enabled = true"
-  fi
   if ! command -v codex > /dev/null 2>&1; then
-    if [[ "$shouldRemove" == 1 || "$isConfinementMissing" == 1 ]] && codexConfigDeclaresServer "$serverName"; then
+    if codexConfigDeclaresServer "$serverName"; then
       noteWarned "Codex MCP $serverName" "codex not on PATH, config.toml still declares this server"
     fi
     return 0
   fi
-  if ! command -v node > /dev/null 2>&1; then
-    noteWarned "Codex MCP $serverName" "node not on PATH"
-    return 0
-  fi
-  if serverConfiguration="$(CODEX_HOME="$codexHome" codex mcp get "$serverName" --json 2>/dev/null)"; then
-    isServerPresent=1
-  fi
-  if ((isServerPresent == 0)) && ! CODEX_HOME="$codexHome" codex mcp list --json > /dev/null 2>&1; then
-    noteWarned "Codex MCP $serverName" "could not read configuration, convergence skipped"
-    return 0
-  fi
-  if [[ "$shouldRemove" == 1 ]]; then
-    if ((isServerPresent == 0)); then
-      codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
-      writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
+  if ! CODEX_HOME="$codexHome" codex mcp get "$serverName" --json > /dev/null 2>&1; then
+    if ! CODEX_HOME="$codexHome" codex mcp list --json > /dev/null 2>&1; then
+      noteWarned "Codex MCP $serverName" "could not read configuration, convergence skipped"
       return 0
     fi
-    if CODEX_HOME="$codexHome" codex mcp remove "$serverName" > /dev/null 2>&1; then
-      noteApplied "Codex MCP $serverName" "removed"
-      codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
-      writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
-      return 0
-    fi
+    codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
+    return 0
+  fi
+  if ! CODEX_HOME="$codexHome" codex mcp remove "$serverName" > /dev/null 2>&1; then
     noteWarned "Codex MCP $serverName" "remove failed"
     return 0
   fi
-  if ! urlAssignment="$(node -e 'const servers = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log("url = " + JSON.stringify(servers[process.argv[2]].url))' "$profileMcpServersSource" "$serverName")"; then
-    noteWarned "Codex MCP $serverName" "could not read declaration"
-    return 0
-  fi
-  if ((isServerEnabled == 0)); then
-    noteWarned "Codex MCP $serverName" "disabled until Codex confinement converges"
-  fi
-  if ((isServerPresent == 1)) && ! grep -qxF "$serverName" <<< "$codexManagedNames" \
-    && ! profilePlanNames exclusive-server | grep -qxF "$serverName"; then
-    noteWarned "Codex MCP $serverName" "an unmanaged server with this name blocks convergence"
-    return 0
-  fi
-  if ! grep -qxF "$serverName" <<< "$codexManagedNames"; then
-    codexManagedNames+="${codexManagedNames:+$'\n'}$serverName"
-    writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
-    if [[ "$(readDotfilesState ai-managed-codex-mcp-servers || true)" != "$codexManagedNames" ]]; then
-      noteWarned "Codex MCP $serverName" "could not record ownership, convergence skipped"
-      return 0
-    fi
-  fi
-  if ((isServerPresent == 1)) && node -e 'const server = JSON.parse(process.argv[1]); const declared = JSON.parse(require("node:fs").readFileSync(process.argv[2], "utf8"))[process.argv[4]]; process.exit(Boolean(server.enabled) === (process.argv[3] === "1") && server.transport?.type === "streamable_http" && server.transport.url === declared.url ? 0 : 1)' "$serverConfiguration" "$profileMcpServersSource" "$isServerEnabled" "$serverName"; then
-    return 0
-  fi
-  if ! pathIsPlainFileOrAbsent "$configPath"; then
-    noteWarned "Codex MCP $serverName" "config.toml is not a plain file, convergence skipped"
-    return 0
-  fi
-  stagedDirectory="$(mktemp -d "$codexHome/.dotfiles-mcp.XXXXXX")"
-  stagedPath="$stagedDirectory/config.toml"
-  : > "$stagedPath"
-  chmod 600 "$stagedPath"
-  if [[ -f "$configPath" ]]; then
-    cat -- "$configPath" > "$stagedPath"
-  fi
-  if ((isServerPresent == 1)) && ! CODEX_HOME="$stagedDirectory" codex mcp remove "$serverName" > /dev/null 2>&1; then
-    rm -rf -- "$stagedDirectory"
-    noteWarned "Codex MCP $serverName" "remove failed"
-    return 0
-  fi
-  printf '\n[mcp_servers.%s]\n%s\n%s\n' "$serverName" "$urlAssignment" "$enabledAssignment" >> "$stagedPath"
-  if ! CODEX_HOME="$stagedDirectory" codex mcp get "$serverName" --json > /dev/null 2>&1; then
-    rm -rf -- "$stagedDirectory"
-    noteWarned "Codex MCP $serverName" "rendered configuration is invalid, convergence skipped"
-    return 0
-  fi
-  chmod 600 "$stagedPath"
-  if mv -f -- "$stagedPath" "$configPath"; then
-    rm -rf -- "$stagedDirectory"
-    noteApplied "Codex MCP $serverName" "configured"
-    return 0
-  fi
-  rm -rf -- "$stagedDirectory"
-  noteWarned "Codex MCP $serverName" "could not write configuration"
+  noteApplied "Codex MCP $serverName" "removed"
+  codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
 }
 
-convergeCodexServers() {
-  local serverName isConfinementMissing
+# Codex servers were only ever added by the retired confinement path, so every recorded name is retired.
+retireCodexServers() {
+  local serverName
   local codexManagedNames
-  local activeServerNames
-  local removedServerNames
-  local unconfinedServerNames
-  declare -A hasRetiredServer=()
   codexManagedNames="$(readDotfilesState ai-managed-codex-mcp-servers || true)"
-  activeServerNames="$(profilePlanNames codex-server)"
-  unconfinedServerNames="$(serversWithoutConfinementIn "$codexHome/hooks.json" "$isCodexConfined")"
-  removedServerNames="$(profilePlanNames remove-server)"
+  [[ -n "$codexManagedNames" ]] || return 0
   while IFS= read -r serverName; do
     [[ -n "$serverName" ]] || continue
-    grep -qxF "$serverName" <<< "$activeServerNames" && continue
-    removedServerNames+="${removedServerNames:+$'\n'}$serverName"
+    retireCodexServer "$serverName"
   done <<< "$codexManagedNames"
-  while IFS= read -r serverName; do
-    [[ -n "$serverName" ]] || continue
-    [[ -z "${hasRetiredServer[$serverName]:-}" ]] || continue
-    hasRetiredServer["$serverName"]=1
-    convergeCodexServer "$serverName" 1 0
-  done <<< "$removedServerNames"
-  while IFS= read -r serverName; do
-    [[ -n "$serverName" ]] || continue
-    isConfinementMissing=0
-    if grep -qxF "$serverName" <<< "$unconfinedServerNames"; then
-      isConfinementMissing=1
-    fi
-    convergeCodexServer "$serverName" 0 "$isConfinementMissing"
-  done <<< "$activeServerNames"
+  if [[ -z "$codexManagedNames" ]]; then
+    clearDotfilesState ai-managed-codex-mcp-servers
+    return 0
+  fi
+  writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
 }
 
 # CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
@@ -839,16 +590,7 @@ copyEntry "CLAUDE.md" "${profileClaudeSource#"$dotfilesRepo/"}" "$claudeHome/CLA
 convergeAiProfileLink "AGENTS.profile.md" "AGENTS.md" "$claudeHome/AGENTS.profile.md"
 convergeAiProfileLink "review-checklist.md" "review-checklist.md" "$claudeHome/review-checklist.md"
 
-isClaudeConfined=0
-isCodexConfined=0
-isProfileHooksLinkCurrent=0
-warningsBeforeConfinement="$warningsEmittedHere"
 convergeAiProfileLink "profile hooks" "hooks" "$claudeHome/profile-hooks"
-if ((warningsEmittedHere == warningsBeforeConfinement)) \
-  && linkIsCurrent "${profileHooksSource#"$dotfilesRepo/"}" "$claudeHome/profile-hooks" \
-  && [[ -d "$claudeHome/profile-hooks" ]]; then
-  isProfileHooksLinkCurrent=1
-fi
 profileSettingsOverlayPath="$(profilePlanNames source-settings.overlay.json)"
 if [[ ! -f "$profileSettingsOverlayPath" ]]; then
   profileSettingsOverlayPath=""
@@ -858,16 +600,9 @@ renderJsonTemplate "settings.json" \
   "$dotfilesRepo/ai/settings.base.json" \
   "$profileSettingsOverlayPath" \
   "$claudeHome/settings.json"
-if ((warningsEmittedHere == warningsBeforeConfinement && isProfileHooksLinkCurrent == 1)) && [[ -n "$profileSettingsOverlayPath" ]]; then
-  isClaudeConfined=1
-fi
-removeExcludedSkills
+removeRetiredSkills
 renderCodexHooks
-if command -v codex > /dev/null 2>&1 && [[ -f "$profileCodexHooksSource" ]] && ((isProfileHooksLinkCurrent == 1 && areCodexHooksRendered == 1)); then
-  confirmCodexHookTrust
-  isCodexConfined="$isCodexHookTrustConfirmed"
-fi
-convergeCodexServers
+retireCodexServers
 convergeMcpServers
 if command -v kimi > /dev/null 2>&1; then
   convergeKimiMcpServers

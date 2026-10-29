@@ -120,12 +120,6 @@
       "dangerouslySkipPermissions": true
     },
     {
-      "id": "e05d2f0d-871f-46c6-90b1-54fc7ff993be",
-      "name": "backchannels",
-      "path": "{{HOME}}/Projects/backchannels",
-      "dangerouslySkipPermissions": true
-    },
-    {
       "id": "696557ae-ee88-44e3-9856-6708a5bfa373",
       "name": "context-mill",
       "path": "{{HOME}}/Projects/context-mill",

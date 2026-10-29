@@ -6,5 +6,4 @@ Projects/posthog-python=https://github.com/PostHog/posthog-python nodeps
 Projects/twig.com=https://github.com/PostHog/twig.com nodeps
 Projects/wizard=https://github.com/PostHog/wizard nodeps
 Projects/wizard-workbench=https://github.com/PostHog/wizard-workbench nodeps
-Projects/backchannels=https://github.com/johncwaters/backchannels nodeps
 Projects/glimmervoid=https://github.com/johncwaters/glimmervoid nodeps

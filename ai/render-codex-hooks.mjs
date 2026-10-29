@@ -1,9 +1,8 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import { readProfilePolicies } from "./profile-config.mjs";
 
-const [declarationPath, runtimePath, destinationPath, trustEpoch = "", ownedCommandsPath] = process.argv.slice(2);
+const [declarationPath, runtimePath, destinationPath, ownedCommandsPath] = process.argv.slice(2);
 
 function readHookConfiguration(configurationPath) {
   if (!fs.existsSync(configurationPath)) return { hooks: {} };
@@ -28,19 +27,6 @@ function isOwnedHook(handler) {
   return ownedCommands.has(handler.command) || retiredCommandPatterns.some((pattern) => pattern.test(String(handler.command || "")));
 }
 
-function snakeCaseEventName(eventName) {
-  return eventName.replace(/(?<=[a-z0-9])(?=[A-Z])/g, "_").toLowerCase();
-}
-
-// Codex keys hook trust in config.toml by this position, which owned entries hold by rendering first.
-function trustStateKeys(hooksByEvent) {
-  return Object.entries(hooksByEvent).flatMap(([eventName, entries]) =>
-    entries.flatMap((entry, entryIndex) =>
-      entry.hooks.map((_, handlerIndex) => `${runtimePath}:${snakeCaseEventName(eventName)}:${entryIndex}:${handlerIndex}`),
-    ),
-  );
-}
-
 try {
   const declaration = readHookConfiguration(new URL("./codex-hooks.base.json", import.meta.url));
   if (fs.realpathSync(declarationPath) !== fs.realpathSync(new URL("./codex-hooks.base.json", import.meta.url))) {
@@ -53,12 +39,8 @@ try {
     if (!fs.lstatSync(ownedCommandsPath).isFile()) throw new Error("owned hook commands must be a plain file");
     ownedCommands = new Set(JSON.parse(fs.readFileSync(ownedCommandsPath, "utf8")));
   }
-  const declarationText = JSON.stringify(declaration);
-  if (declarationText.includes("{{TRUST_EPOCH}}") && !/^[A-Za-z0-9-]+$/.test(trustEpoch)) {
-    throw new Error(`missing or unsafe trust epoch for ${declarationPath}`);
-  }
   const renderedDeclaration = JSON.parse(
-    declarationText.replaceAll("{{HOME}}", JSON.stringify(os.homedir()).slice(1, -1)).replaceAll("{{TRUST_EPOCH}}", trustEpoch),
+    JSON.stringify(declaration).replaceAll("{{HOME}}", JSON.stringify(os.homedir()).slice(1, -1)),
   );
   const declaredCommands = Object.values(renderedDeclaration.hooks).flatMap((entries) => entries.flatMap((entry) => entry.hooks.map((handler) => handler.command)));
   for (const command of declaredCommands) ownedCommands.add(command);
@@ -82,9 +64,6 @@ try {
     fs.renameSync(stagedCommandsPath, ownedCommandsPath);
   }
   fs.writeFileSync(destinationPath, JSON.stringify(configuration, null, 2) + "\n", { mode: 0o600 });
-  const ownedStateKeys = trustStateKeys(renderedDeclaration.hooks);
-  const ownedFingerprint = createHash("sha256").update(JSON.stringify([ownedStateKeys, renderedDeclaration.hooks])).digest("hex");
-  process.stdout.write([ownedFingerprint, ...ownedStateKeys].join("\n") + "\n");
 } catch (renderError) {
   process.stderr.write(`render-codex-hooks: ${renderError.message}\n`);
   process.exitCode = 1;

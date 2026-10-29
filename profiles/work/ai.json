@@ -1,8 +1,4 @@
 {
-  "exclusiveSkills": ["backchannels"],
-  "mcpServers": {
-    "backchannels": { "codex": true, "confined": true, "exclusive": true, "repositoryOrigin": "https://github.com/johncwaters/backchannels" }
-  },
   "retiredCodexHookCommands": [
     "confine-backchannels\\.mjs",
     "\\.agents[\\\\/]skills[\\\\/]backchannels[\\\\/]session-start"

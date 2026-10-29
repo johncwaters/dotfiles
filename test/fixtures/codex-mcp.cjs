@@ -6,7 +6,6 @@ fs.appendFileSync(process.env.CODEX_MCP_COMMAND_LOG, `${JSON.stringify(arguments
 const configPath = path.join(process.env.CODEX_HOME, 'config.toml');
 const configText = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
 if (configText.includes('invalid toml')) process.exit(1);
-if (process.env.CODEX_HOME.includes('/.dotfiles-mcp.') && fs.existsSync(path.join(process.env.HOME, '.fail-codex-mcp-stage'))) process.exit(1);
 const serverSection = /\n?\[mcp_servers\.backchannels\]\n([\s\S]*?)(?=\n\[|$)/.exec(configText);
 const [group, action, serverName] = argumentsPassed;
 if (group !== 'mcp') process.exit(1);

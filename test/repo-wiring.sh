@@ -109,13 +109,13 @@ for (const excludedFile of ["glimmervoid.json", "glimmervoid.overlay.json", "mcp
 }
 JS
 
-for sharedWorkFile in CLAUDE.md AGENTS.md commit-policy.json settings.overlay.json hooks codex-hooks.json skills; do
+for sharedWorkFile in CLAUDE.md AGENTS.md commit-policy.json settings.overlay.json hooks skills; do
   check "work-server inherits work $sharedWorkFile without copying agent additions" \
     test "$(node "$repoRoot/ai/profile-config.mjs" work-server "$sharedWorkFile")" = \
     "$repoRoot/profiles/$(case "$sharedWorkFile" in commit-policy.json) printf work-server ;; *) printf work ;; esac)/$sharedWorkFile"
 done
 
-check "work-server settings equal work settings including confinement" \
+check "work-server settings equal work settings" \
   cmp -s "$sandbox/rendered-ai-settings.work.json" "$sandbox/rendered-ai-settings.work-server.json"
 
 # These topics confine their commands to the sandbox home without command stubs.
@@ -240,71 +240,10 @@ check "the work overlay gates exec writes on every declared MCP server because t
   node -e 'const fs=require("fs");const overlay=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const serverNames=Object.keys(JSON.parse(fs.readFileSync(process.argv[2],"utf8")));const gateEntries=(overlay.hooks?.PreToolUse||[]).filter((entry)=>entry.hooks.some((hook)=>hook.command.includes("gate-posthog-exec-write.mjs")));process.exit(serverNames.length>0&&serverNames.every((serverName)=>gateEntries.some((entry)=>new RegExp(entry.matcher).test(`mcp__${serverName}__exec`)))?0:1)' "$repoRoot/profiles/work/settings.overlay.json" "$repoRoot/profiles/work/mcp-servers.json"
 check "the work overlay disables the Cloudflare plugin because its skills went unused, keeping its marketplace known" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins?.["cloudflare@cloudflare"]===false&&overlay.extraKnownMarketplaces?.cloudflare?.source?.repo==="cloudflare/skills"?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
-check "the work overlay confines backchannels to work repos because it is an internal PostHog tool" \
-  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const wires=(entries,names)=>(entries||[]).some((entry)=>names.every((name)=>entry.matcher===undefined||new RegExp(entry.matcher).test(name))&&entry.hooks.some((hook)=>hook.command.includes("confine-backchannels.mjs")));process.exit(wires(overlay.hooks?.PreToolUse,["mcp__backchannels__register_agent","Skill","ListMcpResourcesTool","ReadMcpResourceTool"])&&wires(overlay.hooks?.SessionStart,["startup","resume","clear","compact"])?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
 check "the work hooks and their tests live only under the work profile" \
-  bash -c 'for hookName in confine-backchannels gate-posthog-exec-write; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
+  bash -c 'for hookName in gate-posthog-exec-write; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
 check "work Claude hook commands use the profile hook link" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const commands=Object.values(overlay.hooks).flatMap(entries=>entries.flatMap(entry=>entry.hooks.map(hook=>hook.command)));process.exit(commands.every(command=>command.includes("/.claude/profile-hooks/"))?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
-check "work Codex denies backchannels tools and gates startup through confinement" \
-  node - "$repoRoot/profiles/work/codex-hooks.json" <<'NODE'
-const fs = require('node:fs');
-const hooks = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).hooks;
-const isConfined = hooks.PreToolUse.some(entry => ['mcp__backchannels__register_agent', 'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].every(toolName => new RegExp(entry.matcher).test(toolName)) && entry.hooks.some(handler => handler.command.includes('/.claude/profile-hooks/confine-backchannels.mjs')));
-const startupHooks = hooks.SessionStart.flatMap(entry => entry.hooks);
-const hasGatedStartup = ['startup', 'resume', 'clear', 'compact'].every(source => hooks.SessionStart.some(entry => new RegExp(entry.matcher).test(source))) && startupHooks.length === 1 && startupHooks[0].command.includes('/.claude/profile-hooks/confine-backchannels.mjs') && startupHooks[0].command.includes('--codex-startup --trust-epoch={{TRUST_EPOCH}}');
-process.exit(isConfined && hasGatedStartup ? 0 : 1);
-NODE
-check "only work declares a backchannels MCP server or Codex hooks" \
-  node - "$repoRoot/profiles" <<'NODE'
-const fs = require('node:fs');
-const path = require('node:path');
-const profilesDirectory = process.argv[2];
-for (const profileName of fs.readdirSync(profilesDirectory)) {
-  const declarationPath = path.join(profilesDirectory, profileName, 'mcp-servers.json');
-  const backchannels = fs.existsSync(declarationPath) ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')).backchannels : undefined;
-  if (profileName === 'work') {
-    if (backchannels?.type !== 'http' || backchannels.url !== 'https://api.backchannels.dev/mcp') process.exit(1);
-    continue;
-  }
-  if (backchannels || fs.existsSync(path.join(profilesDirectory, profileName, 'codex-hooks.json'))) process.exit(1);
-}
-NODE
-check "every profile with a confined server wires its confining hook for Claude and Codex" \
-  node --input-type=module - "$repoRoot" <<'NODE'
-import fs from 'node:fs';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-const repoRoot = process.argv[2];
-const { confiningHookScriptName, profilePolicy, profileSource, wiresConfiningHook } = await import(pathToFileURL(`${repoRoot}/ai/profile-config.mjs`));
-const readHooks = (sourcePath) => (sourcePath ? JSON.parse(fs.readFileSync(sourcePath, 'utf8')).hooks ?? {} : {});
-const unwiredServers = [];
-for (const profileName of fs.readdirSync(`${repoRoot}/profiles`)) {
-  if (!fs.statSync(`${repoRoot}/profiles/${profileName}`).isDirectory()) continue;
-  const declarationPath = profileSource(profileName, 'mcp-servers.json');
-  const declaredServers = declarationPath ? JSON.parse(fs.readFileSync(declarationPath, 'utf8')) : {};
-  const confinedServerNames = Object.entries(profilePolicy(profileName).mcpServers)
-    .filter(([serverName, serverPolicy]) => serverPolicy.confined && Object.hasOwn(declaredServers, serverName))
-    .map(([serverName]) => serverName);
-  const hooksSource = profileSource(profileName, 'hooks');
-  const clientHooks = {
-    claude: readHooks(profileSource(profileName, 'settings.overlay.json')),
-    codex: readHooks(profileSource(profileName, 'codex-hooks.json')),
-  };
-  for (const serverName of confinedServerNames) {
-    const scriptName = confiningHookScriptName(serverName);
-    const hasScript = Boolean(hooksSource) && fs.existsSync(path.join(hooksSource, scriptName));
-    for (const [clientName, hooksByEvent] of Object.entries(clientHooks)) {
-      if (hasScript && wiresConfiningHook(hooksByEvent, `{{HOME}}/.claude/profile-hooks/${scriptName}`, serverName)) continue;
-      unwiredServers.push(`${profileName}/${clientName}/${serverName}`);
-    }
-  }
-}
-if (unwiredServers.length > 0) {
-  console.error(unwiredServers.join('\n'));
-  process.exit(1);
-}
-NODE
 check "no profile overlay owns caveman" \
   bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \
@@ -332,7 +271,7 @@ const scan = (relativePath) => {
   const text = fs.readFileSync(absolutePath, 'utf8');
   const boundaryText = relativePath === 'ai/skills/applying-house-style/SKILL.md'
     ? text.replace("Not for PostHog product UI, which follows PostHog's own design system.", '') : text;
-  if (/posthog|backchannels|profiles\/(work|personal|server)\b|profileName[^\n]*(?:==|!=)\s*["']?(?:work|personal|server)\b/i.test(boundaryText)) {
+  if (/posthog|profiles\/(work|personal|server)\b|profileName[^\n]*(?:==|!=)\s*["']?(?:work|personal|server)\b/i.test(boundaryText)) {
     throw new Error(`profile-specific shared content: ${relativePath}`);
   }
 };

@@ -112,7 +112,6 @@ const { isDeepStrictEqual } = require('node:util');
 const [runtimePath, expectedPosthogUrl] = process.argv.slice(2);
 const runtimeSettings = JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
 const expectedServers = { foreign: { type: 'http', url: 'https://unmanaged.invalid/mcp' } };
-if (expectedPosthogUrl) expectedServers.backchannels = { type: 'http', url: 'https://api.backchannels.dev/mcp' };
 if (expectedPosthogUrl) expectedServers.posthog = { type: 'http', url: expectedPosthogUrl };
 if (expectedPosthogUrl) expectedServers.gauge = { type: 'http', url: 'https://app.withgauge.com/mcp' };
 process.exit(isDeepStrictEqual(runtimeSettings.mcpServers, expectedServers) && runtimeSettings.runtimeToken === 'keep-me' ? 0 : 1);
@@ -146,6 +145,9 @@ const runtimeSettings = JSON.parse(fs.readFileSync(runtimePath,'utf8'));
 runtimeSettings.mcpServers.backchannels = {type:'http', url:'https://api.backchannels.dev/mcp'};
 fs.writeFileSync(runtimePath,JSON.stringify(runtimeSettings));
 NODE
+mkdir -p "$XDG_STATE_HOME/dotfiles"
+printf 'backchannels\n' > "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
+printf 'backchannels\n' > "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
 
 backchannelsArtifactsAreAbsent() {
   node - "$sandbox" <<'NODE'
@@ -172,33 +174,6 @@ process.exit(hooks.description === 'foreign metadata' && foreignStartup?.hooks.l
 NODE
 }
 
-trustCodexHooks() {
-  node - "$sandbox/.codex/hooks.json" "$sandbox/.codex/config.toml" "$1" <<'NODE'
-const fs = require('node:fs');
-const [hooksPath, configPath, trustedHash] = process.argv.slice(2);
-const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks;
-let configText = fs.readFileSync(configPath, 'utf8');
-for (const [eventName, entries] of Object.entries(hooks)) {
-  entries.forEach((entry, entryIndex) => entry.hooks.forEach((handler, handlerIndex) => {
-    if (!/\/\.claude\/(?:profile-)?hooks\//.test(handler.command)) return;
-    const stateKey = `${hooksPath}:${eventName.replace(/(?<=[a-z])(?=[A-Z])/g, '_').toLowerCase()}:${entryIndex}:${handlerIndex}`;
-    const tableHeader = `[hooks.state.${JSON.stringify(stateKey)}]`;
-    configText = configText.split('\n').filter((line, lineIndex, lines) => line !== tableHeader && lines[lineIndex - 1] !== tableHeader).join('\n');
-    configText += `\n${tableHeader}\ntrusted_hash = "${trustedHash}"\n`;
-  }));
-}
-fs.writeFileSync(configPath, configText);
-NODE
-}
-
-codexBackchannelsIsEnabled() {
-  grep -A2 -xF '[mcp_servers.backchannels]' "$sandbox/.codex/config.toml" | grep -qx 'enabled = true'
-}
-
-codexBackchannelsIsDisabled() {
-  grep -A2 -xF '[mcp_servers.backchannels]' "$sandbox/.codex/config.toml" | grep -qx 'enabled = false'
-}
-
 printf '\nai topic\n'
 
 renderFixtureDirectory="$sandbox/render-codex-hooks-fixture"
@@ -206,10 +181,10 @@ mkdir -p "$renderFixtureDirectory"
 node - "$renderFixtureDirectory/hooks.json" <<'NODE'
 const fs = require('node:fs');
 const handler = command => ({type:'command', command});
-fs.writeFileSync(process.argv[2], JSON.stringify({hooks:{SessionStart:[{hooks:[handler('node /srv/backchannels/audit.mjs'), handler("node '$HOME/.agents/skills/backchannels/session-start.mjs' || true"), handler('node "/home/x/.claude/profile-hooks/confine-backchannels.mjs" --codex-startup')]}]}}));
+fs.writeFileSync(process.argv[2], JSON.stringify({hooks:{SessionStart:[{hooks:[handler('node /srv/backchannels/audit.mjs'), handler("node '$HOME/.agents/skills/backchannels/session-start.mjs' || true")]}]}}));
 NODE
 node "$stagedRepo/ai/render-codex-hooks.mjs" "$stagedRepo/ai/codex-hooks.base.json" "$renderFixtureDirectory/hooks.json" "$renderFixtureDirectory/rendered.json" > /dev/null
-check "Codex hook render keeps a foreign hook under another backchannels path and drops only owned and old-installer hooks" \
+check "Codex hook render keeps a foreign hook under another backchannels path and drops the old-installer hook" \
   node -e 'const commands = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks.SessionStart.flatMap(entry => entry.hooks.map(handler => handler.command)); process.exit(JSON.stringify(commands) === JSON.stringify(["node /srv/backchannels/audit.mjs"]) ? 0 : 1)' "$renderFixtureDirectory/rendered.json"
 
 installStatus=0
@@ -362,67 +337,16 @@ printf 'external Codex skill\n' > "$sandbox/.agents/skills/backchannels/SKILL.md
 printf 'process.stdout.write("backchannels startup context");\n' > "$sandbox/.agents/skills/backchannels/session-start.mjs"
 firstWorkStatus=0
 workMcpOutput="$(runTopicInstall "$stagedTopicDir" work)" || firstWorkStatus=$?
-check "a first work converge warns until Codex hooks are reviewed" test "$firstWorkStatus" -eq 1
-check "work preserves external Claude skill ownership" grep -qx 'external Claude skill' "$sandbox/.claude/skills/backchannels/SKILL.md"
-check "work preserves external Codex skill ownership" grep -qx 'external Codex skill' "$sandbox/.agents/skills/backchannels/SKILL.md"
+check "a first work converge exits clean" test "$firstWorkStatus" -eq 0
+check "work retires the backchannels installer's skills" \
+  bash -c '[[ ! -e "$1" && ! -e "$2" ]]' _ "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
 check "work links profile hooks through the alias" \
   bash -c '[[ -L "$1" && "$(readlink "$1")" == "$2" ]]' _ "$sandbox/.claude/profile-hooks" "$sandbox/.dotfiles/profiles/work/hooks"
 check "the shared installed hooks contain none of the work hooks" \
-  bash -c 'for hookName in confine-backchannels gate-posthog-exec-write; do [[ ! -e "$1/$hookName.mjs" ]] || exit 1; done' _ "$sandbox/.claude/hooks"
-check "work configures the Codex backchannels server" grep -qx 'url = "https://api.backchannels.dev/mcp"' "$sandbox/.codex/config.toml"
+  bash -c '[[ ! -e "$1/gate-posthog-exec-write.mjs" ]]' _ "$sandbox/.claude/hooks"
 check "work preserves foreign hooks and Codex trust" foreignBackchannelsNeighboursArePreserved
-check "a first Codex hook render leaves backchannels disabled" codexBackchannelsIsDisabled
-check "a first Codex hook render asks for hook review" outputHas "$workMcpOutput" "review hooks with /hooks, then rerun dot"
-check "Codex owned hooks render ahead of foreign hooks" \
-  node -e 'const hooks = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks; process.exit(hooks.SessionStart[0].hooks[0].command.includes("confine-backchannels.mjs") && hooks.PreToolUse.some(entry => entry.hooks.some(handler => handler.command.includes("confine-backchannels.mjs"))) ? 0 : 1)' "$sandbox/.codex/hooks.json"
-trustCodexHooks "sha256:first-trust"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "trusted Codex hooks enable backchannels" codexBackchannelsIsEnabled
-cp "$stagedRepo/profiles/work/codex-hooks.json" "$sandbox/codex-hooks-declaration-backup.json"
-node -e 'const fs = require("node:fs"); fs.writeFileSync(process.argv[1], fs.readFileSync(process.argv[1], "utf8").replaceAll("\"timeout\": 10", "\"timeout\": 9"))' "$stagedRepo/profiles/work/codex-hooks.json"
-changedHooksStatus=0
-changedHooksOutput="$(runTopicInstall "$stagedTopicDir" work)" || changedHooksStatus=$?
-check "changed Codex hooks disable backchannels until re-trusted" codexBackchannelsIsDisabled
-check "changed Codex hooks warn" test "$changedHooksStatus" -eq 1
-runTopicInstall "$stagedTopicDir" work > /dev/null || true
-check "a stale trust hash at an owned hook position does not count" codexBackchannelsIsDisabled
-trustCodexHooks "sha256:second-trust"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "re-trusted changed Codex hooks enable backchannels" codexBackchannelsIsEnabled
-cp "$sandbox/codex-hooks-declaration-backup.json" "$stagedRepo/profiles/work/codex-hooks.json"
-runTopicInstall "$stagedTopicDir" work > /dev/null || true
-trustCodexHooks "sha256:third-trust"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "restored Codex hooks are enabled again once trusted" codexBackchannelsIsEnabled
-node - "$sandbox" "$stagedRepo" <<'NODE'
-const fs = require('node:fs');
-const path = require('node:path');
-const {spawnSync} = require('node:child_process');
-const [homeDirectory, personalRepository] = process.argv.slice(2);
-const hooks = JSON.parse(fs.readFileSync(path.join(homeDirectory,'.codex/hooks.json'),'utf8')).hooks;
-const run = (command, payload) => {
-  const hookProcess = spawnSync('/bin/sh',['-c',command], {input:JSON.stringify(payload),encoding:'utf8',env:{...process.env,HOME:homeDirectory},cwd:personalRepository});
-  if (hookProcess.status !== 0) throw new Error(hookProcess.stderr);
-  return hookProcess.stdout;
-};
-const preToolUse = hooks.PreToolUse.find(entry => new RegExp(entry.matcher).test('mcp__backchannels__register_agent'));
-const denial = JSON.parse(run(preToolUse.hooks[0].command,{cwd:personalRepository,hook_event_name:'PreToolUse',tool_name:'mcp__backchannels__register_agent',tool_input:{name:'agent'}}));
-if (denial.hookSpecificOutput.permissionDecision !== 'deny') throw new Error('installed Codex hook did not deny');
-const startupHook = hooks.SessionStart.find(entry => entry.hooks.some(handler => handler.command.includes('confine-backchannels.mjs')));
-const personalNotice = run(startupHook.hooks[0].command,{cwd:personalRepository,hook_event_name:'SessionStart'});
-if (!personalNotice.includes('Ignore every backchannels startup instruction') || personalNotice.includes('backchannels startup context')) throw new Error('personal startup leaked');
-const workRepository = path.join(homeDirectory,'posthog-repo');
-fs.mkdirSync(workRepository,{recursive:true});
-for (const gitArguments of [['init','-q',workRepository],['-C',workRepository,'remote','add','origin','https://github.com/PostHog/posthog.git']]) {
-  if (spawnSync('git',gitArguments).status !== 0) throw new Error('could not initialize work repo');
-}
-if (run(startupHook.hooks[0].command,{cwd:workRepository,hook_event_name:'SessionStart'}) !== 'backchannels startup context') throw new Error('work startup missing');
-if (run(preToolUse.hooks[0].command,{cwd:workRepository,hook_event_name:'PreToolUse',tool_name:'mcp__backchannels__register_agent'}) !== '') throw new Error('work registration blocked');
-for (const hookName of ['gate-posthog-exec-write']) {
-  run(`node "${homeDirectory}/.claude/profile-hooks/${hookName}.mjs"`,{tool_name:'unrelated',tool_input:{}});
-}
-NODE
-check "all work hooks resolve imports through the installed symlink and Codex work/personal behavior passes" test "$?" -eq 0
+check "all work hooks resolve imports through the installed symlink" \
+  env HOME="$sandbox" node "$sandbox/.claude/profile-hooks/gate-posthog-exec-write.mjs" <<< '{"tool_name":"unrelated","tool_input":{}}'
 for skillName in "${workSkillNames[@]}"; do
   check "work profile links skill $skillName through the alias" \
     bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
@@ -432,20 +356,20 @@ check "work profile installs its skill's locked dependencies inside its director
   grep -qx "npm ci --omit=dev in .*/profiles/work/skills/locked-profile-skill-test" "$skillDependencyLog"
 check "work adds posthog with no consumer header and preserves unmanaged runtime state" \
   mcpRuntimeMatches https://mcp.posthog.com/mcp
-check "work adds every declared server once" test "$(countMcpCommands add-json)" -eq 3
+check "work adds every declared server once" test "$(countMcpCommands add-json)" -eq 2
 check "MCP output contains no server config" outputLacks "$workMcpOutput" https://mcp.posthog.com/mcp
 quietWorkOutput="$(runTopicInstall "$stagedTopicDir" work)"
 check "a work rerun reports no changes" reportsNoChanges "$quietWorkOutput"
-check "an unchanged rerun issues no MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 3
-printf '{"posthog":{"url":"https://mcp.posthog.com/mcp","type":"http"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"},"gauge":{"url":"https://app.withgauge.com/mcp","type":"http"}}\n' \
+check "an unchanged rerun issues no MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 2
+printf '{"posthog":{"url":"https://mcp.posthog.com/mcp","type":"http"},"gauge":{"url":"https://app.withgauge.com/mcp","type":"http"}}\n' \
   > "$stagedRepo/profiles/work/mcp-servers.json"
 runTopicInstall "$stagedTopicDir" work > /dev/null
-check "object key order does not trigger MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 3
-printf '{"posthog":{"type":"http","url":"https://changed.invalid/mcp"},"backchannels":{"type":"http","url":"https://api.backchannels.dev/mcp"},"gauge":{"type":"http","url":"https://app.withgauge.com/mcp"}}\n' \
+check "object key order does not trigger MCP mutation" test "$(wc -l < "$mcpCommandLog")" -eq 2
+printf '{"posthog":{"type":"http","url":"https://changed.invalid/mcp"},"gauge":{"type":"http","url":"https://app.withgauge.com/mcp"}}\n' \
   > "$stagedRepo/profiles/work/mcp-servers.json"
 runTopicInstall "$stagedTopicDir" work > /dev/null
 check "a changed config removes then adds the managed server" \
-  node -e 'const commands = require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse); process.exit(commands.length === 5 && commands[3][1] === "remove" && commands[4][1] === "add-json" ? 0 : 1)' "$mcpCommandLog"
+  node -e 'const commands = require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse); process.exit(commands.length === 4 && commands[2][1] === "remove" && commands[3][1] === "add-json" ? 0 : 1)' "$mcpCommandLog"
 check "a changed URL converges while preserving unmanaged state" mcpRuntimeMatches https://changed.invalid/mcp
 : > "$sandbox/.fail-mcp-remove"
 failedRemovalStatus=0
@@ -473,7 +397,7 @@ check "an unmanaged differing server names the blocked convergence" \
 check "an unmanaged differing server survives a work converge unchanged" \
   mcpRuntimeMatches https://eu.unmanaged.invalid/mcp
 check "an unmanaged differing server triggers no mutation beyond adding the other declared servers" \
-  test "$(wc -l < "$mcpCommandLog")" -eq "$((mcpCommandCountBeforeUnmanaged + 2))"
+  test "$(wc -l < "$mcpCommandLog")" -eq "$((mcpCommandCountBeforeUnmanaged + 1))"
 check "an unmanaged differing server is not recorded as managed" \
   bash -c '! grep -qx posthog "$1"' _ "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
 node -e 'const fs = require("node:fs"); const runtimeSettings = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); delete runtimeSettings.mcpServers.posthog; fs.writeFileSync(process.argv[1], JSON.stringify(runtimeSettings))' "$sandbox/.claude.json"
@@ -513,7 +437,7 @@ process.exit(isDeepStrictEqual(mcpConfig.mcpServers, expectedServers) && mcpConf
 NODE
 }
 runTopicInstall "$stagedTopicDir" work > /dev/null
-check "work Kimi mcp.json gains the unconfined servers, keeps hand-added ones, and never gets backchannels" \
+check "work Kimi mcp.json gains the declared servers and keeps hand-added ones" \
   kimiMcpServersMatch work
 check "work profile links its own AGENTS.md through the alias" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
@@ -695,14 +619,8 @@ missingClaudeOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH
   bash "$stagedTopicDir/install.sh")" || missingClaudeStatus=$?
 mv "$sandbox/codex-config-aside.toml" "$sandbox/.codex/config.toml"
 check "an absent claude CLI warns when a server needs replacing" outputHas "$missingClaudeOutput" "claude not found"
-check "an absent Codex CLI with no Codex config is skipped quietly because there is no Codex to confine" \
+check "an absent Codex CLI with no Codex config is skipped quietly" \
   bash -c '! grep -qE "\[warn\] +Codex (hooks|MCP)" <<< "$1"' _ "$missingClaudeOutput"
-absentCodexWithConfigOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$gitlessBin" \
-  bash "$stagedTopicDir/install.sh")" || true
-check "an absent Codex CLI warns when config.toml still declares a confined server" \
-  bash -c 'grep -qE "\[warn\] +Codex MCP backchannels" <<< "$1"' _ "$absentCodexWithConfigOutput"
-check "an absent Codex CLI never asks for a hook review it cannot act on" \
-  bash -c '[[ "$1" != *"review hooks with /hooks"* ]]' _ "$absentCodexWithConfigOutput"
 check "an absent claude CLI marks the topic warned" test "$missingClaudeStatus" -eq 1
 check "an absent claude CLI still renders work settings" \
   cmp -s "$sandbox/.claude/CLAUDE.md" "$stagedRepo/profiles/work/CLAUDE.md"
@@ -713,133 +631,59 @@ env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
 mv "$sandbox/runtime-settings-aside.json" "$sandbox/.claude.json"
 check "an absent claude CLI keeps managed ownership when the runtime file is missing" \
   grep -qx posthog "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
+seedRetiredCodexServer() {
+  printf '\n[mcp_servers.backchannels]\nurl = "https://api.backchannels.dev/mcp"\n' >> "$sandbox/.codex/config.toml"
+  printf 'backchannels\n' > "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
+}
+seedRetiredCodexServer
 absentCodexRetiredServerOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
   bash "$stagedTopicDir/install.sh")" || true
 check "an absent Codex CLI warns when config.toml still declares a retired server" \
   bash -c 'grep -qE "\[warn\] +Codex MCP backchannels" <<< "$1"' _ "$absentCodexRetiredServerOutput"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "retirement after an absent CLI preserves the unmanaged server" mcpRuntimeMatches ""
-runTopicInstall "$stagedTopicDir" work > /dev/null
-node - "$sandbox/.codex/config.toml" <<'NODE'
-const fs = require('node:fs');
-const configPath = process.argv[2];
-fs.writeFileSync(configPath, fs.readFileSync(configPath, 'utf8').replace('https://api.backchannels.dev/mcp', 'https://outdated.invalid/mcp'));
-NODE
-cp "$sandbox/.codex/config.toml" "$sandbox/codex-config-before-failed-render.toml"
-: > "$sandbox/.fail-codex-mcp-stage"
-failedCodexRenderStatus=0
-failedCodexRenderOutput="$(runTopicInstall "$stagedTopicDir" work)" || failedCodexRenderStatus=$?
-check "Codex rejects an invalid staged config with a warning" test "$failedCodexRenderStatus" -eq 1
-check "a rejected Codex render preserves the current config" cmp -s "$sandbox/.codex/config.toml" "$sandbox/codex-config-before-failed-render.toml"
-rm -f "$sandbox/.fail-codex-mcp-stage"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "a changed Codex URL converges" grep -qx 'url = "https://api.backchannels.dev/mcp"' "$sandbox/.codex/config.toml"
-check "a changed Codex URL preserves foreign config and trust" foreignBackchannelsNeighboursArePreserved
+seedRetiredCodexServer
 : > "$sandbox/.fail-codex-mcp-remove"
 failedCodexRemovalStatus=0
-failedCodexRemovalOutput="$(runTopicInstall "$stagedTopicDir" personal)" || failedCodexRemovalStatus=$?
+runTopicInstall "$stagedTopicDir" personal > /dev/null || failedCodexRemovalStatus=$?
 check "a failed Codex removal follows the topic warning convention" test "$failedCodexRemovalStatus" -eq 1
 check "a failed Codex removal preserves the server for the next converge" grep -qxF '[mcp_servers.backchannels]' "$sandbox/.codex/config.toml"
-check "a failed Codex removal still removes startup hooks" bash -c '! grep -q backchannels "$1"' _ "$sandbox/.codex/hooks.json"
+check "a failed Codex removal keeps ownership for retry" grep -qx backchannels "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
 rm -f "$sandbox/.fail-codex-mcp-remove"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "a failed Codex removal converges once the CLI can remove it" backchannelsArtifactsAreAbsent
-cp "$sandbox/.codex/config.toml" "$sandbox/codex-valid-config.toml"
-printf 'invalid toml\n' > "$sandbox/.codex/config.toml"
-invalidCodexConfigStatus=0
-invalidCodexConfigOutput="$(runTopicInstall "$stagedTopicDir" work)" || invalidCodexConfigStatus=$?
-check "an unreadable Codex config warns" test "$invalidCodexConfigStatus" -eq 1
-check "an unreadable Codex config is never overwritten" grep -qx 'invalid toml' "$sandbox/.codex/config.toml"
-cp "$sandbox/codex-valid-config.toml" "$sandbox/.codex/config.toml"
-runTopicInstall "$stagedTopicDir" personal > /dev/null
+check "a retired Codex server clears its ownership record" test ! -e "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
+check "a retired Codex server preserves foreign config and trust" foreignBackchannelsNeighboursArePreserved
 cp "$sandbox/.codex/hooks.json" "$sandbox/codex-valid-hooks.json"
 printf 'not json\n' > "$sandbox/.codex/hooks.json"
 invalidCodexHooksStatus=0
 runTopicInstall "$stagedTopicDir" work > /dev/null 2>&1 || invalidCodexHooksStatus=$?
 check "unparseable Codex hooks warn" test "$invalidCodexHooksStatus" -eq 1
 check "unparseable Codex hooks preserve the source for correction" grep -qx 'not json' "$sandbox/.codex/hooks.json"
-check "unparseable Codex hooks leave the Codex backchannels server disabled" codexBackchannelsIsDisabled
 cp "$sandbox/codex-valid-hooks.json" "$sandbox/.codex/hooks.json"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "Codex backchannels is enabled again once its trusted hooks render" codexBackchannelsIsEnabled
-codexTrustEpochPath="$XDG_STATE_HOME/dotfiles/ai-codex-hook-trust-epoch"
-codexTrustBaselinePath="$XDG_STATE_HOME/dotfiles/ai-codex-hook-trust-baseline"
-cp "$sandbox/.codex/hooks.json" "$sandbox/codex-hooks-before-quiet-rerun.json"
-cp "$codexTrustEpochPath" "$sandbox/codex-trust-epoch-before-quiet-rerun"
+printf 'stale\n' > "$XDG_STATE_HOME/dotfiles/ai-codex-hook-trust-epoch"
+printf 'stale\n' > "$XDG_STATE_HOME/dotfiles/ai-codex-hook-trust-baseline"
 quietRerunStatus=0
 runTopicInstall "$stagedTopicDir" work > /dev/null || quietRerunStatus=$?
-check "an unchanged trusted converge reruns quietly" test "$quietRerunStatus" -eq 0
-check "an unchanged converge keeps the Codex trust epoch" cmp -s "$codexTrustEpochPath" "$sandbox/codex-trust-epoch-before-quiet-rerun"
-check "an unchanged converge keeps the Codex hook definitions" cmp -s "$sandbox/.codex/hooks.json" "$sandbox/codex-hooks-before-quiet-rerun.json"
-check "owned Codex hook commands carry the trust epoch" grep -qF -- "--trust-epoch=$(cat "$codexTrustEpochPath")" "$sandbox/.codex/hooks.json"
-rm -f "$codexTrustEpochPath" "$codexTrustBaselinePath"
-lostTrustStateStatus=0
-runTopicInstall "$stagedTopicDir" work > /dev/null || lostTrustStateStatus=$?
-check "lost Codex trust state warns" test "$lostTrustStateStatus" -eq 1
-check "lost Codex trust state disables backchannels" codexBackchannelsIsDisabled
-check "lost Codex trust state rotates the trust epoch" bash -c '! cmp -s "$1" "$2"' _ "$codexTrustEpochPath" "$sandbox/codex-trust-epoch-before-quiet-rerun"
-check "lost Codex trust state changes the owned hook definitions" bash -c '! cmp -s "$1" "$2"' _ "$sandbox/.codex/hooks.json" "$sandbox/codex-hooks-before-quiet-rerun.json"
-trustCodexHooks "sha256:third-trust"
-runTopicInstall "$stagedTopicDir" work > /dev/null || true
-check "the pre-loss trust hash does not count after lost Codex trust state" codexBackchannelsIsDisabled
-trustCodexHooks "sha256:after-state-loss-trust"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "re-trusted hooks after lost Codex trust state enable backchannels" codexBackchannelsIsEnabled
-rm -f "$codexTrustEpochPath" "$codexTrustBaselinePath"
+check "a work converge with Codex and no hook trust exits clean" test "$quietRerunStatus" -eq 0
+check "a converge clears the retired Codex hook trust state" \
+  bash -c '[[ ! -e "$1/ai-codex-hook-trust-epoch" && ! -e "$1/ai-codex-hook-trust-baseline" ]]' _ "$XDG_STATE_HOME/dotfiles"
 mv "$stagedRepo/profiles/work/hooks" "$sandbox/work-hooks-aside"
 rm -f "$sandbox/.claude/profile-hooks"
 mkdir -p "$sandbox/.claude/profile-hooks"
 printf 'foreign hook directory\n' > "$sandbox/.claude/profile-hooks/foreign.txt"
 runTopicInstall "$stagedTopicDir" work > /dev/null 2>&1 || true
-check "a warned profile hooks link still records the Codex trust baseline" test -s "$codexTrustBaselinePath"
-check "a foreign hook directory cannot satisfy profile confinement" codexBackchannelsIsDisabled
 check "an absent profile hook declaration preserves the foreign directory" \
   grep -qx 'foreign hook directory' "$sandbox/.claude/profile-hooks/foreign.txt"
-trustCodexHooks "sha256:while-link-warned-trust"
 mv "$sandbox/work-hooks-aside" "$stagedRepo/profiles/work/hooks"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "hooks trusted while the profile hooks link warned enable backchannels once it converges" codexBackchannelsIsEnabled
+runTopicInstall "$stagedTopicDir" work > /dev/null || true
 cp "$stagedRepo/profiles/work/settings.overlay.json" "$sandbox/settings-overlay-backup.json"
 printf 'not json\n' > "$stagedRepo/profiles/work/settings.overlay.json"
-failedClaudeConfinementStatus=0
-failedClaudeConfinementOutput="$(runTopicInstall "$stagedTopicDir" work)" || failedClaudeConfinementStatus=$?
-check "a failed Claude settings render warns" test "$failedClaudeConfinementStatus" -eq 1
-check "a failed Claude settings render withholds the Claude backchannels server" \
-  node -e 'process.exit(require(process.argv[1]).mcpServers.backchannels ? 1 : 0)' "$sandbox/.claude.json"
-check "a failed Claude settings render names the withheld server" \
-  outputHas "$failedClaudeConfinementOutput" "withheld until Claude confinement converges"
+failedClaudeSettingsStatus=0
+runTopicInstall "$stagedTopicDir" work > /dev/null || failedClaudeSettingsStatus=$?
+check "a failed Claude settings render warns" test "$failedClaudeSettingsStatus" -eq 1
 cp "$sandbox/settings-overlay-backup.json" "$stagedRepo/profiles/work/settings.overlay.json"
 runTopicInstall "$stagedTopicDir" work > /dev/null
-check "a recovered Claude settings render restores the Claude backchannels server" \
-  node -e 'process.exit(require(process.argv[1]).mcpServers.backchannels ? 0 : 1)' "$sandbox/.claude.json"
-unconfinedChildDirectory="$stagedRepo/profiles/unconfined-child-fixture"
-mkdir -p "$unconfinedChildDirectory"
-printf '{"extends":"work"}\n' > "$unconfinedChildDirectory/ai.json"
-node - "$stagedRepo/profiles/work" "$unconfinedChildDirectory" <<'NODE'
-const fs = require('node:fs');
-const [workDirectory, childDirectory] = process.argv.slice(2);
-const overlay = JSON.parse(fs.readFileSync(`${workDirectory}/settings.overlay.json`, 'utf8'));
-overlay.hooks.PreToolUse = overlay.hooks.PreToolUse.filter(entry => !entry.hooks.some(handler => handler.command.includes('confine-backchannels.mjs')));
-fs.writeFileSync(`${childDirectory}/settings.overlay.json`, JSON.stringify(overlay));
-const codexHooks = JSON.parse(fs.readFileSync(`${workDirectory}/codex-hooks.json`, 'utf8'));
-for (const entry of codexHooks.hooks.PreToolUse) entry.matcher = '^Bash$';
-fs.writeFileSync(`${childDirectory}/codex-hooks.json`, JSON.stringify(codexHooks));
-NODE
-runTopicInstall "$stagedTopicDir" unconfined-child-fixture > /dev/null 2>&1 || true
-trustCodexHooks "sha256:unconfined-child-trust"
-unconfinedChildStatus=0
-unconfinedChildOutput="$(runTopicInstall "$stagedTopicDir" unconfined-child-fixture)" || unconfinedChildStatus=$?
-check "a child overlay without the confining hook withholds the Claude server" \
-  node -e 'process.exit(require(process.argv[1]).mcpServers.backchannels ? 1 : 0)' "$sandbox/.claude.json"
-check "a child overlay without the confining hook names the withheld server" \
-  outputHas "$unconfinedChildOutput" "withheld until Claude confinement converges"
-check "trusted child Codex hooks that miss the server tools keep Codex backchannels disabled" codexBackchannelsIsDisabled
-check "an unwired confined server fails the topic" test "$unconfinedChildStatus" -eq 1
-rm -rf "$unconfinedChildDirectory"
-runTopicInstall "$stagedTopicDir" work > /dev/null 2>&1 || true
-trustCodexHooks "sha256:after-unconfined-child-trust"
-runTopicInstall "$stagedTopicDir" work > /dev/null
-check "work re-enables confined servers once its own confining hooks are wired again" codexBackchannelsIsEnabled
 settingsHookCommandsResolve() {
   node - "$sandbox/.claude/settings.json" <<'NODE'
 const fs = require('node:fs');
@@ -858,7 +702,6 @@ runTopicInstall "$stagedTopicDir" work-server > /dev/null
 check "work-server installs its own addition beside inherited skills" \
   test "$(readlink "$sandbox/.claude/skills/child-fixture")" = "$sandbox/.dotfiles/profiles/work-server/skills/child-fixture"
 check "work-server excludes personal additions" test ! -e "$sandbox/.claude/skills/personal-fixture"
-check "work-server inherits trusted Codex confinement" codexBackchannelsIsEnabled
 check "work-server installs every settings hook at a present script" settingsHookCommandsResolve
 check "work-server inherits work rules for Claude" \
   test "$(readlink "$sandbox/.claude/AGENTS.profile.md")" = "$sandbox/.dotfiles/profiles/work/AGENTS.md"
@@ -875,8 +718,6 @@ runTopicInstall "$stagedTopicDir" server > /dev/null
 check "server removes inherited work-only artifacts" backchannelsArtifactsAreAbsent
 check "server retires the child profile addition" test ! -L "$sandbox/.claude/skills/child-fixture"
 check "server keeps shared house style" test -L "$sandbox/.claude/skills/applying-house-style"
-runTopicInstall "$stagedTopicDir" work-server > /dev/null
-check "work-server restores the identical trusted Codex hooks" codexBackchannelsIsEnabled
 rm -r "$stagedRepo/profiles/work-server/skills/child-fixture" "$stagedRepo/profiles/personal/skills/personal-fixture"
 overridingChildDirectory="$stagedRepo/profiles/overriding-child-fixture"
 mkdir -p "$overridingChildDirectory/skills/posting-sprint-updates"
@@ -897,12 +738,9 @@ check "personal installs the shared house style" \
   test "$(readlink "$sandbox/.claude/skills/applying-house-style")" = "$sandbox/.dotfiles/ai/skills/applying-house-style"
 mv "$stagedRepo/profiles/work" "$stagedRepo/profiles/renamed"
 runTopicInstall "$stagedTopicDir" renamed > /dev/null
-check "a renamed profile still enables its trusted confined server" codexBackchannelsIsEnabled
 check "another profile keeps the shared house style" test -L "$sandbox/.claude/skills/applying-house-style"
 check "a renamed profile links its hooks generically" \
   test "$(readlink "$sandbox/.claude/profile-hooks")" = "$sandbox/.dotfiles/profiles/renamed/hooks"
-runTopicInstall "$stagedTopicDir" personal > /dev/null
-check "switching away from a renamed profile retires its exclusive tools" backchannelsArtifactsAreAbsent
 mv "$stagedRepo/profiles/renamed" "$stagedRepo/profiles/work"
 
 check "AI inheritance rejects cycles, missing parents, and escaping names before convergence" \
@@ -911,7 +749,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const repository = process.argv[2];
-const { profileLineage, profilePolicy } = await import(pathToFileURL(`${repository}/ai/profile-config.mjs`));
+const { profileLineage } = await import(pathToFileURL(`${repository}/ai/profile-config.mjs`));
 const inheritedDirectory = `${repository}/profiles/inherited-fixture`;
 fs.mkdirSync(inheritedDirectory);
 for (const parent of ['inherited-fixture', 'absent-fixture', '../work']) {
@@ -920,8 +758,6 @@ for (const parent of ['inherited-fixture', 'absent-fixture', '../work']) {
 }
 fs.writeFileSync(`${inheritedDirectory}/ai.json`, JSON.stringify({extends: 'work-server'}));
 assert.deepEqual(profileLineage('inherited-fixture'), ['work', 'work-server', 'inherited-fixture']);
-assert.equal(profilePolicy('inherited-fixture').mcpServers.backchannels.confined, true);
-assert.deepEqual(profilePolicy('inherited-fixture').removedSkills, []);
 fs.rmSync(inheritedDirectory, {recursive: true});
 NODE
 
@@ -942,7 +778,7 @@ fs.writeFileSync(basePath, JSON.stringify(declaration('printf shared-hook')));
 fs.writeFileSync(overlayPath, JSON.stringify(declaration('printf profile-hook')));
 fs.writeFileSync(runtimePath, JSON.stringify(declaration('printf foreign-hook')));
 const render = () => {
-  const processOutput = spawnSync(process.execPath, [`${repository}/ai/render-codex-hooks.mjs`, overlayPath, runtimePath, destinationPath, '', ownedPath], {encoding:'utf8'});
+  const processOutput = spawnSync(process.execPath, [`${repository}/ai/render-codex-hooks.mjs`, overlayPath, runtimePath, destinationPath, ownedPath], {encoding:'utf8'});
   assert.equal(processOutput.status, 0, processOutput.stderr);
   fs.copyFileSync(destinationPath, runtimePath);
   return fs.readFileSync(runtimePath, 'utf8');
@@ -966,12 +802,9 @@ check "a profile without an overlay still gets shared hooks" \
   grep -q load-agents-md.mjs "$sandbox/.claude/settings.json"
 check "a profile without an overlay gets no work hooks" \
   bash -c '! grep -q profile-hooks "$1"' _ "$sandbox/.claude/settings.json"
-check "a profile without declarations retires another profile's artifacts" backchannelsArtifactsAreAbsent
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 
 
-runTopicInstall "$stagedTopicDir" work > /dev/null
-trustCodexHooks "sha256:no-profile-trust"
 runTopicInstall "$stagedTopicDir" work > /dev/null
 mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
 noProfileSnapshot="$sandbox/no-profile-snapshot"

@@ -10,17 +10,8 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(Skill|ListMcpResourcesTool|ReadMcpResourceTool|mcp__backchannels__.*)$",
-        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/confine-backchannels.mjs" }]
-      },
-      {
         "matcher": "^mcp__.*__exec$",
         "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/gate-posthog-exec-write.mjs" }]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/confine-backchannels.mjs" }]
       }
     ]
   },

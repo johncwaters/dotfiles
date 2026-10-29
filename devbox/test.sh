@@ -853,23 +853,7 @@ GITCONFIG
 workServerConvergeStatus=0
 workServerConvergeOutput="$(runDevbox ensure 2>&1)" || workServerConvergeStatus=$?
 check "the real work-server profile bootstraps a fresh box through ensure" test "$workServerConvergeStatus" -eq 0
-check "the fresh work-server converge waits for Codex hook trust" \
-  grep -qF 'open codex, review hooks with /hooks' "$remoteBootstrapLog"
-check "untrusted confinement reports dotfiles warned" outputHas "$workServerConvergeOutput" '[warned] dotfiles: work-server converge warned'
-check "fresh work-server keeps Codex backchannels disabled" \
-  grep -qF 'enabled = false' "$remoteHome/.codex/config.toml"
-node - "$remoteHome" <<'NODE'
-const fs = require('node:fs');
-const home = process.argv[2];
-const baseline = fs.readFileSync(`${home}/.local/state/dotfiles/ai-codex-hook-trust-baseline`, 'utf8').trimEnd().split('\n');
-for (const entry of baseline.slice(1)) {
-  const stateKey = entry.split('\t')[0];
-  fs.appendFileSync(`${home}/.codex/config.toml`, `\n[hooks.state.${JSON.stringify(stateKey)}]\ntrusted_hash = "sha256:fixture-approved"\n`);
-}
-NODE
-: > "$remoteBootstrapLog"
-workServerConvergeOutput="$(runDevbox ensure 2>&1)"
-check "trusted work-server confinement converges with zero warnings" \
+check "the fresh work-server converge has zero warnings" \
   bash -c '[[ -s "$2" ]] && ! grep -qF "[warn" <<< "$1" && ! grep -qF "[warn]" "$2"' _ "$workServerConvergeOutput" "$remoteBootstrapLog"
 check "the real work-server bootstrap resolves npm on the box rather than the test host" logHas 'npm ci --omit=dev in '
 check "the real work-server converge records the clone HEAD as clean" \
