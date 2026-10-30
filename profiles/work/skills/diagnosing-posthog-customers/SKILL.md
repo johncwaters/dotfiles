@@ -28,7 +28,7 @@ Lead with the verdict in bold, in one or two sentences. Then:
    what their own data shows, and put platform-wide reach ("others hit this since Oct 14")
    in the Owning team message. When the fix sits with another team, close with
    `I'll let you know!`. End every support reply with `Thanks!`, then `John` on its own
-   line except on a posthog.com forum reply, which already shows the author. This
+   line except on a posthog.com forum or Discord reply, which already shows the author. This
    overrides `writing-in-voice`'s no-sign-off rule. A pre-close follow-up is a bare check-in: ask
    whether the last reply covered everything, say the ticket resolves in a few days
    without a reply, and say replying reopens it. Anything else worth telling the customer
