@@ -7,16 +7,17 @@ description: Guides the design process for any UI, personal or work. Use when bu
 
 Polished screens are the floor every competitor reaches with the same tools. What reads as premium is evidence of care in the states nobody screenshots, rendered in the project's own taste.
 
-Read each file under `subskills/` as you reach it:
+Open each step's file with the Read tool before acting on that step; the one-line summaries below leave out what each step requires.
 
-1. [taste](subskills/taste.md): resolve the look before writing any UI.
-2. [theme-scene](subskills/theme-scene.md): the physical scene that picks dark or light.
-3. [answer-back](subskills/answer-back.md): every action says what happened, how to take it back, what comes next.
-4. [one-product](subskills/one-product.md): the same situation looks and reads the same everywhere.
-5. [break-it](subskills/break-it.md): failure, empty, and offline states designed as carefully as success.
-6. [motion](subskills/motion.md): how anything moves.
+1. [triage](subskills/triage.md): on an existing screen, decide how much to change before changing anything.
+2. [taste](subskills/taste.md): resolve the look before writing any UI.
+3. [theme-scene](subskills/theme-scene.md): the physical scene that picks dark or light, and where the richness goes.
+4. [answer-back](subskills/answer-back.md): every action says what happened, how to take it back, what comes next.
+5. [one-product](subskills/one-product.md): the same situation looks and reads the same everywhere.
+6. [break-it](subskills/break-it.md): failure, empty, and offline states designed as carefully as success.
+7. [motion](subskills/motion.md): how anything moves.
 
-Building runs every step on the flow in scope. Reviewing runs steps 3 to 6 on the rendered UI and reports each gap as one row:
+Building runs steps 2 to 7 and the finish on the flow in scope. On an existing screen, step 1 runs first and its level sets the scope: heavy runs all of it, light fixes only the found tells, none stops at the offered refinements. Reviewing runs step 1, then steps 4 to 7 on the rendered UI, and reports each gap as one row:
 
 ```
 screen | state | fix
