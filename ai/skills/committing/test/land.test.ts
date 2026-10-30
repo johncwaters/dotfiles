@@ -43,32 +43,7 @@ function writeFailingHook(repo: string, name: string): void {
   const hooksDir = path.join(repo, ".git", "hooks");
   fs.mkdirSync(hooksDir, { recursive: true });
   const hookPath = path.join(hooksDir, name);
-  fs.writeFileSync(hookPath, "#!/bin/sh\necho 'hook says no' >&2\nexit 1\n", "utf8");
-  fs.chmodSync(hookPath, 0o755);
-}
-
-function writeFlakyHook(repo: string, name: string, failingAttempts: number): void {
-  const hooksDir = path.join(repo, ".git", "hooks");
-  fs.mkdirSync(hooksDir, { recursive: true });
-  const hookPath = path.join(hooksDir, name);
-  fs.writeFileSync(
-    hookPath,
-    [
-      "#!/bin/sh",
-      'count_file="$(git rev-parse --git-dir)/hook-attempts"',
-      "count=0",
-      '[ -f "$count_file" ] && count=$(cat "$count_file")',
-      "count=$((count + 1))",
-      'printf "%s" "$count" > "$count_file"',
-      `if [ "$count" -le ${failingAttempts} ]; then`,
-      '  echo "flaky attempt $count" >&2',
-      "  exit 1",
-      "fi",
-      "exit 0",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
+  fs.writeFileSync(hookPath, "#!/bin/sh\nprintf ' src/a.ts\\t12:3 check output: gate failed\\n'\ngit rev-parse --verify refs/heads/absent\necho 'hook says no' >&2\nexit 1\n", "utf8");
   fs.chmodSync(hookPath, 0o755);
 }
 
@@ -540,27 +515,7 @@ test("a rejected push is PUSH_FAILED with the commit already made", () => {
   }
 });
 
-test("a flaky pre-push hook is retried until it passes", () => {
-  const origin = makeBareOrigin();
-  const repo = cloneRepo(origin);
-  try {
-    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
-    commitFile(repo, "a.txt", "one\n");
-    runGit(repo, ["push", "-q", "-u", "origin", "HEAD"]);
-    writeFile(repo, "a.txt", "two\n");
-    writeFlakyHook(repo, "pre-push", 2);
-
-    const { result } = land(repo, [], VALID_MESSAGE);
-
-    assert.equal(result.outcome, "COMMITTED");
-    assert.equal(result.pushed, true);
-    assert.match((result.warnings as string[]).join("\n"), /push attempt 1\/3 failed/);
-  } finally {
-    cleanup(origin, repo);
-  }
-});
-
-test("a pre-push hook that never passes exhausts the retries", () => {
+test("a pre-push hook refusal is not retried and its output lands in the warning", () => {
   const origin = makeBareOrigin();
   const repo = cloneRepo(origin);
   try {
@@ -574,7 +529,11 @@ test("a pre-push hook that never passes exhausts the retries", () => {
 
     assert.equal(result.outcome, "PUSH_FAILED");
     assert.equal(code, 22);
-    assert.match((result.warnings as string[]).join("\n"), /push attempt 3\/3 failed/);
+    const warnings = (result.warnings as string[]).join("\n");
+    assert.doesNotMatch(warnings, /attempt/);
+    assert.match(warnings, /refused before reaching origin, not retried/);
+    assert.match(warnings, /check output: gate failed/);
+    assert.match(warnings, /hook says no/);
   } finally {
     cleanup(origin, repo);
   }

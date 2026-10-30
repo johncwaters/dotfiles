@@ -64,3 +64,16 @@ export function pushFailureText(push: PushResult, branch: string, destination = 
   }
   return push.stdout.trim();
 }
+
+const REFUSAL_OUTPUT_TAIL_LINES = 40;
+
+export function isRefusedBeforeTransfer(push: PushResult): boolean {
+  const gitReportedTransfer = push.stdout.split("\n").some((line) => line.startsWith("To "));
+  const lastStderrLine = push.stderr.trim().split("\n").pop() ?? "";
+  return push.code === 1 && !gitReportedTransfer && lastStderrLine.startsWith("error: failed to push some refs");
+}
+
+export function refusalOutputText(push: PushResult): string {
+  const combinedOutput = [push.stdout.trim(), push.stderr.trim()].filter(Boolean).join("\n");
+  return combinedOutput.split("\n").slice(-REFUSAL_OUTPUT_TAIL_LINES).join("\n");
+}

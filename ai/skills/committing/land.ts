@@ -39,8 +39,10 @@ import {
   allRefsPushed,
   branchRefspec,
   hasCauseFailure,
+  isRefusedBeforeTransfer,
   type PendingPushRef,
   pushFailureText,
+  refusalOutputText,
   sleep,
   statusByBranch,
 } from "./lib/push.ts";
@@ -1048,7 +1050,15 @@ class Landing {
       if (hasCauseFailure(statuses)) {
         for (const pendingRef of pendingRefs) {
           this.warnings.push(
-            `${pendingRef.kind === "promote" ? "promote " : ""}push ${pendingRef.branch} failed: ${pushFailureText(push, pendingRef.branch, pendingRef.destination)}`,
+            `${pushLabel(pendingRef)} failed: ${pushFailureText(push, pendingRef.branch, pendingRef.destination)}`,
+          );
+        }
+        return exhaustedOutcome;
+      }
+      if (isRefusedBeforeTransfer(push)) {
+        for (const pendingRef of pendingRefs) {
+          this.warnings.push(
+            `${pushLabel(pendingRef)} refused before reaching ${remote}, not retried: ${refusalOutputText(push)}`,
           );
         }
         return exhaustedOutcome;
@@ -1078,6 +1088,10 @@ class Landing {
       );
     }
   }
+}
+
+function pushLabel(pendingRef: PendingPushRef): string {
+  return `${pendingRef.kind === "promote" ? "promote " : ""}push ${pendingRef.branch}`;
 }
 
 function nearestExistingDirectory(directory: string, holder: string): string {
