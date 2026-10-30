@@ -1183,6 +1183,7 @@ if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFi
   check "hook, workflow, committing, running-retros, releasing, capturing-ui, composing-social-images, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
 fi
 check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"
+check "designing-ui slop lint tests pass" node --test "$topicDir/skills/designing-ui/test/lint-slop.test.mjs"
 if ((${#workSkillTestFiles[@]} > 0)); then
   check "work profile skill behavior tests pass" node --test "${workSkillTestFiles[@]}"
 fi

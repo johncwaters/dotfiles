@@ -22,4 +22,11 @@ Building runs every step on the flow in scope. Reviewing runs steps 3 to 6 on th
 screen | state | fix
 ```
 
-Finish when each step has walked the whole flow in scope and every gap has a fix or a named reason to leave it.
+Finish when each step has walked the whole flow in scope and every gap has a fix or a named reason to leave it, then:
+
+1. Run `node ~/.claude/skills/designing-ui/scripts/lint-slop.mjs <ui-files-or-dir>` and rerun until it exits 0, keeping a flag only where the resolved taste names that rule.
+2. Template check: swap in a competitor's product name. A screen that still fits gets pushed further in its copy, its moments, and its signature detail.
+
+## Scripts
+
+- `scripts/lint-slop.mjs`: flags taste-neutral AI-template tells (transition-all, hover scale, looping pulse, gradient text, 800+ weights, emoji, colored glows, off-grid arbitrary px) as `file:line: rule`, exit 1 while any remain.
