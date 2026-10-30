@@ -676,7 +676,56 @@ test("promotion rebases past another ticket's uncommitted files left outside --p
   }
 });
 
-test("promotion leaves the branch unmoved when an uncommitted file is one mainline changed", () => {
+test("promotion carries an uncommitted edit that merges cleanly with mainline's change to the same file", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "shared.txt", "one\ntwo\nthree\nfour\nfive\n", "shared base");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["pull", "-q", "--ff-only", "origin", "main"]);
+    commitFile(seed, "shared.txt", "ONE\ntwo\nthree\nfour\nfive\n", "mainline edits the top");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "shared.txt", "one\ntwo\nthree\nfour\nFIVE\n");
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--paths", "base.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
+    assert.equal(gitOutput(local, ["rev-parse", "HEAD"]), result.commit);
+    assert.equal(fs.readFileSync(path.join(local, "shared.txt"), "utf8"), "ONE\ntwo\nthree\nfour\nFIVE\n");
+    assert.equal(gitOutput(local, ["status", "--porcelain"]), "M shared.txt");
+    assert.equal(gitOutput(local, ["stash", "list"]), "");
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("promotion keeps an uncommitted revert of a committed feature line in a file mainline also changed", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "shared.txt", "a\nb\nc\nd\ne\nf\ng\n", "shared base");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["pull", "-q", "--ff-only", "origin", "main"]);
+    commitFile(local, "shared.txt", "a\nb\nc\nd\ne\nf\nG\n", "feature edits the bottom");
+    commitFile(seed, "shared.txt", "A\nb\nc\nd\ne\nf\ng\n", "mainline edits the top");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "shared.txt", "a\nb\nc\nd\ne\nf\ng\n");
+    writeFile(local, "base.txt", "base\nfeature change\n");
+
+    const { result } = land(local, ["--promote", "--paths", "base.txt"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(fs.readFileSync(path.join(local, "shared.txt"), "utf8"), "A\nb\nc\nd\ne\nf\ng\n");
+    assert.equal(gitOutput(local, ["show", "HEAD:shared.txt"]), "A\nb\nc\nd\ne\nf\nG");
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("promotion leaves the branch unmoved when an uncommitted file conflicts with mainline's change", () => {
   const { origin, seed, local } = seedOrigin();
   try {
     runGit(seed, ["checkout", "-q", "main"]);

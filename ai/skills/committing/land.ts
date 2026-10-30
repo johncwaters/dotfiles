@@ -708,7 +708,7 @@ class Landing {
       return rebase.failure;
     }
     const moveBranch = this.git.resetKeep(rebase.rebasedTip);
-    if (moveBranch.code !== 0) {
+    if (moveBranch.code !== 0 && !this.carryUncommittedOnto(rebase.rebasedTip, featureTipBeforeRebase)) {
       const failureText = (moveBranch.stderr || moveBranch.stdout || "unknown error").trim();
       this.warnings.push(
         `could not move ${source} onto its rebase over ${destination} without overwriting uncommitted changes; promotion stopped: ${failureText}`,
@@ -719,6 +719,52 @@ class Landing {
       this.commitHash = rebase.rebasedTip;
     }
     return this.fastForwardDestination(source, destination);
+  }
+
+  private carryUncommittedOnto(rebasedTip: string, featureTip: string): boolean {
+    const scratchDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-snapshot-"));
+    try {
+      return this.carryUncommittedWith(rebasedTip, featureTip, path.join(scratchDirectory, "index"));
+    } finally {
+      fs.rmSync(scratchDirectory, { recursive: true, force: true });
+    }
+  }
+
+  private carryUncommittedWith(rebasedTip: string, featureTip: string, scratchIndexPath: string): boolean {
+    const uncommittedTree = this.git.workingTreeOid(scratchIndexPath);
+    if (uncommittedTree === null) {
+      return false;
+    }
+    const snapshot = this.git.commitTree(uncommittedTree, featureTip, "land.ts uncommitted snapshot");
+    if (snapshot === null) {
+      return false;
+    }
+    const rebasedTree = this.git.treeOid(rebasedTip);
+    const rebasedOverFeature = rebasedTree === null ? null : this.git.commitTree(rebasedTree, featureTip, "land.ts rebased tree over the feature tip");
+    if (rebasedOverFeature === null) {
+      return false;
+    }
+    const merged = this.git.mergeTree(rebasedOverFeature, snapshot);
+    if (merged.code !== 0) {
+      return false;
+    }
+    const mergedTree = (merged.stdout.split("\n")[0] ?? "").trim();
+    const mainlineChangedPaths = this.git.changedPathsBetween(uncommittedTree, mergedTree);
+    if (mainlineChangedPaths === null) {
+      return false;
+    }
+    if (this.git.workingTreeOid(scratchIndexPath) !== uncommittedTree) {
+      return false;
+    }
+    if (this.git.resetMixed(rebasedTip).code !== 0) {
+      return false;
+    }
+    if (mainlineChangedPaths.length > 0 && this.git.restoreWorkingTreeFrom(mergedTree, mainlineChangedPaths).code !== 0) {
+      this.warnings.push(`the branch moved to ${rebasedTip} but mainline's changes to uncommitted files were not written; the uncommitted snapshot is ${snapshot}`);
+      return true;
+    }
+    this.warnings.push("uncommitted changes outside --paths were carried onto the promoted branch and left unstaged");
+    return true;
   }
 
   private rebaseInTemporaryWorktree(

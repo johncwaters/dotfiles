@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 
 export type GitResult = { code: number; stdout: string; stderr: string };
@@ -249,6 +250,39 @@ export class Git {
 
   resetKeep(commit: string): GitResult {
     return this.run(["reset", "--keep", commit]);
+  }
+
+  workingTreeOid(scratchIndexPath: string): string | null {
+    fs.copyFileSync(this.gitPath("index"), scratchIndexPath);
+    const env = { GIT_INDEX_FILE: scratchIndexPath };
+    if (this.run(["add", "-A"], { env }).code !== 0) {
+      return null;
+    }
+    const tree = this.run(["write-tree"], { env });
+    return tree.code === 0 ? tree.stdout.trim() : null;
+  }
+
+  commitTree(tree: string, parent: string, message: string): string | null {
+    const commit = this.run(["commit-tree", tree, "-p", parent, "-m", message]);
+    return commit.code === 0 ? commit.stdout.trim() : null;
+  }
+
+  changedPathsBetween(fromTree: string, toTree: string): string[] | null {
+    const diff = this.run(["diff-tree", "-r", "--no-renames", "--name-only", "-z", fromTree, toTree]);
+    if (diff.code !== 0) {
+      return null;
+    }
+    return diff.stdout.split("\0").filter(Boolean);
+  }
+
+  restoreWorkingTreeFrom(tree: string, paths: string[]): GitResult {
+    return this.run(["restore", `--source=${tree}`, "--worktree", "--no-overlay", "--pathspec-from-file=-", "--pathspec-file-nul"], {
+      input: paths.map((changedPath) => `${changedPath}\0`).join(""),
+    });
+  }
+
+  resetMixed(commit: string): GitResult {
+    return this.run(["reset", "-q", "--mixed", commit]);
   }
 
   mergeFfOnlyIn(worktreePath: string, ref: string): GitResult {
