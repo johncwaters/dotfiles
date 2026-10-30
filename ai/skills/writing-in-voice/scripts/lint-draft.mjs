@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { proseLines } from "../../../hooks/skill-lint.mjs";
 
 const SUBORDINATE_OPENERS = new Set(["if", "when", "because", "since", "while", "although", "though", "once", "after", "before", "unless", "until", "whenever"]);
+const AFFIRMATION_OPENERS = new Set(["yeh", "yah", "yeah", "yep", "yes", "ok", "okay", "sure", "true", "gotcha", "right", "oh", "ah"]);
 const SPLICE_AFTER_COMMA = /,\s+(?:(?:i|you|we|they|it|that|this|these|those|he|she|there)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+(?!and\b|or\b)[a-z']+|(?:the|my|your|our|their)\s+[a-z][\w-]*)/i;
 const LIST_CONTINUATION = /,\s+(?:and|or)\s/i;
 const NOT_X_ITS_Y = /\b(?:it|this|that)(?:['’]s|\s+is)\s+not\b[^.!?]*?[,;]\s*(?:it|this|that)(?:['’]s|\s+is)\b/gi;
@@ -12,6 +13,7 @@ const SHARED_PATTERN_RULES = [
   { rule: "em-dash", pattern: /—/ },
   { rule: "machine-tell", pattern: /\b(?:delv(?:e|es|ed|ing)|tapestry|landscape|game-changer|unlock(?:s|ed|ing)?|navigate the complexities|in today['’]s world|have you ever wondered|here are (?:\d+|two|three|four|five|six|seven|eight|nine|ten) )|^\s*(?:in conclusion|ultimately)\b/i },
   { rule: "corporate-opener", pattern: /\bhope this (?:email|message|note) finds you well\b|\bfriendly reminder\b/i },
+  { rule: "teaser", pattern: /\b(?:(?:shows|explains) why|here['’]s (?:why|how|the thing))\s*[.!?:]*\s*$/i },
   { rule: "corporate-closer", pattern: /^\s*(?:best|cheers|regards|best regards|kind regards|warm regards|warmly|sincerely|all the best)\s*[,.!]?\s*$/i },
 ];
 
@@ -30,7 +32,9 @@ function isCommaSplice(sentence) {
   const splice = sentence.match(SPLICE_AFTER_COMMA);
   if (!splice) return false;
   const clauseBeforeComma = sentence.slice(0, splice.index).trim();
-  if (!/\s/.test(clauseBeforeComma)) return false;
+  const openerAfterLabel = clauseBeforeComma.split(/:\s/).pop().trim();
+  if (AFFIRMATION_OPENERS.has(openerAfterLabel.toLowerCase())) return true;
+  if (!/\s/.test(openerAfterLabel)) return false;
   return !LIST_CONTINUATION.test(sentence.slice(splice.index + splice[0].length));
 }
 
@@ -93,6 +97,7 @@ function runCommandLine(argumentList) {
   const flags = draftSources.flatMap((source) => lintDraft(fs.readFileSync(source, "utf8"), { isLongform }).map((flag) => ({ ...flag, source })));
   for (const flag of flags) console.log(`${draftPaths.length > 1 ? `${flag.source}:` : ""}${flag.line}: ${flag.rule}: ${flag.text}`);
   if (flags.some((flag) => flag.rule === "comma-splice")) console.log("comma-splice: delete the whole sentence. A spliced line is usually a fluff acknowledgement, and splitting it with a period or joining it with 'and' keeps the fluff. Rewrite it only when it carries a fact the reader needs.");
+  if (flags.some((flag) => flag.rule === "teaser")) console.log("teaser: delete the whole sentence. It announces a reason without giving one, so open the next sentence with the reason itself.");
   console.log(`${flags.length} flag(s). Delete or rewrite each flagged sentence and rerun until 0.`);
   process.exitCode = flags.length > 0 ? 1 : 0;
 }

@@ -21,7 +21,10 @@ test("comma splices from real support drafts fail and their joined rewrite passe
     assert.equal(linted.exitCode, 1);
     assert.match(linted.stdout, new RegExp(`comma-splice: ${splice.replace(/[.]/g, "\\.")}`));
   }
-  const rewrite = lintDraft("Ty for the screenshots, and they helped a lot. If it moves to 13, that is the cause. We checked the API, the worker, and the DB. Thanks!");
+  const labelledInterjectionTeaser = lintDraft("Agents not showing as agents: yeh, that one's real, and your own report (the voice inference one) shows why.");
+  assert.deepEqual(labelledInterjectionTeaser.rules, ["teaser", "comma-splice"]);
+  assert.match(labelledInterjectionTeaser.stdout, /teaser: delete the whole sentence/);
+  const rewrite = lintDraft("Ty for the screenshots, and they helped a lot. If it moves to 13, that is the cause. We checked the API, the worker, and the DB. The log shows why the job failed: a stale token. Here's how to fix it: set X. However, the API returns 500 for that call. At 10:30, the worker, the API, and the DB restarted. Thanks!");
   assert.equal(rewrite.exitCode, 0, rewrite.stdout);
 });
 
