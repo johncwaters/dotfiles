@@ -518,6 +518,7 @@ class Landing {
       }
     }
 
+    const mainlineTipBeforePromotion = this.git.revParseRef(`refs/heads/${mainline}`);
     const promoteOutcome = this.promoteHop(current, mainline);
     if (promoteOutcome) {
       this.pushFeatureAfterFailedMainlinePromotion(featureBranch, promoteOutcome);
@@ -533,6 +534,7 @@ class Landing {
 
     const pushOutcome = this.pushMainline(mainline);
     if (pushOutcome) {
+      this.restoreMainlineAfterFailedPush(mainline, mainlineTipBeforePromotion);
       this.pushFeatureAfterFailedMainlinePromotion(featureBranch, pushOutcome);
       return pushOutcome;
     }
@@ -544,6 +546,32 @@ class Landing {
     }
     this.deleteMergedRemoteFeatureBranch(featureBranch, mainline);
     return null;
+  }
+
+  private restoreMainlineAfterFailedPush(mainline: string, mainlineTipBeforePromotion: string | null): void {
+    if (mainlineTipBeforePromotion === null || this.readOnlyHolderMainlineTip !== null) {
+      return;
+    }
+    const promotedTip = this.git.revParseRef(`refs/heads/${mainline}`);
+    if (promotedTip === null || promotedTip === mainlineTipBeforePromotion || promotedTip !== this.git.revParseHead()) {
+      return;
+    }
+    const worktrees = this.git.worktreeListPorcelain();
+    const holder = worktrees.code === 0 ? findWorktreeForBranch(worktrees.stdout, mainline) : null;
+    const restore =
+      holder === null
+        ? this.git.updateRef(`refs/heads/${mainline}`, mainlineTipBeforePromotion, promotedTip)
+        : this.git.resetKeepIn(holder, mainlineTipBeforePromotion);
+    if (restore.code === 0) {
+      this.warnings.push(
+        `local ${mainline} was reset to ${mainlineTipBeforePromotion} after its push failed, so a rerun promotes again`,
+      );
+      return;
+    }
+    const failureText = (restore.stderr || restore.stdout || "unknown error").trim();
+    this.warnings.push(
+      `could not reset local ${mainline} to ${mainlineTipBeforePromotion} after its push failed; a rerun stops on MAINLINE_AHEAD: ${failureText}`,
+    );
   }
 
   private pushDeferredFeatureBranch(): FailureOutcome | null {

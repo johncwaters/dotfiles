@@ -285,6 +285,14 @@ export class Git {
     return this.run(["reset", "-q", "--mixed", commit]);
   }
 
+  resetKeepIn(worktreePath: string, commit: string): GitResult {
+    return this.run(["reset", "-q", "--keep", commit], { cwd: worktreePath });
+  }
+
+  updateRef(ref: string, newTip: string, expectedOldTip: string): GitResult {
+    return this.run(["update-ref", ref, newTip, expectedOldTip]);
+  }
+
   mergeFfOnlyIn(worktreePath: string, ref: string): GitResult {
     return this.run(["merge", "--ff-only", ref], { cwd: worktreePath });
   }

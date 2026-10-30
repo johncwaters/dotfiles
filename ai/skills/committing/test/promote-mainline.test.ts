@@ -389,7 +389,7 @@ test("a rejected mainline push is PROMOTE_FAILED and pushes the feature branch",
     assert.deepEqual(result.promoted, []);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), result.commit);
-    assert.equal(gitOutput(local, ["rev-parse", "main"]), result.commit);
+    assert.equal(gitOutput(local, ["rev-parse", "main"]), originMainBefore);
   } finally {
     cleanup(origin, seed, local);
   }
@@ -518,6 +518,32 @@ test("a mainline checked out in a clean worktree is fast-forwarded there", () =>
     assert.equal(gitOutput(holder, ["rev-parse", "main"]), result.commit);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
     assert.match((result.warnings as string[]).join("\n"), /fast-forwarded in its holding worktree/);
+  } finally {
+    cleanup(origin, seed, local, path.dirname(holder));
+  }
+});
+
+test("a failed mainline push resets the holding worktree's main so a rerun promotes", () => {
+  const { origin, seed, local } = seedOrigin();
+  const holder = cloneRepo(origin);
+  const session = path.join(path.dirname(holder), "session");
+  try {
+    const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
+    runGit(holder, ["worktree", "add", "-b", "feature", session, "origin/feature"]);
+    writeOriginHook(origin, "update", rejectUpdateHook("main"));
+    writeFile(session, "base.txt", "base\nfeature change\n");
+    const failedLanding = land(session, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(failedLanding.result.outcome, "PROMOTE_FAILED");
+    assert.equal(gitOutput(holder, ["rev-parse", "main"]), originMainBefore);
+
+    fs.rmSync(path.join(origin, "hooks", "update"));
+    const rerun = land(session, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(rerun.result.outcome, "NOTHING_TO_COMMIT");
+    assert.deepEqual(rerun.result.promoted, ["main"]);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), failedLanding.result.commit);
+    assert.equal(gitOutput(holder, ["rev-parse", "main"]), failedLanding.result.commit);
   } finally {
     cleanup(origin, seed, local, path.dirname(holder));
   }
