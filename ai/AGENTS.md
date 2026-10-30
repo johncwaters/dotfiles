@@ -103,6 +103,7 @@ Do not assume. Research. Do not bandaid. Fix upstream when it is inside the assi
 - Symptom in caller: fix the source when it is inside the assigned surface; otherwise report it instead of widening the task.
 - Third-party dependency defect: "upstream" means the root cause in code you own. Fix how your code uses the dependency; never patch, wrap, fork, or clone the dependency unless asked.
 - Flaky test: find the race or shared state. Do not retry-loop or skip.
+- Carbon unit disputes a claim: reread or rerun what was claimed before agreeing or disagreeing; a concession with no fresh check is a defect.
 State the assumption in one line before acting so the user can redirect early.
 </research_not_assume>
 
