@@ -15,7 +15,7 @@ One pass. Pin, find, triage, judge, return. A change gets this pass once, so it 
 
 **Guaranteed output.** A `VERDICT` line, an `ACTIONABLE` line, a `TRUNCATED` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
 
-**Boundaries.** No file edits. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/reviewing-prs`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up a fresh batch of MEDIUM findings every time and the loop cannot converge.
+**Boundaries.** No file edits. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/reviewing-prs`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up fresh MEDIUM findings every time. Only `/converging-reviews` does, reviewing just the last round's delta.
 
 **Not a direct entry point.** Asked to review something conversationally, route it: local work goes through `/committing`, a pull request goes through `/reviewing-prs`. Both call this skill with a proper target.
 
@@ -84,7 +84,7 @@ The tier is the highest severity still standing after triage and dedup:
 
 Highest-severity-wins rather than a count-weighted score, because CRITICAL and HIGH block outright. Counts go in the summary, where they inform without moving the gate.
 
-A fifth value, `FAILED`, means the review could not be completed: `swarming-reviews` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code; it means only an incomplete review. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
+A fifth value, `FAILED`, means the review could not be completed: `swarming-reviews` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
 
 State the verdict and the count of surviving `ACTIONABLE` findings at HIGH or higher on separate lines in the summary.
 

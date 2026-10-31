@@ -3,9 +3,8 @@
 One review is the gate. What you fix after it is checked by re-running each
 finding's proof and then the suite.
 
-**Skip the review** for a mechanical follow-up with passing tests: a pure rename, or a
-reviewer's suggestion applied verbatim. A review there costs minutes and finds nothing. Go
-straight to **Step 3: write the message**. Any logic change, however small, gets the review.
+**Skip the review** for a pure rename or a reviewer's suggestion applied verbatim, with
+passing tests, or for a tree `/converging-reviews` just classified CLEAN. Go straight to **Step 3: write the message**. Any logic change, however small, gets the review.
 
 **Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list. Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed.
 

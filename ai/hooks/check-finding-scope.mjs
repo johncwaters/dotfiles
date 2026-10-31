@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { allow, readPayload, SPAWN_TOOLS } from "./hook-io.mjs";
 
 function collectText(value, collectedText) {
@@ -23,9 +25,9 @@ function collectText(value, collectedText) {
   }
 }
 
-const FIELD_SEPARATOR = " | ";
+export const FIELD_SEPARATOR = " | ";
 
-function fieldValue(fields, label) {
+export function fieldValue(fields, label) {
   const prefix = `${label}:`;
   const field = fields.find((entry) => entry.trim().toLowerCase().startsWith(prefix));
   if (field === undefined) {
@@ -34,7 +36,7 @@ function fieldValue(fields, label) {
   return field.trim().slice(prefix.length).trim();
 }
 
-function parseFinding(line) {
+export function parseFinding(line) {
   const trimmedLine = line.trim();
   if (!trimmedLine.startsWith("-")) {
     return null;
@@ -84,7 +86,7 @@ function normalizeFilePath(filePath, workingDirectory) {
   return relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
-function runGit(workingDirectory, argumentsList) {
+export function runGit(workingDirectory, argumentsList) {
   const processResult = spawnSync("git", argumentsList, {
     cwd: workingDirectory,
     encoding: "utf8",
@@ -116,12 +118,11 @@ const DIFF_ARGUMENTS = [
   "--no-ext-diff",
   "--no-textconv",
   "--inter-hunk-context=0",
-  "HEAD",
 ];
 
-function changedLineRanges(workingDirectory, filePath) {
+export function changedLineRanges(workingDirectory, filePath, diffRange = ["HEAD"]) {
   const ranges = { LEFT: [], RIGHT: [] };
-  const diffOutput = runGit(workingDirectory, [...DIFF_ARGUMENTS, "--", filePath]);
+  const diffOutput = runGit(workingDirectory, [...DIFF_ARGUMENTS, ...diffRange, "--", filePath]);
   let headerCount = 0;
   for (const line of diffOutput.split(/\r?\n/)) {
     const header = HUNK_HEADER.exec(line);
@@ -138,7 +139,7 @@ function changedLineRanges(workingDirectory, filePath) {
   return ranges;
 }
 
-function isWithinRanges(ranges, lineNumber) {
+export function isWithinRanges(ranges, lineNumber) {
   return ranges.some(([start, end]) => lineNumber >= start && lineNumber <= end);
 }
 
@@ -224,8 +225,11 @@ function main() {
   warn(scopeGaps);
 }
 
-try {
-  main();
-} catch {
-  allow();
+const isRunDirectly = Boolean(process.argv[1]) && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+if (isRunDirectly) {
+  try {
+    main();
+  } catch {
+    allow();
+  }
 }
