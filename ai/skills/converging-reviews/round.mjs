@@ -135,8 +135,8 @@ function defectSentence(body) {
     .trim();
 }
 
-function fingerprintOf(file, reviewer, body) {
-  return createHash("sha1").update(`${file}\n${reviewer}\n${defectSentence(body)}`).digest("hex").slice(0, 12);
+function fingerprintOf(file, body) {
+  return createHash("sha1").update(`${file}\n${defectSentence(body)}`).digest("hex").slice(0, 12);
 }
 
 function parseReview(reviewText) {
@@ -159,7 +159,7 @@ function parseReview(reviewText) {
       reviewer,
       disposition: (fieldValue(fields, "disposition") ?? "").toUpperCase(),
       body,
-      fingerprint: fingerprintOf(anchor.filePath, reviewer, body),
+      fingerprint: fingerprintOf(anchor.filePath, body),
     }];
   });
   const verdict = headerValue("VERDICT").toUpperCase();

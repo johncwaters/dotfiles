@@ -30,15 +30,15 @@ function reviewWith(findingRows) {
   return ["VERDICT: REQUEST CHANGES", "ACTIONABLE: 0", "TRUNCATED: none", "", "STRUCTURED_FINDINGS:", ...findingRows, "", "OVERALL_SUMMARY:", "Summary."].join("\n");
 }
 
-function findingRow(line, severity, body) {
-  return `- file: a.txt | line: ${line} | side: RIGHT | severity: ${severity} | reviewer: code/logic | disposition: ACTIONABLE | body: ${body}`;
+function findingRow(line, severity, body, reviewer = "code/logic") {
+  return `- file: a.txt | line: ${line} | side: RIGHT | severity: ${severity} | reviewer: ${reviewer} | disposition: ACTIONABLE | body: ${body}`;
 }
 
 function linesWithChange(changedLineNumbers) {
   return Array.from({ length: 30 }, (_, index) => (changedLineNumbers.includes(index + 1) ? `changed ${index + 1}` : `line ${index + 1}`)).join("\n") + "\n";
 }
 
-test("a loop round drops out-of-lane and settled findings and stalls when a fixed finding returns", (context) => {
+test("a loop round drops out-of-lane and settled findings and stalls when a fixed finding returns under another reviewer", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
@@ -68,7 +68,7 @@ test("a loop round drops out-of-lane and settled findings and stalls when a fixe
   fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5, 6]));
   const secondTree = workingTreeId(repository, ledgerRoot);
   const secondRound = runRound(repository, ledgerRoot, ["classify", "--round", "2", "--base", firstTree, "--head", secondTree], reviewWith([
-    findingRow(6, "MEDIUM", inLaneBody),
+    findingRow(6, "MEDIUM", inLaneBody, "convergent: code/logic + redteam/silent-failure"),
     findingRow(6, "HIGH", upstreamBody),
   ]));
   assert.equal(secondRound.exitCode, 21);
