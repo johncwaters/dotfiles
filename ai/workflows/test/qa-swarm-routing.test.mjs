@@ -240,7 +240,7 @@ test('route-lanes picks the same lanes from a pinned diff on every run, docs alo
   git('add', '-A')
   git('commit', '-qm', 'change')
   const routeLanesScript = path.join(import.meta.dirname, '../../skills/swarming-reviews/scripts/route-lanes.mjs')
-  const routeLanes = (reviewCmd, changedFiles) => JSON.parse(execFileSync(process.execPath, [routeLanesScript, '--review-cmd', reviewCmd, '--repo', repoPath, '--', ...changedFiles], { encoding: 'utf8' }))
+  const routeLanes = (reviewCmd, changedFiles, extraFlags = []) => JSON.parse(execFileSync(process.execPath, [routeLanesScript, '--review-cmd', reviewCmd, '--repo', repoPath, ...extraFlags, '--', ...changedFiles], { encoding: 'utf8' }))
 
   const codeChange = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'])
 
@@ -248,4 +248,7 @@ test('route-lanes picks the same lanes from a pinned diff on every run, docs alo
   assert.deepEqual(codeChange.lanes, ['code', 'security', 'redteam'])
   assert.deepEqual(codeChange.filesByLane.redteam, ['src/quota-gate.js'])
   assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md']).lanes, ['code'])
+  const allLanes = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'], ['--all-lanes'])
+  assert.deepEqual(allLanes.filesByLane, { code: ['README.md', 'src/quota-gate.js'], security: ['README.md', 'src/quota-gate.js'], redteam: ['src/quota-gate.js'] })
+  assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md'], ['--all-lanes']).lanes, ['code', 'security'])
 })

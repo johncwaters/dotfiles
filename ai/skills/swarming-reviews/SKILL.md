@@ -7,7 +7,7 @@ description: Finds defects for the review ladder from an already-pinned diff. Pi
 
 Find, converge, return. Every lane emits the same structured format so the merge is mechanical, and every finding carries a `Proof:` the script checks for, so unrun scenarios stay out of triage.
 
-Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLanes, retryAttemptId?: string, findingCap?: number | null }`; pass `findingCap: null` when the caller asked uncapped.
+Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLanes, retryAttemptId?: string, findingCap?: number | null }`; `findingCap: null` when the caller asked uncapped.
 
 ## Input
 
@@ -25,7 +25,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLane
 
 ## Step 1: Pick rule lanes
 
-Run `node ~/.claude/skills/swarming-reviews/scripts/route-lanes.mjs --review-cmd "<REVIEW_CMD>" --repo <repo path> -- <changed files>` and pass its JSON as `ruleLanes`. Exit 2 means the diff could not be read: stop and report it.
+Run `node ~/.claude/skills/swarming-reviews/scripts/route-lanes.mjs --review-cmd "<REVIEW_CMD>" --repo <repo path> -- <changed files>`, plus `--all-lanes` when asked all lanes, and pass its JSON as `ruleLanes`. Exit 2: the diff could not be read; stop and report it.
 
 ## Step 2: Run the workflow
 
@@ -47,4 +47,4 @@ Lane definitions belong to `~/.claude/workflows/qa-swarm.js`; manual lanes use `
 
 ## Scripts
 
-- `scripts/route-lanes.mjs`: picks lanes from changed paths and changed lines; run in Step 1 before every workflow call.
+- `scripts/route-lanes.mjs`: picks lanes from changed paths and lines; run in Step 1.

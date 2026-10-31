@@ -38,13 +38,14 @@ function redteamFilesFor(codeFiles, changedLines) {
   return codeFiles
 }
 
-export function selectRuleLanes({ changedFiles, changedLines }) {
+export function selectRuleLanes({ changedFiles, changedLines, allLanes = false }) {
   const filesByLane = { code: changedFiles }
-  const securityFiles = securityFilesFor(changedFiles, changedLines)
+  const codeFiles = changedFiles.filter(isCodeFile)
+  const securityFiles = allLanes ? changedFiles : securityFilesFor(changedFiles, changedLines)
   if (securityFiles.length > 0) {
     filesByLane.security = securityFiles
   }
-  const redteamFiles = redteamFilesFor(changedFiles.filter(isCodeFile), changedLines)
+  const redteamFiles = allLanes ? codeFiles : redteamFilesFor(codeFiles, changedLines)
   if (redteamFiles.length > 0) {
     filesByLane.redteam = redteamFiles
   }
@@ -61,14 +62,14 @@ export function readChangedLines(reviewCmd, repoPath) {
 }
 
 function main() {
-  const { values, positionals: changedFiles } = parseArgs({ options: { 'review-cmd': { type: 'string' }, repo: { type: 'string' } }, allowPositionals: true })
+  const { values, positionals: changedFiles } = parseArgs({ options: { 'review-cmd': { type: 'string' }, repo: { type: 'string' }, 'all-lanes': { type: 'boolean' } }, allowPositionals: true })
   if (!values['review-cmd'] || !values.repo || changedFiles.length === 0) {
-    process.stderr.write('usage: route-lanes.mjs --review-cmd <cmd> --repo <path> -- <changed file> ...\n')
+    process.stderr.write('usage: route-lanes.mjs --review-cmd <cmd> --repo <path> [--all-lanes] -- <changed file> ...\n')
     process.exit(2)
   }
   try {
     const changedLines = readChangedLines(values['review-cmd'], values.repo)
-    process.stdout.write(`${JSON.stringify(selectRuleLanes({ changedFiles, changedLines }))}\n`)
+    process.stdout.write(`${JSON.stringify(selectRuleLanes({ changedFiles, changedLines, allLanes: Boolean(values['all-lanes']) }))}\n`)
   } catch (error) {
     process.stderr.write(`${error.message}\n`)
     process.exit(2)
