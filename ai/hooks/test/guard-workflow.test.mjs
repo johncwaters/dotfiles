@@ -149,10 +149,12 @@ test("the first repo edit of a session without /specifying is denied once", () =
   assert.equal(decisionFor(editCall(repoFile, afterReadingSource)).decision, "deny");
 });
 
-test("running /specifying or reading a design spec clears the spec gate", () => {
+test("running /specifying or /converging-reviews or reading a design spec clears the spec gate", () => {
   const repoFile = path.join(repository, "a.txt");
   const specRun = writeTranscript([prompt("add an export button"), ...skillRun("specifying")]);
   assert.equal(decisionFor(editCall(repoFile, specRun)).decision, "allow");
+  const loopRun = writeTranscript([prompt("/converging-reviews"), ...skillRun("converging-reviews")]);
+  assert.equal(decisionFor(editCall(repoFile, loopRun)).decision, "allow");
   const intentRead = writeTranscript([prompt("build it"), toolUse("Read", { file_path: path.join(sandboxHome, ".claude/specs/repo/export.intent.json") })]);
   assert.equal(decisionFor(editCall(repoFile, intentRead)).decision, "allow");
 });

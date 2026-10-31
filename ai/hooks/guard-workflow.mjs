@@ -58,7 +58,7 @@ function isSpecGateDenial(event) {
 
 async function hasSpecGateCleared(transcriptPath, specsDirectory) {
   for await (const event of sessionEvents(transcriptPath)) {
-    if (isSkillRun(event, "specifying")) return true;
+    if (isSkillRun(event, "specifying") || isSkillRun(event, "converging-reviews")) return true;
     if (isSpecGateDenial(event)) return true;
     if (event.kind !== "toolUse" || event.name !== "Read") continue;
     const readPath = String(event.input.file_path || "");
