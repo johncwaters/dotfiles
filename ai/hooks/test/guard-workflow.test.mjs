@@ -147,6 +147,32 @@ test("the first repo edit of a session without /specifying is denied once", () =
   const hookSource = fs.readFileSync(path.resolve(import.meta.dirname, "../guard-workflow.mjs"), "utf8");
   const afterReadingSource = writeTranscript([prompt("add an export button"), toolUse("Read", { file_path: "guard-workflow.mjs" }), toolResult(hookSource, { toolUseId: "tool-Read", isError: false })]);
   assert.equal(decisionFor(editCall(repoFile, afterReadingSource)).decision, "deny");
+  const outsideRepository = path.join(sandboxHome, "elsewhere");
+  for (const [command, cwd] of [
+    ["sed -i 's/one/two/' a.txt", repository],
+    ["perl -pi -e 's/one/two/' a.txt", repository],
+    ["cat > a.txt <<'EOF'\nfrom > to\nEOF", repository],
+    ["echo two >> a.txt", repository],
+    ["echo two | tee -a a.txt", repository],
+    [`cd ${repository} && sed -i s/one/two/ a.txt`, outsideRepository],
+    ["printf two > \"$TARGET\"", repository],
+    ["grep -l one -r . | xargs sed -i 's/one/two/'", repository],
+    ["find . -name '*.txt' -exec sed -i 's/one/two/' {} +", repository],
+    ["git -C . apply x.patch", repository],
+    ["sed -i 's/\"/x/' a.txt; echo \"z\"", repository],
+    ["sed -i --expression=s/one/two/ a.txt", repository],
+    ["perl -0pi -e 's/one/two/' a.txt", repository],
+    [`(cd ${repository} && sed -i s/one/two/ a.txt)`, outsideRepository],
+    [`cd ${repository}\nsed -i s/one/two/ a.txt`, outsideRepository],
+    ["bash -c \"sed -i s/one/two/ a.txt\"", repository],
+    ["bash -c 'sed -i s/one/two/ a.txt'", repository],
+  ]) {
+    assert.equal(decisionFor(bashCall(command, fresh, { cwd })).decision, "deny", command);
+  }
+  for (const command of ["sed -n 1p a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee"]) {
+    assert.equal(decisionFor(bashCall(command, fresh, { cwd: repository })).decision, "allow", command);
+  }
+  assert.equal(decisionFor(bashCall("sed -i s/one/two/ a.txt", afterDenial, { cwd: repository })).decision, "allow");
 });
 
 test("running /specifying or /converging-reviews or reading a design spec clears the spec gate", () => {
@@ -164,4 +190,6 @@ test("edits outside a git worktree or under ~/.claude skip the spec gate", () =>
   assert.equal(decisionFor(editCall(path.join(sandboxHome, "scratch/notes.md"), transcriptPath)).decision, "allow");
   fs.mkdirSync(path.join(sandboxHome, ".claude"), { recursive: true });
   assert.equal(decisionFor(editCall(path.join(sandboxHome, ".claude/projects/memory/fact.md"), transcriptPath)).decision, "allow");
+  assert.equal(decisionFor(bashCall("echo note > notes.md", transcriptPath, { cwd: sandboxHome })).decision, "allow");
+  assert.equal(decisionFor(bashCall("echo fact > ~/.claude/projects/memory/fact.md", transcriptPath, { cwd: repository })).decision, "allow");
 });

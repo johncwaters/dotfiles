@@ -23,6 +23,17 @@ const PKILL_CALL = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(
 const PKILL_FULL_FLAG = /^(?:--full|-[A-Za-z]*f[A-Za-z]*)$/;
 const QUOTE_AWARE_WORD = /(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"])+/g;
 const BRACKET_CLASS = /\[[^\]]+\]/;
+const OUTPUT_REDIRECT = /(?:^|[^<>&\d=-])(?:\d|&)?>>?(?![&>(=])[ \t]*([^\s;&|()<>]*)/g;
+const FILE_WRITING_COMMAND = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(?:\S*/)?(tee|sed|perl|ruby|patch|git${GIT_GLOBAL_OPTIONS}\s+apply)(?=\s|$)([^;&|\n]*)`, "gm");
+const FIND_EXEC_EDIT = /-(?:exec|execdir|ok|okdir)\s+(?:\S*\/)?(sed|perl|ruby)(?=\s)([^;&|\n]*)/g;
+const DIRECTORY_CHANGE = /(?:^|[;&|(\n])\s*(?:cd|pushd)\s+([^\s;&|)]+)/g;
+const SHELL_RUNS_NEXT_WORD = /(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval)\s*$/;
+const IN_PLACE_FLAG = /^(?:-[A-Za-z0-9]*i|--in-place)/;
+const SCRIPT_TAKING_FLAG = /^(?:--expression|-f|--file)$/;
+const ATTACHED_SCRIPT_FLAG = /^(?:--(?:expression|file)=|-e.)/;
+const INLINE_SCRIPT_FLAG = /^-[A-Za-z0-9]*e$/;
+const UNRESOLVABLE_PATH_CHARACTERS = /[$`*?[{]/;
+const UNRESOLVED_TARGET_NAME = "unresolved-write-target";
 
 const RAW_COMMIT_REASON =
   "Raw `git commit` and `git push` are denied outside /committing, so every landing goes through its review loop. " +
@@ -133,12 +144,112 @@ async function guardRawCommit(command, transcriptPath) {
   denyPreToolUse(RAW_COMMIT_REASON);
 }
 
-async function guardSpecFirst(filePath, transcriptPath) {
+function isSpecGatedPath(filePath) {
   const claudeDirectory = path.join(os.homedir(), ".claude");
-  if (!path.isAbsolute(filePath) || isInsideDirectory(filePath, claudeDirectory)) allow();
-  if (!isInsideGitWorktree(filePath)) allow();
-  if (await hasSpecGateCleared(transcriptPath, path.join(claudeDirectory, "specs"))) allow();
+  if (!path.isAbsolute(filePath) || isInsideDirectory(filePath, claudeDirectory)) return false;
+  return isInsideGitWorktree(filePath);
+}
+
+async function denyUnlessSpecGateCleared(transcriptPath) {
+  if (await hasSpecGateCleared(transcriptPath, path.join(os.homedir(), ".claude", "specs"))) return;
   denyPreToolUse(SPEC_GATE_REASON);
+}
+
+async function guardSpecFirst(filePath, transcriptPath) {
+  if (!isSpecGatedPath(filePath)) allow();
+  await denyUnlessSpecGateCleared(transcriptPath);
+  allow();
+}
+
+function resolveShellPath(word, baseDirectory) {
+  const unquotedWord = word.replace(/^(['"])(.*)\1$/, "$2");
+  if (unquotedWord === "" || UNRESOLVABLE_PATH_CHARACTERS.test(unquotedWord)) return null;
+  if (unquotedWord === "~" || unquotedWord.startsWith("~/")) return path.join(os.homedir(), unquotedWord.slice(1));
+  return path.resolve(baseDirectory, unquotedWord);
+}
+
+function editedFileWords(commandName, argumentWords) {
+  if (commandName === "tee") return argumentWords.filter((word) => !word.startsWith("-"));
+  const isInPlace = argumentWords.some((word) => IN_PLACE_FLAG.test(word));
+  if (!isInPlace) return [];
+  const positionalWords = [];
+  let hasInlineScript = false;
+  for (let index = 0; index < argumentWords.length; index += 1) {
+    const word = argumentWords[index];
+    if (ATTACHED_SCRIPT_FLAG.test(word)) {
+      hasInlineScript = true;
+      continue;
+    }
+    if (SCRIPT_TAKING_FLAG.test(word) || (INLINE_SCRIPT_FLAG.test(word) && !word.includes("i"))) {
+      hasInlineScript = true;
+      index += 1;
+      continue;
+    }
+    if (!word.startsWith("-")) positionalWords.push(word);
+  }
+  const fileWords = hasInlineScript ? positionalWords : positionalWords.slice(1);
+  return fileWords.length > 0 ? fileWords : [""];
+}
+
+function closingQuoteIndex(command, openingIndex) {
+  const quote = command[openingIndex];
+  for (let index = openingIndex + 1; index < command.length; index += 1) {
+    if (quote === '"' && command[index] === "\\") index += 1;
+    if (command[index] === quote) return index;
+  }
+  return -1;
+}
+
+function maskedQuotedWord(quotedText, quotedWord, isRunByShell) {
+  if (isRunByShell) return `;${maskQuotedTextForWriteScan(quotedText)};`;
+  return /\s/.test(quotedText) ? '""' : quotedWord;
+}
+
+function maskQuotedTextForWriteScan(command) {
+  let maskedCommand = "";
+  let index = 0;
+  while (index < command.length) {
+    const character = command[index];
+    if (character === "\\") {
+      maskedCommand += command.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
+    if (character !== "'" && character !== '"') {
+      maskedCommand += character;
+      index += 1;
+      continue;
+    }
+    const closingIndex = closingQuoteIndex(command, index);
+    if (closingIndex === -1) return maskedCommand + command.slice(index);
+    const quotedText = command.slice(index + 1, closingIndex);
+    maskedCommand += maskedQuotedWord(quotedText, command.slice(index, closingIndex + 1), SHELL_RUNS_NEXT_WORD.test(maskedCommand));
+    index = closingIndex + 1;
+  }
+  return maskedCommand;
+}
+
+function bashWriteTargets(command, sessionDirectory) {
+  const scannedCommand = maskQuotedTextForWriteScan(maskLiteralHeredocBodies(command));
+  let baseDirectory = sessionDirectory;
+  for (const [, directoryWord] of scannedCommand.matchAll(DIRECTORY_CHANGE)) baseDirectory = resolveShellPath(directoryWord, baseDirectory) ?? baseDirectory;
+  const fileInBaseDirectory = path.join(baseDirectory, UNRESOLVED_TARGET_NAME);
+  const resolveTarget = (word) => resolveShellPath(word, baseDirectory) ?? fileInBaseDirectory;
+  const targets = [...scannedCommand.matchAll(OUTPUT_REDIRECT)].map((redirect) => resolveTarget(redirect[1]));
+  for (const [, commandName, argumentText] of [...scannedCommand.matchAll(FILE_WRITING_COMMAND), ...scannedCommand.matchAll(FIND_EXEC_EDIT)]) {
+    if (commandName === "patch" || commandName.startsWith("git")) {
+      targets.push(fileInBaseDirectory);
+      continue;
+    }
+    const argumentWords = argumentText.split(/[<>]/)[0].match(QUOTE_AWARE_WORD) ?? [];
+    for (const word of editedFileWords(commandName, argumentWords)) targets.push(resolveTarget(word));
+  }
+  return [...new Set(targets)].filter((target) => !isInsideDirectory(target, "/dev"));
+}
+
+async function guardSpecFirstForBash(command, sessionDirectory, transcriptPath) {
+  if (!bashWriteTargets(command, sessionDirectory).some(isSpecGatedPath)) return;
+  await denyUnlessSpecGateCleared(transcriptPath);
 }
 
 async function main() {
@@ -146,7 +257,9 @@ async function main() {
   if (!payload || typeof payload !== "object" || !isAttendedMainLoopCall(payload)) allow();
   if (typeof payload.transcript_path !== "string" || !fs.existsSync(payload.transcript_path)) allow();
   const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
+  const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
   if (payload.tool_name === "Bash") guardPkillSelfMatch(String(toolInput.command || ""));
+  if (payload.tool_name === "Bash") await guardSpecFirstForBash(String(toolInput.command || ""), sessionDirectory, payload.transcript_path);
   if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
   if (EDIT_TOOLS.has(payload.tool_name)) await guardSpecFirst(String(toolInput.file_path || ""), payload.transcript_path);
   allow();
