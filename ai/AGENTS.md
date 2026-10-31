@@ -15,6 +15,7 @@ If the task cannot be completed inside the surface, stop and report instead of w
 
 <execution>
 Run builds, test suites, and installs with run_in_background instead of blocking the loop.
+Steps the carbon unit must run themselves (auth, key setup, anything interactive) ship as one script file to run in their own terminal, never a list of `!` commands.
 Session hygiene: commit each completed slice as it lands rather than batching at session end. Long-running loops wake every 20-30 minutes minimum. Queue work rather than run 4+ parallel sessions; all sessions share one limit.
 Give `rm -rf` a literal absolute path: Safety Net allows temp paths written out but blocks a `$VAR` or post-`cd` relative target it cannot resolve.
 </execution>
@@ -101,6 +102,7 @@ Do not assume. Research. Do not bandaid. Fix upstream when it is inside the assi
 - Unknown project behavior: read the file, run the command, check the schema. Do not infer from filename or memory.
 - Tool/lint/type/test failure: find root cause. Never silence with `@ts-ignore`, `eslint-disable`, `--no-verify`, swallowed `try/catch`, skip flags, or "temporary" workarounds. Real upstream blocker forcing a workaround: leave a one-line comment naming the issue and the removal trigger.
 - Symptom in caller: fix the source when it is inside the assigned surface; otherwise report it instead of widening the task.
+- Suspected dependency bug: compare the pinned version with the latest release and upstream main, and reproduce on latest, before filing an issue or writing a fix.
 - Third-party dependency defect: "upstream" means the root cause in code you own. Fix how your code uses the dependency; never patch, wrap, fork, or clone the dependency unless asked.
 - Flaky test: find the race or shared state. Do not retry-loop or skip.
 - Carbon unit disputes a claim: reread or rerun what was claimed before agreeing or disagreeing; a concession with no fresh check is a defect.

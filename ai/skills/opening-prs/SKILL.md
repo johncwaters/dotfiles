@@ -45,7 +45,7 @@ No template and no rules: use `Problem`, `Changes`, `How did you test this code?
 
 ## Step 3: Find open questions
 
-Read the diff against the merge-base (`git diff $(git merge-base <base> HEAD)`) and the commit log. Find real open questions a reviewer must answer; a change can have none.
+Read the diff against the merge-base (`git diff $(git merge-base <base> HEAD)`) and the commit log. Find real open questions a reviewer must answer; a change can have none. A question the author can settle alone is not one: work the change's own conventions call for (a spec bullet, a test, a doc line) gets done and pushed before drafting, and a design choice is stated with its reason in the body, never asked.
 
 ## Step 4: Draft the questions
 
