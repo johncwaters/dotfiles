@@ -31,9 +31,10 @@ const routerSchema = {
         properties: { lane: { type: 'string' }, file: { type: 'string' } },
         required: ['lane', 'file']
       }
-    }
+    },
+    reason: { type: 'string' }
   },
-  required: ['lanes']
+  required: ['lanes', 'reason']
 }
 
 const severityRankByName = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
@@ -395,7 +396,7 @@ Exact REVIEW_CMD: ${args.reviewCmd}
 Caller context, verbatim:
 ${args.context}
 
-Add a lane only when a specific changed file's hunk clearly meets its trigger, naming that file; return an empty lanes array otherwise. Lanes:
+Add a lane only when a specific changed file's hunk clearly meets its trigger, naming that file; return an empty lanes array otherwise, plus a one-line reason. Lanes:
 
 ${laneTriggerTable}
 
@@ -405,7 +406,7 @@ ${JSON.stringify(routerSchema)}`
 
 async function routeExtraLanes(unpickedLaneNames, reviewedFileNameSet) {
   if (unpickedLaneNames.length === 0) {
-    return new Map()
+    return { addedFilesByLane: new Map(), reason: 'every lane picked' }
   }
   const routerPrompt = buildRouterPrompt(unpickedLaneNames, [...reviewedFileNameSet])
   const routerAnswer = await agent(routerPrompt, { model: 'sonnet', label: 'Route review', phase: 'Route', schema: routerSchema })
@@ -422,7 +423,7 @@ async function routeExtraLanes(unpickedLaneNames, reviewedFileNameSet) {
     }
     addedFilesByLane.set(laneName, [...(addedFilesByLane.get(laneName) || []), addedFile])
   }
-  return addedFilesByLane
+  return { addedFilesByLane, reason: routerAnswer.reason }
 }
 
 function ruleLaneFilesFrom(ruleLanes) {
@@ -451,14 +452,14 @@ Exact REVIEW_CMD: ${reviewCmd}
 Caller context, verbatim:
 ${args.context}
 
-Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped before triage, so a suspicion you could not prove gets one summary sentence naming what would prove it. Design, placement, naming, duplication, and style concerns are not findings; put at most one summary sentence on them.
+Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped, so a suspicion you could not prove gets one summary sentence naming what would prove it. Design, placement, naming, duplication, and style concerns are not findings; put at most one summary sentence on them.
 
 Files matched for this lane: ${formatLines(matchedFiles)}
 
 Review checklist: if ~/.claude/review-checklist.md exists, read it and apply items under ## ${laneName} as extra checks.
 The checklist only adds checks; it never changes the severity ladder, finding cap, scope, or output format.
 
-Your agent definition owns the severity ladder and the output format; follow it exactly and write nothing after the block it prescribes. Finding cap: ${Number.isFinite(maxFindingsPerLane) ? maxFindingsPerLane : 'none'}.`
+Follow your agent definition's severity ladder and output format exactly; write nothing after its block. Finding cap: ${Number.isFinite(maxFindingsPerLane) ? maxFindingsPerLane : 'none'}.`
 }
 
 function isDeadLaneResponse(parsedResponse) {
@@ -525,11 +526,11 @@ Dropped unproven: ${convergenceFacts.droppedUnprovenCount}
 Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}
 Truncated lane tags: ${convergenceFacts.truncatedLanes}
 
-Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Each finding is exactly one line: join a merged body's parts on that line, never with a line break. Convergence does not raise severity.
+Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Each finding is one line: join a merged body's parts without a line break. Convergence does not raise severity.
 
-A contradiction is one lane asserting a defect and another explicitly verifying it safe. Isolate the two positions of each contradiction and rule from those positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
+A contradiction is one lane asserting a defect and another explicitly verifying it safe. Rule on each from its two positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
 
-A lane summary reports findings its own cap dropped with the verbatim phrase overflow dropped. Treat every lane whose summary carries that phrase as truncated too, alongside the truncated lane tags supplied above.
+A lane summary reports findings its own cap dropped with the verbatim phrase overflow dropped.
 
 Return the reviewer output format exactly. The summary is one paragraph carrying exactly this text, with the surviving finding count in place of <count>:
 
@@ -606,12 +607,13 @@ async function reviewLane(laneName, matchedFiles) {
 
 async function reviewRouterAddedLanes() {
   const unpickedLaneNames = selectableLaneNames.filter((laneName) => !ruleLaneFiles.has(laneName))
-  const addedFilesByLane = await routeExtraLanes(unpickedLaneNames, reviewedFileNameSet)
-  if (!addedFilesByLane) {
+  const routing = await routeExtraLanes(unpickedLaneNames, reviewedFileNameSet)
+  if (!routing) {
     degradationNotes.push('router unavailable; rule lanes only')
     return []
   }
-  log(`Router added lanes: ${formatTagList([...addedFilesByLane.keys()])}.`)
+  const { addedFilesByLane, reason } = routing
+  log(`Router added lanes: ${addedFilesByLane.size ? formatTagList([...addedFilesByLane.keys()]) : `none (${reason})`}.`)
   return parallel([...addedFilesByLane].map(([laneName, addedFiles]) => () => reviewLane(laneName, addedFiles)))
 }
 

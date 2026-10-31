@@ -14,7 +14,7 @@ function runWorkflow(workflowArgs, runtimeBindings = {}) {
   return AsyncFunction('args', ...bindingNames, executableWorkflowSource)(workflowArgs, ...bindingValues)
 }
 
-function workflowRuntimeReturning(agentResponseFor, routerAnswer = { lanes: [] }) {
+function workflowRuntimeReturning(agentResponseFor, routerAnswer = { lanes: [], reason: 'no trigger met' }) {
   return {
     phase: () => {},
     log: () => {},
@@ -221,6 +221,9 @@ test('the router only adds an unpicked lane naming a changed file, even as a dif
   assert.match(addingResponse, /Lanes run: code, redteam\. Lanes skipped: security\./)
 
   const deadRouterResponse = await runWorkflow(baseWorkflowArgs, workflowRuntimeReturning(() => laneResponse, null))
+  const loggedLines = []
+  await runWorkflow(baseWorkflowArgs, { ...workflowRuntimeReturning(() => laneResponse), log: (line) => loggedLines.push(line) })
+  assert.ok(loggedLines.includes('Router added lanes: none (no trigger met).'))
 
   assert.match(deadRouterResponse, /Lanes run: code\..*Degraded: router unavailable; rule lanes only\./)
 })
