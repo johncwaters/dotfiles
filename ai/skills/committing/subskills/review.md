@@ -4,12 +4,12 @@ One review is the gate. What you fix after it is checked by re-running each
 finding's proof and then the suite.
 
 **Skip the review** for a pure rename or a reviewer's suggestion applied verbatim, with
-passing tests, or for a tree `/converging-reviews` just classified CLEAN. Go straight to **Step 3: write the message**. Any logic change, however small, gets the review.
+passing tests, or a working tree `/converging-reviews`'s `round.mjs verify` passes. Go straight to **Step 3: write the message**. Any logic change, however small, gets the review.
 
 **Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list. Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed.
 
-**Then one review, the fixes, and the commit.** A second sweep of the same diff finds a
-fresh batch of MEDIUM findings every time, so the review runs once and reports only what a
+**Then one review, the fixes, and the commit.** A second sweep of the same diff finds
+fresh MEDIUM findings every time, so the review runs once and reports only what a
 lane proved: every finding carries a `Proof:`, a command with its output or quoted lines,
 and you re-run that proof in place of a confirming review.
 

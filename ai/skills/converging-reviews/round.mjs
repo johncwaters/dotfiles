@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -18,6 +19,8 @@ const EXIT_CODE_BY_OUTCOME = {
   FRESH: 0,
   RESUME: 0,
   RECORDED: 0,
+  VERIFIED: 0,
+  UNVERIFIED: 24,
   CLEAN: 0,
   CONTINUE: 10,
   RETRY: 11,
@@ -93,7 +96,32 @@ function startRun(repoPath, workingTree) {
     fs.renameSync(ledgerFile, setAsidePath);
   }
   const headTree = runGit(repoPath, ["rev-parse", "HEAD^{tree}"]).trim();
-  finish("FRESH", { round: 1, base: headTree, head: workingTree, ledger: ledgerFile });
+  finish("FRESH", { round: 1, base: headTree, ledger: ledgerFile });
+}
+
+function pinWorkingTree(repoPath) {
+  const scratchDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "converging-reviews-"));
+  const indexCopy = path.join(scratchDirectory, "index");
+  try {
+    const liveIndex = path.resolve(repoPath, runGit(repoPath, ["rev-parse", "--git-path", "index"]).trim());
+    if (fs.existsSync(liveIndex)) fs.copyFileSync(liveIndex, indexCopy);
+    const gitWithIndexCopy = (argumentList) => spawnSync("git", argumentList, { cwd: repoPath, encoding: "utf8", env: { ...process.env, GIT_INDEX_FILE: indexCopy } });
+    const addResult = gitWithIndexCopy(["add", "-A"]);
+    if (addResult.status !== 0) throw new Error(addResult.stderr || "git add -A failed");
+    const writeTreeResult = gitWithIndexCopy(["write-tree"]);
+    if (writeTreeResult.status !== 0) throw new Error(writeTreeResult.stderr || "git write-tree failed");
+    return writeTreeResult.stdout.trim();
+  } finally {
+    fs.rmSync(scratchDirectory, { recursive: true, force: true });
+  }
+}
+
+function verifyCleanTree(repoPath) {
+  const workingTree = pinWorkingTree(repoPath);
+  const ledgerFile = ledgerPath(repoPath);
+  const lastRound = roundRows(readLedger(ledgerFile)).at(-1);
+  const isCleanOnThisTree = lastRound?.outcome === "CLEAN" && lastRound.head === workingTree;
+  finish(isCleanOnThisTree ? "VERIFIED" : "UNVERIFIED", { tree: workingTree, lastRound: lastRound ?? null, ledger: ledgerFile });
 }
 
 function defectSentence(body) {
@@ -233,10 +261,12 @@ function classifyRound(repoPath, round, base, head, reviewText) {
   appendRows(ledgerFile, [...findingRows, roundRow]);
   const reportedFinding = ({ fingerprint, filePath, lineNumber, severity, reviewer, body }) => ({ fingerprint, file: filePath, line: lineNumber ?? "general", severity, reviewer, body });
   const askedFindings = outcome === "ASKED" ? keptFindings.filter((finding) => finding.disposition === "AMBIGUOUS" && atLeast(finding.severity, "HIGH")) : [];
+  const ambiguousBelowHighFindings = keptFindings.filter((finding) => finding.disposition === "AMBIGUOUS" && !atLeast(finding.severity, "HIGH"));
   finish(outcome, {
     round,
     actionable: actionableFindings.map(reportedFinding),
     asked: askedFindings.map(reportedFinding),
+    ambiguous: ambiguousBelowHighFindings.map(reportedFinding),
     droppedOutOfLane: droppedOutOfLaneByReviewer,
     droppedSettled: droppedSettledCount,
     truncatedLanes: review.truncatedLanes,
@@ -277,6 +307,7 @@ function main() {
     if (!values.tree) failUsage("start needs --tree <working tree id>");
     startRun(repoPath, values.tree);
   }
+  if (command === "verify") verifyCleanTree(repoPath);
   if (command === "classify") {
     if (!values.round || !values.base || !values.head) failUsage("classify needs --round, --base and --head, with the review on stdin");
     classifyRound(repoPath, Number(values.round), values.base, values.head, fs.readFileSync(0, "utf8"));
@@ -285,7 +316,7 @@ function main() {
     if (!values.fingerprint) failUsage("record needs --fingerprint");
     recordOutcome(repoPath, values);
   }
-  failUsage("use start, classify or record");
+  failUsage("use start, classify, record or verify");
 }
 
 main();

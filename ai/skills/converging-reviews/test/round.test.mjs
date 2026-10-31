@@ -74,4 +74,5 @@ test("a loop round drops out-of-lane and settled findings and stalls when a fixe
   assert.equal(secondRound.exitCode, 21);
   assert.equal(secondRound.report.outcome, "STALLED");
   assert.equal(secondRound.report.droppedSettled, 1);
+  assert.equal(runRound(repository, ledgerRoot, ["verify"]).exitCode, 24);
 });
