@@ -167,6 +167,31 @@ function parseReview(reviewText) {
   return { verdict: isWellFormed ? verdict : "FAILED", truncatedLanes, findings };
 }
 
+function anchorKey({ filePath, lineNumber, side }) {
+  return `${filePath}:${lineNumber ?? "general"}:${side}`;
+}
+
+function swarmRowsByAnchor(swarmOutputPath) {
+  const swarmFindings = parseReview(JSON.parse(fs.readFileSync(swarmOutputPath, "utf8")).result ?? "").findings;
+  return Map.groupBy(swarmFindings, anchorKey);
+}
+
+function withSwarmBodies(findings, swarmOutputPath) {
+  if (!swarmOutputPath) return { findings, unmatchedBodies: null };
+  const rowsByAnchor = swarmRowsByAnchor(swarmOutputPath);
+  let unmatchedBodies = 0;
+  const findingsWithSwarmBodies = findings.map((finding) => {
+    const swarmRows = rowsByAnchor.get(anchorKey(finding)) ?? [];
+    if (swarmRows.length !== 1) {
+      unmatchedBodies += 1;
+      return finding;
+    }
+    const { body } = swarmRows[0];
+    return { ...finding, body, fingerprint: fingerprintOf(finding.filePath, body) };
+  });
+  return { findings: findingsWithSwarmBodies, unmatchedBodies };
+}
+
 function hunkLookup(repoPath, base, head) {
   const rangesByFile = new Map();
   const rangesFor = (filePath) => {
@@ -210,17 +235,19 @@ function decideOutcome({ review, round, ledger, actionableFindings, keptFindings
   return "CONTINUE";
 }
 
-function classifyRound(repoPath, round, base, head, reviewText) {
+function classifyRound(repoPath, round, base, head, reviewText, swarmOutputPath) {
   const ledgerFile = ledgerPath(repoPath);
   const ledger = readLedger(ledgerFile);
-  const review = parseReview(reviewText);
+  const parsedReview = parseReview(reviewText);
+  const { findings: reviewFindings, unmatchedBodies } = withSwarmBodies(parsedReview.findings, swarmOutputPath);
+  const review = { ...parsedReview, findings: reviewFindings };
   const rulingByFingerprint = new Map(ledger.filter((row) => row.type === "ruling").map((row) => [row.fingerprint, row.ruling]));
   const settledFingerprints = new Set([
     ...ledger.filter((row) => row.type === "fix" && row.outcome === "DECLINED").map((row) => row.fingerprint),
     ...[...rulingByFingerprint].filter(([, ruling]) => ruling === "NIT").map(([fingerprint]) => fingerprint),
   ]);
   const isNearChangedLine = hunkLookup(repoPath, base, head);
-  const droppedOutOfLaneByReviewer = {};
+  const droppedOffHunkByReviewer = {};
   let droppedSettledCount = 0;
   const keptFindings = [];
   for (const finding of review.findings) {
@@ -229,7 +256,7 @@ function classifyRound(repoPath, round, base, head, reviewText) {
       continue;
     }
     if (!isAnchoredToChange(finding, isNearChangedLine)) {
-      droppedOutOfLaneByReviewer[finding.reviewer] = (droppedOutOfLaneByReviewer[finding.reviewer] ?? 0) + 1;
+      droppedOffHunkByReviewer[finding.reviewer] = (droppedOffHunkByReviewer[finding.reviewer] ?? 0) + 1;
       continue;
     }
     const ruledDisposition = rulingByFingerprint.get(finding.fingerprint);
@@ -255,7 +282,7 @@ function classifyRound(repoPath, round, base, head, reviewText) {
     verdict: review.verdict,
     outcome,
     actionable: actionableFindings.length,
-    droppedOutOfLane: droppedOutOfLaneByReviewer,
+    droppedOffHunk: droppedOffHunkByReviewer,
     droppedSettled: droppedSettledCount,
   };
   appendRows(ledgerFile, [...findingRows, roundRow]);
@@ -267,8 +294,9 @@ function classifyRound(repoPath, round, base, head, reviewText) {
     actionable: actionableFindings.map(reportedFinding),
     asked: askedFindings.map(reportedFinding),
     ambiguous: ambiguousBelowHighFindings.map(reportedFinding),
-    droppedOutOfLane: droppedOutOfLaneByReviewer,
+    droppedOffHunk: droppedOffHunkByReviewer,
     droppedSettled: droppedSettledCount,
+    unmatchedBodies,
     truncatedLanes: review.truncatedLanes,
     ledger: ledgerFile,
   });
@@ -297,6 +325,7 @@ function main() {
       round: { type: "string" },
       base: { type: "string" },
       head: { type: "string" },
+      "swarm-output": { type: "string" },
       fingerprint: { type: "string" },
       fix: { type: "string" },
       ruling: { type: "string" },
@@ -310,7 +339,7 @@ function main() {
   if (command === "verify") verifyCleanTree(repoPath);
   if (command === "classify") {
     if (!values.round || !values.base || !values.head) failUsage("classify needs --round, --base and --head, with the review on stdin");
-    classifyRound(repoPath, Number(values.round), values.base, values.head, fs.readFileSync(0, "utf8"));
+    classifyRound(repoPath, Number(values.round), values.base, values.head, fs.readFileSync(0, "utf8"), values["swarm-output"]);
   }
   if (command === "record") {
     if (!values.fingerprint) failUsage("record needs --fingerprint");

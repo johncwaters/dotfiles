@@ -38,7 +38,7 @@ function linesWithChange(changedLineNumbers) {
   return Array.from({ length: 30 }, (_, index) => (changedLineNumbers.includes(index + 1) ? `changed ${index + 1}` : `line ${index + 1}`)).join("\n") + "\n";
 }
 
-test("a loop round drops out-of-lane and settled findings and stalls when a fixed finding returns under another reviewer", (context) => {
+test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findings and stalls when a fixed finding returns under another reviewer", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
@@ -51,15 +51,20 @@ test("a loop round drops out-of-lane and settled findings and stalls when a fixe
 
   const inLaneBody = "Off-by-one in the loop bound. Proof: a.txt:5 reads `changed 5`.";
   const upstreamBody = "Helper misreads the new value. Proof: a.txt:5 passes it in.";
-  const firstRound = runRound(repository, ledgerRoot, ["classify", "--round", "1", "--base", started.report.base, "--head", firstTree], reviewWith([
-    findingRow(5, "MEDIUM", inLaneBody),
+  const swarmOutput = path.join(ledgerRoot, "swarm.output");
+  const swarmRows = [findingRow(5, "MEDIUM", inLaneBody), findingRow(28, "HIGH", upstreamBody), findingRow(28, "MEDIUM", "Another defect on that line. Proof: a.txt:28.")];
+  fs.writeFileSync(swarmOutput, JSON.stringify({ result: ["STRUCTURED_FINDINGS:", ...swarmRows.map((row) => row.replace(" | disposition: ACTIONABLE", "")), "", "OVERALL_SUMMARY:", "Summary."].join("\n") }));
+  const firstRound = runRound(repository, ledgerRoot, ["classify", "--round", "1", "--base", started.report.base, "--head", firstTree, "--swarm-output", swarmOutput], reviewWith([
+    findingRow(5, "MEDIUM", "Loop bound is off by one, paraphrased. Proof: a.txt:5."),
     findingRow(25, "MEDIUM", "Unrelated naming drift. Proof: line 25 reads `line 25`."),
     findingRow(28, "HIGH", upstreamBody),
   ]));
   assert.equal(firstRound.exitCode, 10);
   assert.equal(firstRound.report.outcome, "CONTINUE");
   assert.equal(firstRound.report.actionable.length, 2);
-  assert.deepEqual(firstRound.report.droppedOutOfLane, { "code/logic": 1 });
+  assert.deepEqual(firstRound.report.droppedOffHunk, { "code/logic": 1 });
+  assert.equal(firstRound.report.unmatchedBodies, 2);
+  assert.equal(firstRound.report.actionable[0].body, inLaneBody);
 
   const [inLaneFinding, upstreamFinding] = firstRound.report.actionable;
   runRound(repository, ledgerRoot, ["record", "--fingerprint", inLaneFinding.fingerprint, "--fix", "FIXED", "--round", "1"]);
