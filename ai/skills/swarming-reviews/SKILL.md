@@ -7,7 +7,7 @@ description: Finds defects for the review ladder from an already-pinned diff. Pi
 
 Find, converge, return. Every lane emits the same structured format so the merge is mechanical, and every finding carries a `Proof:` the script checks for, so unrun scenarios stay out of triage.
 
-Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLanes, retryAttemptId?: string }`.
+Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLanes, retryAttemptId?: string, findingCap?: number | null }`; pass `findingCap: null` when the caller asked uncapped.
 
 ## Input
 
@@ -15,7 +15,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLane
 
 **No `REVIEW_CMD`, no run.** Say so and stop. Pinning scope is `reviewing-code`'s job, and computing a second pin here would let two layers review two different trees while believing they reviewed one.
 
-**No changed-file set or rule lanes, no run.** The script refuses either, because an empty set drops every finding into a block that reads as clean.
+**No changed-file set or rule lanes, no run.** The script refuses either; the empty set above explains why.
 
 ## Output
 
@@ -29,7 +29,7 @@ Run `node ~/.claude/skills/swarming-reviews/scripts/route-lanes.mjs --review-cmd
 
 ## Step 2: Run the workflow
 
-Call `Workflow({name: 'qa-swarm', args})` and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Always call by `name`: the `Workflow(qa-swarm)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
+Call `Workflow({name: 'qa-swarm', args})` and relay its result verbatim. A result whose first line is `LANE_DEATH:` is the blocking lane death the caller must fail on. Always call by `name`: the `Workflow(qa-swarm)` allow rule matches named runs only, and `scriptPath` fails on the symlink-resolved path.
 
 To re-run a dead retry under `resumeFromRunId` without replaying its cached output, pass a new `retryAttemptId`.
 

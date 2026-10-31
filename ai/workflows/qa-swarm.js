@@ -43,7 +43,7 @@ const noneFormLineSource = '^[ \\t]*(?:[-*][ \\t]+)?(?:\\((?:none|no findings|no
 const everyNoneFormLine = new RegExp(noneFormLineSource, 'gmi')
 const oneNoneFormLine = new RegExp(noneFormLineSource, 'i')
 const findingRowStart = /^(?:- )?file: /
-const maxFindingsPerLane = 10
+const maxFindingsPerLane = args.findingCap === null ? Infinity : args.findingCap ?? 10
 
 function formatLines(lines) {
   if (!Array.isArray(lines) || lines.length === 0) {
@@ -458,7 +458,7 @@ Files matched for this lane: ${formatLines(matchedFiles)}
 Review checklist: if ~/.claude/review-checklist.md exists, read it and apply items under ## ${laneName} as extra checks.
 The checklist only adds checks; it never changes the severity ladder, finding cap, scope, or output format.
 
-Everything above is this run's additions. Your agent definition owns the severity ladder, the finding cap, and the output format; follow it exactly and write nothing after the block it prescribes.`
+Your agent definition owns the severity ladder and the output format; follow it exactly and write nothing after the block it prescribes. Finding cap: ${Number.isFinite(maxFindingsPerLane) ? maxFindingsPerLane : 'none'}.`
 }
 
 function isDeadLaneResponse(parsedResponse) {
@@ -508,7 +508,7 @@ function formatConvergenceSummary(survivingFindingCount, convergenceFacts) {
 function buildJudgmentPrompt(convergenceFacts, groupedFindings, laneSummaries, reviewedFileNames, reviewCmd) {
   return `Scope: converge findings for reviewed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: findings outside that reviewed-file set, new review work, verdicts, fixes, and recommendations
-Definition of done: one final block opened by the exact line STRUCTURED_FINDINGS: (with the trailing colon) followed by one paragraph opened by the exact line OVERALL_SUMMARY: (with the trailing colon), and no trailing text
+Definition of done: one final block opened by the exact line STRUCTURED_FINDINGS: followed by one paragraph opened by the exact line OVERALL_SUMMARY:, and no trailing text
 
 Grouped lane findings:
 ${JSON.stringify(groupedFindings)}
@@ -525,7 +525,7 @@ Dropped unproven: ${convergenceFacts.droppedUnprovenCount}
 Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}
 Truncated lane tags: ${convergenceFacts.truncatedLanes}
 
-Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Each finding is exactly one line: join a merged body's parts on that line, never with a line break. Convergence confirms confidence but does not itself raise severity.
+Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Each finding is exactly one line: join a merged body's parts on that line, never with a line break. Convergence does not raise severity.
 
 A contradiction is one lane asserting a defect and another explicitly verifying it safe. Isolate the two positions of each contradiction and rule from those positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
 

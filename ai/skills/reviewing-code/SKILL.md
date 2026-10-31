@@ -9,7 +9,7 @@ One pass. Pin, find, triage, judge, return. A change gets this pass once, so it 
 
 ## Input
 
-**Required input.** A target, in one of three forms: `staged`, `working` (a local tree), or a base and head ref (a branch or a pull request); the changed-file set as `-- <paths>`; and 2 to 4 sentences of context that the diff does not carry. If the caller omits paths, derive the set with `git diff --name-only` from the target diff and state the derived set in the output.
+**Required input.** A target, in one of three forms: `staged`, `working` (a local tree), or a base and head ref (a branch or a pull request); the changed-file set as `-- <paths>`; 2 to 4 sentences of context that the diff does not carry, and optionally `uncapped`. If the caller omits paths, derive the set with `git diff --name-only` from the target diff and state the derived set in the output.
 
 ## Output
 
@@ -44,7 +44,7 @@ Record the changed-file set, file count, changed-line count, and touched subsyst
 
 ## Step 2: Call `swarming-reviews`
 
-Invoke `/swarming-reviews` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, and the changed-file set.
+Invoke `/swarming-reviews` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, and `findingCap: null` when `uncapped`.
 
 Route all finding through `swarming-reviews` rather than spawning a reviewer agent directly, so there is exactly one place that knows which lanes exist and when they trigger.
 
@@ -54,7 +54,7 @@ Route all finding through `swarming-reviews` rather than spawning a reviewer age
 
 Every finding leaves this step with exactly one disposition. A finding with none is a bug in the run, not an acceptable outcome.
 
-Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. The scope hook's PostToolUse note on each lane result names both kinds mechanically, as `outside the current diff` and `lines the diff did not change`; a finding it names survives only when its body attributes the defect to a changed line. That note is authoritative only for a `working` target, where the hook's HEAD-versus-tree diff is the pinned diff. A `staged` target pins `git write-tree` of the index while the hook keeps diffing the live tree, so an unstaged edit above a staged defect shifts its line and the note calls a correct finding unchanged; a branch or pull request target describes the wrong tree outright, and a clean checkout leaves the note naming every finding file. Ignore it entirely for both and apply the prose rule above on its own. Mention all such removals only in `OVERALL_SUMMARY`, in at most one sentence, excluding them from `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then keep at most 10 findings per lane, highest severity first, and set the `TRUNCATED` line of the return to the union of the lanes `swarming-reviews`'s `truncated lanes:` phrase names and the lanes this cap dropped findings from, so the caller can tell a swept diff from a capped one. The union is what makes the line true: every agent lane caps itself at 10 before its findings reach here, so this cap firing on those lanes is the rare case, and reading `TRUNCATED` off it alone reports `none` for the swarm's own overflow.
+Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. The scope hook's PostToolUse note on each lane result names both kinds mechanically, as `outside the current diff` and `lines the diff did not change`; a finding it names survives only when its body attributes the defect to a changed line. That note is authoritative only for a `working` target, where the hook's HEAD-versus-tree diff is the pinned diff. A `staged` target pins `git write-tree` of the index while the hook keeps diffing the live tree, so an unstaged edit above a staged defect shifts its line and the note calls a correct finding unchanged; a branch or pull request target describes the wrong tree outright, and a clean checkout leaves the note naming every finding file. Ignore it entirely for both and apply the prose rule above on its own. Mention all such removals only in `OVERALL_SUMMARY`, in at most one sentence, excluding them from `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then, unless `uncapped`, keep at most 10 findings per lane, highest severity first. Set the `TRUNCATED` line of the return to the union of the lanes `swarming-reviews`'s `truncated lanes:` phrase names and the lanes this cap dropped findings from, so the caller can tell a swept diff from a capped one. The union is what makes the line true: every agent lane applies the same cap before its findings reach here, so this cap firing on those lanes is the rare case, and reading `TRUNCATED` off it alone reports `none` for the swarm's own overflow.
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
@@ -82,7 +82,7 @@ The tier is the highest severity still standing after triage and dedup:
 | MEDIUM | `APPROVE WITH NITS` |
 | LOW or nothing | `APPROVE` |
 
-Highest-severity-wins rather than a count-weighted score, because CRITICAL and HIGH block outright; a scheme where two HIGH findings block and one does not would contradict that. Counts go in the summary, where they inform without moving the gate.
+Highest-severity-wins rather than a count-weighted score, because CRITICAL and HIGH block outright. Counts go in the summary, where they inform without moving the gate.
 
 A fifth value, `FAILED`, means the review could not be completed: `swarming-reviews` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code; it means only an incomplete review. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
 
@@ -122,4 +122,4 @@ The summary states: the pinned tree or SHA range, changed-file set, file and lin
 
 ## Token discipline
 
-This is the deliberately expensive layer, but expense should land on lanes rather than on this skill's own reasoning. Everything here is bookkeeping over a block `swarming-reviews` already produced: pinning, one classification per finding, one table lookup. Re-reading the diff to second-guess a lane means the lane prompt was wrong.
+Expense should land on lanes, not on this skill's own reasoning. Everything here is bookkeeping over a block `swarming-reviews` already produced: pinning, one classification per finding, one table lookup. Re-reading the diff to second-guess a lane means the lane prompt was wrong.
