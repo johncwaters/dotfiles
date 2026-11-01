@@ -189,4 +189,4 @@ Read `policy.afterCommit`:
 - `pull-request`: keep the feature branch unmerged everywhere. When the disclosure check held
   the change back, stop after reporting; a public pull request discloses it too. Otherwise
   offer to open a pull request against the repository's mainline with `/opening-prs`. If the
-  carbon unit declines, stop after reporting. `/reviewing-prs` reviews a pull request only when asked for by name.
+  carbon unit declines, or the remote is one `/opening-prs` cannot serve, report the pushed branch and stop; leave merging to the PR host. `/reviewing-prs` reviews a pull request only when asked for by name.

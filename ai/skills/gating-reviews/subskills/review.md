@@ -4,7 +4,7 @@ One review is the gate. What you fix after it is checked by re-running each
 finding's proof and then the suite.
 
 **Skip the review** for a pure rename or a reviewer's suggestion applied verbatim, with
-passing tests. Go straight to **Stamp the tree**. Any logic change, however small, gets the review.
+passing tests, when the stamped paths change nothing else; code the carbon unit dictates is a logic change and gets the review. Go straight to **Stamp the tree**. Any logic change, however small, gets the review.
 
 **Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list. Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed.
 
