@@ -154,28 +154,31 @@ Flags:
 
 ## Outcomes
 
-Exit code carries the outcome; the JSON carries the detail. Report one line with the
-outcome, short hash, and message subject, then one line per finding fixed. Expand only on
-failures.
+Exit code carries the outcome; the JSON carries the detail and a typed `next`. Act on it:
+`proceed` continues to the next step; `done` reports; `rerun` reruns `script` with the same flags once `after` is done;
+`fixAndRerun` fixes each of `items`, then reruns; `resolveConflicts` follows
+[Conflict resolution](subskills/recovery.md#conflict-resolution); `askCarbonUnit` asks
+`question`; `stop` relays `report`. Report one line with the outcome, short hash, and
+message subject, then one line per finding fixed.
 
-| Outcome | Exit | What to do |
-|---|---|---|
-| `COMMITTED` | 0 | Report the commit and any branches listed in `promoted` |
-| `NOTHING_TO_COMMIT` | 13 | [Recovery](subskills/recovery.md#nothing_to_commit) |
-| `MESSAGE_INVALID` | 20 | [Recovery](subskills/recovery.md#message_invalid) |
-| `HOOK_FAILED` | 21 | [Recovery](subskills/recovery.md#hook_failed) |
-| `DENYLISTED_FILE_STAGED` | 25 | [Recovery](subskills/recovery.md#denylisted_file_staged) |
-| `PUSH_FAILED` | 22 | [Recovery](subskills/recovery.md#push_failed) |
-| `PROMOTE_CONFLICT` | 23 | [Recovery](subskills/recovery.md#promote_conflict) |
-| `PROMOTE_FAILED` | 24 | [Recovery](subskills/recovery.md#promote_failed) |
-| `MAINLINE_AHEAD` | 26 | [Recovery](subskills/recovery.md#mainline_ahead) |
-| `POLICY_INVALID` | 27 | [Recovery](subskills/recovery.md#policy_invalid) |
-| `BRANCH_FORBIDDEN` | 28 | [Recovery](subskills/recovery.md#branch_forbidden) |
-| `MAINLINE_UNVERIFIED` | 29 | [Recovery](subskills/recovery.md#mainline_unverified) |
-| `HOME_PATH_STAGED` | 30 | [Recovery](subskills/recovery.md#home_path_staged) |
-| `NOT_A_REPO` | 10 | [Recovery](subskills/recovery.md#not_a_repo) |
-| `DETACHED_HEAD` | 11 | [Recovery](subskills/recovery.md#detached_head) |
-| `OPERATION_IN_PROGRESS` | 12 | [Recovery](subskills/recovery.md#operation_in_progress) |
+| Outcome | Exit |
+|---|---|
+| `COMMITTED` | 0 |
+| `NOTHING_TO_COMMIT` | 13 |
+| `MESSAGE_INVALID` | 20 |
+| `HOOK_FAILED` | 21 |
+| `DENYLISTED_FILE_STAGED` | 25 |
+| `PUSH_FAILED` | 22 |
+| `PROMOTE_CONFLICT` | 23 |
+| `PROMOTE_FAILED` | 24 |
+| `MAINLINE_AHEAD` | 26 |
+| `POLICY_INVALID` | 27 |
+| `BRANCH_FORBIDDEN` | 28 |
+| `MAINLINE_UNVERIFIED` | 29 |
+| `HOME_PATH_STAGED` | 30 |
+| `NOT_A_REPO` | 10 |
+| `DETACHED_HEAD` | 11 |
+| `OPERATION_IN_PROGRESS` | 12 |
 
 `pushed: false` after successful mainline promotion is normal. Report safety-push failures
 from `warnings`; the outcome stays unchanged.

@@ -1,86 +1,16 @@
 # Recovery
 
-Read the section for the reported outcome; the outcome codes are pinned by `../test/skill-doc.test.ts`.
+Every result carries a typed `next`; do what it names. This file holds only the judgment `next` cannot carry.
 
 ## Contents
 
-- [NOTHING_TO_COMMIT](#nothing_to_commit)
-- [MESSAGE_INVALID](#message_invalid)
-- [HOOK_FAILED](#hook_failed)
-- [DENYLISTED_FILE_STAGED](#denylisted_file_staged)
-- [HOME_PATH_STAGED](#home_path_staged)
-- [PUSH_FAILED](#push_failed)
-- [PROMOTE_CONFLICT](#promote_conflict)
-- [PROMOTE_FAILED](#promote_failed)
-- [MAINLINE_AHEAD](#mainline_ahead)
-- [POLICY_INVALID](#policy_invalid)
-- [BRANCH_FORBIDDEN](#branch_forbidden)
-- [MAINLINE_UNVERIFIED](#mainline_unverified)
-- [NOT_A_REPO](#not_a_repo)
-- [DETACHED_HEAD](#detached_head)
-- [OPERATION_IN_PROGRESS](#operation_in_progress)
+- [A flagged file that belongs](#a-flagged-file-that-belongs)
 - [Conflict resolution](#conflict-resolution)
 - [Push and promote recovery](#push-and-promote-recovery)
 
-## NOTHING_TO_COMMIT
+## A flagged file that belongs
 
-With `--promote`, promotion still ran: report what `promoted` says. Without it, stop and relay
-
-## MESSAGE_INVALID
-
-`errors` names each violation. Fix the message and re-run `land.ts`
-
-## HOOK_FAILED
-
-A commit hook rejected the commit, or git could not stage a scoped file or unstage an out-of-scope one; git's stderr is in `warnings` and nothing was committed. Fix the cause, then re-run
-
-## DENYLISTED_FILE_STAGED
-
-The index would add a file the denylist names (`.env*`, `*.log`, `node_modules/`, `dist/`, `__pycache__/`); `files` lists them and nothing was committed. Unstage each one (`git restore --staged <file>`) and re-run, or put it to the carbon unit when it genuinely belongs in the commit
-
-## HOME_PATH_STAGED
-
-A staged line or the commit message holds a local path (this machine's home directory, or `/home/<name>` or `/Users/<name>` for the current username or one in `local-usernames.txt`), which publishes the owner's username and layout; `matches` lists each `file:line`, or `commit message:line`, and nothing was committed. Lines a commit hook stages or writes into the message are scanned too: the commit is made, rescanned, and reset back off the branch, leaving its changes staged. Replace each with a path the code derives at runtime (an env var, a path relative to the file, `os.homedir()`) or reword the message, restage, and re-run. There is no override: a path that genuinely belongs goes to the carbon unit, who commits it by hand
-
-## PUSH_FAILED
-
-The commit exists, the push did not land. Follow [Push and promote recovery](#push-and-promote-recovery)
-
-## PROMOTE_CONFLICT
-
-The commit exists. A conflicted feature rebase was aborted and `conflicts` names the files, or an empty list means mainline diverged from origin. Follow [Conflict resolution](#conflict-resolution)
-
-## PROMOTE_FAILED
-
-The commit exists; promotion stopped for a non-conflict reason named in `warnings`, and `promoted` says which branches did update. Follow [Push and promote recovery](#push-and-promote-recovery)
-
-## MAINLINE_AHEAD
-
-Local mainline has commits absent from origin. `localOnlyCommits` lists their SHAs. Push or drop them by hand, then re-run; publication requires that explicit action
-
-## POLICY_INVALID
-
-The applied profile uses unsupported commit policy vocabulary. Update the profile file named in `errors`, then re-run preflight
-
-## BRANCH_FORBIDDEN
-
-`land.ts` was invoked on the guarded `branch` and wrote nothing. Create and switch to a feature branch, then re-run preflight
-
-## MAINLINE_UNVERIFIED
-
-Origin exists, but fetch failed or `origin/<mainline>` is missing, so promotion refused. `warnings` carries the verification detail. Restore remote verification, then re-run
-
-## NOT_A_REPO
-
-Stop and relay
-
-## DETACHED_HEAD
-
-Stop and relay
-
-## OPERATION_IN_PROGRESS
-
-A merge, rebase, or cherry-pick is in flight (`operation`). Stop and relay
+`DENYLISTED_FILE_STAGED` and `HOME_PATH_STAGED` name files or lines `next` says to unstage or replace. When one genuinely belongs in the commit, put it to the carbon unit instead; there is no override, so a home path that belongs is committed by the carbon unit by hand.
 
 ## Conflict resolution
 

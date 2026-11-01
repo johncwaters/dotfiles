@@ -47,7 +47,16 @@ type Payload<Specs extends FieldSpecs> = {
   [Name in OptionalFieldNames<Specs>]?: FieldValueByKind[Specs[Name]["kind"]];
 } & { warnings?: string[] };
 
-export type Result = { outcome: OutcomeName } & Record<string, unknown>;
+export type NextStep =
+  | { action: "done" }
+  | { action: "proceed" }
+  | { action: "rerun"; script: "land.ts" | "preflight.ts"; after: string }
+  | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause"; items: string[] }
+  | { action: "resolveConflicts"; files: string[] }
+  | { action: "askCarbonUnit"; question: string }
+  | { action: "stop"; report: string };
+
+export type Result = { outcome: OutcomeName; next: NextStep } & Record<string, unknown>;
 
 export function required<Kind extends FieldKind>(kind: Kind) {
   return { kind, isRequired: true } as const;
@@ -70,7 +79,11 @@ function matchesKind(kind: FieldKind, value: unknown): boolean {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function defineOutcome<const Specs extends FieldSpecs>(outcome: OutcomeName, specs: Specs) {
+function defineOutcome<const Specs extends FieldSpecs>(
+  outcome: OutcomeName,
+  specs: Specs,
+  nextStepFor: (payload: Payload<Specs>) => NextStep,
+) {
   return (payload: Payload<Specs>): Result => {
     const fields = payload as Record<string, unknown>;
     for (const [name, value] of Object.entries(fields)) {
@@ -94,7 +107,7 @@ function defineOutcome<const Specs extends FieldSpecs>(outcome: OutcomeName, spe
       }
     }
     const warnings = payload.warnings ?? [];
-    const result: Result = { outcome, ...fields };
+    const result: Result = { outcome, ...fields, next: nextStepFor(payload) };
     if (warnings.length === 0) {
       delete result.warnings;
     }
@@ -111,6 +124,15 @@ export const ready = defineOutcome("READY", {
   policy: optional("object"),
   mainlineFreshness: optional("object"),
   remoteVisibility: optional("object"),
+}, ({ branchAllowed, mainlineFreshness }) => {
+  if (!branchAllowed) {
+    return { action: "rerun", script: "preflight.ts", after: "creating and switching to a feature branch named for the work" };
+  }
+  const commitsBehindMainline = Number(mainlineFreshness?.behind ?? 0);
+  if (commitsBehindMainline > 0) {
+    return { action: "rerun", script: "preflight.ts", after: `integrating origin/${String(mainlineFreshness?.mainline)} with the verb its warning names` };
+  }
+  return { action: "proceed" };
 });
 
 export const committed = defineOutcome("COMMITTED", {
@@ -118,56 +140,59 @@ export const committed = defineOutcome("COMMITTED", {
   pushed: required("boolean"),
   promoted: required("stringList"),
   deletedRemoteBranches: optional("stringList"),
-});
+}, () => ({ action: "done" }));
 
-export const messageValid = defineOutcome("READY", {});
+export const messageValid = defineOutcome("READY", {}, () => ({ action: "proceed" }));
 
-export const notARepo = defineOutcome("NOT_A_REPO", {});
+export const notARepo = defineOutcome("NOT_A_REPO", {}, () => ({ action: "stop", report: "Not inside a git repository." }));
 
-export const detachedHead = defineOutcome("DETACHED_HEAD", {});
+export const detachedHead = defineOutcome("DETACHED_HEAD", {}, () => ({ action: "stop", report: "HEAD is detached; nothing was written." }));
 
 export const operationInProgress = defineOutcome("OPERATION_IN_PROGRESS", {
   operation: required("string"),
-});
+}, ({ operation }) => ({ action: "stop", report: `A ${operation} is in flight; nothing was written.` }));
 
 export const nothingToCommit = defineOutcome("NOTHING_TO_COMMIT", {
   pushed: optional("boolean"),
   promoted: optional("stringList"),
   deletedRemoteBranches: optional("stringList"),
-});
+}, ({ promoted = [] }) => ({ action: "stop", report: promoted.length > 0 ? `Nothing new to commit; promoted ${promoted.join(", ")}.` : "Nothing to commit." }));
 
 export const messageInvalid = defineOutcome("MESSAGE_INVALID", {
   errors: required("stringList"),
-});
+}, ({ errors }) => ({ action: "fixAndRerun", fix: "message", items: errors }));
 
-export const hookFailed = defineOutcome("HOOK_FAILED", {});
+export const hookFailed = defineOutcome("HOOK_FAILED", {}, ({ warnings = [] }) => ({ action: "fixAndRerun", fix: "hookCause", items: warnings }));
 
 export const denylistedFileStaged = defineOutcome("DENYLISTED_FILE_STAGED", {
   files: required("stringList"),
-});
+}, ({ files }) => ({ action: "fixAndRerun", fix: "unstage", items: files }));
 
 export const homePathStaged = defineOutcome("HOME_PATH_STAGED", {
   matches: required("stringList"),
-});
+}, ({ matches }) => ({ action: "fixAndRerun", fix: "replacePaths", items: matches }));
 
 export const pushFailed = defineOutcome("PUSH_FAILED", {
   commit: optional("string"),
   pushed: required("boolean"),
   promoted: required("stringList"),
-});
+}, () => ({ action: "rerun", script: "land.ts", after: "fixing the push failure named in warnings, by Push and promote recovery" }));
 
 export const promoteConflict = defineOutcome("PROMOTE_CONFLICT", {
   commit: optional("string"),
   pushed: required("boolean"),
   promoted: required("stringList"),
   conflicts: required("stringList"),
-});
+}, ({ conflicts }) =>
+    conflicts.length > 0
+      ? { action: "resolveConflicts", files: conflicts }
+      : { action: "askCarbonUnit", question: "Local mainline diverged from origin; how should it be reconciled?" });
 
 export const promoteFailed = defineOutcome("PROMOTE_FAILED", {
   commit: optional("string"),
   pushed: required("boolean"),
   promoted: required("stringList"),
-});
+}, () => ({ action: "rerun", script: "land.ts", after: "fixing the promote failure named in warnings, by Push and promote recovery" }));
 
 export const mainlineAhead = defineOutcome("MAINLINE_AHEAD", {
   commit: optional("string"),
@@ -175,22 +200,22 @@ export const mainlineAhead = defineOutcome("MAINLINE_AHEAD", {
   promoted: required("stringList"),
   mainline: required("string"),
   localOnlyCommits: required("stringList"),
-});
+}, ({ mainline, localOnlyCommits }) => ({ action: "askCarbonUnit", question: `Local ${mainline} holds commits absent from origin (${localOnlyCommits.join(", ")}); push or drop them?` }));
 
 export const policyInvalid = defineOutcome("POLICY_INVALID", {
   errors: required("stringList"),
-});
+}, ({ errors }) => ({ action: "askCarbonUnit", question: `The applied profile's commit policy is invalid: ${errors.join("; ")}. How should the profile change?` }));
 
 export const branchForbidden = defineOutcome("BRANCH_FORBIDDEN", {
   branch: required("string"),
-});
+}, ({ branch }) => ({ action: "rerun", script: "preflight.ts", after: `switching from ${branch} to a feature branch named for the work` }));
 
 export const mainlineUnverified = defineOutcome("MAINLINE_UNVERIFIED", {
   commit: optional("string"),
   pushed: required("boolean"),
   promoted: required("stringList"),
   mainline: required("string"),
-});
+}, () => ({ action: "rerun", script: "land.ts", after: "restoring the remote verification named in warnings" }));
 
 export function emit(result: Result): never {
   process.stdout.write(`${JSON.stringify(result)}\n`);

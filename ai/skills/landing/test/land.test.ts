@@ -184,7 +184,7 @@ test("a clean tree without promotion is NOTHING_TO_COMMIT", () => {
   }
 });
 
-test("an invalid message is MESSAGE_INVALID and commits nothing", () => {
+test("an invalid message is MESSAGE_INVALID, commits nothing, and names the message fix as next", () => {
   const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -195,6 +195,7 @@ test("an invalid message is MESSAGE_INVALID and commits nothing", () => {
 
     assert.equal(result.outcome, "MESSAGE_INVALID");
     assert.equal(code, 20);
+    assert.deepEqual(result.next, { action: "fixAndRerun", fix: "message", items: result.errors });
     assert.equal(gitOutput(repo, ["rev-parse", "HEAD"]), head);
   } finally {
     cleanup(repo);
