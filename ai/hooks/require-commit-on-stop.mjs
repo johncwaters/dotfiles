@@ -10,7 +10,7 @@ const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const MAX_LISTED_PATHS = 5;
 const FRAMED_BACKGROUND_TOOLS = new Set(["Agent", "Workflow"]);
 const BACKGROUND_LAUNCH_FRAMING = /^\s*(?:Async agent launched|Workflow launched in background)/;
-const COMMIT_PREFLIGHT_COMMAND = /^\s*(?:cd\s+\S+\s*(?:&&|;)\s*)?node\s+["']?[^\s"']*\/\.claude\/skills\/committing\/preflight\.ts["']?(?:\s|$)/;
+const COMMIT_PREFLIGHT_COMMAND = /^\s*(?:cd\s+\S+\s*(?:&&|;)\s*)?node\s+["']?[^\s"']*\/\.claude\/skills\/landing\/preflight\.ts["']?(?:\s|$)/;
 
 function isCommitPreflightCall(event) {
   return event.kind === "toolUse" && event.name === "Bash" && COMMIT_PREFLIGHT_COMMAND.test(String(event.input.command || ""));
@@ -20,7 +20,7 @@ async function pathsEditedSinceLastCommitRun(transcriptPath) {
   const editedPaths = new Set();
   const pendingPreflightIds = new Set();
   for await (const event of sessionEvents(transcriptPath)) {
-    if (isSkillRun(event, "committing")) editedPaths.clear();
+    if (isSkillRun(event, "landing")) editedPaths.clear();
     if (isCommitPreflightCall(event)) pendingPreflightIds.add(event.id);
     const isPreflightResult = event.kind === "toolResult" && pendingPreflightIds.delete(event.toolUseId);
     if (isPreflightResult && !event.isError) editedPaths.clear();
@@ -92,8 +92,8 @@ function blockStop(dirtyPaths) {
   process.stdout.write(JSON.stringify({
     decision: "block",
     reason:
-      `This turn ends with uncommitted edits this session made and no /committing since: ${listedPaths}${moreSuffix}. ` +
-      "Run /committing now. If <auto_commit> exempts this turn (the carbon unit said not to commit, " +
+      `This turn ends with uncommitted edits this session made and no /landing since: ${listedPaths}${moreSuffix}. ` +
+      "Run /landing now. If <land_when_done> exempts this turn (the carbon unit said not to commit, " +
       "the work was exploration, or it is one slice of a plan still in flight), say which in one line and stop again.",
   }));
   process.exit(0);

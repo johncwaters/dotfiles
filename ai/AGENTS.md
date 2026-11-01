@@ -3,7 +3,7 @@ Say "carbon unit" / "carbon units" wherever prose would say human, person, peopl
 </output_style>
 
 <scope>
-`<spec_first>` and `<auto_commit>` are main-loop only. Main loop: do the work in this session; spawn agents only where a skill or workflow says to, following `~/.claude/MODELS.md` for model and prompt. Subagents (Agent/Task) and externally dispatched CLIs (Codex): execute the assigned task with your own tools, never spawn further agents, never offload to Codex, never run /committing, report results back instead. Every other section applies to everyone.
+`<spec_first>` and `<land_when_done>` are main-loop only. Main loop: do the work in this session; spawn agents only where a skill or workflow says to, following `~/.claude/MODELS.md` for model and prompt. Subagents (Agent/Task) and externally dispatched CLIs (Codex): execute the assigned task with your own tools, never spawn further agents, never offload to Codex, never run /landing, report results back instead. Every other section applies to everyone.
 </scope>
 
 <scope_boundary>
@@ -29,7 +29,7 @@ Main loop only. Run /specifying before the first edit of any change that involve
 </spec_first>
 
 <verification>
-Before any completion claim or auto-commit: zero pending tasks, tests passing, and verification evidence collected by actually exercising the change, not just typechecking. Never self-approve in the same context. Review is a ladder of read-only engines with one writer: `swarming-reviews` finds, `reviewing-code` triages and judges, committing's fix step is the only thing that edits inside the loop, and the caller owns the loop. /committing runs that loop and is the single gate for local work; /reviewing-prs is the gate for a pull request and never fixes anything. Never spawn a reviewer agent directly or invoke `swarming-reviews` yourself; `swarming-reviews` owns lane selection behind `reviewing-code`, and a second review path is how findings stop composing. If verification fails, keep iterating.
+Before any completion claim or landing: zero pending tasks, tests passing, and verification evidence collected by actually exercising the change, not just typechecking. Never self-approve in the same context. Review is a ladder of read-only engines with one writer: `swarming-reviews` finds, `reviewing-code` triages and judges, committing's fix step is the only thing that edits inside the loop, and the caller owns the loop. /landing runs that loop and is the single gate for local work; /reviewing-prs is the gate for a pull request and never fixes anything. Never spawn a reviewer agent directly or invoke `swarming-reviews` yourself; `swarming-reviews` owns lane selection behind `reviewing-code`, and a second review path is how findings stop composing. If verification fails, keep iterating.
 </verification>
 
 <tests>
@@ -41,9 +41,9 @@ Write few tests; the default for a change is zero new ones. Agent-written unit t
 - A repo's own instruction file that requires tests wins.
 </tests>
 
-<auto_commit>
-Main session loop only; subagents skip per `<scope>`. Change complete and every gate passed (tests green, verification evidence collected, zero pending tasks): run the /committing workflow immediately, without waiting to be asked. Skip only when the user said not to commit, the work was assessment or exploration with no code change, or the change is one slice of a larger plan still in flight.
-</auto_commit>
+<land_when_done>
+Main session loop only; subagents skip per `<scope>`. Change complete and every gate passed (tests green, verification evidence collected, zero pending tasks): run the /landing workflow immediately, without waiting to be asked. Skip only when the user said not to commit, the work was assessment or exploration with no code change, or the change is one slice of a larger plan still in flight.
+</land_when_done>
 
 <reuse_before_create>
 Before writing a new component, hook, util, fetcher, schema, script, skill, or agent: search for existing equivalents with Glob/Grep, by behavior and by synonym/abbreviation/domain wording.

@@ -1,6 +1,6 @@
 ---
-name: committing
-description: Lands work through the personal commit workflow. Reviews once via /reviewing-code, fixes what that review proved broken, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /committing, "commit this", "commit and push", or landing finished work.
+name: landing
+description: Lands work through the personal commit workflow. Reviews once via /reviewing-code, fixes what that review proved broken, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /landing, "commit this", "commit and push", or landing finished work.
 ---
 
 # Commit
@@ -10,8 +10,8 @@ commit message, and the recovery procedures. Stage, commit, push, or merge by ha
 within [recovery](subskills/recovery.md).
 
 ```
-node "$HOME/.claude/skills/committing/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]
-node "$HOME/.claude/skills/committing/land.ts" [--paths ...] [--promote] [--no-push] <<'MSG'
+node "$HOME/.claude/skills/landing/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]
+node "$HOME/.claude/skills/landing/land.ts" [--paths ...] [--promote] [--no-push] <<'MSG'
 <commit message>
 MSG
 ```
@@ -120,7 +120,7 @@ Pipe the message into `land.ts` with a quoted heredoc, so nothing in the message
 expanded by the shell:
 
 ```
-node "$HOME/.claude/skills/committing/land.ts" --promote --paths src/thing.ts <<'MSG'
+node "$HOME/.claude/skills/landing/land.ts" --promote --paths src/thing.ts <<'MSG'
 feat(thing): do the thing
 
 Why it was done this way.

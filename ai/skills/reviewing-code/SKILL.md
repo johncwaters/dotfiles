@@ -1,6 +1,6 @@
 ---
 name: reviewing-code
-description: Reviews diffs as the internal engine. Pins an immutable object, calls swarming-reviews, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only with no edits, git history changes, posts, or repeat passes. Use when /committing or /reviewing-prs invokes the engine; direct requests route through those entry points.
+description: Reviews diffs as the internal engine. Pins an immutable object, calls swarming-reviews, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only with no edits, git history changes, posts, or repeat passes. Use when /landing or /reviewing-prs invokes the engine; direct requests route through those entry points.
 ---
 
 # Code Review
@@ -17,7 +17,7 @@ One pass. Pin, find, triage, judge, return. A change gets this pass once, so it 
 
 **Boundaries.** No file edits. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/reviewing-prs`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up fresh MEDIUM findings every time. Only `/converging-reviews` does, reviewing just the last round's delta.
 
-**Not a direct entry point.** Asked to review something conversationally, route it: local work goes through `/committing`, a pull request goes through `/reviewing-prs`. Both call this skill with a proper target.
+**Not a direct entry point.** Asked to review something conversationally, route it: local work goes through `/landing`, a pull request goes through `/reviewing-prs`. Both call this skill with a proper target.
 
 ## Step 1: Pin the target
 

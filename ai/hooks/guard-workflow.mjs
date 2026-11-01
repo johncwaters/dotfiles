@@ -14,7 +14,7 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
   String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?git['"]?${GIT_GLOBAL_OPTIONS}\s+(?:(?:commit|push)(?=\s|$|[;&|)'"])|${GIT_ALIAS_TO_COMMIT_OR_PUSH})`,
   "m",
 );
-const LANDING_SKILLS = ["committing", "opening-prs"];
+const LANDING_SKILLS = ["landing", "opening-prs"];
 const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
 const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
 const SHELL_WORD_ON_LINE = /(?:^|[;&|(\s])(?:\S*\/)?(?:(?:ba|z|da|k)?sh|eval)(?=$|[\s;&|)])/;
@@ -36,8 +36,8 @@ const UNRESOLVABLE_PATH_CHARACTERS = /[$`*?[{]/;
 const UNRESOLVED_TARGET_NAME = "unresolved-write-target";
 
 const RAW_COMMIT_REASON =
-  "Raw `git commit` and `git push` are denied outside /committing, so every landing goes through its review loop. " +
-  "Run /committing; its Step 2 already skips the review for a mechanical change such as a pure rename or a reviewer's suggestion applied verbatim. " +
+  "Raw `git commit` and `git push` are denied outside /landing, so every landing goes through its review loop. " +
+  "Run /landing; its Step 2 already skips the review for a mechanical change such as a pure rename or a reviewer's suggestion applied verbatim. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
 const PKILL_SELF_MATCH_REASON =

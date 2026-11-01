@@ -130,7 +130,7 @@ only to unblock the run.
   run `git push <remote> HEAD:<headRefName>`,
   `git branch --set-upstream-to=<remote>/<headRefName>`, and
   `git config branch.<branch>.pushRemote <remote>`, then re-run `land.ts`, which now
-  pushes there. The landing gate admits this push while /committing runs.
+  pushes there. The landing gate admits this push while /landing runs.
 
 Stop and report only when the failure is authentication or branch protection; when a
 permissions failure persists because no configured remote holds the PR head, the PR head

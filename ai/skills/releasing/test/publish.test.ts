@@ -11,7 +11,7 @@ import {
   makeBareOrigin,
   runGit,
   writeFile,
-} from "../../committing/test/helpers.ts";
+} from "../../landing/test/helpers.ts";
 
 const PUBLISH_SCRIPT = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "publish.ts");
 

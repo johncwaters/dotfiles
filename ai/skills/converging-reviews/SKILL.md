@@ -1,11 +1,11 @@
 ---
 name: converging-reviews
-description: Runs review and fix rounds over local work until a round finds nothing left to fix, then hands the tree to /committing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a stall, a cap of 8 rounds, or a question. Starts only by name. Use for /converging-reviews.
+description: Runs review and fix rounds over local work until a round finds nothing left to fix, then hands the tree to /landing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a stall, a cap of 8 rounds, or a question. Starts only by name. Use for /converging-reviews.
 ---
 
 # Converging Reviews
 
-An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made, and only HIGH+ counts there; once one is clean, a sweep re-reviews the whole diff, where MEDIUM+ counts on the first sweep and HIGH+ after, so the loop tapers instead of minting fresh MEDIUMs. The `ACTIONABLE` count must strictly fall against the previous round of the same kind, and a fixed finding coming back means the fixes are fighting; a finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/committing` stays the default gate.
+An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made, and only HIGH+ counts there; once one is clean, a sweep re-reviews the whole diff, where MEDIUM+ counts on the first sweep and HIGH+ after, so the loop tapers instead of minting fresh MEDIUMs. The `ACTIONABLE` count must strictly fall against the previous round of the same kind, and a fixed finding coming back means the fixes are fighting; a finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/landing` stays the default gate.
 
 ## Input
 
@@ -13,11 +13,11 @@ Uncommitted local work on a feature branch, and one or two sentences of what cha
 
 ## Output
 
-The tree landed through `/committing` on `CLEAN`, or a stop report on `STALLED`, `CAPPED`, or `FAILED` naming the round, the ledger path, and every live `ACTIONABLE` finding. The ledger stays for the next run either way.
+The tree landed through `/landing` on `CLEAN`, or a stop report on `STALLED`, `CAPPED`, or `FAILED` naming the round, the ledger path, and every live `ACTIONABLE` finding. The ledger stays for the next run either way.
 
 ## Step 1: Preflight and start
 
-Run `node "$HOME/.claude/skills/committing/preflight.ts"` and act on it as `/committing` Step 1 says, integrating mainline before round 1 so no merge lands inside the loop; its `paths` are the changed-file set. Pin the working tree once through a throwaway index, as `reviewing-code` Step 1 does for `working`, giving `TREE_1`. Then:
+Run `node "$HOME/.claude/skills/landing/preflight.ts"` and act on it as `/landing` Step 1 says, integrating mainline before round 1 so no merge lands inside the loop; its `paths` are the changed-file set. Pin the working tree once through a throwaway index, as `reviewing-code` Step 1 does for `working`, giving `TREE_1`. Then:
 
 ```
 node "$HOME/.claude/skills/converging-reviews/round.mjs" start --tree "$TREE_1"
@@ -43,7 +43,7 @@ node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --ba
 
 | Outcome | Exit | Action |
 |---|---|---|
-| `CLEAN` | 0 | Run `/committing`; its review skips only when `round.mjs verify`, which pins the working tree itself, finds it equal to this CLEAN head, so an edit made after CLEAN still gets reviewed |
+| `CLEAN` | 0 | Run `/landing`; its review skips only when `round.mjs verify`, which pins the working tree itself, finds it equal to this CLEAN head, so an edit made after CLEAN still gets reviewed |
 | `CONTINUE` | 10 | Step 4, then the next round from Step 2 |
 | `RETRY` | 11 | Repeat Step 2 for the same round once |
 | `SWEEP` | 12 | Run round `nextRound` from Step 2 with its `base` and the same head; no fix lands between |
@@ -60,7 +60,7 @@ The final report of every outcome, `CLEAN` included, names each `ambiguous` find
 
 ## Step 4: Fix and pin
 
-Hand every `actionable` finding to `~/.claude/skills/committing/subskills/fix.md`. The write scope is the changed-file set plus each file a finding's `Proof:` cites at file:line, so a fix lands at its upstream source when the finding traces it there. Record each outcome:
+Hand every `actionable` finding to `~/.claude/skills/landing/subskills/fix.md`. The write scope is the changed-file set plus each file a finding's `Proof:` cites at file:line, so a fix lands at its upstream source when the finding traces it there. Record each outcome:
 
 ```
 node "$HOME/.claude/skills/converging-reviews/round.mjs" record --fingerprint <fp> --fix FIXED|UNVERIFIED|DECLINED --round N

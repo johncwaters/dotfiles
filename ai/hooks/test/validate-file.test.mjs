@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { commitFile, makeRepo, writeExecutable } from "../../skills/committing/test/helpers.ts";
+import { commitFile, makeRepo, writeExecutable } from "../../skills/landing/test/helpers.ts";
 import { removeAll, runHook } from "./harness.mjs";
 
 const validatorHome = fs.mkdtempSync(path.join(os.tmpdir(), "validate-file-hook-"));
@@ -117,11 +117,11 @@ test("instruction caps block growth at repo roots but permit shrinking and neste
 
 test("review-ladder writes cannot grow across runtime, alias, and worktree paths", () => {
   const ladderSuffixes = [
-    "skills/committing/SKILL.md",
-    "skills/committing/subskills/review.md",
+    "skills/landing/SKILL.md",
+    "skills/landing/subskills/review.md",
     "skills/reviewing-code/SKILL.md",
     "skills/swarming-reviews/SKILL.md",
-    "skills/committing/subskills/fix.md",
+    "skills/landing/subskills/fix.md",
     "workflows/qa-swarm.js",
   ];
   const ladderRoots = [".claude", ".dotfiles/ai", "worktree/ai"];
@@ -145,8 +145,8 @@ test("review-ladder writes cannot grow across runtime, alias, and worktree paths
 
 test("review-ladder suffix matching normalizes separators and dot segments", () => {
   const filePaths = [
-    validatorHome + "/normalized/skills/committing/../committing/SKILL.md",
-    path.join(validatorHome, "windows\\skills\\committing\\SKILL.md"),
+    validatorHome + "/normalized/skills/landing/../landing/SKILL.md",
+    path.join(validatorHome, "windows\\skills\\landing\\SKILL.md"),
   ];
   for (const filePath of filePaths) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -163,11 +163,11 @@ function wellFormedSkill(skillName, body = "## Step 1: Act\n\nAct on the request
 test("dotfiles skill writes are denied only when they add structure violations", () => {
   const dotfilesRoot = path.join(validatorHome, "structure");
   fs.mkdirSync(path.join(dotfilesRoot, "profiles"), { recursive: true });
-  const skillPath = path.join(dotfilesRoot, "ai/skills/landing/SKILL.md");
+  const skillPath = path.join(dotfilesRoot, "ai/skills/shipping/SKILL.md");
   fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-  const foreignSkillProcess = validateWrite({ file_path: path.join(validatorHome, "project/.claude/skills/landing/SKILL.md"), content: "Do not wait.\n" });
+  const foreignSkillProcess = validateWrite({ file_path: path.join(validatorHome, "project/.claude/skills/shipping/SKILL.md"), content: "Do not wait.\n" });
   assert.equal(foreignSkillProcess.stdout, "", foreignSkillProcess.stderr);
-  const newSkillProcess = validateWrite({ file_path: skillPath, content: wellFormedSkill("landing") });
+  const newSkillProcess = validateWrite({ file_path: skillPath, content: wellFormedSkill("shipping") });
   assert.equal(newSkillProcess.stdout, "", newSkillProcess.stderr);
   for (const invalidName of ["lander", "sing", "ing", "pdfs-processing"]) {
     const invalidPath = path.join(dotfilesRoot, "ai/skills", invalidName, "SKILL.md");
@@ -175,24 +175,24 @@ test("dotfiles skill writes are denied only when they add structure violations",
     assert.match(gerundDenial, /does not start with a gerund/);
     assert.ok(gerundDenial.includes("Rename to a gerund phrase, verb first (processing-pdfs, reviewing-code)."));
   }
-  fs.writeFileSync(skillPath, wellFormedSkill("landing", "## Step 2: Act\n\nNever wait.\n"));
-  const keptViolationsProcess = validateWrite({ file_path: skillPath, content: wellFormedSkill("landing", "## Step 2: Act\n\nNever stall.\n") });
+  fs.writeFileSync(skillPath, wellFormedSkill("shipping", "## Step 2: Act\n\nNever wait.\n"));
+  const keptViolationsProcess = validateWrite({ file_path: skillPath, content: wellFormedSkill("shipping", "## Step 2: Act\n\nNever stall.\n") });
   assert.equal(keptViolationsProcess.stdout, "", keptViolationsProcess.stderr);
-  const denialReason = readDenialReason(validateWrite({ file_path: skillPath, content: wellFormedSkill("landing", "## Step 2: Act\n\nNever stall. Never wait.\n") }));
+  const denialReason = readDenialReason(validateWrite({ file_path: skillPath, content: wellFormedSkill("shipping", "## Step 2: Act\n\nNever stall. Never wait.\n") }));
   assert.match(denialReason, /Where: line \d+: prohibition 'Never'\n/);
   assert.match(denialReason, /Fix: State the action to take instead of the one to skip\./);
 });
 
 test("new review-ladder files and other skill files may grow", () => {
-  const newFilePath = path.join(validatorHome, "new/skills/committing/SKILL.md");
+  const newFilePath = path.join(validatorHome, "new/skills/landing/SKILL.md");
   const otherSkillPath = path.join(validatorHome, "skills/writing-in-voice/SKILL.md");
-  const similarSuffixPath = path.join(validatorHome, "other-skills/committing/SKILL.md");
+  const similarSuffixPath = path.join(validatorHome, "other-skills/landing/SKILL.md");
   for (const filePath of [otherSkillPath, similarSuffixPath]) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, "rule");
   }
   for (const filePath of [newFilePath, otherSkillPath, similarSuffixPath]) {
-    const content = filePath === newFilePath ? wellFormedSkill("committing") : "rules";
+    const content = filePath === newFilePath ? wellFormedSkill("landing") : "rules";
     const allowedWriteProcess = validateWrite({ file_path: filePath, content });
     assert.equal(allowedWriteProcess.status, 0, allowedWriteProcess.stderr);
     assert.equal(allowedWriteProcess.stdout, "");
@@ -223,7 +223,7 @@ test("review-ladder Edit checks explicit content and replayed replacements", () 
 });
 
 test("review-ladder MultiEdit checks the final full content", () => {
-  const filePath = path.join(validatorHome, "multi/skills/committing/subskills/fix.md");
+  const filePath = path.join(validatorHome, "multi/skills/landing/subskills/fix.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, "rule rule");
   for (const replacement of ["rules", "rule", "rul"]) {
@@ -250,8 +250,8 @@ test("review-ladder MultiEdit checks the final full content", () => {
 test("review-ladder ceiling is the committed size, so a shrink can be grown back up to it", () => {
   const repository = makeRepo();
   after(() => removeAll(repository));
-  commitFile(repository, "skills/committing/SKILL.md", "rule rule\n");
-  const filePath = path.join(repository, "skills/committing/SKILL.md");
+  commitFile(repository, "skills/landing/SKILL.md", "rule rule\n");
+  const filePath = path.join(repository, "skills/landing/SKILL.md");
   fs.writeFileSync(filePath, "rule\n");
   const regrowthProcess = validateWrite({ file_path: filePath, content: "rule rule\n" });
   assert.equal(regrowthProcess.status, 0, regrowthProcess.stderr);
@@ -264,7 +264,7 @@ test("untracked review-ladder files fall back to the on-disk size", () => {
   const repository = makeRepo();
   after(() => removeAll(repository));
   commitFile(repository, "README.md", "readme\n");
-  const filePath = path.join(repository, "skills/committing/subskills/fix.md");
+  const filePath = path.join(repository, "skills/landing/subskills/fix.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, "rule");
   const denialReason = readDenialReason(validateWrite({ file_path: filePath, content: "rules" }));

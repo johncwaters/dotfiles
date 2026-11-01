@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, closeSync, constants, fstatSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { withLedgerLock } from "../../committing/lib/ledger.ts";
+import { withLedgerLock } from "../../landing/lib/ledger.ts";
 
 export type SessionEntry = {
   v: 1; kind: "session"; at: string; sessionId: string; transcriptPath: string;

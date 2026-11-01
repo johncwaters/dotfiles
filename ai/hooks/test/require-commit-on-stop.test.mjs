@@ -45,27 +45,27 @@ function stopDecision(entries, extra = {}, env = ATTENDED) {
 
 const editDirtyFile = toolUse("Edit", { file_path: path.join(dirtyRepository, "a.txt") });
 
-test("a turn ending with uncommitted session edits is blocked once with a pointer to /committing", () => {
+test("a turn ending with uncommitted session edits is blocked once with a pointer to /landing", () => {
   const { decision, reason } = stopDecision([prompt("fix it"), editDirtyFile]);
   assert.equal(decision, "block");
-  assert.match(reason, /\/committing/);
+  assert.match(reason, /\/landing/);
   assert.match(reason, /a\.txt/);
   assert.equal(stopDecision([prompt("fix it"), editDirtyFile], { stop_hook_active: true }).decision, "allow");
 });
 
-test("a /committing after the last edit, or edits that left no change, let the turn end", () => {
-  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...skillRun("committing")]).decision, "allow");
-  const resumedCommit = bashRun('node "$HOME/.claude/skills/committing/preflight.ts" --paths a.txt', "ok");
-  assert.equal(stopDecision([prompt("fix it"), ...skillRun("committing"), editDirtyFile, ...resumedCommit]).decision, "allow");
-  const deniedPreflight = bashRun('node "$HOME/.claude/skills/committing/preflight.ts" --paths a.txt', "Permission to use Bash was denied", true);
+test("a /landing after the last edit, or edits that left no change, let the turn end", () => {
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...skillRun("landing")]).decision, "allow");
+  const resumedCommit = bashRun('node "$HOME/.claude/skills/landing/preflight.ts" --paths a.txt', "ok");
+  assert.equal(stopDecision([prompt("fix it"), ...skillRun("landing"), editDirtyFile, ...resumedCommit]).decision, "allow");
+  const deniedPreflight = bashRun('node "$HOME/.claude/skills/landing/preflight.ts" --paths a.txt', "Permission to use Bash was denied", true);
   assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...deniedPreflight]).decision, "block");
-  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...bashRun("cat ~/.claude/skills/committing/preflight.ts", "source")]).decision, "block");
+  assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...bashRun("cat ~/.claude/skills/landing/preflight.ts", "source")]).decision, "block");
   assert.equal(stopDecision([prompt("fix it"), toolUse("Edit", { file_path: path.join(cleanRepository, "a.txt") })]).decision, "allow");
   assert.equal(stopDecision([prompt("note it"), toolUse("Write", { file_path: path.join(sandboxHome, "notes.md") })]).decision, "allow");
 });
 
-test("an edit after a /committing run blocks again", () => {
-  assert.equal(stopDecision([prompt("fix it"), ...skillRun("committing"), prompt("one more"), editDirtyFile]).decision, "block");
+test("an edit after a /landing run blocks again", () => {
+  assert.equal(stopDecision([prompt("fix it"), ...skillRun("landing"), prompt("one more"), editDirtyFile]).decision, "block");
 });
 
 test("a background launch that has not reported back lets the turn end until its notification arrives", () => {

@@ -545,7 +545,7 @@ check "a profile skill directory left without SKILL.md is retired, not relinked"
 rm -r "$stagedRepo/profiles/work/skills/leftover-profile-skill"
 rm -f "$skillsPath/posting-sprint-updates"
 ln -s "$stagedRepo/profiles/work/skills/posting-sprint-updates" "$skillsPath/posting-sprint-updates"
-ln -s "$sandbox/.dotfiles/profiles/retired/skills/committing" "$skillsPath/commit-from-retired-profile"
+ln -s "$sandbox/.dotfiles/profiles/retired/skills/landing" "$skillsPath/commit-from-retired-profile"
 ln -s "$stagedRepo/profiles/retired/skills/deleted" "$skillsPath/deleted-profile-skill"
 ln -s "$sandbox/.dotfiles/profiles/work/skills/deleted" "$skillsPath/.hidden-profile-skill"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
@@ -553,7 +553,7 @@ for skillName in "${workSkillNames[@]}" commit-from-retired-profile deleted-prof
   check "personal profile removes profile skill link $skillName through the alias or clone path" \
     bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$skillsPath/$skillName"
 done
-profileConflictSkillPath="$stagedRepo/profiles/work/skills/committing"
+profileConflictSkillPath="$stagedRepo/profiles/work/skills/landing"
 mkdir -p "$profileConflictSkillPath"
 printf '{}\n' > "$profileConflictSkillPath/package-lock.json"
 printf 'profile commit\n' > "$profileConflictSkillPath/SKILL.md"
@@ -564,9 +564,9 @@ check "a profile skill conflicting with a shared skill warns" \
 check "a profile skill conflict fails the topic" test "$profileConflictStatus" -eq 1
 check "a profile skill conflict keeps the shared link" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
-  "$skillsPath/committing" "$sandbox/.dotfiles/ai/skills/committing"
+  "$skillsPath/landing" "$sandbox/.dotfiles/ai/skills/landing"
 check "a conflicting profile skill installs no dependencies" \
-  bash -c '! grep -qF /profiles/work/skills/committing "$1"' _ "$skillDependencyLog"
+  bash -c '! grep -qF /profiles/work/skills/landing "$1"' _ "$skillDependencyLog"
 rm -rf "$profileConflictSkillPath"
 rm -f "$stagedTopicDir/skills/composing-social-images/node_modules/.package-lock.json"
 : > "$skillDependencyLog"
@@ -581,7 +581,7 @@ for skillName in "${workSkillNames[@]}"; do
 done
 check "a missing profile keeps shared skills linked" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
-  "$skillsPath/committing" "$sandbox/.dotfiles/ai/skills/committing"
+  "$skillsPath/landing" "$sandbox/.dotfiles/ai/skills/landing"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "skills is a plain directory, never a whole-directory link" \
   bash -c '[[ -d "$1" && ! -L "$1" ]]' _ "$skillsPath"
@@ -836,7 +836,7 @@ rm -rf "$nodelessSnapshot"
 mkdir -p "$nodelessSnapshot"
 cp "$sandbox/.codex/AGENTS.md" "$sandbox/.claude.json" "$sandbox/.codex/hooks.json" "$sandbox/.codex/config.toml" \
   "$sandbox/.claude/settings.json" "$sandbox/.claude/CLAUDE.md" "$nodelessSnapshot/"
-rm -f "$sandbox/.claude/AGENTS.md" "$skillsPath/committing"
+rm -f "$sandbox/.claude/AGENTS.md" "$skillsPath/landing"
 nodelessStatus=0
 nodelessOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=work NO_COLOR=1 PATH="$nodelessBin" \
   bash "$stagedTopicDir/install.sh")" || nodelessStatus=$?
@@ -846,7 +846,7 @@ check "a converge without node names the skipped profile policy" \
 check "a converge without node still links the shared AGENTS.md" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ "$sandbox/.claude/AGENTS.md" "$sandbox/.dotfiles/ai/AGENTS.md"
 check "a converge without node still links shared skills" \
-  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ "$skillsPath/committing" "$sandbox/.dotfiles/ai/skills/committing"
+  bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ "$skillsPath/landing" "$sandbox/.dotfiles/ai/skills/landing"
 for skillName in "${workSkillNames[@]}"; do
   check "a converge without node preserves work skill $skillName" test -L "$skillsPath/$skillName"
 done
@@ -880,7 +880,7 @@ check "a dangling foreign skills link does not fail the topic" test "$danglingLi
 check "a dangling foreign skills link is backed up" \
   bash -c 'ls "$1".pre-dotfiles.bak* > /dev/null 2>&1' _ "$skillsPath"
 check "a dangling foreign skills link converges to a plain directory" \
-  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/committing" ]]' _ "$skillsPath"
+  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/landing" ]]' _ "$skillsPath"
 
 foreignSkillsHome="$sandbox/foreign-skills-home"
 mkdir -p "$foreignSkillsHome"
@@ -889,9 +889,9 @@ rm -rf "$skillsPath"
 ln -s "$foreignSkillsHome" "$skillsPath"
 runTopicInstall "$stagedTopicDir" > /dev/null
 check "a foreign skills link converges to a plain directory" \
-  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/committing" ]]' _ "$skillsPath"
+  bash -c '[[ -d "$1" && ! -L "$1" && -L "$1/landing" ]]' _ "$skillsPath"
 check "a foreign skills directory takes no repo skill link" \
-  bash -c '! test -e "$1/committing" && ! test -L "$1/committing"' _ "$foreignSkillsHome"
+  bash -c '! test -e "$1/landing" && ! test -L "$1/landing"' _ "$foreignSkillsHome"
 check "a foreign skills directory keeps what it held" \
   grep -qx 'foreign skills state' "$foreignSkillsHome/state.json"
 
@@ -1167,7 +1167,7 @@ check "an overlay hook renders alongside the base hook it shares an event with" 
 shopt -s nullglob
 hookTestFiles=("$topicDir"/hooks/test/*.test.mjs "$repoRoot"/profiles/work/hooks/test/*.test.mjs)
 workflowTestFiles=("$topicDir"/workflows/test/*.test.mjs)
-commitTestFiles=("$topicDir"/skills/committing/test/*.test.ts)
+commitTestFiles=("$topicDir"/skills/landing/test/*.test.ts)
 retroTestFiles=("$topicDir"/skills/running-retros/test/*.test.ts)
 releaseTestFiles=("$topicDir"/skills/releasing/test/*.test.ts)
 specTestFiles=("$topicDir"/skills/specifying/test/*.test.ts)
@@ -1181,7 +1181,7 @@ shopt -u nullglob
 check "all behavior test groups are present" \
   test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0 && ${#workSkillTestFiles[@]} > 0))" -eq 1
 if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
-  check "hook, workflow, committing, running-retros, releasing, capturing-ui, composing-social-images, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
+  check "hook, workflow, landing, running-retros, releasing, capturing-ui, composing-social-images, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
 fi
 check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-brand/test/census.test.ts"
 check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"

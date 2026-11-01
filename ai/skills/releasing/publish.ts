@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { Git, parsePushPorcelain, type PushRefResult } from "../committing/lib/git.ts";
-import { branchRefspec } from "../committing/lib/push.ts";
+import { Git, parsePushPorcelain, type PushRefResult } from "../landing/lib/git.ts";
+import { branchRefspec } from "../landing/lib/push.ts";
 import { emit } from "./outcome.ts";
 
 const REMOTE_QUERY_TIMEOUT_MS = 30000;

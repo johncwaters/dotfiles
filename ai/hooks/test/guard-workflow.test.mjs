@@ -50,7 +50,7 @@ function editCall(filePath, transcriptPath) {
   return { tool_name: "Edit", tool_input: { file_path: filePath, old_string: "a", new_string: "b" }, transcript_path: transcriptPath };
 }
 
-test("raw git commit and push outside /committing are denied in every command position", () => {
+test("raw git commit and push outside /landing are denied in every command position", () => {
   const transcriptPath = writeTranscript([prompt("fix the typo")]);
   for (const command of [
     "git commit -m x",
@@ -80,7 +80,7 @@ test("raw git commit and push outside /committing are denied in every command po
   ]) {
     const { decision, reason } = decisionFor(bashCall(command, transcriptPath));
     assert.equal(decision, "deny", command);
-    assert.match(reason, /\/committing/);
+    assert.match(reason, /\/landing/);
   }
 });
 
@@ -114,16 +114,16 @@ test("pkill -f with a pattern that matches its own shell is denied", () => {
   }
 });
 
-test("a /committing or /opening-prs run allows raw commits until the next carbon-unit prompt", () => {
-  const commitSkillRun = writeTranscript([prompt("ship it"), ...skillRun("committing")]);
+test("a /landing or /opening-prs run allows raw commits until the next carbon-unit prompt", () => {
+  const commitSkillRun = writeTranscript([prompt("ship it"), ...skillRun("landing")]);
   assert.equal(decisionFor(bashCall('git commit -m "WIP set-aside"', commitSkillRun)).decision, "allow");
-  const slashRun = writeTranscript([prompt("<command-name>/committing</command-name>\n<command-message>committing</command-message>")]);
+  const slashRun = writeTranscript([prompt("<command-name>/landing</command-name>\n<command-message>landing</command-message>")]);
   assert.equal(decisionFor(bashCall("git push", slashRun)).decision, "allow");
-  const nextPrompt = writeTranscript([prompt("ship it"), ...skillRun("committing"), prompt("now change the colour")]);
+  const nextPrompt = writeTranscript([prompt("ship it"), ...skillRun("landing"), prompt("now change the colour")]);
   assert.equal(decisionFor(bashCall("git commit -m x", nextPrompt)).decision, "deny");
   const openPullRequestRun = writeTranscript([prompt("open a PR"), ...skillRun("opening-prs")]);
   assert.equal(decisionFor(bashCall('git add -A && git commit -m "WIP set-aside"', openPullRequestRun)).decision, "allow");
-  const rejectedRun = writeTranscript([prompt("ship it"), toolUse("Skill", { skill: "committing" }), toolResult("The tool use was rejected.", { toolUseId: "tool-Skill" })]);
+  const rejectedRun = writeTranscript([prompt("ship it"), toolUse("Skill", { skill: "landing" }), toolResult("The tool use was rejected.", { toolUseId: "tool-Skill" })]);
   assert.equal(decisionFor(bashCall("git commit -m x", rejectedRun)).decision, "deny");
 });
 

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { cleanup, commitFile, makeRepo } from "../../committing/test/helpers.ts";
+import { cleanup, commitFile, makeRepo } from "../../landing/test/helpers.ts";
 
 const ROUND_SCRIPT = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "round.mjs");
 

@@ -734,7 +734,7 @@ isVersionAtLeast() {
   return 0
 }
 
-# The committing skill is TypeScript node runs by stripping types, stable only since 22.18.
+# The landing skill is TypeScript node runs by stripping types, stable only since 22.18.
 nodeIsCurrentEnough() {
   local installedNodeVersion
   if ! installedNodeVersion="$(node -v 2>/dev/null)"; then
