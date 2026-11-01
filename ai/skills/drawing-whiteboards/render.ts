@@ -47,7 +47,7 @@ export type Board = {
   ariaLabel: string;
   width: number;
   height: number;
-  columns: Record<string, { x: number; width: number }>;
+  columns?: Record<string, { x: number; width: number }>;
   lanes?: Record<string, Lane>;
   headings?: Heading[];
   boxes: Box[];
@@ -146,7 +146,7 @@ function placeBoxes(board: Board, problems: string[]): Map<string, PlacedBox> {
   const boxesById = new Map<string, PlacedBox>();
   for (const box of board.boxes) {
     if (boxesById.has(box.id)) problems.push(`two boxes share the id ${JSON.stringify(box.id)}`);
-    const column = box.column === undefined ? undefined : board.columns[box.column];
+    const column = box.column === undefined ? undefined : board.columns?.[box.column];
     if (box.column !== undefined && !column) problems.push(`${box.id}: unknown column ${JSON.stringify(box.column)}`);
     const x = box.x ?? column?.x;
     const width = box.width ?? column?.width;
