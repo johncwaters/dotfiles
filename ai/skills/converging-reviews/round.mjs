@@ -14,13 +14,13 @@ import {
   parseFinding,
   runGit,
 } from "../../hooks/check-finding-scope.mjs";
+import { Git } from "../landing/lib/git.ts";
+import { EMPTY_FINDINGS, pinScopedTree, writeStamp } from "../landing/lib/stamp.ts";
 
 const EXIT_CODE_BY_OUTCOME = {
   FRESH: 0,
   RESUME: 0,
   RECORDED: 0,
-  VERIFIED: 0,
-  UNVERIFIED: 24,
   CLEAN: 0,
   CONTINUE: 10,
   RETRY: 11,
@@ -29,6 +29,8 @@ const EXIT_CODE_BY_OUTCOME = {
   STALLED: 21,
   CAPPED: 22,
   FAILED: 23,
+  STAMPED: 0,
+  UNSTAMPED: 24,
   USAGE: 2,
 };
 const ROUND_CAP = 8;
@@ -104,29 +106,20 @@ function startRun(repoPath, workingTree) {
   finish("FRESH", { round: 1, base: headTree, ledger: ledgerFile });
 }
 
-function pinWorkingTree(repoPath) {
-  const scratchDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "converging-reviews-"));
-  const indexCopy = path.join(scratchDirectory, "index");
-  try {
-    const liveIndex = path.resolve(repoPath, runGit(repoPath, ["rev-parse", "--git-path", "index"]).trim());
-    if (fs.existsSync(liveIndex)) fs.copyFileSync(liveIndex, indexCopy);
-    const gitWithIndexCopy = (argumentList) => spawnSync("git", argumentList, { cwd: repoPath, encoding: "utf8", env: { ...process.env, GIT_INDEX_FILE: indexCopy } });
-    const addResult = gitWithIndexCopy(["add", "-A"]);
-    if (addResult.status !== 0) throw new Error(addResult.stderr || "git add -A failed");
-    const writeTreeResult = gitWithIndexCopy(["write-tree"]);
-    if (writeTreeResult.status !== 0) throw new Error(writeTreeResult.stderr || "git write-tree failed");
-    return writeTreeResult.stdout.trim();
-  } finally {
-    fs.rmSync(scratchDirectory, { recursive: true, force: true });
+function stampCleanTree(repoPath, paths) {
+  const git = new Git(repoPath);
+  const workingTree = pinScopedTree(git, ["."]);
+  const ledger = readLedger(ledgerPath(repoPath));
+  const lastRound = roundRows(ledger).at(-1);
+  if (lastRound?.outcome !== "CLEAN" || lastRound.head !== workingTree) {
+    finish("UNSTAMPED", { tree: workingTree, lastRound: lastRound ?? null });
   }
-}
-
-function verifyCleanTree(repoPath) {
-  const workingTree = pinWorkingTree(repoPath);
-  const ledgerFile = ledgerPath(repoPath);
-  const lastRound = roundRows(readLedger(ledgerFile)).at(-1);
-  const isCleanOnThisTree = lastRound?.outcome === "CLEAN" && lastRound.head === workingTree;
-  finish(isCleanOnThisTree ? "VERIFIED" : "UNVERIFIED", { tree: workingTree, lastRound: lastRound ?? null, ledger: ledgerFile });
+  const unverifiedFingerprints = new Set(ledger.filter((row) => row.type === "fix" && row.outcome === "UNVERIFIED").map((row) => row.fingerprint));
+  const unverifiedFindings = ledger
+    .filter((row) => row.type === "finding" && unverifiedFingerprints.has(row.fingerprint))
+    .map((row) => ({ severity: row.severity, file: row.file, summary: `${row.reviewer} finding ${row.fingerprint}, fix unverified` }));
+  const stamp = writeStamp(git, "converging-reviews", paths, { ...EMPTY_FINDINGS, unverifiedFindings });
+  finish("STAMPED", { tree: workingTree, stamp });
 }
 
 function defectSentence(body) {
@@ -412,8 +405,9 @@ function recordOutcome(repoPath, values) {
 
 function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: rest,
+    allowPositionals: true,
     options: {
       repo: { type: "string", default: process.cwd() },
       tree: { type: "string" },
@@ -431,7 +425,10 @@ function main() {
     if (!values.tree) failUsage("start needs --tree <working tree id>");
     startRun(repoPath, values.tree);
   }
-  if (command === "verify") verifyCleanTree(repoPath);
+  if (command === "stamp") {
+    if (positionals.length === 0) failUsage("stamp needs the changed-file paths after --");
+    stampCleanTree(repoPath, positionals);
+  }
   if (command === "classify") {
     if (!values.round || !values.base || !values.head) failUsage("classify needs --round, --base and --head, with the review on stdin");
     classifyRound(repoPath, Number(values.round), values.base, values.head, fs.readFileSync(0, "utf8"), values["swarm-output"]);
@@ -440,7 +437,7 @@ function main() {
     if (!values.fingerprint) failUsage("record needs --fingerprint");
     recordOutcome(repoPath, values);
   }
-  failUsage("use start, classify, record or verify");
+  failUsage("use start, classify, record or stamp");
 }
 
 main();

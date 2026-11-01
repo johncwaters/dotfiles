@@ -13,7 +13,7 @@ function runRound(repository, ledgerRoot, argumentList, reviewText = "") {
   const processResult = spawnSync("node", [ROUND_SCRIPT, ...argumentList, "--repo", repository], {
     input: reviewText,
     encoding: "utf8",
-    env: { ...process.env, CONVERGING_REVIEWS_DIR: ledgerRoot },
+    env: { ...process.env, CONVERGING_REVIEWS_DIR: ledgerRoot, REVIEW_GATES_DIR: path.join(ledgerRoot, "review-gates") },
   });
   return { exitCode: processResult.status, report: JSON.parse(processResult.stdout) };
 }
@@ -79,7 +79,7 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   assert.equal(secondRound.exitCode, 21);
   assert.equal(secondRound.report.outcome, "STALLED");
   assert.equal(secondRound.report.droppedSettled, 1);
-  assert.equal(runRound(repository, ledgerRoot, ["verify"]).exitCode, 24);
+  assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).report.outcome, "UNSTAMPED");
 });
 
 test("a clean delta round asks for a whole-diff sweep against the original base, whatever base the caller passes, and the severity bar tapers to HIGH after the first sweep", (context) => {
@@ -112,7 +112,10 @@ test("a clean delta round asks for a whole-diff sweep against the original base,
   assert.equal(classify(4, secondTree, thirdTree, []).report.outcome, "SWEEP");
   const secondSweep = classify(5, baseTree, thirdTree, [findingRow(21, "MEDIUM", "Comment wording drifts. Proof: a.txt:21.")]);
   assert.deepEqual([secondSweep.report.outcome, secondSweep.report.severityFloor], ["CLEAN", "HIGH"]);
-  assert.equal(runRound(repository, ledgerRoot, ["verify"]).report.outcome, "VERIFIED");
+  const cleanStamp = runRound(repository, ledgerRoot, ["stamp", "a.txt"]);
+  assert.deepEqual([cleanStamp.exitCode, cleanStamp.report.outcome, cleanStamp.report.stamp.gate], [0, "STAMPED", "converging-reviews"]);
+  fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5, 6, 20, 21, 22]));
+  assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).exitCode, 24);
 });
 
 test("a failing pre-push gate keeps a clean review from ending the round and its fix lets the loop move on", (context) => {
