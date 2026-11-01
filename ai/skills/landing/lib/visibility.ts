@@ -7,7 +7,7 @@ export type RemoteVisibility =
 
 type GithubRemote =
   | { remote: string; repositoryName: string; hasRemote: true }
-  | { remote: string; repositoryName: null; hasRemote: boolean; reason: string };
+  | { remote: string; repositoryName: null; hasRemote: boolean; isLocal: boolean; reason: string };
 
 type AfterCommitResolution = {
   mode: "promote" | "pull-request";
@@ -22,21 +22,40 @@ export function githubRepositoryName(remoteUrl: string): string | null {
   return GITHUB_REMOTE_PATTERN.exec(remoteUrl.trim())?.[1] ?? null;
 }
 
+export function isLocalRemoteUrl(remoteUrl: string): boolean {
+  const url = remoteUrl.trim();
+  if (url.startsWith("file://")) {
+    return true;
+  }
+  if (url.includes("://")) {
+    return false;
+  }
+  const firstColon = url.indexOf(":");
+  const firstSlash = url.indexOf("/");
+  return firstColon === -1 || (firstSlash !== -1 && firstSlash < firstColon);
+}
+
+function pushesOnlyToLocalPaths(git: Git, remote: string): boolean {
+  const pushUrls = git.run(["remote", "get-url", "--push", "--all", remote]);
+  const urls = pushUrls.stdout.split("\n").filter((url) => url.trim() !== "");
+  return pushUrls.code === 0 && urls.length > 0 && urls.every(isLocalRemoteUrl);
+}
+
 export function readGithubRemote(git: Git, remote = "origin"): GithubRemote {
   const remoteUrl = git.run(["remote", "get-url", remote]);
   if (remoteUrl.code !== 0) {
-    return { remote, repositoryName: null, hasRemote: false, reason: `no ${remote} remote` };
+    return { remote, repositoryName: null, hasRemote: false, isLocal: false, reason: `no ${remote} remote` };
   }
   const repositoryName = githubRepositoryName(remoteUrl.stdout);
   if (repositoryName === null) {
-    return { remote, repositoryName: null, hasRemote: true, reason: `${remote} is not a GitHub remote` };
+    return { remote, repositoryName: null, hasRemote: true, isLocal: pushesOnlyToLocalPaths(git, remote), reason: `${remote} is not a GitHub remote` };
   }
   return { remote, repositoryName, hasRemote: true };
 }
 
 export function resolveAfterCommit(origin: GithubRemote): AfterCommitResolution {
   if (origin.repositoryName === null) {
-    if (!origin.hasRemote) {
+    if (!origin.hasRemote || origin.isLocal) {
       return { mode: "promote" };
     }
     return leaveForPullRequest(origin.reason);

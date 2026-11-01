@@ -56,7 +56,7 @@ test("preflight reports unknown visibility when gh fails", () => {
   assert.match((result.warnings as string[]).join("\n"), /gh api user --jq \.login failed: HTTP 404/);
 });
 
-test("preflight promotes a local-only repo but leaves a non-GitHub origin for a pull request", () => {
+test("preflight promotes a local-only repo or a local-path origin but leaves a hosted non-GitHub origin for a pull request", () => {
   const repo = makeRepo();
   const policyRoot = makePolicyRoot("personal", { mainline: "auto" });
   try {
@@ -66,7 +66,17 @@ test("preflight promotes a local-only repo but leaves a non-GitHub origin for a 
     assert.equal((localOnly.policy as Record<string, unknown>).afterCommit, "promote");
     assert.equal(localOnly.warnings, undefined);
 
-    runGit(repo, ["remote", "add", "origin", "https://gitlab.com/Example/widget.git"]);
+    runGit(repo, ["remote", "add", "origin", "../origin.git"]);
+    const localPath = preflight(repo, ["--no-fetch"], environment).result;
+    assert.equal((localPath.policy as Record<string, unknown>).afterCommit, "promote");
+    assert.equal(localPath.warnings, undefined);
+
+    runGit(repo, ["config", "remote.origin.pushurl", "git@gitlab.com:Example/widget.git"]);
+    const hostedPush = preflight(repo, ["--no-fetch"], environment).result;
+    assert.equal((hostedPush.policy as Record<string, unknown>).afterCommit, "pull-request");
+    runGit(repo, ["config", "--unset", "remote.origin.pushurl"]);
+
+    runGit(repo, ["remote", "set-url", "origin", "https://gitlab.com/Example/widget.git"]);
     const nonGithub = preflight(repo, ["--no-fetch"], environment).result;
     assert.equal((nonGithub.policy as Record<string, unknown>).afterCommit, "pull-request");
     assert.match((nonGithub.warnings as string[]).join("\n"), /origin is not a GitHub remote/);

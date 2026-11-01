@@ -247,7 +247,7 @@ class Landing {
       return {};
     }
     const pushedRemote = readGithubRemote(this.git, this.featurePushRemote);
-    if (pushedRemote.repositoryName !== null || !pushedRemote.hasRemote) {
+    if (pushedRemote.repositoryName !== null || !pushedRemote.hasRemote || pushedRemote.isLocal) {
       return {};
     }
     const remoteUrl = this.git.run(["remote", "get-url", pushedRemote.remote]).stdout.trim();

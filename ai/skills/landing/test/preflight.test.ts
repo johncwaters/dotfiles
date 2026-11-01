@@ -156,6 +156,7 @@ test("a pushed branch under a pull-request policy is told to merge mainline, not
     try {
       runGit(local, ["switch", "-q", "-c", "feature"]);
       runGit(local, ["push", "-q", "-u", "origin", "feature"]);
+      runGit(local, ["config", "remote.origin.pushurl", "git@gitlab.com:Example/widget.git"]);
       commitFile(seed, "b.txt", "two\n", "second");
       runGit(seed, ["push", "-q", "origin", "main"]);
 
