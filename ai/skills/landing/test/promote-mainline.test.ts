@@ -10,6 +10,7 @@ import {
   commitFile,
   gitOutput,
   land,
+  landUnstamped,
   makeBareOrigin,
   makeLedgerPath,
   makePolicyRoot,
@@ -18,6 +19,7 @@ import {
   runGit,
   runSkillScript,
   seedOrigin,
+  stamp,
   tryGit,
   VALID_MESSAGE,
   writeExecutable,
@@ -51,6 +53,29 @@ test("promotion rebases a feature branch onto main and pushes one mainline ref",
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
     assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
     assert.equal(gitOutput(local, ["rev-parse", "--abbrev-ref", "HEAD"]), "feature");
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("an unstamped tree is NOT_REVIEWED and a live HIGH on the stamp withholds promotion", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    const mainBefore = gitOutput(origin, ["rev-parse", "main"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+    const unreviewed = landUnstamped(local, ["--promote"], VALID_MESSAGE);
+    assert.equal(unreviewed.result.outcome, "NOT_REVIEWED");
+    assert.equal(unreviewed.code, 31);
+    assert.deepEqual(unreviewed.result.next, { action: "runGate", gate: "gating-reviews", then: "landing" });
+
+    const highFinding = { severity: "HIGH", file: "base.txt", summary: "drops the base line" };
+    assert.equal(stamp(local, ["base.txt"], { liveFindings: [highFinding] }).code, 0);
+    const withheld = landUnstamped(local, ["--promote"], VALID_MESSAGE);
+    assert.equal(withheld.result.outcome, "PROMOTE_WITHHELD");
+    assert.equal(withheld.code, 32);
+    assert.deepEqual(withheld.result.findings, ["HIGH base.txt: drops the base line"]);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), withheld.result.commit);
   } finally {
     cleanup(origin, seed, local);
   }
@@ -103,10 +128,7 @@ test("land refuses a forbidden branch before committing under policy and fallbac
       commitFile(repo, "base.txt", "base\n", "init");
       const mainBefore = gitOutput(repo, ["rev-parse", "main"]);
       writeFile(repo, "base.txt", "base\nmain change\n");
-      const { code, result } = runSkillScript(
-        "land.ts",
-        repo,
-        ["--push-retry-delay-ms", "0", "--promote"],
+      const { code, result } = land(repo, ["--promote"],
         VALID_MESSAGE,
         { CLAUDE_COMMIT_POLICY_ROOT: root },
       );
@@ -148,10 +170,7 @@ test("committing on a resolved mainline outside the forbid list is BRANCH_FORBID
         "",
         { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
       );
-      const { code, result } = runSkillScript(
-        "land.ts",
-        local,
-        ["--push-retry-delay-ms", "0", "--no-push"],
+      const { code, result } = land(local, ["--no-push"],
         VALID_MESSAGE,
         { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
       );
@@ -222,10 +241,7 @@ test("promotion honors a literal policy mainline", () => {
     runGit(local, ["fetch", "-q", "origin", "trunk:trunk"]);
     const mainBefore = gitOutput(origin, ["rev-parse", "main"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
-    const { result } = runSkillScript(
-      "land.ts",
-      local,
-      ["--push-retry-delay-ms", "0", "--promote"],
+    const { result } = land(local, ["--promote"],
       VALID_MESSAGE,
       { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
     );
@@ -680,7 +696,7 @@ function advanceOriginMain(seed: string, filePath: string): void {
   runGit(seed, ["push", "-q", "origin", "main"]);
 }
 
-test("promotion rebases past another ticket's uncommitted files left outside --paths", () => {
+test("promotion rebases past another ticket's uncommitted files left outside the stamped paths", () => {
   const { origin, seed, local } = seedOrigin();
   try {
     commitFile(local, "other-ticket.txt", "committed\n", "other ticket base");
@@ -842,16 +858,18 @@ test("--no-push suppresses the feature safety push on a mainline refusal", () =>
   }
 });
 
-test("a clean tree still promotes an unlanded feature tip", () => {
+test("a commit land.ts did not make withholds promotion, even after a branch rename", () => {
   const { origin, seed, local } = seedOrigin();
   try {
+    const mainBefore = gitOutput(origin, ["rev-parse", "main"]);
     commitFile(local, "feature-only.txt", "feature advance\n", "feature advance");
-    const { code, result } = land(local, ["--promote"], VALID_MESSAGE);
+    runGit(local, ["switch", "-q", "-c", "renamed-feature"]);
+    const { code, result } = landUnstamped(local, ["--promote"], VALID_MESSAGE);
 
-    assert.equal(result.outcome, "NOTHING_TO_COMMIT");
-    assert.equal(code, 13);
-    assert.deepEqual(result.promoted, ["main"]);
-    assert.equal(gitOutput(origin, ["rev-parse", "main"]), gitOutput(local, ["rev-parse", "feature"]));
+    assert.equal(result.outcome, "PROMOTE_WITHHELD");
+    assert.equal(code, 32);
+    assert.match((result.findings as string[]).join("\n"), /^UNREVIEWED [0-9a-f]{12}: not landed through land\.ts$/);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBefore);
   } finally {
     cleanup(origin, seed, local);
   }

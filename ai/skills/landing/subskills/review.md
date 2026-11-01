@@ -42,13 +42,11 @@ and you re-run that proof in place of a confirming review.
      checkout's dependencies fails it with the same error. Proceed without blocking or
      asking the carbon unit: name it in the message's `Constraint` trailer and land.
 
-A HIGH or CRITICAL finding left live or `UNVERIFIED` withholds only promotion:
-run `land.ts` without `--promote`, so the feature branch is pushed and mainline is
-untouched, and name each such finding in the commit message body, so the decision is
-visible in history rather than only in the chat report. Where `policy.afterCommit` is
-`promote`, say in the report that a later plain re-run with `--promote` carries the commit
-onto mainline once a carbon unit has looked at those findings; under any other policy
-**Step 5: land** already omits the flag and nothing is withheld.
+**Stamp the tree last**, after every fix and the suite, skipped review included:
+`node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings -`
+with `{liveFindings, unverifiedFindings, preexistingFailures, truncatedLanes, droppedUnproven}`
+on stdin, each finding `{severity, file, summary}`. A live or `UNVERIFIED` HIGH+ on any branch
+stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`; name each in the message body.
 
 A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
 overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review

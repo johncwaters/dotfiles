@@ -11,7 +11,7 @@ within [recovery](subskills/recovery.md).
 
 ```
 node "$HOME/.claude/skills/landing/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]
-node "$HOME/.claude/skills/landing/land.ts" [--paths ...] [--promote] [--no-push] <<'MSG'
+node "$HOME/.claude/skills/landing/land.ts" [--promote] [--no-push] <<'MSG'
 <commit message>
 MSG
 ```
@@ -23,7 +23,7 @@ Both print one JSON object on stdout and set the exit code from the outcome tabl
 Run `preflight.ts` first, with `--paths` when you know exactly which files this session
 changed.
 Use preflight's `paths` output as the scoped file list for `cleaning-ai-slop`, `/reviewing-code`,
-and `land.ts`.
+and the review stamp; `land.ts` stages exactly the stamp's paths.
 
 **Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
 committing on this branch. `policy.commitBranches.onForbidden` permits only
@@ -120,7 +120,7 @@ Pipe the message into `land.ts` with a quoted heredoc, so nothing in the message
 expanded by the shell:
 
 ```
-node "$HOME/.claude/skills/landing/land.ts" --promote --paths src/thing.ts <<'MSG'
+node "$HOME/.claude/skills/landing/land.ts" --promote <<'MSG'
 feat(thing): do the thing
 
 Why it was done this way.
@@ -132,12 +132,9 @@ MSG
 
 Flags:
 
-- `--paths <file-or-dir> ...`: pass preflight's `paths`, as used for `/reviewing-code`.
-  Omit it only when the carbon unit asked to commit everything or you cannot enumerate what
-  changed. Report `excluded staged files outside --paths: ...` warnings to the carbon unit;
-  those files were unstaged and remain in the working tree.
-  New `.coherence/**/*.jsonl` files ride along regardless, because the review lanes
-  open their journals after preflight fixed the list.
+- No path flag: `land.ts` stages exactly the last stamp's `paths`, and refuses with
+  `NOT_REVIEWED` when no stamp matches the tree over them. Report `excluded staged files`
+  warnings; those files stay in the working tree. New `.coherence/**/*.jsonl` files ride along.
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
   mainline, and pushing mainline. Omit it when the
@@ -155,7 +152,7 @@ Flags:
 ## Outcomes
 
 Exit code carries the outcome; the JSON carries the detail and a typed `next`. Act on it:
-`proceed` continues to the next step; `done` reports; `rerun` reruns `script` with the same flags once `after` is done;
+`proceed` continues to the next step; `done` reports; `runGate` runs `gate`, then lands again; `rerun` reruns `script` with the same flags once `after` is done;
 `fixAndRerun` fixes each of `items`, then reruns; `resolveConflicts` follows
 [Conflict resolution](subskills/recovery.md#conflict-resolution); `askCarbonUnit` asks
 `question`; `stop` relays `report`. Report one line with the outcome, short hash, and
@@ -176,6 +173,8 @@ message subject, then one line per finding fixed.
 | `BRANCH_FORBIDDEN` | 28 |
 | `MAINLINE_UNVERIFIED` | 29 |
 | `HOME_PATH_STAGED` | 30 |
+| `NOT_REVIEWED` | 31 |
+| `PROMOTE_WITHHELD` | 32 |
 | `NOT_A_REPO` | 10 |
 | `DETACHED_HEAD` | 11 |
 | `OPERATION_IN_PROGRESS` | 12 |

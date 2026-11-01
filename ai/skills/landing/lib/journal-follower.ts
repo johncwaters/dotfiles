@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Git } from "./git.ts";
+import { EMPTY_FINDINGS, writeStamp } from "./stamp.ts";
 import { COHERENCE_DIR } from "./workspace.ts";
 
 const FOLLOWER_SCRIPT = fileURLToPath(import.meta.url);
@@ -53,7 +54,8 @@ function landJournal(worktree: string, landedHead: string, promote: boolean): vo
   if (git.revParseHead() !== landedHead || isWorktreeDirtyOutsideCoherence(git)) {
     return;
   }
-  spawnSync(process.execPath, [LAND_SCRIPT, "--paths", COHERENCE_DIR, ...(promote ? ["--promote"] : [])], {
+  writeStamp(git, "coherence-journal", [COHERENCE_DIR], EMPTY_FINDINGS);
+  spawnSync(process.execPath, [LAND_SCRIPT, ...(promote ? ["--promote"] : [])], {
     cwd: worktree,
     input: JOURNAL_COMMIT_MESSAGE,
     stdio: ["pipe", "ignore", "ignore"],

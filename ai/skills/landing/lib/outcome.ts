@@ -16,6 +16,8 @@ export const EXIT_CODES = {
   BRANCH_FORBIDDEN: 28,
   MAINLINE_UNVERIFIED: 29,
   HOME_PATH_STAGED: 30,
+  NOT_REVIEWED: 31,
+  PROMOTE_WITHHELD: 32,
 } as const;
 
 export type OutcomeName = keyof typeof EXIT_CODES;
@@ -51,6 +53,7 @@ export type NextStep =
   | { action: "done" }
   | { action: "proceed" }
   | { action: "rerun"; script: "land.ts" | "preflight.ts"; after: string }
+  | { action: "runGate"; gate: string; then: "landing" }
   | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause"; items: string[] }
   | { action: "resolveConflicts"; files: string[] }
   | { action: "askCarbonUnit"; question: string }
@@ -216,6 +219,19 @@ export const mainlineUnverified = defineOutcome("MAINLINE_UNVERIFIED", {
   promoted: required("stringList"),
   mainline: required("string"),
 }, () => ({ action: "rerun", script: "land.ts", after: "restoring the remote verification named in warnings" }));
+
+export const notReviewed = defineOutcome("NOT_REVIEWED", {
+  gate: required("string"),
+  tree: optional("string"),
+  stampTree: optional("string"),
+}, ({ gate }) => ({ action: "runGate", gate, then: "landing" }));
+
+export const promoteWithheld = defineOutcome("PROMOTE_WITHHELD", {
+  commit: optional("string"),
+  pushed: required("boolean"),
+  promoted: required("stringList"),
+  findings: required("stringList"),
+}, ({ findings }) => ({ action: "stop", report: `Promotion withheld; the branch stays pushed until a carbon unit looks at ${findings.join("; ")} and releases it with stamp.ts clear` }));
 
 export function emit(result: Result): never {
   process.stdout.write(`${JSON.stringify(result)}\n`);

@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Git } from "../lib/git.ts";
 import type { ParkedEntry } from "../lib/ledger.ts";
+import { recordLandedCommit } from "../lib/stamp.ts";
 
 export type PromotionSetup = { origin: string; seed: string; local: string };
 
@@ -179,13 +181,80 @@ export function runSkillScript(
   return { code: proc.status ?? 1, result: parsed, stderr };
 }
 
+export function reviewGatesDirectory(repo: string): string {
+  const commonDirectory = gitOutput(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  return path.join(commonDirectory, "test-review-gates");
+}
+
+function changedPaths(repo: string): string[] {
+  const status = spawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all", "--no-renames"], { cwd: repo, encoding: "utf8" });
+  return (status.stdout ?? "")
+    .split("\0")
+    .filter(Boolean)
+    .map((entry) => entry.slice(3));
+}
+
+export function stamp(repo: string, paths: string[], findings: Record<string, unknown> = {}): RunResult {
+  const stampPaths = paths.length > 0 ? paths : changedPaths(repo);
+  const proc = spawnSync(
+    "node",
+    [path.join(SKILL_DIR, "stamp.ts"), "write", "--gate", "gating-reviews", "--paths", ...stampPaths, "--findings", "-"],
+    { cwd: repo, input: JSON.stringify(findings), encoding: "utf8", env: { ...process.env, REVIEW_GATES_DIR: reviewGatesDirectory(repo) } },
+  );
+  return { code: proc.status ?? 1, result: proc.stdout ? (JSON.parse(proc.stdout) as Record<string, unknown>) : {}, stderr: proc.stderr ?? "" };
+}
+
+function restoreEnvironmentVariable(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
+}
+
+export function markCommitsLanded(repo: string): void {
+  const previousGatesDirectory = process.env.REVIEW_GATES_DIR;
+  process.env.REVIEW_GATES_DIR = reviewGatesDirectory(repo);
+  try {
+    const git = new Git(repo);
+    for (const commit of git.revList("HEAD")) {
+      recordLandedCommit(git, commit);
+    }
+  } finally {
+    restoreEnvironmentVariable("REVIEW_GATES_DIR", previousGatesDirectory);
+  }
+}
+
+export function landUnstamped(
+  repo: string,
+  args: string[],
+  message: string,
+  env: Record<string, string> = {},
+): RunResult {
+  const stampEnv = { REVIEW_GATES_DIR: reviewGatesDirectory(repo), ...env };
+  return runSkillScript("land.ts", repo, ["--push-retry-delay-ms", "0", ...args], message, stampEnv);
+}
+
 export function land(
   repo: string,
   args: string[],
   message: string,
   env: Record<string, string> = {},
 ): RunResult {
-  return runSkillScript("land.ts", repo, ["--push-retry-delay-ms", "0", ...args], message, env);
+  const pathsFlagIndex = args.indexOf("--paths");
+  const flagArguments = pathsFlagIndex === -1 ? args : args.slice(0, pathsFlagIndex);
+  const afterPathsFlag = pathsFlagIndex === -1 ? [] : args.slice(pathsFlagIndex + 1);
+  const firstFlagAfterPaths = afterPathsFlag.findIndex((argument) => argument.startsWith("--"));
+  const scopedPaths = firstFlagAfterPaths === -1 ? afterPathsFlag : afterPathsFlag.slice(0, firstFlagAfterPaths);
+  const trailingFlags = firstFlagAfterPaths === -1 ? [] : afterPathsFlag.slice(firstFlagAfterPaths);
+  if (scopedPaths.length > 0 || changedPaths(repo).length > 0) {
+    const stampRun = stamp(repo, scopedPaths);
+    if (stampRun.code !== 0) {
+      throw new Error(`stamp failed: ${stampRun.stderr}`);
+    }
+  }
+  markCommitsLanded(repo);
+  return landUnstamped(repo, [...flagArguments, ...trailingFlags], message, env);
 }
 
 export function preflight(

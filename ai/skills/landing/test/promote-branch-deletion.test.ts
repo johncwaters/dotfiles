@@ -219,10 +219,7 @@ test("a worktree-scoped custom merge driver cannot make an unmerged remote branc
 test("an environment-injected merge driver cannot make an unmerged remote branch look contained", () => {
   const { origin, seed, local } = seedMergeDriverDivergence();
   try {
-    const { result } = runSkillScript(
-      "land.ts",
-      local,
-      ["--push-retry-delay-ms", "0", "--promote"],
+    const { result } = land(local, ["--promote"],
       VALID_MESSAGE,
       {
         GIT_CONFIG_COUNT: "1",
@@ -335,9 +332,9 @@ test("a branch named like a remote tag never deletes the tag", () => {
     runGit(local, ["checkout", "-q", "v9"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
 
-    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+    const { result, stderr } = land(local, ["--promote"], VALID_MESSAGE);
 
-    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(result.outcome, "COMMITTED", stderr);
     assert.deepEqual(result.deletedRemoteBranches, ["v9"]);
     assert.equal(tryGit(origin, ["rev-parse", "-q", "--verify", "refs/tags/v9"]), 0);
   } finally {
@@ -356,10 +353,7 @@ test("a stale branch deletion lease keeps the remote branch with a warning", () 
     writeExecutable(wrapperPath, gitWrapperInterceptingDeleteOf("feature"));
     writeFile(local, "base.txt", "base\nfeature change\n");
 
-    const { result } = runSkillScript(
-      "land.ts",
-      local,
-      ["--push-retry-delay-ms", "0", "--promote"],
+    const { result } = land(local, ["--promote"],
       VALID_MESSAGE,
       {
         GIT_ARGS_BEFORE_DELETION: JSON.stringify([
@@ -393,10 +387,7 @@ test("a mainline force-reset right after the deletion restores the remote branch
     writeExecutable(wrapperPath, gitWrapperInterceptingDeleteOf("feature"));
     writeFile(local, "base.txt", "base\nfeature change\n");
 
-    const { result } = runSkillScript(
-      "land.ts",
-      local,
-      ["--push-retry-delay-ms", "0", "--promote"],
+    const { result } = land(local, ["--promote"],
       VALID_MESSAGE,
       {
         GIT_ARGS_AFTER_DELETION: JSON.stringify([
@@ -435,10 +426,7 @@ test("mainline is never deleted as a feature branch", () => {
     runGit(local, ["checkout", "-q", "main"]);
     const mainOnOriginBefore = gitOutput(origin, ["rev-parse", "main"]);
     writeFile(local, "base.txt", "base\nmainline change\n");
-    const { result } = runSkillScript(
-      "land.ts",
-      local,
-      ["--push-retry-delay-ms", "0", "--promote"],
+    const { result } = land(local, ["--promote"],
       VALID_MESSAGE,
       { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
     );

@@ -23,8 +23,10 @@ import {
   mainlineUnverified,
   messageInvalid,
   nothingToCommit,
+  notReviewed,
   promoteConflict,
   promoteFailed,
+  promoteWithheld,
   policyInvalid,
   pushFailed,
   type Result,
@@ -47,6 +49,15 @@ import {
   statusByBranch,
 } from "./lib/push.ts";
 import { repoRequiresSignoff } from "./lib/signoff.ts";
+import {
+  branchBlockingFindings,
+  clearStampLedger,
+  commitsNotLandedSince,
+  gateToRerun,
+  lastStamp,
+  recordLandedCommit,
+  verifyStamp,
+} from "./lib/stamp.ts";
 import { readStdin } from "./lib/stdio.ts";
 import {
   computeScope,
@@ -71,7 +82,8 @@ type FailureOutcome =
   | "PROMOTE_CONFLICT"
   | "PROMOTE_FAILED"
   | "MAINLINE_AHEAD"
-  | "MAINLINE_UNVERIFIED";
+  | "MAINLINE_UNVERIFIED"
+  | "PROMOTE_WITHHELD";
 
 type DetachedRebase =
   | { rebasedTip: string; failure: null }
@@ -93,7 +105,6 @@ const PARKED_OUTCOMES = new Set<FailureOutcome>([
 ]);
 
 type Arguments = {
-  paths: string[];
   promote: boolean;
   noPush: boolean;
   pushRetryDelayMs: number;
@@ -101,26 +112,18 @@ type Arguments = {
 
 function parseArguments(argv: string[]): Arguments {
   const parsed: Arguments = {
-    paths: [],
     promote: false,
     noPush: false,
     pushRetryDelayMs: 2000,
   };
-  let collectingPaths = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] ?? "";
-    if (argument === "--paths") {
-      collectingPaths = true;
-      continue;
-    }
     if (argument === "--promote") {
       parsed.promote = true;
-      collectingPaths = false;
       continue;
     }
     if (argument === "--no-push") {
       parsed.noPush = true;
-      collectingPaths = false;
       continue;
     }
     if (argument === "--push-retry-delay-ms") {
@@ -130,16 +133,12 @@ function parseArguments(argv: string[]): Arguments {
       }
       parsed.pushRetryDelayMs = value;
       index += 1;
-      collectingPaths = false;
       continue;
     }
     if (argument.startsWith("--")) {
-      throw new Error(`unknown flag ${argument}`);
+      throw new Error(`unknown flag ${argument}; land.ts stages the paths on the last review stamp`);
     }
-    if (!collectingPaths) {
-      throw new Error(`unexpected argument ${argument}`);
-    }
-    parsed.paths.push(argument);
+    throw new Error(`unexpected argument ${argument}`);
   }
   return parsed;
 }
@@ -162,7 +161,9 @@ class Landing {
   private preRebaseFeatureTip: string | null = null;
   private readOnlyHolderMainlineTip: string | null = null;
   private noOriginPromoteWarned = false;
+  private stampedPaths: string[] = [];
   private scopePaths: string[] = [];
+  private withheldFindings: string[] = [];
 
   constructor(repo: string, config: Arguments) {
     this.git = new Git(repo);
@@ -191,11 +192,21 @@ class Landing {
       return messageInvalid({ errors: messageErrors });
     }
 
-    const operatorScope = computeScope(this.git, this.config.paths);
+    const stamp = lastStamp(this.git);
+    this.stampedPaths = stamp?.paths ?? [];
+    const operatorScope = computeScope(this.git, this.stampedPaths);
     if (operatorScope.changed.size === 0 && operatorScope.untracked.length === 0) {
       return this.landNothing();
     }
-    this.scopePaths = withNewJournalFiles(this.git, this.config.paths);
+    const verification = verifyStamp(this.git);
+    if (!verification.matches) {
+      return notReviewed({
+        gate: gateToRerun(stamp),
+        ...(verification.tree ? { tree: verification.tree } : {}),
+        ...(stamp ? { stampTree: stamp.tree } : {}),
+      });
+    }
+    this.scopePaths = withNewJournalFiles(this.git, this.stampedPaths);
     const { untracked } = computeScope(this.git, this.scopePaths);
 
     const commitOutcome = this.commit(message, untracked);
@@ -229,7 +240,7 @@ class Landing {
   }
 
   private followCoherenceJournal(): void {
-    if (this.config.noPush || isCoherenceOnly(this.config.paths) || !tracksCoherence(this.git)) {
+    if (this.config.noPush || isCoherenceOnly(this.stampedPaths) || !tracksCoherence(this.git)) {
       return;
     }
     startJournalFollower(this.git, this.config.promote);
@@ -287,6 +298,9 @@ class Landing {
         ...state,
         mainline: this.mainline ?? "",
       });
+    }
+    if (outcome === "PROMOTE_WITHHELD") {
+      return promoteWithheld({ ...state, findings: this.withheldFindings });
     }
     if (outcome === "NOTHING_TO_COMMIT") {
       return nothingToCommit({ pushed: this.pushed, promoted: this.promoted, warnings: this.warnings });
@@ -399,6 +413,7 @@ class Landing {
       return afterHooksScanOutcome;
     }
     this.commitHash = committedHash;
+    recordLandedCommit(this.git, committedHash);
     return null;
   }
 
@@ -447,10 +462,10 @@ class Landing {
     }
     const unstage = this.git.unstage(outOfScope);
     if (unstage.code !== 0) {
-      this.warnings.push(`could not exclude staged files outside --paths: ${unstage.stderr.trim()}`);
+      this.warnings.push(`could not exclude staged files outside the stamped paths: ${unstage.stderr.trim()}`);
       return "HOOK_FAILED";
     }
-    this.warnings.push(`excluded staged files outside --paths: ${outOfScope.join(", ")}`);
+    this.warnings.push(`excluded staged files outside the stamped paths: ${outOfScope.join(", ")}`);
     return null;
   }
 
@@ -491,6 +506,16 @@ class Landing {
     return null;
   }
 
+  private withholdPromotion(mainlineRef: string): FailureOutcome | null {
+    const blockingFindings = branchBlockingFindings(this.git).map((finding) => `${finding.severity} ${finding.file}: ${finding.summary}`);
+    const unreviewedCommits = commitsNotLandedSince(this.git, mainlineRef).map((commit) => `UNREVIEWED ${commit.slice(0, 12)}: not landed through land.ts`);
+    this.withheldFindings = [...blockingFindings, ...unreviewedCommits];
+    if (this.withheldFindings.length === 0) {
+      return null;
+    }
+    return this.pushDeferredFeatureBranch() ?? "PROMOTE_WITHHELD";
+  }
+
   private promote(): FailureOutcome | null {
     const originExists = this.git.listRemotes().includes("origin");
     const { policy } = readCommitPolicy();
@@ -518,6 +543,10 @@ class Landing {
       }
     }
 
+    const withheldOutcome = this.withholdPromotion(originExists ? `refs/remotes/origin/${mainline}` : `refs/heads/${mainline}`);
+    if (withheldOutcome) {
+      return withheldOutcome;
+    }
     const mainlineTipBeforePromotion = this.git.revParseRef(`refs/heads/${mainline}`);
     const promoteOutcome = this.promoteHop(current, mainline);
     if (promoteOutcome) {
@@ -529,6 +558,7 @@ class Landing {
       this.warnAboutMissingOrigin();
       this.promoted.push(mainline);
       this.clearParkedBranch(featureBranch);
+      clearStampLedger(this.git);
       return null;
     }
 
@@ -541,6 +571,7 @@ class Landing {
 
     this.promoted.push(mainline);
     this.clearParkedBranch(featureBranch);
+    clearStampLedger(this.git);
     if (this.config.noPush) {
       return null;
     }
@@ -793,7 +824,7 @@ class Landing {
       this.warnings.push(`the branch moved to ${rebasedTip} but mainline's changes to uncommitted files were not written; the uncommitted snapshot is ${snapshot}`);
       return true;
     }
-    this.warnings.push("uncommitted changes outside --paths were carried onto the promoted branch and left unstaged");
+    this.warnings.push("uncommitted changes outside the stamped paths were carried onto the promoted branch and left unstaged");
     return true;
   }
 

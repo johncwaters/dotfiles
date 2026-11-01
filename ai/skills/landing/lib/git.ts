@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 
 export type GitResult = { code: number; stdout: string; stderr: string };
 
@@ -186,6 +187,18 @@ export class Git {
     return proc.stdout.trim();
   }
 
+  patchIdsByCommit(revisionArgs: string[]): Map<string, string> {
+    const patches = this.run(["log", "--no-merges", "-p", "--format=commit %H", ...revisionArgs]);
+    if (patches.code !== 0) {
+      return new Map();
+    }
+    const patchIds = this.run(["patch-id", "--stable"], { input: patches.stdout });
+    return new Map(nonEmptyLines(patchIds.stdout).map((line) => {
+      const [patchId = "", commit = ""] = line.split(" ");
+      return [commit, patchId];
+    }));
+  }
+
   revList(range: string): string[] {
     return nonEmptyLines(this.run(["rev-list", "--reverse", range]).stdout);
   }
@@ -257,6 +270,24 @@ export class Git {
     const env = { GIT_INDEX_FILE: scratchIndexPath };
     if (this.run(["add", "-A"], { env }).code !== 0) {
       return null;
+    }
+    const tree = this.run(["write-tree"], { env });
+    return tree.code === 0 ? tree.stdout.trim() : null;
+  }
+
+  scopedTreeOid(scratchIndexPath: string, paths: string[]): string | null {
+    const env = { GIT_INDEX_FILE: scratchIndexPath };
+    const headTree = this.isHeadUnborn() ? ["--empty"] : ["HEAD"];
+    if (this.run(["read-tree", ...headTree], { env }).code !== 0) {
+      return null;
+    }
+    const trackedInScope = this.run(["ls-files", "-z", "--", ...paths], { env }).stdout.split("\0").filter(Boolean);
+    const presentPaths = paths.filter(
+      (scopePath) => fs.existsSync(path.join(this.repo, scopePath)) || trackedInScope.some((tracked) => tracked === scopePath || tracked.startsWith(`${scopePath}/`)),
+    );
+    if (presentPaths.length > 0) {
+      // A file git cannot add stays out of the pin; land.ts reports it when staging fails.
+      this.run(["add", "-A", "--sparse", "--ignore-errors", "--", ...presentPaths], { env });
     }
     const tree = this.run(["write-tree"], { env });
     return tree.code === 0 ? tree.stdout.trim() : null;

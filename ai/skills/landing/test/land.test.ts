@@ -154,10 +154,7 @@ test("land refuses a stale forbidden-branch remedy before committing", () => {
     const headBefore = gitOutput(repo, ["rev-parse", "HEAD"]);
     writeFile(repo, "a.txt", "two\n");
 
-    const { code, result } = runSkillScript(
-      "land.ts",
-      repo,
-      ["--push-retry-delay-ms", "0", "--promote"],
+    const { code, result } = land(repo, ["--promote"],
       VALID_MESSAGE,
       { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
     );
@@ -636,7 +633,7 @@ test("a nested denylisted file is not staged through its parent directory", () =
   }
 });
 
-test("a file staged outside --paths is unstaged and excluded from the commit", () => {
+test("a file staged outside the stamped paths is unstaged and excluded from the commit", () => {
   const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -648,7 +645,7 @@ test("a file staged outside --paths is unstaged and excluded from the commit", (
     const { result } = land(repo, ["--no-push", "--paths", "a.txt"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.match((result.warnings as string[]).join("\n"), /excluded staged files outside --paths.*b\.txt/);
+    assert.match((result.warnings as string[]).join("\n"), /excluded staged files outside the stamped paths.*b\.txt/);
     assert.deepEqual(gitOutput(repo, ["show", "--name-only", "--format=", "HEAD"]).split("\n"), [
       "a.txt",
     ]);
