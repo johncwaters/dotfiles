@@ -4,14 +4,18 @@ import type { Token, Tokens } from 'marked';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Node as YamlNode } from 'yaml';
 import { normalizeColor } from './color.ts';
-import { addFinding, addProseFindings, advanceLocation, createSourceText, locatorFrom, addWholeFileFinding, collapseWhitespace, isTokenProperty, kebabCase } from './findings.ts';
-import type { FindingCollector, ScanContext, SourceLocation } from './findings.ts';
+import { addFinding, addProseFindings, createSourceText, addWholeFileFinding, collapseWhitespace, isTokenProperty, kebabCase } from './findings.ts';
+import type { FindingCollector, IndexLocator, ScanContext, SourceLocation } from './findings.ts';
 import { addDeclarationFindings } from './parse-css.ts';
 import { decodeCharacterReferences, scanMarkup } from './parse-markup.ts';
 
-type Heading = { text: string; depth: number; line: number };
+type Heading = { text: string; name: string; depth: number; line: number };
 
-type MarkdownState = { isReadme: boolean; headings: Heading[]; hasReadmeH1: boolean; hasReadmeBold: boolean; hasReadmeParagraph: boolean };
+type MarkdownState = { isReadme: boolean; headings: Heading[]; hasReadmeH1: boolean; hasReadmeBold: boolean; hasReadmeParagraph: boolean; sourceCursor: number };
+
+type AlignedLine = { rawContentStart: number; sourceContentStart: number };
+
+type AlignedBlock = { start: number; end: number; locate: IndexLocator; prefixGaps: Array<[number, number]> };
 
 const BRAND_DOC_NAME_PATTERN = /(?:^|[-_.\s])(product|design|brand|branding|style|styleguide|voice|tone|mission|vision|values|personality|audience|anti-?references?|identity|messaging|positioning)(?:$|[-_.\s])/i;
 const BRAND_DOC_HEADING_PATTERN = /\b(voice|tone|mission|vision|values|personality|audiences?|anti-?references?|brand|positioning|tagline|brand personality)\b/i;
@@ -20,18 +24,23 @@ const DATA_FILE_HINT_PATTERN = /font|colou?r|radius|shadow|#[0-9a-f]{3,8}\b|\b(?
 const PACKAGE_COPY_KEYS = new Set(['name', 'description', 'keywords', 'homepage']);
 const MANIFEST_COPY_KEYS = new Set(['name', 'short_name', 'description']);
 const MARKDOWN_ESCAPE_PATTERN = /\\[!-\/:-@[-`{-~]/g;
+const LINE_PREFIX_GAP_PATTERN = /^[\s>]*$/;
+const BLOCK_PREFIX_GAP_PATTERN = /^(?:[\s>]|[-*+](?=\s)|\d{1,9}[.)](?=\s)|\[[ xX]\](?=\s))*$/;
+const ANY_GAP_PATTERN = /^/;
+const TASK_CHECKBOX_PATTERN = /^\[[ xX]\] /;
 const CODE_SPAN_OR_URL_PATTERN = /`[^`\n]*`|\]\([^)\s]*(?:\s+"[^"]*")?\)|<https?:[^>\s]*>|https?:\/\/\S+/g;
 
 function blankMatches(text: string, pattern: RegExp): string {
   return text.replace(pattern, (match) => match.replace(/[^\n]/g, ' '));
 }
 
-function inlinePlainText(tokens: Token[] | undefined): string {
+function inlinePlainText(tokens: Token[] | undefined, keepsCode = false): string {
   if (!tokens) return '';
   return tokens.map((token) => {
+    if (keepsCode && token.type === 'codespan') return (token as Tokens.Codespan).text;
     if (token.type === 'codespan' || token.type === 'html' || token.type === 'image') return ' ';
     if (token.type === 'br') return ' ';
-    if ('tokens' in token && Array.isArray(token.tokens) && token.tokens.length > 0) return inlinePlainText(token.tokens as Token[]);
+    if ('tokens' in token && Array.isArray(token.tokens) && token.tokens.length > 0) return inlinePlainText(token.tokens as Token[], keepsCode);
     if (token.type === 'text') return decodeCharacterReferences(token.text).text;
     return 'text' in token && typeof token.text === 'string' ? token.text : '';
   }).join('');
@@ -127,26 +136,76 @@ function brandDocSignal(file: string, headings: Heading[]): string | undefined {
   return heading ? `heading:${collapseWhitespace(heading.text).toLowerCase()}` : undefined;
 }
 
-function addMarkdownBlock(collector: FindingCollector, token: Token, offset: number, context: ScanContext, state: MarkdownState): void {
-  const location = collector.source.locationAt(offset);
+function findAfterGap(sourceText: string, content: string, cursor: number, gapPattern: RegExp): number | undefined {
+  if (!content) return undefined;
+  const foundIndex = sourceText.indexOf(content, cursor);
+  if (foundIndex === -1 || !gapPattern.test(sourceText.slice(cursor, foundIndex))) return undefined;
+  return foundIndex;
+}
+
+function sourceMarkupOf(sourceText: string, block: AlignedBlock): string {
+  let markup = sourceText.slice(block.start, block.end);
+  for (const [gapStart, gapEnd] of block.prefixGaps) {
+    const localStart = gapStart - block.start;
+    const localEnd = gapEnd - block.start;
+    markup = markup.slice(0, localStart) + markup.slice(localStart, localEnd).replace(/>/g, ' ') + markup.slice(localEnd);
+  }
+  return markup;
+}
+
+function alignToSource(collector: FindingCollector, sourceText: string, raw: string, searchFrom: number): AlignedBlock {
+  const alignedLines: AlignedLine[] = [];
+  const prefixGaps: Array<[number, number]> = [];
+  let rawLineStart = 0;
+  let cursor = searchFrom;
+  let start: number | undefined;
+  for (const rawLine of raw.split('\n')) {
+    const content = rawLine.trimStart();
+    const rawContentStart = rawLineStart + rawLine.length - content.length;
+    rawLineStart += rawLine.length + 1;
+    const isFirstLine = start === undefined;
+    const gapPattern = isFirstLine ? BLOCK_PREFIX_GAP_PATTERN : LINE_PREFIX_GAP_PATTERN;
+    const contentWithoutCheckbox = content.replace(TASK_CHECKBOX_PATTERN, '');
+    const exactIndex = findAfterGap(sourceText, content, cursor, gapPattern);
+    const checkboxLength = exactIndex === undefined ? content.length - contentWithoutCheckbox.length : 0;
+    const checkboxlessIndex = checkboxLength > 0 ? findAfterGap(sourceText, contentWithoutCheckbox, cursor, gapPattern) : undefined;
+    const looseIndex = isFirstLine && exactIndex === undefined && checkboxlessIndex === undefined ? findAfterGap(sourceText, content, cursor, ANY_GAP_PATTERN) : undefined;
+    const foundIndex = exactIndex ?? checkboxlessIndex ?? looseIndex;
+    const droppedLength = checkboxlessIndex === undefined ? 0 : checkboxLength;
+    if (foundIndex === undefined) continue;
+    if (!isFirstLine) prefixGaps.push([cursor, foundIndex]);
+    alignedLines.push({ rawContentStart: rawContentStart + droppedLength, sourceContentStart: foundIndex });
+    start ??= foundIndex - rawContentStart - droppedLength;
+    cursor = foundIndex + content.length - droppedLength;
+  }
+  const blockStart = Math.max(0, start ?? searchFrom);
+  const locate: IndexLocator = (index) => {
+    const line = alignedLines.findLast((candidate) => candidate.rawContentStart <= index) ?? alignedLines[0];
+    const offset = line ? line.sourceContentStart + index - line.rawContentStart : blockStart + index;
+    return collector.source.locationAt(Math.max(0, offset));
+  };
+  return { start: Math.max(blockStart, alignedLines[0]?.sourceContentStart ?? blockStart), end: Math.max(cursor, blockStart), locate, prefixGaps };
+}
+
+function addMarkdownBlock(collector: FindingCollector, token: Token, block: AlignedBlock, context: ScanContext, state: MarkdownState): void {
+  const location = collector.source.locationAt(block.start);
   const inlineTokens = 'tokens' in token ? (token.tokens as Token[] | undefined) : undefined;
   const plainText = collapseWhitespace(inlinePlainText(inlineTokens));
   const slot = token.type === 'heading' ? `md:h${(token as Tokens.Heading).depth}` : 'md:p';
-  if (token.type === 'heading') state.headings.push({ text: plainText, depth: (token as Tokens.Heading).depth, line: location.line });
+  if (token.type === 'heading') state.headings.push({ text: plainText, name: collapseWhitespace(inlinePlainText(inlineTokens, true)), depth: (token as Tokens.Heading).depth, line: location.line });
   let referenceCursor = 0;
   for (const reference of inlineImagesAndLinks(inlineTokens)) {
     const referenceIndex = token.raw.indexOf(reference.raw, referenceCursor);
     referenceCursor = referenceIndex === -1 ? referenceCursor : referenceIndex;
-    const referenceLocation = referenceIndex === -1 ? location : advanceLocation(location, token.raw.slice(0, referenceIndex));
-    if (reference.type === 'image' && reference.text.trim()) addFinding(collector, 'copy-slot', referenceLocation, reference.text, collapseWhitespace(reference.text).toLowerCase(), { slot: 'alt' });
-    if (isAssetPath(reference.href)) addFinding(collector, 'asset-reference', referenceLocation, reference.href, reference.href.split(/[?#]/)[0] ?? reference.href, { slot: `md:${reference.type}` });
+    const locateInReference = (partIndex: number): SourceLocation => (referenceIndex === -1 ? location : block.locate(referenceIndex + Math.max(0, partIndex)));
+    if (reference.type === 'image' && reference.text.trim()) addFinding(collector, 'copy-slot', locateInReference(reference.raw.indexOf(reference.text)), reference.text, collapseWhitespace(reference.text).toLowerCase(), { slot: 'alt' });
+    if (isAssetPath(reference.href)) addFinding(collector, 'asset-reference', locateInReference(reference.raw.lastIndexOf(reference.href)), reference.href, reference.href.split(/[?#]/)[0] ?? reference.href, { slot: `md:${reference.type}` });
   }
   if (state.isReadme) addReadmeSlots(collector, token, plainText, location, state);
   if (!/\p{L}/u.test(plainText)) return;
   addFinding(collector, 'ui-text', location, plainText, plainText.toLowerCase(), { slot });
   const decodedProse = decodeCharacterReferences(blankMatches(blankMatches(token.raw, CODE_SPAN_OR_URL_PATTERN), MARKDOWN_ESCAPE_PATTERN));
-  const rawLocator = locatorFrom(location, token.raw);
-  addProseFindings(collector, decodedProse.text, (decodedIndex) => rawLocator(decodedProse.rawIndexOf(decodedIndex)), context, { slot });
+  addProseFindings(collector, decodedProse.text, (decodedIndex) => block.locate(decodedProse.rawIndexOf(decodedIndex)), context, { slot });
 }
 
 function addReadmeSlots(collector: FindingCollector, token: Token, plainText: string, location: SourceLocation, state: MarkdownState): void {
@@ -169,30 +228,28 @@ function addReadmeSlots(collector: FindingCollector, token: Token, plainText: st
   addFinding(collector, 'copy-slot', location, plainText, plainText.toLowerCase(), { slot: 'readme:paragraph' });
 }
 
-function walkMarkdownTokens(collector: FindingCollector, tokens: Token[], parentRaw: string, parentOffset: number, context: ScanContext, state: MarkdownState): void {
-  let cursor = 0;
+function walkMarkdownTokens(collector: FindingCollector, tokens: Token[], sourceText: string, context: ScanContext, state: MarkdownState): void {
   for (const token of tokens) {
-    const foundIndex = parentRaw.indexOf(token.raw, cursor);
-    const index = foundIndex === -1 ? cursor : foundIndex;
-    cursor = index + (foundIndex === -1 ? 0 : token.raw.length);
-    const offset = parentOffset + index;
-    if (token.type === 'heading' || token.type === 'paragraph' || token.type === 'text') {
-      addMarkdownBlock(collector, token, offset, context, state);
-      continue;
-    }
-    if (token.type === 'html') {
-      scanMarkup(collector, token.raw, context, offset);
-      continue;
-    }
+    if (token.type === 'space') continue;
+    const block = alignToSource(collector, sourceText, token.raw, state.sourceCursor);
     if (token.type === 'list') {
-      walkMarkdownTokens(collector, (token as Tokens.List).items, token.raw, offset, context, state);
+      walkMarkdownTokens(collector, (token as Tokens.List).items, sourceText, context, state);
       continue;
     }
     if (token.type === 'list_item' || token.type === 'blockquote') {
-      walkMarkdownTokens(collector, (token as Tokens.ListItem | Tokens.Blockquote).tokens, token.raw, offset, context, state);
+      walkMarkdownTokens(collector, (token as Tokens.ListItem | Tokens.Blockquote).tokens, sourceText, context, state);
       continue;
     }
-    if (token.type === 'table') addTableText(collector, token as Tokens.Table, offset);
+    state.sourceCursor = block.end;
+    if (token.type === 'heading' || token.type === 'paragraph' || token.type === 'text') {
+      addMarkdownBlock(collector, token, block, context, state);
+      continue;
+    }
+    if (token.type === 'html') {
+      scanMarkup(collector, sourceMarkupOf(sourceText, block), context, block.start);
+      continue;
+    }
+    if (token.type === 'table') addTableText(collector, token as Tokens.Table, block.start);
   }
 }
 
@@ -222,18 +279,18 @@ function scanFrontMatter(collector: FindingCollector, text: string, length: numb
 
 export function scanMarkdown(originalCollector: FindingCollector, originalText: string, context: ScanContext): void {
   const text = originalText.replace(/\r\n?/g, '\n');
-  const collector = text === originalText ? originalCollector : { ...originalCollector, source: createSourceText(text) };
-  const state: MarkdownState = { isReadme: /^readme(?:\.|$)/i.test(path.posix.basename(collector.file)), headings: [], hasReadmeH1: false, hasReadmeBold: false, hasReadmeParagraph: false };
   const frontLength = frontMatterLength(text);
+  const collector = text === originalText ? originalCollector : { ...originalCollector, source: createSourceText(text) };
+  const state: MarkdownState = { isReadme: /^readme(?:\.|$)/i.test(path.posix.basename(collector.file)), headings: [], hasReadmeH1: false, hasReadmeBold: false, hasReadmeParagraph: false, sourceCursor: frontLength };
   if (frontLength > 0) scanFrontMatter(collector, text, frontLength);
   const body = text.slice(frontLength);
-  walkMarkdownTokens(collector, Lexer.lex(body, { gfm: true }), body, frontLength, context, state);
+  walkMarkdownTokens(collector, Lexer.lex(body, { gfm: true }), text, context, state);
   const signal = brandDocSignal(collector.file, state.headings);
   if (!signal) return;
   addWholeFileFinding(collector, 'brand-doc', collector.file, collector.file.toLowerCase(), { signal });
   const lastLine = collector.source.locationAt(text.trimEnd().length).line;
   state.headings.forEach((heading, index) => {
-    addFinding(collector, 'brand-doc-section', { line: heading.line, column: 1 }, heading.text, heading.text.toLowerCase(), {
+    addFinding(collector, 'brand-doc-section', { line: heading.line, column: 1 }, heading.name, heading.name.toLowerCase(), {
       depth: heading.depth, lineStart: heading.line, lineEnd: headingLineEnd(state.headings, index, lastLine),
     });
   });

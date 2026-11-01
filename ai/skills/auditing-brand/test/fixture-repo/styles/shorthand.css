@@ -1,0 +1,7 @@
+.title { font: 700 42px / 1 "Segoe UI", sans-serif; }
+@font-face {
+  font-family: "Beam";
+  src: url("../fonts/beam.woff2") format("woff2");
+}
+.note { font: 600 /* brand weight */ 18px/1.2 Inter; }
+.glued { font: bold 16px/*brand*/Inter; }

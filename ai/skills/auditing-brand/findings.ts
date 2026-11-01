@@ -178,19 +178,57 @@ function isWeightToken(token: string): boolean {
   return Number.isInteger(weight) && weight >= 1 && weight <= 1000;
 }
 
-export type FontShorthand = { size?: string; lineHeight?: string; weight?: string; family?: string };
+export type ShorthandPart = { raw: string; offset: number };
+
+export type FontShorthand = { size?: ShorthandPart; lineHeight?: ShorthandPart; weight?: ShorthandPart; family?: ShorthandPart };
+
+function shorthandParts(value: string): ShorthandPart[] {
+  const parts: ShorthandPart[] = [];
+  let depth = 0;
+  let quote = '';
+  let partStart = -1;
+  const closePart = (end: number): void => {
+    if (partStart !== -1) parts.push({ raw: value.slice(partStart, end), offset: partStart });
+    partStart = -1;
+  };
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index] ?? '';
+    if (quote) {
+      if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    if (character === '(') depth += 1;
+    if (character === ')') depth = Math.max(0, depth - 1);
+    const isTopLevel = depth === 0 && !quote;
+    if (isTopLevel && /\s/.test(character)) {
+      closePart(index);
+      continue;
+    }
+    if (isTopLevel && character === '/') {
+      closePart(index);
+      parts.push({ raw: '/', offset: index });
+      continue;
+    }
+    if (partStart === -1) partStart = index;
+  }
+  closePart(value.length);
+  return parts;
+}
 
 export function parseFontShorthand(value: string): FontShorthand {
-  const tokens = splitTopLevel(value, ' ');
-  const sizeIndex = tokens.findIndex((token) => isSizeToken(token.split('/')[0] ?? ''));
-  if (sizeIndex === -1) return {};
-  const [size, lineHeight] = (tokens[sizeIndex] ?? '').split('/');
-  const weight = tokens.slice(0, sizeIndex).find(isWeightToken);
-  const family = tokens.slice(sizeIndex + 1).join(' ');
+  const parts = shorthandParts(value);
+  const sizeIndex = parts.findIndex((part) => isSizeToken(part.raw));
+  const size = parts[sizeIndex];
+  if (!size) return {};
   const shorthand: FontShorthand = { size };
-  if (lineHeight) shorthand.lineHeight = lineHeight;
+  const weight = parts.slice(0, sizeIndex).find((part) => isWeightToken(part.raw));
   if (weight) shorthand.weight = weight;
-  if (family) shorthand.family = family;
+  const hasLineHeight = parts[sizeIndex + 1]?.raw === '/' && parts[sizeIndex + 2] !== undefined;
+  const lineHeight = hasLineHeight ? parts[sizeIndex + 2] : undefined;
+  if (lineHeight) shorthand.lineHeight = lineHeight;
+  const familyStart = parts[sizeIndex + (lineHeight ? 3 : 1)];
+  if (familyStart) shorthand.family = { raw: value.slice(familyStart.offset).trimEnd(), offset: familyStart.offset };
   return shorthand;
 }
 

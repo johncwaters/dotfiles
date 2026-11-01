@@ -7,7 +7,7 @@ import {
   addFinding, advanceLocation, classifyCustomProperty, collapseWhitespace, durationsInMs, findColorExpressions, findColorLiterals,
   isTokenProperty, kebabCase, normalizeFontFamily, normalizeLength, parseFontShorthand,
 } from './findings.ts';
-import type { FindingCollector, SourceLocation } from './findings.ts';
+import type { FindingCollector, ShorthandPart, SourceLocation } from './findings.ts';
 import type { FindingDetail, FindingKind } from './bible/targets.ts';
 
 export type DeclarationSource = 'css' | 'style-attribute' | 'js-style' | 'canvas' | 'svg-attribute' | 'data-file';
@@ -29,6 +29,7 @@ const PASSTHROUGH_TYPOGRAPHY: Record<string, FindingKind> = {
   'font-variant-ligatures': 'font-features',
 };
 
+const CSS_COMMENT_PATTERN = /\/\*[\s\S]*?\*\//g;
 const URL_PATTERN = /url\(\s*(["']?)([^"'()]+)\1\s*\)/g;
 const IMPORT_TARGET_PATTERN = /^\s*(?:url\(\s*)?(["']?)([^"'()\s]+)\1/;
 
@@ -60,10 +61,10 @@ function addTypographyFinding(collector: FindingCollector, kind: FindingKind, lo
 
 function addFontShorthandFindings(collector: FindingCollector, value: string, location: SourceLocation, detail: FindingDetail): void {
   const shorthand = parseFontShorthand(value);
-  if (shorthand.size) addTypographyFinding(collector, 'font-size', location, shorthand.size, { ...detail, from: 'font-shorthand' });
-  if (shorthand.lineHeight) addTypographyFinding(collector, 'line-height', location, shorthand.lineHeight, { ...detail, from: 'font-shorthand' });
-  if (shorthand.weight) addTypographyFinding(collector, 'font-weight', location, shorthand.weight, { ...detail, from: 'font-shorthand' });
-  if (shorthand.family) addTypographyFinding(collector, 'font-family', location, shorthand.family, { ...detail, from: 'font-shorthand' });
+  const partFindings: Array<[FindingKind, ShorthandPart | undefined]> = [['font-size', shorthand.size], ['line-height', shorthand.lineHeight], ['font-weight', shorthand.weight], ['font-family', shorthand.family]];
+  for (const [kind, part] of partFindings) {
+    if (part) addTypographyFinding(collector, kind, advanceLocation(location, value.slice(0, part.offset)), part.raw, { ...detail, from: 'font-shorthand' });
+  }
 }
 
 function addCustomPropertyFindings(collector: FindingCollector, property: string, value: string, location: SourceLocation, detail: FindingDetail): void {
@@ -89,12 +90,14 @@ function addAssetReferences(collector: FindingCollector, value: string, location
   for (const match of value.matchAll(URL_PATTERN)) {
     const reference = match[2]?.trim() ?? '';
     if (!reference || reference.startsWith('data:') || reference.startsWith('#')) continue;
-    addFinding(collector, 'asset-reference', advanceLocation(location, value.slice(0, match.index)), reference, reference.split(/[?#]/)[0] ?? reference, { ...detail, slot: 'css:url' });
+    const referenceOffset = match.index + match[0].indexOf(reference, 4);
+    addFinding(collector, 'asset-reference', advanceLocation(location, value.slice(0, referenceOffset)), reference, reference.split(/[?#]/)[0] ?? reference, { ...detail, slot: 'css:url' });
   }
 }
 
 export function addDeclarationFindings(collector: FindingCollector, rawProperty: string, value: string, location: SourceLocation, scopeDetail: FindingDetail, source: DeclarationSource): void {
   const property = kebabCase(rawProperty);
+  if (!value.trim()) return;
   const detail: FindingDetail = { ...scopeDetail, property, source };
   addColorFindings(collector, property, value, location, detail);
   if (value.includes('url(')) addAssetReferences(collector, value, location, detail);
@@ -157,14 +160,22 @@ function declarationValueLocation(declaration: Declaration, mapLocation: Locatio
   return advanceLocation(start, `${declaration.prop}${between}`);
 }
 
+function sourceAlignedValue(declaration: Declaration): string {
+  const sourceValue = declaration.raws.value?.raw ?? declaration.value;
+  return sourceValue.replace(CSS_COMMENT_PATTERN, (comment) => comment.replace(/[^\n]/g, ' ')).trimEnd();
+}
+
 function isInsideFontFace(node: ChildNode): boolean {
   return enclosingAtRules(node).some((atRule) => atRule.name.toLowerCase() === 'font-face');
 }
 
 function addFontFaceFinding(collector: FindingCollector, atRule: AtRule, mapLocation: LocationMapper): void {
   const descriptorByName = new Map<string, string>();
+  let sourceDeclaration: Declaration | undefined;
   atRule.each((child) => {
-    if (child.type === 'decl') descriptorByName.set(child.prop.toLowerCase(), child.value);
+    if (child.type !== 'decl') return;
+    descriptorByName.set(child.prop.toLowerCase(), child.value);
+    if (child.prop.toLowerCase() === 'src') sourceDeclaration = child;
   });
   const family = descriptorByName.get('font-family') ?? '';
   const sources = descriptorByName.get('src') ?? '';
@@ -172,7 +183,8 @@ function addFontFaceFinding(collector: FindingCollector, atRule: AtRule, mapLoca
   const weight = descriptorByName.get('font-weight');
   if (weight) detail.weight = weight;
   addFinding(collector, 'font-face', locationOf(atRule, mapLocation), family, normalizeFontFamily(family), detail);
-  addAssetReferences(collector, sources, locationOf(atRule, mapLocation), { property: 'src', source: 'css', scope: '@font-face' });
+  if (!sourceDeclaration) return;
+  addAssetReferences(collector, sourceAlignedValue(sourceDeclaration), declarationValueLocation(sourceDeclaration, mapLocation), { property: 'src', source: 'css', scope: '@font-face' });
 }
 
 function addContrastPair(collector: FindingCollector, rule: Rule, mapLocation: LocationMapper): void {
@@ -241,7 +253,7 @@ export function scanCss(collector: FindingCollector, cssText: string, options: C
     if (node.type !== 'decl' || isInsideFontFace(node)) return;
     const textName = tailwindTextName(node);
     if (textName) tailwindTextNames.push(textName);
-    addDeclarationFindings(collector, node.prop, node.value, declarationValueLocation(node, mapLocation), scopeOf(node), options.source ?? 'css');
+    addDeclarationFindings(collector, node.prop, sourceAlignedValue(node), declarationValueLocation(node, mapLocation), scopeOf(node), options.source ?? 'css');
   });
   return { tailwindTextNames };
 }
