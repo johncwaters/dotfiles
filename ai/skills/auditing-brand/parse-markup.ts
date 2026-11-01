@@ -14,7 +14,7 @@ export type DecodedText = { text: string; rawIndexOf: (decodedIndex: number) => 
 type OpenElement = { name: string; attributes: Record<string, string>; isInsideSvg: boolean; copySlot?: string; copyTexts: PendingText[] };
 
 const SKIPPED_TEXT_ELEMENTS = new Set(['script', 'style', 'code', 'pre', 'noscript']);
-const UI_TEXT_ATTRIBUTES = new Set(['aria-label', 'aria-description', 'title', 'placeholder', 'alt']);
+export const UI_TEXT_ATTRIBUTES = new Set(['aria-label', 'aria-description', 'title', 'placeholder', 'alt']);
 const ASSET_ATTRIBUTES = new Set(['src', 'href', 'srcset', 'poster', 'data', 'xlink:href']);
 const ASSET_EXTENSIONS = new Set(['.css', '.webmanifest', '.svg', '.ico']);
 const SVG_ICON_ATTRIBUTES = ['viewBox', 'width', 'height', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin'];
@@ -84,6 +84,15 @@ function blankAstroFrontmatter(text: string): string {
   const closingIndex = text.indexOf('\n---', 3);
   if (closingIndex === -1) return text;
   return text.slice(0, closingIndex + 4).replace(/[^\n]/g, ' ') + text.slice(closingIndex + 4);
+}
+
+export function addAssetReferenceFindings(collector: FindingCollector, elementName: string, attributeName: string, value: string, location: SourceLocation): void {
+  if (!ASSET_ATTRIBUTES.has(attributeName)) return;
+  const urls = attributeName === 'srcset' ? value.split(',').map((candidate) => candidate.trim().split(/\s+/)[0] ?? '') : [value];
+  for (const url of urls) {
+    const assetPath = assetPathOf(url);
+    if (assetPath) addFinding(collector, 'asset-reference', location, url.trim(), assetPath, { slot: `${elementName}:${attributeName}` });
+  }
 }
 
 export function scanMarkup(collector: FindingCollector, markup: string, context: ScanContext, baseOffset = 0): void {
@@ -160,18 +169,10 @@ export function scanMarkup(collector: FindingCollector, markup: string, context:
       if (element.name === 'path' && name === 'd' && rawValue.length >= MIN_SVG_PATH_LENGTH) {
         addFinding(collector, 'svg-path', location, rawValue.slice(0, 120), collapseWhitespace(rawValue.replace(/,/g, ' ')), { length: rawValue.length });
       }
-      if (ASSET_ATTRIBUTES.has(name)) addAssetReferences(element.name, name, value, location);
+      addAssetReferenceFindings(collector, element.name, name, value, location);
     }
     if (element.name === 'meta') addMetaFindings(element);
     if (element.name === 'svg') addSvgIcon(element);
-  };
-
-  const addAssetReferences = (elementName: string, attributeName: string, value: string, location: SourceLocation): void => {
-    const urls = attributeName === 'srcset' ? value.split(',').map((candidate) => candidate.trim().split(/\s+/)[0] ?? '') : [value];
-    for (const url of urls) {
-      const assetPath = assetPathOf(url);
-      if (assetPath) addFinding(collector, 'asset-reference', location, url.trim(), assetPath, { slot: `${elementName}:${attributeName}` });
-    }
   };
 
   const addMetaFindings = (element: OpenElement): void => {

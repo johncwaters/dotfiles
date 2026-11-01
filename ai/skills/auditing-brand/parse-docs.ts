@@ -15,7 +15,7 @@ type MarkdownState = { isReadme: boolean; headings: Heading[]; hasReadmeH1: bool
 
 const BRAND_DOC_NAME_PATTERN = /(?:^|[-_.\s])(product|design|brand|branding|style|styleguide|voice|tone|mission|vision|values|personality|audience|anti-?references?|identity|messaging|positioning)(?:$|[-_.\s])/i;
 const BRAND_DOC_HEADING_PATTERN = /\b(voice|tone|mission|vision|values|personality|audiences?|anti-?references?|brand|positioning|tagline|brand personality)\b/i;
-const DATA_STYLE_PROPERTY_PATTERN = /^(?:font(?:-size|-family|-weight|-feature-settings|-variant-ligatures)?|letter-spacing|line-height|text-transform|border(?:-[a-z]+)*-radius|box-shadow|text-shadow|(?:transition|animation)(?:-[a-z-]+)?|color|fill|stroke|background|[a-z-]+-color)$/;
+export const DATA_STYLE_PROPERTY_PATTERN = /^(?:font(?:-size|-family|-weight|-feature-settings|-variant-ligatures)?|letter-spacing|line-height|text-transform|border(?:-[a-z]+)*-radius|box-shadow|text-shadow|(?:transition|animation)(?:-[a-z-]+)?|color|fill|stroke|background|[a-z-]+-color)$/;
 const DATA_FILE_HINT_PATTERN = /font|colou?r|radius|shadow|#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab)\(/i;
 const PACKAGE_COPY_KEYS = new Set(['name', 'description', 'keywords', 'homepage']);
 const MANIFEST_COPY_KEYS = new Set(['name', 'short_name', 'description']);

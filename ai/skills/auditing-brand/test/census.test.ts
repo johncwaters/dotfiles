@@ -96,7 +96,7 @@ test('the census lists every stylesheet, asset and path-rule surface of the fixt
   assert.deepEqual(accentGroup, { normalized: '#c084fc', count: 4, files: ['styles/legacy.less', 'styles/panel.scss', 'styles/tokens.css'] });
 });
 
-test('the census lists copy slots, product names, brand docs, UI text, markup typography, SVG and data-file surfaces', async () => {
+test('the census lists copy slots, product names, brand docs, UI text, markup and script typography, SVG and data-file surfaces', async () => {
   const findings: Finding[] = (await runCensusCli()).trim().split('\n').map((line) => JSON.parse(line));
   const describe = (finding: Finding) => `${finding.file}:${finding.line}:${finding.column} ${finding.normalized}`;
 
@@ -105,20 +105,25 @@ test('the census lists copy slots, product names, brand docs, UI text, markup ty
     'readme:paragraph=Lumen Relay routes light signals between rooms — quietly. See the guide.>naming.descriptions', 'alt=Lumen Relay mark>voice.vocabulary',
     'frontmatter:title=Voice and tone>naming.descriptions', 'package:name=@lumen/lumen-relay>naming.productName',
     'package:description=Routes light signals between rooms.>naming.descriptions', 'package:keywords=light>naming.glossary', 'package:keywords=relay>naming.glossary',
-    'manifest:name=Lumen Relay>naming.productName', 'manifest:short_name=Lumen>naming.productName',
+    'manifest:name=Lumen Relay>naming.productName', 'manifest:short_name=Lumen>naming.productName', 'alt=Relay beam>voice.vocabulary', 'alt=Close mark>voice.vocabulary',
     'html:title=Lumen Relay>naming.descriptions', 'meta:description=Calm light for busy rooms.>naming.descriptions', 'html:h1=Meet Lumen Relay>naming.tagline',
   ]);
   assert.deepEqual(findings.filter((finding) => finding.kind === 'product-name').map(describe), [
-    'README.md:1:3 lumenrelay', 'README.md:5:1 lumenrelay', 'docs/RELEASE.md:3:1 lumenrelay', 'site/index.html:4:10 lumenrelay', 'site/index.html:10:58 lumenrelay',
+    'README.md:1:3 lumenrelay', 'README.md:5:1 lumenrelay', 'docs/RELEASE.md:3:1 lumenrelay', 'site/canvas.js:5:38 lumenrelay',
+    'site/components/Hero.tsx:10:57 lumenrelay', 'site/components/Hero.tsx:16:25 lumenrelay', 'site/components/Hero.tsx:17:25 lumenrelay', 'site/index.html:4:10 lumenrelay', 'site/index.html:10:58 lumenrelay',
   ]);
-  assert.deepEqual(findings.filter((finding) => finding.kind === 'typographic-char').map(describe), ['README.md:5:48 em-dash', 'docs/RELEASE.md:3:19 em-dash', 'docs/VOICE.md:7:17 ellipsis', 'site/components/Badge.vue:2:43 em-dash']);
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'typographic-char').map(describe), ['README.md:5:48 em-dash', 'docs/RELEASE.md:3:19 em-dash', 'docs/VOICE.md:7:17 ellipsis', 'site/components/Badge.vue:2:43 em-dash',
+    'site/components/Hero.tsx:11:78 em-dash', 'site/components/Hero.tsx:16:53 ellipsis', 'site/components/Hero.tsx:17:45 em-dash', 'site/components/Signed.js:2:33 copyright',
+  ]);
   assert.deepEqual(findings.filter((finding) => finding.kind.startsWith('brand-doc')).map((finding) => `${finding.kind}:${finding.raw}:${finding.detail?.lineStart ?? finding.detail?.signal}-${finding.detail?.lineEnd ?? ''}`), [
     'brand-doc:docs/VOICE.md:name:voice-', 'brand-doc-section:Voice:5-11', 'brand-doc-section:Tone:9-11',
   ]);
   assert.ok(!findings.some((finding) => finding.kind === 'ui-text' && finding.raw.includes('--start')));
   assert.deepEqual(findings.filter((finding) => finding.kind === 'ui-text' && /Jerry|ships|Escaped/.test(finding.raw)).map((finding) => finding.raw), ['Lumen Relay ships \u2014 today', 'Escaped &mdash; stays literal.', 'Tom & Jerry \u2014 go']);
   assert.deepEqual(findings.filter((finding) => finding.kind === 'font-size' && !finding.file.startsWith('styles/')).map((finding) => `${describe(finding)} ${finding.detail?.source}`), [
-    'site/components/Badge.vue:2:16 text-tiny tailwind', 'site/components/Badge.vue:7:16 10px css', 'site/index.html:7:29 18px css', 'site/index.html:10:14 text-4xl tailwind', 'site/index.html:10:23 text-huge tailwind',
+    'site/canvas.js:2:17 12px canvas', 'site/canvas.js:5:29 text-sm tailwind', 'site/canvas.js:6:27 text-xs tailwind',
+    'site/components/Badge.vue:2:16 text-tiny tailwind', 'site/components/Badge.vue:7:16 10px css',
+    'site/components/Hero.tsx:4:14 22px css', 'site/components/Hero.tsx:10:25 text-2xl tailwind', 'site/components/Hero.tsx:11:30 30 js-style', 'site/components/Hero.tsx:18:77 text-lg tailwind', 'site/components/Hero.tsx:20:48 15px style-attribute', 'site/index.html:7:29 18px css', 'site/index.html:10:14 text-4xl tailwind', 'site/index.html:10:23 text-huge tailwind',
     'site/index.html:11:54 13px style-attribute', 'site/index.html:12:133 11 svg-attribute', 'site/theme.yaml:2:13 28px data-file',
   ]);
   const markPaths = findings.filter((finding) => finding.kind === 'svg-path');
@@ -126,7 +131,14 @@ test('the census lists copy slots, product names, brand docs, UI text, markup ty
   assert.equal(new Set(markPaths.map((finding) => finding.normalized)).size, 1);
   assert.deepEqual(findingsWhere(findings, 'image-asset', 'assets/mark.svg').map((finding) => [finding.detail?.width, finding.detail?.height]), [[32, 16]]);
   assert.deepEqual(findings.filter((finding) => finding.kind === 'asset-reference' && !finding.file.startsWith('styles/')).map((finding) => `${finding.file} ${finding.normalized} ${finding.detail?.slot}`), [
-    'README.md assets/logo.png md:image', 'site.webmanifest /assets/logo.png manifest:icons', 'site/index.html /assets/og.png og:image',
+    'README.md assets/logo.png md:image', 'site.webmanifest /assets/logo.png manifest:icons', 'site/components/Hero.tsx /assets/beam.png img:src', 'site/components/Hero.tsx /assets/close.svg img:src', 'site/index.html /assets/og.png og:image',
+  ]);
+  assert.deepEqual(findingsWhere(findings, 'color', 'site/canvas.js').map(describe), ['site/canvas.js:3:22 #ff6600', 'site/canvas.js:4:46 #40b1b7']);
+  assert.deepEqual(findingsWhere(findings, 'font-family', 'site/canvas.js').map(describe), ['site/canvas.js:2:17 inter']);
+  assert.deepEqual(findings.filter((finding) => finding.file === 'site/answer.js'), []);
+  assert.deepEqual(findingsWhere(findings, 'radius', 'site/components/Hero.tsx').map(describe), ['site/components/Hero.tsx:19:75 6px']);
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'ui-text' && /Close dialog|Shuts|No sessions|Made with care/.test(finding.raw)).map(describe), [
+    'site/components/Empty.jsx:1:31 no sessions yet', 'site/components/Hero.tsx:18:51 close dialog', 'site/components/Hero.tsx:18:114 shuts the panel', 'site/components/Signed.js:1:32 made with care',
   ]);
   assert.deepEqual(findingsWhere(findings, 'color', 'site.webmanifest').map((finding) => finding.normalized), ['#0a0a12']);
 

@@ -17,6 +17,8 @@ A repo's bible is `brand-bible/`, one YAML file per section named in `bible/sche
 - `census.ts`: the census CLI; lists files, scans them concurrently, targets, sorts and prints findings.
 - `parse-css.ts`: reads stylesheets and CSS declarations from any source into findings.
 - `parse-markup.ts`: reads HTML-like markup and SVG: copy slots, UI text, style blocks and attributes, Tailwind classes, icons and asset references.
+- `parse-script.ts`: reads JS and TS through oxc: style objects, canvas fonts and fills, JSX text and attributes, CSS and markup in template strings, and prose in string literals.
+- `scan-worker.ts`: the worker thread that scans script files in parallel once a repo has enough of them.
 - `parse-docs.ts`: reads Markdown, front matter, YAML and JSON: README and manifest copy slots, brand docs and their sections, and style values in data files.
 - `findings.ts`: shared value classifiers, source locations and image header reading.
 - `color.ts`: normalizes any CSS color literal to lowercase hex.

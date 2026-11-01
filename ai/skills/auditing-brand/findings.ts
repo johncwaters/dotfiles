@@ -9,7 +9,7 @@ export type FindingCollector = { file: string; source: SourceText; findings: Unt
 
 export type IndexLocator = (index: number) => SourceLocation;
 
-export type DeferredTailwindText = { collector: FindingCollector; location: SourceLocation; raw: string; utility: string; name: string; detail: FindingDetail };
+export type DeferredTailwindText = { name: string; finding: UntargetedFinding };
 
 export type ScanContext = { productNamePattern?: RegExp; tailwindTextNames: Set<string>; deferredTailwindText: DeferredTailwindText[] };
 
@@ -50,11 +50,15 @@ export function createCollector(file: string, text: string): FindingCollector {
 }
 
 export function addFinding(collector: FindingCollector, kind: FindingKind, location: SourceLocation, raw: string, normalized: string, detail?: FindingDetail): void {
+  collector.findings.push(buildFinding(collector, kind, location, raw, normalized, detail));
+}
+
+function buildFinding(collector: FindingCollector, kind: FindingKind, location: SourceLocation, raw: string, normalized: string, detail?: FindingDetail): UntargetedFinding {
   const context = location.line > 0 ? collector.source.lineText(location.line).trim().slice(0, MAX_CONTEXT_LENGTH) : '';
   const finding: UntargetedFinding = { kind, file: collector.file, line: location.line, column: location.column, raw, normalized };
   if (context) finding.context = context;
   if (detail && Object.keys(detail).length > 0) finding.detail = detail;
-  collector.findings.push(finding);
+  return finding;
 }
 
 export function addWholeFileFinding(collector: FindingCollector, kind: FindingKind, raw: string, normalized: string, detail?: FindingDetail): void {
@@ -380,13 +384,11 @@ export function addTailwindClassFindings(collector: FindingCollector, classList:
     const utilityLocation = advanceLocation(location, classList.slice(0, match.index));
     const kind = tailwindKind(utility);
     const customTextName = /^text-([\w-]+?)(?:\/[\w.[\]-]+)?$/.exec(utility)?.[1];
-    if (!kind && customTextName) context.deferredTailwindText.push({ collector, location: utilityLocation, raw: match[0], utility, name: customTextName, detail: { ...detail, source: 'tailwind' } });
+    if (!kind && customTextName) context.deferredTailwindText.push({ name: customTextName, finding: buildFinding(collector, 'font-size', utilityLocation, match[0], utility, { ...detail, source: 'tailwind' }) });
     if (kind) addFinding(collector, kind, utilityLocation, match[0], utility, { ...detail, source: 'tailwind' });
   }
 }
 
-export function addDeferredTailwindTextFindings(context: ScanContext): void {
-  for (const deferred of context.deferredTailwindText) {
-    if (context.tailwindTextNames.has(deferred.name)) addFinding(deferred.collector, 'font-size', deferred.location, deferred.raw, deferred.utility, deferred.detail);
-  }
+export function resolveDeferredTailwindText(context: ScanContext): UntargetedFinding[] {
+  return context.deferredTailwindText.filter((deferred) => context.tailwindTextNames.has(deferred.name)).map((deferred) => deferred.finding);
 }

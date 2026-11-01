@@ -2,17 +2,25 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
+import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { targetFinding } from './bible/targets.ts';
 import type { Finding, FindingKind, UntargetedFinding } from './bible/targets.ts';
-import { addDeferredTailwindTextFindings, addFinding, addWholeFileFinding, createCollector, imageRoleHint, isFontFile, isImageFile, productNamePatternFor, rasterDimensions } from './findings.ts';
-import type { FindingCollector, ScanContext } from './findings.ts';
+import { addFinding, addWholeFileFinding, createCollector, imageRoleHint, isFontFile, isImageFile, productNamePatternFor, rasterDimensions, resolveDeferredTailwindText } from './findings.ts';
+import type { DeferredTailwindText, FindingCollector, ScanContext } from './findings.ts';
 import { scanCss } from './parse-css.ts';
 import { firstMarkdownHeading, scanDataFile, scanMarkdown } from './parse-docs.ts';
 import { scanMarkupFile } from './parse-markup.ts';
+import { scanScript } from './parse-script.ts';
 
 type TextScanner = { phase: 1 | 2; scan: (collector: FindingCollector, text: string, context: ScanContext) => void };
+
+export type ScanWorkerReply = { findings: UntargetedFinding[]; tailwindTextNames: string[]; deferredTailwindText: DeferredTailwindText[] };
+
+const SCAN_WORKER_URL = new URL('./scan-worker.ts', import.meta.url);
+const FILES_PER_SCAN_WORKER = 64;
+const MAX_SCAN_WORKERS = 4;
 
 type CensusOptions = { repoDirectory: string; summary: boolean; outFile?: string; includes: string[]; excludes: string[]; productNames: string[] };
 
@@ -38,6 +46,7 @@ export const TEXT_SCANNERS: Record<string, TextScanner> = {
   '.less': { phase: 1, scan: (collector, text, context) => scanStylesheet(collector, text, context, 'scss') },
   ...Object.fromEntries(['.html', '.htm', '.svg', '.vue', '.svelte', '.astro'].map((extension) => [extension, { phase: 2, scan: scanMarkupFile }])),
   ...Object.fromEntries(['.md', '.mdx', '.markdown'].map((extension) => [extension, { phase: 2, scan: scanMarkdown }])),
+  ...Object.fromEntries(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'].map((extension) => [extension, { phase: 2, scan: scanScript }])),
   ...Object.fromEntries(['.json', '.webmanifest', '.yaml', '.yml'].map((extension) => [extension, { phase: 2, scan: scanDataFile }])),
 };
 
@@ -194,6 +203,41 @@ function phaseOf(file: string): 1 | 2 {
   return TEXT_SCANNERS[path.posix.extname(file).toLowerCase()]?.phase ?? 2;
 }
 
+function isScriptFile(file: string): boolean {
+  return TEXT_SCANNERS[path.posix.extname(file).toLowerCase()]?.scan === scanScript;
+}
+
+async function scanInWorkers(repoDirectory: string, files: string[], productNames: string[], context: ScanContext): Promise<UntargetedFinding[][]> {
+  const workerCount = Math.min(MAX_SCAN_WORKERS, availableParallelism() - 1, Math.floor(files.length / FILES_PER_SCAN_WORKER));
+  if (workerCount < 1) return mapWithConcurrency(files, availableParallelism() * 4, (file) => scanFile(repoDirectory, file, context));
+  const outputs: UntargetedFinding[][] = new Array(files.length);
+  const workers = Array.from({ length: workerCount }, () => new Worker(SCAN_WORKER_URL, { workerData: { repoDirectory, productNames } }));
+  let nextIndex = 0;
+  const drainQueue = (worker: Worker): Promise<void> => new Promise((resolve, reject) => {
+    let fileIndex = -1;
+    const sendNextFile = (): void => {
+      fileIndex = nextIndex++;
+      if (fileIndex >= files.length) return resolve();
+      worker.postMessage(files[fileIndex]);
+    };
+    worker.on('message', (reply: ScanWorkerReply) => {
+      outputs[fileIndex] = reply.findings;
+      for (const name of reply.tailwindTextNames) context.tailwindTextNames.add(name);
+      context.deferredTailwindText.push(...reply.deferredTailwindText);
+      sendNextFile();
+    });
+    worker.on('error', reject);
+    worker.on('exit', (exitCode) => reject(new Error(`scan worker exited with code ${exitCode} while scanning ${files[fileIndex] ?? 'nothing'}`)));
+    sendNextFile();
+  });
+  try {
+    await Promise.all(workers.map(drainQueue));
+    return outputs;
+  } finally {
+    await Promise.all(workers.map((worker) => worker.terminate()));
+  }
+}
+
 async function readOptionalText(file: string): Promise<string> {
   return readFile(file, 'utf8').catch(() => '');
 }
@@ -213,11 +257,14 @@ export async function runCensus(repoDirectory: string, options: { includes: stri
   const productNamePattern = productNamePatternFor(productNames);
   const context: ScanContext = { tailwindTextNames: new Set(), deferredTailwindText: [], ...(productNamePattern ? { productNamePattern } : {}) };
   const concurrency = availableParallelism() * 4;
-  const scanPhase = (phase: 1 | 2) => mapWithConcurrency(files.filter((file) => phaseOf(file) === phase), concurrency, (file) => scanFile(repoDirectory, file, context));
-  const stylesheetFindings = await scanPhase(1);
-  const otherFindings = await scanPhase(2);
-  addDeferredTailwindTextFindings(context);
-  return [...stylesheetFindings, ...otherFindings].flat().map(targetFinding).sort(compareFindings);
+  const scanInProcess = (selectedFiles: string[]) => mapWithConcurrency(selectedFiles, concurrency, (file) => scanFile(repoDirectory, file, context));
+  const scanOtherPhases = async (): Promise<UntargetedFinding[][]> => {
+    const stylesheetFindings = await scanInProcess(files.filter((file) => phaseOf(file) === 1));
+    const otherFindings = await scanInProcess(files.filter((file) => phaseOf(file) === 2 && !isScriptFile(file)));
+    return [...stylesheetFindings, ...otherFindings];
+  };
+  const [scriptFindings, otherFindings] = await Promise.all([scanInWorkers(repoDirectory, files.filter(isScriptFile), productNames, context), scanOtherPhases()]);
+  return [...scriptFindings, ...otherFindings, resolveDeferredTailwindText(context)].flat().map(targetFinding).sort(compareFindings);
 }
 
 type SummaryGroup = { normalized: string; count: number; files: string[] };
