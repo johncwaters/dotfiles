@@ -77,9 +77,9 @@ test('the census lists every stylesheet, asset and path-rule surface of the fixt
 
   assert.deepEqual(findingsWhere(findings, 'contrast-pair', 'styles/tokens.css').map((finding) => [finding.normalized, finding.detail?.ratio]), [['#e8e8f0 on #0a0a12', 16.18], ['#00000099 on #ffffff', 5.74]]);
   assert.deepEqual(findings.filter((finding) => finding.kind === 'css-token' && /^[$@]|--primary/.test(String(finding.detail?.property))).map((finding) => `${finding.normalized}=${finding.detail?.valueKind}`), [
-    '@brand: #c084fc=color', '$panel-gap: 8px=other', '--primary: 222.2 47.4% 11.2%=color-channels',
+    '@brand: #c084fc=color', '@shadow: 0 1px 2px #000=shadow', '@edge: 1px solid #abc=other', '$panel-gap: 8px=other', '--primary: 222.2 47.4% 11.2%=color-channels',
   ]);
-  assert.deepEqual(findingsWhere(findings, 'color', 'styles/legacy.less').map((finding) => finding.column), [9]);
+  assert.deepEqual(findingsWhere(findings, 'color', 'styles/legacy.less').map((finding) => `${finding.line}:${finding.column}`), ['1:9', '2:31', '3:22']);
   assert.ok(findingsWhere(findings, 'color-expression', 'styles/tokens.css').some((finding) => finding.normalized === 'hsl(var(--primary))'));
   assert.ok(findingsWhere(findings, 'asset-reference', 'styles/tokens.css').some((finding) => finding.normalized === 'https://fonts.example.com/css2' && finding.detail?.slot === 'css:import'));
   assert.deepEqual(findingsWhere(findings, 'radius', 'styles/tokens.css').map((finding) => finding.normalized), ['4px', '--radius-sm']);

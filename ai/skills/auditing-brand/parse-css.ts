@@ -160,9 +160,16 @@ function declarationValueLocation(declaration: Declaration, mapLocation: Locatio
   return advanceLocation(start, `${declaration.prop}${between}`);
 }
 
-function sourceAlignedValue(declaration: Declaration): string {
-  const sourceValue = declaration.raws.value?.raw ?? declaration.value;
+function blankComments(sourceValue: string): string {
   return sourceValue.replace(CSS_COMMENT_PATTERN, (comment) => comment.replace(/[^\n]/g, ' ')).trimEnd();
+}
+
+function sourceAlignedValue(declaration: Declaration): string {
+  return blankComments(declaration.raws.value?.raw ?? declaration.value);
+}
+
+function sourceAlignedParams(atRule: AtRule): string {
+  return blankComments(atRule.raws.params?.raw ?? atRule.params);
 }
 
 function isInsideFontFace(node: ChildNode): boolean {
@@ -210,7 +217,7 @@ function addContrastPair(collector: FindingCollector, rule: Rule, mapLocation: L
 function addAtRuleFindings(collector: FindingCollector, atRule: AtRule, mapLocation: LocationMapper): void {
   const name = atRule.name.toLowerCase();
   if (name.endsWith(':')) {
-    addDeclarationFindings(collector, `@${atRule.name.slice(0, -1)}`, atRule.params, advanceLocation(locationOf(atRule, mapLocation), `@${atRule.name}${atRule.raws.afterName ?? ''}`), scopeOf(atRule), 'css');
+    addDeclarationFindings(collector, `@${atRule.name.slice(0, -1)}`, sourceAlignedParams(atRule), advanceLocation(locationOf(atRule, mapLocation), `@${atRule.name}${atRule.raws.afterName ?? ''}`), scopeOf(atRule), 'css');
     return;
   }
   if (name === 'import') {
