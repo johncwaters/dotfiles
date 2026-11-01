@@ -2,5 +2,6 @@ system-tools
 node
 claude-code
 casks
+dmgs
 npm-globals
 python-tools

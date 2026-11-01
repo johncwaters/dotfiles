@@ -126,6 +126,21 @@ for packageName in "$@"; do
 done
 STUB
 
+writeStub defaults <<'STUB'
+#!/usr/bin/env bash
+printf 'defaults %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+[[ "${1:-}" == read && -f "${2:-}.plist" ]] || exit 1
+sed -n "s|.*<key>${3:-}</key><string>\\([^<]*\\)</string>.*|\\1|p" "$2.plist"
+STUB
+
+placeInstalledTinyHand() {
+  local applicationsDirectoryPath="$1"
+  local bundleVersion="$2"
+  mkdir -p "$applicationsDirectoryPath/TinyHand.app/Contents"
+  printf '<plist><dict><key>CFBundleShortVersionString</key><string>%s</string></dict></plist>\n' \
+    "$bundleVersion" > "$applicationsDirectoryPath/TinyHand.app/Contents/Info.plist"
+}
+
 writeStub npm <<'STUB'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -447,6 +462,8 @@ provideCommand python3
 writeDarwinDirectoryServiceStub "$stubBin" "$realHome"
 upgradeHomebrewPrefix="$upgradeHome/homebrew"
 mkdir -p "$upgradeHomebrewPrefix/bin" "$upgradeHome/Applications"
+placeInstalledTinyHand "$upgradeHome/Applications" 1.0.2
+provideCommand defaults
 cp "$stubBin/python3" "$upgradeHomebrewPrefix/bin/python3"
 runUpgradeInstall() {
   runInStubbedSandbox "$upgradeHome" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
@@ -730,6 +747,8 @@ done
 darwinHomebrewPrefix="$sandbox/homebrew"
 darwinApplicationsDirectory="$sandbox/Applications"
 mkdir -p "$darwinHomebrewPrefix/bin" "$darwinApplicationsDirectory/Slack.app/Contents/MacOS"
+placeInstalledTinyHand "$darwinApplicationsDirectory" 9.0.0
+provideCommand defaults
 rm -f "$stubState/npm-installed/typescript" "$stubState/npm-installed/@openai%codex" \
   "$stubState/npm-installed/@earendil-works%pi-coding-agent"
 rm -f "$stubState/python-modules/ruff" "$stubState/python-modules/yaml" \
@@ -761,6 +780,8 @@ check "darwin reports a cask whose app was installed by hand as present" \
   outputMatches "$darwinRunOutput" '\[ -- \].*slack.*already installed'
 check "darwin does not install a cask over an app someone installed by hand" \
   logLacks 'brew install --cask slack'
+check "darwin never downgrades a DMG app its own updater moved past the pin" \
+  logLacks 'TinyHand-1.0.2.dmg'
 check "darwin creates Python tools with Homebrew Python" \
   logHas "python3 -m venv --clear $sandbox/.local/share/dotfiles/python-tools"
 check "darwin installs ruff inside the Python tools environment" \

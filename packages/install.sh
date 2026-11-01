@@ -22,6 +22,7 @@ knownPackageGroups=(
   claude-code
   flatpaks
   casks
+  dmgs
   npm-globals
   python-tools
 )
@@ -253,6 +254,117 @@ installProfileCasks() {
     fi
     noteWarned "$caskToken" "Homebrew install failed"
   done < <(readPackageList "$packagesDirectory/casks.txt")
+}
+
+bundleIsAtLeastPinnedVersion() {
+  local bundlePath="$1"
+  local pinnedVersion="$2"
+  local installedVersion
+  if [[ ! -d "$bundlePath" ]]; then
+    return 1
+  fi
+  installedVersion="$(defaults read "$bundlePath/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
+  isVersionAtLeast "$installedVersion" "$pinnedVersion"
+}
+
+replaceBundleFromImage() {
+  local imageBundlePath="$1"
+  local bundlePath="$2"
+  local stagedBundlePath="$bundlePath.dotfiles-staged"
+  rm -rf -- "$stagedBundlePath"
+  if ! ditto "$imageBundlePath" "$stagedBundlePath"; then
+    rm -rf -- "$stagedBundlePath"
+    return 1
+  fi
+  rm -rf -- "$bundlePath"
+  mv -- "$stagedBundlePath" "$bundlePath"
+}
+
+downloadDmgMatchingPinnedHash() {
+  local appLabel="$1"
+  local dmgUrl="$2"
+  local pinnedSha256="$3"
+  local dmgPath="$4"
+  local outputLog="$5"
+  local downloadedSha256
+  if ! curl -fsSL "$dmgUrl" -o "$dmgPath" >>"$outputLog" 2>&1; then
+    noteWarned "$appLabel" "download failed: $(lastLogLine "$outputLog")"
+    return 1
+  fi
+  downloadedSha256="$(shasum -a 256 "$dmgPath" | cut -d ' ' -f 1)"
+  if [[ "$downloadedSha256" != "$pinnedSha256" ]]; then
+    noteWarned "$appLabel" "sha256 mismatch, not installed: got $downloadedSha256"
+    return 1
+  fi
+}
+
+copyBundleFromVerifiedDmg() {
+  local appLabel="$1"
+  local dmgUrl="$2"
+  local pinnedSha256="$3"
+  local bundleName="$4"
+  local workDirectory="$5"
+  local dmgPath="$workDirectory/image.dmg"
+  local mountPoint="$workDirectory/mount"
+  local outputLog="$workDirectory/output.log"
+  local replaceStatus=0
+  if ! downloadDmgMatchingPinnedHash "$appLabel" "$dmgUrl" "$pinnedSha256" "$dmgPath" "$outputLog"; then
+    return 1
+  fi
+  if ! hdiutil attach -nobrowse -readonly -mountpoint "$mountPoint" "$dmgPath" >>"$outputLog" 2>&1; then
+    noteWarned "$appLabel" "mount failed: $(lastLogLine "$outputLog")"
+    return 1
+  fi
+  replaceBundleFromImage "$mountPoint/$bundleName" "$(applicationsDirectory)/$bundleName" >>"$outputLog" 2>&1 \
+    || replaceStatus=$?
+  if ! hdiutil detach "$mountPoint" -quiet >>"$outputLog" 2>&1; then
+    noteWarned "$appLabel" "could not unmount $mountPoint"
+    return 1
+  fi
+  if ((replaceStatus != 0)); then
+    noteWarned "$appLabel" "copy into $(applicationsDirectory) failed: $(lastLogLine "$outputLog")"
+    return 1
+  fi
+}
+
+installPinnedDmgApp() {
+  local pinnedVersion="$1"
+  local dmgUrl="$2"
+  local pinnedSha256="$3"
+  local bundleName="$4"
+  local appLabel="${bundleName%.app}"
+  local workDirectory
+  if bundleIsAtLeastPinnedVersion "$(applicationsDirectory)/$bundleName" "$pinnedVersion"; then
+    notePresent "$appLabel" "already installed"
+    return 0
+  fi
+  noteStarting "$appLabel" "installing $pinnedVersion from its DMG"
+  workDirectory="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-dmg.XXXXXX")"
+  if copyBundleFromVerifiedDmg "$appLabel" "$dmgUrl" "$pinnedSha256" "$bundleName" "$workDirectory"; then
+    noteInstalled "$appLabel" "installed $pinnedVersion"
+  fi
+  rm -rf -- "$workDirectory"
+}
+
+installProfileDmgApps() {
+  local pinnedVersion
+  local dmgUrl
+  local pinnedSha256
+  local bundleName
+  if ! isDarwin; then
+    notePresent "dmgs" "skipped, requires macOS"
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    noteWarned "dmgs" "curl not on PATH, install manually"
+    return 0
+  fi
+  while read -r pinnedVersion dmgUrl pinnedSha256 bundleName; do
+    if [[ -z "$bundleName" ]]; then
+      continue
+    fi
+    installPinnedDmgApp "$pinnedVersion" "$dmgUrl" "$pinnedSha256" "$bundleName"
+  done < <(readPackageList "$packagesDirectory/dmgs.txt")
 }
 
 npmToolingIsReady() {
@@ -580,6 +692,11 @@ fi
 if packageGroupEnabled "casks"; then
   writeSection "Desktop apps"
   installProfileCasks
+fi
+
+if packageGroupEnabled "dmgs"; then
+  writeSection "Desktop apps"
+  installProfileDmgApps
 fi
 
 if packageGroupEnabled "npm-globals"; then
