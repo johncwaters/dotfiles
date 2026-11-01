@@ -2,7 +2,7 @@
 
 Taste is colors, type, references, and visual bans. It belongs to the project, so resolve it per repo, in this order:
 
-1. The project's `DESIGN.md`, which wins outright.
+1. The project's `brand-bible/` (validated by the `auditing-brand` skill), then its `DESIGN.md`; together they win outright.
 2. The installed taste skill whose description matches the repo in use. Load it and follow it.
 3. Ask the carbon unit, then record the answer in the project's `DESIGN.md` so later sessions skip this step.
 
