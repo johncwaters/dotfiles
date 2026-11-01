@@ -40,12 +40,13 @@ The arc (pain, hero action, result, one idea) comes from the `storytelling` skil
 ## Encode and ship
 
 ```
-ffmpeg -f concat -safe 0 -i window.ffconcat -vf fps=60,format=yuv420p -an -c:v libaom-av1 -crf 22 -b:v 0 -cpu-used 3 -g 600 demo.webm
-ffmpeg -f concat -safe 0 -i window.ffconcat -vf fps=60,format=yuv420p -an -c:v libx264 -preset veryslow -tune animation -crf 17 -profile:v high -level:v 4.2 -g 600 -movflags +faststart demo.mp4
+ffmpeg -reinit_filter 0 -f concat -safe 0 -i window.ffconcat -vf fps=60,format=yuv420p -an -c:v libaom-av1 -crf 22 -b:v 0 -cpu-used 3 -row-mt 0 -g 600 demo.webm
+ffmpeg -reinit_filter 0 -f concat -safe 0 -i window.ffconcat -vf fps=60,format=yuv420p -an -c:v libx264 -preset veryslow -tune animation -crf 17 -profile:v high -level:v 4.2 -g 600 -movflags +faststart demo.mp4
 ffmpeg -xerror -i demo.webm -f null -
 ```
 
 1. Ship AV1 webm first and H.264 mp4 as the fallback `<source>`, with `preload="metadata"` and a poster. A 1440x900 UI demo landed near 1 MB AV1 and 1.6 MB H.264 per 30 s.
-2. Decode-check every output with `-xerror`; a truncated encode still plays its first seconds.
-3. A README GIF needs `palettegen=stats_mode=diff` and a low frame rate, and still runs several MB; link the video when size matters.
-4. **Confirm the deploy, not the push.** `curl -sI <url>` and compare `content-length` with the local file. Same-URL assets stay cached in the viewer's browser, so tell the carbon unit to hard-refresh, or give the files a content hash in their names.
+2. `-row-mt 0` is deliberate: libaom row multithreading once wrote an AV1 stream that failed to decode. `-reinit_filter 0` stops a stray RGBA frame among RGB screencast frames from rebuilding the filter graph mid-stream, which reset the GIF palette and diffing and made a 24 MB GIF.
+3. Decode-check every output with `-xerror`; a truncated encode still plays its first seconds.
+4. A README GIF needs `palettegen=stats_mode=diff` and a low frame rate, and still runs several MB; link the video when size matters.
+5. **Confirm the deploy, not the push.** `curl -sI <url>` and compare `content-length` with the local file. Same-URL assets stay cached in the viewer's browser, so tell the carbon unit to hard-refresh, or give the files a content hash in their names.
