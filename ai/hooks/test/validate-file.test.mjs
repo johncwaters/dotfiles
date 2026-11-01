@@ -118,10 +118,11 @@ test("instruction caps block growth at repo roots but permit shrinking and neste
 test("review-ladder writes cannot grow across runtime, alias, and worktree paths", () => {
   const ladderSuffixes = [
     "skills/landing/SKILL.md",
-    "skills/landing/subskills/review.md",
+    "skills/gating-reviews/SKILL.md",
+    "skills/gating-reviews/subskills/review.md",
     "skills/reviewing-code/SKILL.md",
     "skills/swarming-reviews/SKILL.md",
-    "skills/landing/subskills/fix.md",
+    "skills/gating-reviews/subskills/fix.md",
     "workflows/qa-swarm.js",
   ];
   const ladderRoots = [".claude", ".dotfiles/ai", "worktree/ai"];
@@ -223,7 +224,7 @@ test("review-ladder Edit checks explicit content and replayed replacements", () 
 });
 
 test("review-ladder MultiEdit checks the final full content", () => {
-  const filePath = path.join(validatorHome, "multi/skills/landing/subskills/fix.md");
+  const filePath = path.join(validatorHome, "multi/skills/gating-reviews/subskills/fix.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, "rule rule");
   for (const replacement of ["rules", "rule", "rul"]) {
@@ -264,7 +265,7 @@ test("untracked review-ladder files fall back to the on-disk size", () => {
   const repository = makeRepo();
   after(() => removeAll(repository));
   commitFile(repository, "README.md", "readme\n");
-  const filePath = path.join(repository, "skills/landing/subskills/fix.md");
+  const filePath = path.join(repository, "skills/gating-reviews/subskills/fix.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, "rule");
   const denialReason = readDenialReason(validateWrite({ file_path: filePath, content: "rules" }));

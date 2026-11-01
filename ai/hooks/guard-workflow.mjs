@@ -36,8 +36,8 @@ const UNRESOLVABLE_PATH_CHARACTERS = /[$`*?[{]/;
 const UNRESOLVED_TARGET_NAME = "unresolved-write-target";
 
 const RAW_COMMIT_REASON =
-  "Raw `git commit` and `git push` are denied outside /landing, so every landing goes through its review loop. " +
-  "Run /landing; its Step 2 already skips the review for a mechanical change such as a pure rename or a reviewer's suggestion applied verbatim. " +
+  "Raw `git commit` and `git push` are denied outside /landing, so every landing commits a tree a review gate stamped. " +
+  "Run the review gate (the intent's gate, else /gating-reviews), then /landing; /gating-reviews stamps a pure rename or a reviewer's suggestion applied verbatim without a review pass. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
 const PKILL_SELF_MATCH_REASON =
@@ -69,7 +69,7 @@ function isSpecGateDenial(event) {
 
 async function hasSpecGateCleared(transcriptPath, specsDirectory) {
   for await (const event of sessionEvents(transcriptPath)) {
-    if (isSkillRun(event, "specifying") || isSkillRun(event, "converging-reviews")) return true;
+    if (["specifying", "gating-reviews", "converging-reviews"].some((skillName) => isSkillRun(event, skillName))) return true;
     if (isSpecGateDenial(event)) return true;
     if (event.kind !== "toolUse" || event.name !== "Read") continue;
     const readPath = String(event.input.file_path || "");

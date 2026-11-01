@@ -14,8 +14,8 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `skill-lint.mjs` | Skill structure rules, shared by the guard and its CLI over every skill | `test/validate-file.test.mjs` |
 | `validate-spec.mjs` | PreToolUse design graph contract guard | `test/validate-spec.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
-| `guard-workflow.mjs` | PreToolUse attended main-loop gate: raw git commit/push outside /landing (quoted and literal heredoc text masked), self-matching `pkill -f`, first repo edit without /specifying | `test/guard-workflow.test.mjs` |
-| `require-commit-on-stop.mjs` | Stop hook: blocks once a turn ending with uncommitted session edits and no /landing, unless a background launch has not reported back | `test/require-commit-on-stop.test.mjs` |
+| `guard-workflow.mjs` | PreToolUse attended main-loop gate: raw git commit/push outside /landing, pointing at the review gate first (quoted and literal heredoc text masked), self-matching `pkill -f`, first repo edit without /specifying | `test/guard-workflow.test.mjs` |
+| `require-commit-on-stop.mjs` | Stop hook: blocks once a turn ending with uncommitted session edits and no /landing, pointing at the review gate then /landing, unless a background launch has not reported back | `test/require-commit-on-stop.test.mjs` |
 | `session-transcript.mjs` | Shared transcript event stream for the workflow gates | `test/guard-workflow.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `load-agents-md.mjs` | SessionStart and PostToolUse(Read) injection of AGENTS.md files a CLAUDE.md shadows (Claude Code 2.1.287 loads AGENTS.md only when no CLAUDE.md sits between it and the repo root) | `test/load-agents-md.test.mjs` |

@@ -59,4 +59,4 @@ SOFTWARE.
 ```
 
 Everything else (hooks, hud, setup scripts, agents, commands, triaging-posthog-errors,
-landing, reviewing-code and releasing skills) is original to this repo.
+landing, gating-reviews, reviewing-code and releasing skills) is original to this repo.

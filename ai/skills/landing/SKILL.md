@@ -1,12 +1,12 @@
 ---
 name: landing
-description: Lands work through the personal commit workflow. Reviews once via /reviewing-code, fixes what that review proved broken, then runs two deterministic steps (preflight, land) that stage, commit, and push with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /landing, "commit this", "commit and push", or landing finished work.
+description: Lands reviewed work through the personal commit workflow. Runs two deterministic steps (preflight, land) that stage exactly the tree a review gate stamped, commit, and push with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /landing, "commit this", "commit and push", or landing finished work.
 ---
 
 # Commit
 
-Two deterministic steps own everything that touches git. You own the review step, the
-commit message, and the recovery procedures. Stage, commit, push, or merge by hand only
+Two deterministic steps own everything that touches git. A review gate
+(`/gating-reviews` by default) stamps the tree first; you own the message and recovery. Stage, commit, push, or merge by hand only
 within [recovery](subskills/recovery.md).
 
 ```
@@ -22,8 +22,7 @@ Both print one JSON object on stdout and set the exit code from the outcome tabl
 
 Run `preflight.ts` first, with `--paths` when you know exactly which files this session
 changed.
-Use preflight's `paths` output as the scoped file list for `cleaning-ai-slop`, `/reviewing-code`,
-and the review stamp; `land.ts` stages exactly the stamp's paths.
+`land.ts` stages exactly the review stamp's paths.
 
 **Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
 committing on this branch. `policy.commitBranches.onForbidden` permits only
@@ -31,7 +30,7 @@ committing on this branch. `policy.commitBranches.onForbidden` permits only
 a branch named for the work item, switch to it, and proceed.
 
 **Mainline freshness.** A `mainlineFreshness.behind` above zero means integrate
-`origin/<mainline>` with the verb the warning names before Step 2, then re-run preflight.
+`origin/<mainline>` with the verb the warning names, then re-run preflight.
 Merge only for `afterCommit: pull-request` with an upstream, since rebasing a pushed
 branch needs a force-push; a landing that passes `--promote` rebases, because
 promotion's rebase drops a merge commit. Set uncommitted work aside only in a WIP commit;
@@ -58,12 +57,7 @@ profile has not been applied. `main` and `master` are still guarded, so `branchA
 still answers the branch question. Run `land.ts` without `--promote` and
 tell the carbon unit to run `~/.dotfiles/script/bootstrap --profile <name>` from the main checkout.
 
-## Step 2: review
-
-Read and follow [Review](subskills/review.md), which routes findings to
-[Fix](subskills/fix.md), before writing the message.
-
-## Step 3: write the message
+## Step 2: write the message
 
 You write the message; nothing generates it for you. The convention:
 
@@ -85,10 +79,12 @@ Ticket: <spec-slug>/<ticket-id>
 `description` is one line, 72 characters or fewer, no trailing period. Trailers are
 optional as a block, but a message that carries any trailer must carry `Confidence` and
 must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested` are
-included only when they apply, and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the whole trailer block only for a genuinely trivial change (a
+included only when they apply (`stamp.ts verify` prints the stamp: its `unverifiedFindings`
+go in `Not-tested`, which keeps `Confidence` below `high`, its `preexistingFailures` in
+`Constraint`, and each live HIGH+ in the body), and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the whole trailer block only for a genuinely trivial change (a
 version bump with no logic change).
 
-## Step 4: disclosure check
+## Step 3: disclosure check
 
 Many work repos are public, and a push publishes the diff and message to everyone. Before
 landing, decide whether everything the landing would publish should reach the remote at
@@ -108,13 +104,13 @@ When the change carries any of them, run `land.ts` with `--no-push` and without
 `--promote`, so the commit stays local, then stop and tell the carbon unit what you found.
 A vulnerability fix goes through the repo's private channel instead: a GitHub security
 advisory's temporary private fork, or whatever the repo's `SECURITY.md` names. Strip a
-secret or customer detail out of the tree instead, then re-review; one that already
+secret or customer detail out of the tree instead, then rerun the gate; one that already
 reached a remote needs rotating, not just deleting.
 
 Everything else lands normally. On a public remote, still write the message as public
 text: name the defect class; keep exploit steps and customer identities out.
 
-## Step 5: land
+## Step 4: land
 
 Pipe the message into `land.ts` with a quoted heredoc, so nothing in the message is
 expanded by the shell:
@@ -147,7 +143,8 @@ Flags:
 ## Scripts
 
 - `preflight.ts`: run first to resolve policy, freshness, branch eligibility, and scoped paths.
-- `land.ts`: run after review, message, and disclosure checks to stage, commit, push, and optionally promote.
+- `land.ts`: run after the message and disclosure checks to stage, commit, push, and optionally promote.
+- `stamp.ts`: review gates write the stamp; `verify` prints it.
 
 ## Outcomes
 

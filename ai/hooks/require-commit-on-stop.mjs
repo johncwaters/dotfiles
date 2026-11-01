@@ -93,7 +93,7 @@ function blockStop(dirtyPaths) {
     decision: "block",
     reason:
       `This turn ends with uncommitted edits this session made and no /landing since: ${listedPaths}${moreSuffix}. ` +
-      "Run /landing now. If <land_when_done> exempts this turn (the carbon unit said not to commit, " +
+      "Run the review gate (the intent's gate, else /gating-reviews), then /landing, now. If <land_when_done> exempts this turn (the carbon unit said not to commit, " +
       "the work was exploration, or it is one slice of a plan still in flight), say which in one line and stop again.",
   }));
   process.exit(0);
