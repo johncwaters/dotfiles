@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +18,11 @@ import {
   runGit,
   runSkillScript,
   VALID_MESSAGE,
+  landUnstamped,
+  reviewGatesDirectory,
+  seedOrigin,
+  SKILL_DIR,
+  stamp,
   writeFile,
   writeOriginHook,
 } from "./helpers.ts";
@@ -741,5 +747,60 @@ test("--promote-to is rejected as an unknown flag", () => {
     assert.match(stderr, /unknown flag --promote-to/);
   } finally {
     cleanup(repo);
+  }
+});
+
+test("a spec lands live: refused unreviewed, ticket commits scoped to the stamp, stale stamp refused, intent promoted once, release stamped by --only, and an unlanded commit withheld", () => {
+  const { origin, seed, local } = seedOrigin();
+  const ticketMessage = (ticketId: string) => `${VALID_MESSAGE}\nTicket: live-spec/${ticketId}\n`;
+  const writeReleaseStamp = (paths: string[]) =>
+    spawnSync("node", [path.join(SKILL_DIR, "stamp.ts"), "write", "--gate", "releasing", "--only", ...paths], {
+      cwd: local,
+      encoding: "utf8",
+      env: { ...process.env, REVIEW_GATES_DIR: reviewGatesDirectory(local) },
+    });
+  try {
+    const mainBeforeSpec = gitOutput(origin, ["rev-parse", "main"]);
+    writeFile(local, "ticket.txt", "first ticket\n");
+    writeFile(local, "stray.txt", "never reviewed\n");
+    assert.equal(landUnstamped(local, [], ticketMessage("U1")).result.outcome, "NOT_REVIEWED");
+
+    assert.equal(stamp(local, ["ticket.txt"]).code, 0);
+    const firstTicket = landUnstamped(local, [], ticketMessage("U1"));
+    assert.equal(firstTicket.result.outcome, "COMMITTED");
+    assert.deepEqual(gitOutput(local, ["show", "--name-only", "--format=", "HEAD"]).split("\n"), ["ticket.txt"]);
+    assert.equal(gitOutput(local, ["log", "-1", "--format=%(trailers:key=Ticket,valueonly)"]), "live-spec/U1");
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), firstTicket.result.commit);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBeforeSpec);
+
+    writeFile(local, "ticket.txt", "first ticket\nsecond ticket\n");
+    assert.equal(stamp(local, ["ticket.txt"]).code, 0);
+    writeFile(local, "ticket.txt", "first ticket\nsecond ticket, edited after review\n");
+    assert.equal(landUnstamped(local, [], ticketMessage("U2")).result.outcome, "NOT_REVIEWED");
+    assert.equal(stamp(local, ["ticket.txt"]).code, 0);
+    assert.equal(landUnstamped(local, [], ticketMessage("U2")).result.outcome, "COMMITTED");
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBeforeSpec);
+
+    const intentLanding = landUnstamped(local, ["--promote"], VALID_MESSAGE);
+    assert.equal(intentLanding.result.outcome, "NOTHING_TO_COMMIT");
+    assert.equal(gitOutput(origin, ["show", "main:ticket.txt"]), "first ticket\nsecond ticket, edited after review");
+    assert.equal(gitOutput(origin, ["rev-list", "--count", `${mainBeforeSpec}..main`]), "2");
+
+    writeFile(local, "VERSION", "1.1.0\n");
+    assert.equal(writeReleaseStamp(["VERSION"]).status, 2);
+    fs.rmSync(path.join(local, "stray.txt"));
+    assert.equal(writeReleaseStamp(["VERSION"]).status, 0);
+    assert.equal(landUnstamped(local, ["--promote"], "chore(release): 1.1.0\n").result.outcome, "COMMITTED");
+    assert.equal(gitOutput(origin, ["show", "main:VERSION"]), "1.1.0");
+
+    const mainBeforeHandCommit = gitOutput(origin, ["rev-parse", "main"]);
+    writeFile(local, "ticket.txt", "committed by hand\n");
+    runGit(local, ["commit", "-qam", "by hand"]);
+    const withheld = landUnstamped(local, ["--promote"], VALID_MESSAGE);
+    assert.equal(withheld.result.outcome, "PROMOTE_WITHHELD");
+    assert.match((withheld.result.findings as string[]).join("\n"), /^UNREVIEWED [0-9a-f]{12}: not landed through land\.ts$/);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBeforeHandCommit);
+  } finally {
+    cleanup(origin, seed, local);
   }
 });
