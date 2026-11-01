@@ -468,7 +468,7 @@ test("the live JSON release profile is preferred when both profile formats exist
   }
 });
 
-test("an unresolved policy mainline stays READY with a warning", () => {
+test("an unresolved policy mainline stays READY and names the mainline promotion would found", () => {
   const repo = makeRepo();
   const policyRoot = makePolicyRoot("personal", {
     profile: "personal",
@@ -477,11 +477,17 @@ test("an unresolved policy mainline stays READY with a warning", () => {
   });
   try {
     commitFile(repo, "a.txt", "one\n");
+    runGit(repo, ["branch", "other"]);
     const { result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+    runGit(repo, ["branch", "-D", "other"]);
+    const onlyBranchRun = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot }).result;
 
     assert.equal(result.outcome, "READY");
     assert.deepEqual((result.policy as Record<string, unknown>).resolved, { mainline: null });
     assert.match((result.warnings as string[]).join("\n"), /promotion will be skipped/);
+    const noFetchRun = preflight(repo, ["--no-fetch"], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot }).result;
+    assert.match((onlyBranchRun.warnings as string[]).join("\n"), /--promote from a feature branch founds missing-trunk at the landed commit$/m);
+    assert.match((noFetchRun.warnings as string[]).join("\n"), /founds missing-trunk at the landed commit$/m);
   } finally {
     cleanup(repo, policyRoot);
   }

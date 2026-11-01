@@ -19,7 +19,7 @@ import {
 } from "./lib/policy.ts";
 import { readStdin } from "./lib/stdio.ts";
 import { readGithubRemote, readRemoteVisibility, resolveAfterCommit } from "./lib/visibility.ts";
-import { checkMainlineFreshness, computeScope, resolveMainline } from "./lib/workspace.ts";
+import { checkMainlineFreshness, computeScope, foundingMainlineName, originHoldsOnlyBranch, resolveMainline } from "./lib/workspace.ts";
 
 type Arguments = { paths: string[]; checkMessage: boolean; noFetch: boolean };
 
@@ -121,6 +121,18 @@ function releaseProfileIntegration(repo: string): ReleaseIntegrationLookup {
   return yamlReleaseProfileIntegration(profilePath);
 }
 
+function unresolvedMainlineWarning(git: Git, branch: string, configured: unknown, noFetch: boolean): string {
+  const foundingMainline = foundingMainlineName(git, configured);
+  const hasOrigin = git.listRemotes().includes("origin");
+  if (foundingMainline !== null && noFetch && hasOrigin) {
+    return `no mainline yet; land.ts --promote from a feature branch founds ${foundingMainline} if origin holds no other branch, unchecked under --no-fetch`;
+  }
+  if (foundingMainline === null || !originHoldsOnlyBranch(git, branch)) {
+    return "could not resolve the policy mainline; promotion will be skipped";
+  }
+  return `no mainline yet; land.ts --promote from a feature branch founds ${foundingMainline} at the landed commit${hasOrigin ? " and pushes it" : ""}`;
+}
+
 function preflightResult(paths: string[], noFetch: boolean): Result {
   const git = new Git(process.cwd());
   const guard = repositoryGuard(git);
@@ -156,7 +168,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
     );
   }
   if (policy && mainline === null) {
-    warnings.push("could not resolve the policy mainline; promotion will be skipped");
+    warnings.push(unresolvedMainlineWarning(git, branch, configuredMainline(policy), noFetch));
   }
   const releaseIntegration = releaseProfileIntegration(process.cwd());
   if (releaseIntegration.warning) {

@@ -64,6 +64,7 @@ import {
   computeScope,
   findWorktreeForBranch,
   foundingMainlineName,
+  originHoldsOnlyBranch,
   localPathMatches,
   isDenylisted,
   listedUsernames,
@@ -538,10 +539,9 @@ class Landing {
     const { policy } = readCommitPolicy();
     const existingMainline = resolveMainline(this.git, configuredMainline(policy));
     const current = this.git.currentBranch();
-    const needsLiveOriginBranches =
+    const isOriginMainlineUnfetched =
       originExists && (existingMainline === null || !this.git.verifyRef(`refs/remotes/origin/${existingMainline}`));
-    const liveOriginBranches = needsLiveOriginBranches ? this.git.remoteBranchNames("origin") : [];
-    const originHoldsOnlyCurrentBranch = liveOriginBranches !== null && liveOriginBranches.every((branch) => branch === current);
+    const originHoldsOnlyCurrentBranch = (!originExists || isOriginMainlineUnfetched) && originHoldsOnlyBranch(this.git, current);
     const mainline =
       existingMainline ?? (originHoldsOnlyCurrentBranch ? foundingMainlineName(this.git, configuredMainline(policy)) : null);
     this.mainline = mainline;
@@ -558,7 +558,7 @@ class Landing {
     }
 
     this.preRebaseFeatureTip = this.git.revParseRef("HEAD");
-    const originHasMainline = originExists && !(needsLiveOriginBranches && originHoldsOnlyCurrentBranch);
+    const originHasMainline = originExists && !originHoldsOnlyCurrentBranch;
     const localMainlineExists = this.git.verifyRef(`refs/heads/${mainline}`);
     if (originHasMainline) {
       const syncOutcome = this.syncMainlineWithOrigin(mainline);

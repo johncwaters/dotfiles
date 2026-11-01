@@ -134,6 +134,14 @@ export function resolveMainline(git: Git, configuredMainline: unknown = "auto"):
   return null;
 }
 
+export function originHoldsOnlyBranch(git: Git, branch: string): boolean {
+  if (!git.listRemotes().includes("origin")) {
+    return true;
+  }
+  const originBranches = git.remoteBranchNames("origin");
+  return originBranches !== null && originBranches.every((originBranch) => originBranch === branch);
+}
+
 export function foundingMainlineName(git: Git, configuredMainline: unknown = "auto"): string | null {
   const currentBranchRef = `refs/heads/${git.currentBranch()}`;
   const listing = git.run(["for-each-ref", "--format=%(refname)", "refs/heads"]);

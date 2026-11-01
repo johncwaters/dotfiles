@@ -50,7 +50,7 @@ On a conflict, resolve by step 2 of [Conflict resolution](subskills/recovery.md#
 since nothing has been reviewed yet.
 `checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
 
-An unresolved mainline warns; landing pushes the feature branch without promotion.
+An unresolved mainline warns; landing pushes the feature branch without promotion, unless the warning names a mainline `--promote` founds, which happens only while the current branch is the repo's only branch locally and on origin.
 
 **No policy.** A missing `policy` field (the warning names the reason) means the machine
 profile has not been applied. `main` and `master` are still guarded, so `branchAllowed`
