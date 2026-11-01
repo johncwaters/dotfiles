@@ -172,10 +172,10 @@ export function recordLandedCommit(git: Git, commit: string): void {
   fs.appendFileSync(landedFile, `${patchId}\n`);
 }
 
-export function commitsNotLandedSince(git: Git, baseRef: string): string[] {
+export function commitsNotLandedSince(git: Git, baseRef: string | null): string[] {
   const landedFile = landedLedgerPath(git);
   const landedPatchIds = new Set(fs.existsSync(landedFile) ? fs.readFileSync(landedFile, "utf8").split("\n").filter(Boolean) : []);
-  return [...git.patchIdsByCommit([`${baseRef}..HEAD`])]
+  return [...git.patchIdsByCommit([baseRef === null ? "HEAD" : `${baseRef}..HEAD`])]
     .filter(([, patchId]) => !landedPatchIds.has(patchId))
     .map(([commit]) => commit);
 }

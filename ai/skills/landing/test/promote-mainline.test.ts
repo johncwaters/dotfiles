@@ -189,10 +189,11 @@ test("committing on a resolved mainline outside the forbid list is BRANCH_FORBID
   }
 });
 
-test("no mainline commits and pushes the feature branch with a warning", () => {
+test("a repository whose only branch is the feature branch founds its mainline at the landed commit", () => {
   const origin = makeBareOrigin();
   const repo = makeRepo();
   try {
+    runGit(repo, ["config", "init.defaultBranch", "trunk"]);
     commitFile(repo, "base.txt", "base\n", "init");
     runGit(repo, ["branch", "-m", "feature"]);
     runGit(repo, ["remote", "add", "origin", origin]);
@@ -201,12 +202,48 @@ test("no mainline commits and pushes the feature branch with a warning", () => {
     const { result } = land(repo, ["--promote"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.equal(result.pushed, true);
-    assert.deepEqual(result.promoted, []);
-    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
-    assert.match((result.warnings as string[]).join("\n"), /promotion skipped: no mainline/);
+    assert.deepEqual(result.promoted, ["trunk"]);
+    assert.equal(gitOutput(origin, ["rev-parse", "trunk"]), result.commit);
+    assert.match((result.warnings as string[]).join("\n"), /founded trunk/);
   } finally {
     cleanup(origin, repo);
+  }
+});
+
+test("a mainline founded locally under --no-push is pushed by the next promotion", () => {
+  const origin = makeBareOrigin();
+  const repo = makeRepo("feature");
+  try {
+    commitFile(repo, "base.txt", "base\n", "init");
+    runGit(repo, ["remote", "add", "origin", origin]);
+    writeFile(repo, "base.txt", "base\nfirst\n");
+    const firstLanding = land(repo, ["--promote", "--no-push"], VALID_MESSAGE).result;
+    writeFile(repo, "base.txt", "base\nfirst\nsecond\n");
+    const secondLanding = land(repo, ["--promote"], VALID_MESSAGE).result;
+
+    assert.deepEqual(firstLanding.promoted, ["main"]);
+    assert.equal(secondLanding.outcome, "COMMITTED");
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), secondLanding.commit);
+  } finally {
+    cleanup(origin, repo);
+  }
+});
+
+test("an unfetched origin holding its own mainline is never founded over", () => {
+  const { origin, seed, local } = seedOrigin();
+  const repo = makeRepo("feature");
+  try {
+    runGit(repo, ["config", "init.defaultBranch", "trunk"]);
+    commitFile(repo, "base.txt", "base\n", "init");
+    runGit(repo, ["remote", "add", "origin", origin]);
+    writeFile(repo, "base.txt", "base\nfeature change\n");
+    const { result } = land(repo, ["--promote"], VALID_MESSAGE);
+
+    assert.deepEqual(result.promoted, []);
+    assert.match((result.warnings as string[]).join("\n"), /promotion skipped: no mainline/);
+    assert.doesNotMatch(gitOutput(origin, ["branch", "--format=%(refname:short)"]), /trunk/);
+  } finally {
+    cleanup(origin, seed, local, repo);
   }
 });
 
@@ -322,6 +359,7 @@ test("a failed mainline fetch returns MAINLINE_UNVERIFIED and never creates orig
     runGit(repo, ["checkout", "-q", "-b", "feature"]);
     runGit(repo, ["remote", "add", "origin", origin]);
     runGit(repo, ["push", "-q", "-u", "origin", "feature"]);
+    runGit(repo, ["push", "-q", "origin", "main:unrelated"]);
     writeFile(repo, "base.txt", "base\nfeature change\n");
 
     const { code, result } = land(repo, ["--promote"], VALID_MESSAGE);
@@ -898,6 +936,7 @@ test("a deferred feature push failure without a mainline records the parked bran
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();
   try {
     commitFile(local, "base.txt", "base\n", "init");
+    runGit(local, ["branch", "unrelated"]);
     runGit(local, ["remote", "add", "origin", origin]);
     writeOriginHook(origin, "update", rejectUpdateHook("feature"));
     writeFile(local, "base.txt", "base\nfeature change\n");

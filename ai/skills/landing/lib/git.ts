@@ -514,6 +514,14 @@ export class Git {
     ]);
   }
 
+  remoteBranchNames(remote: string): string[] | null {
+    const listing = this.run(["ls-remote", "--heads", remote], { noPrompt: true, timeoutMs: REMOTE_QUERY_TIMEOUT_MS });
+    if (listing.code !== 0) {
+      return null;
+    }
+    return nonEmptyLines(listing.stdout).map((line) => (line.split(/\s+/)[1] ?? "").replace(/^refs\/heads\//, ""));
+  }
+
   remoteBranchTip(remote: string, branch: string): string | null {
     const listing = this.run(["ls-remote", "--heads", remote, `refs/heads/${branch}`], {
       noPrompt: true,

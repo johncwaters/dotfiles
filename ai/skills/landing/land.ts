@@ -63,6 +63,7 @@ import { readGithubRemote } from "./lib/visibility.ts";
 import {
   computeScope,
   findWorktreeForBranch,
+  foundingMainlineName,
   localPathMatches,
   isDenylisted,
   listedUsernames,
@@ -522,7 +523,7 @@ class Landing {
     return null;
   }
 
-  private withholdPromotion(mainlineRef: string): FailureOutcome | null {
+  private withholdPromotion(mainlineRef: string | null): FailureOutcome | null {
     const blockingFindings = branchBlockingFindings(this.git).map((finding) => `${finding.severity} ${finding.file}: ${finding.summary}`);
     const unreviewedCommits = commitsNotLandedSince(this.git, mainlineRef).map((commit) => `UNREVIEWED ${commit.slice(0, 12)}: not landed through land.ts`);
     this.withheldFindings = [...blockingFindings, ...unreviewedCommits];
@@ -535,9 +536,15 @@ class Landing {
   private promote(): FailureOutcome | null {
     const originExists = this.git.listRemotes().includes("origin");
     const { policy } = readCommitPolicy();
-    const mainline = resolveMainline(this.git, configuredMainline(policy));
-    this.mainline = mainline;
+    const existingMainline = resolveMainline(this.git, configuredMainline(policy));
     const current = this.git.currentBranch();
+    const needsLiveOriginBranches =
+      originExists && (existingMainline === null || !this.git.verifyRef(`refs/remotes/origin/${existingMainline}`));
+    const liveOriginBranches = needsLiveOriginBranches ? this.git.remoteBranchNames("origin") : [];
+    const originHoldsOnlyCurrentBranch = liveOriginBranches !== null && liveOriginBranches.every((branch) => branch === current);
+    const mainline =
+      existingMainline ?? (originHoldsOnlyCurrentBranch ? foundingMainlineName(this.git, configuredMainline(policy)) : null);
+    this.mainline = mainline;
     const featureBranch = this.featureBranchForPromotion(current, mainline);
     this.parkedFeatureBranch = featureBranch;
     if (mainline === null) {
@@ -551,7 +558,9 @@ class Landing {
     }
 
     this.preRebaseFeatureTip = this.git.revParseRef("HEAD");
-    if (originExists) {
+    const originHasMainline = originExists && !(needsLiveOriginBranches && originHoldsOnlyCurrentBranch);
+    const localMainlineExists = this.git.verifyRef(`refs/heads/${mainline}`);
+    if (originHasMainline) {
       const syncOutcome = this.syncMainlineWithOrigin(mainline);
       if (syncOutcome) {
         this.pushFeatureAfterFailedMainlinePromotion(featureBranch, syncOutcome);
@@ -559,9 +568,16 @@ class Landing {
       }
     }
 
-    const withheldOutcome = this.withholdPromotion(originExists ? `refs/remotes/origin/${mainline}` : `refs/heads/${mainline}`);
+    const withheldOutcome = this.withholdPromotion(
+      originHasMainline ? `refs/remotes/origin/${mainline}` : localMainlineExists ? `refs/heads/${mainline}` : null,
+    );
     if (withheldOutcome) {
       return withheldOutcome;
+    }
+    const foundingOutcome = originHasMainline || localMainlineExists ? null : this.foundMainline(mainline);
+    if (foundingOutcome) {
+      this.pushFeatureAfterFailedMainlinePromotion(featureBranch, foundingOutcome);
+      return foundingOutcome;
     }
     const mainlineTipBeforePromotion = this.git.revParseRef(`refs/heads/${mainline}`);
     const promoteOutcome = this.promoteHop(current, mainline);
@@ -593,6 +609,17 @@ class Landing {
     }
     this.deleteMergedRemoteFeatureBranch(featureBranch, mainline);
     return null;
+  }
+
+  private foundMainline(mainline: string): FailureOutcome | null {
+    const headTip = this.git.revParseHead();
+    const create = headTip === null ? null : this.git.updateRef(`refs/heads/${mainline}`, headTip, "");
+    if (create !== null && create.code === 0) {
+      this.warnings.push(`founded ${mainline} at ${headTip}: the repository had no mainline yet`);
+      return null;
+    }
+    this.warnings.push(`could not found ${mainline} at HEAD: ${(create?.stderr ?? "HEAD unresolved").trim()}`);
+    return "PROMOTE_FAILED";
   }
 
   private restoreMainlineAfterFailedPush(mainline: string, mainlineTipBeforePromotion: string | null): void {

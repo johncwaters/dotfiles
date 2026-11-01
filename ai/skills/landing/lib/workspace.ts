@@ -134,6 +134,19 @@ export function resolveMainline(git: Git, configuredMainline: unknown = "auto"):
   return null;
 }
 
+export function foundingMainlineName(git: Git, configuredMainline: unknown = "auto"): string | null {
+  const currentBranchRef = `refs/heads/${git.currentBranch()}`;
+  const listing = git.run(["for-each-ref", "--format=%(refname)", "refs/heads"]);
+  const hasOtherBranches = listing.stdout.split("\n").some((refName) => refName !== "" && refName !== currentBranchRef);
+  if (listing.code !== 0 || hasOtherBranches) {
+    return null;
+  }
+  if (typeof configuredMainline === "string" && configuredMainline !== "auto") {
+    return configuredMainline;
+  }
+  return git.run(["config", "init.defaultBranch"]).stdout.trim() || "main";
+}
+
 export function checkMainlineFreshness(
   git: Git,
   mainline: string,
