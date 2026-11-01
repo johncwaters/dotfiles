@@ -13,6 +13,7 @@ source "$dotfilesRepo/packages/flatpak.sh"
 packagesDirectory="$dotfilesRepo/packages"
 nodeSourceMajor=22
 minimumClaudeCodeVersion=2.1.284
+imageStillMountedStatus=2
 enabledPackageGroups=()
 declare -A installedNpmPackages=()
 # A group this file never asks about installs nothing, so a typo has to be named out loud.
@@ -256,15 +257,14 @@ installProfileCasks() {
   done < <(readPackageList "$packagesDirectory/casks.txt")
 }
 
-bundleIsAtLeastPinnedVersion() {
+installedBundleNumericVersion() {
   local bundlePath="$1"
-  local pinnedVersion="$2"
   local installedVersion
-  if [[ ! -d "$bundlePath" ]]; then
+  installedVersion="$(defaults read "$bundlePath/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
+  if [[ ! "$installedVersion" =~ ^[0-9]+(\.[0-9]+)* ]]; then
     return 1
   fi
-  installedVersion="$(defaults read "$bundlePath/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
-  isVersionAtLeast "$installedVersion" "$pinnedVersion"
+  printf '%s\n' "${BASH_REMATCH[0]}"
 }
 
 replaceBundleFromImage() {
@@ -317,9 +317,10 @@ copyBundleFromVerifiedDmg() {
   fi
   replaceBundleFromImage "$mountPoint/$bundleName" "$(applicationsDirectory)/$bundleName" >>"$outputLog" 2>&1 \
     || replaceStatus=$?
-  if ! hdiutil detach "$mountPoint" -quiet >>"$outputLog" 2>&1; then
-    noteWarned "$appLabel" "could not unmount $mountPoint"
-    return 1
+  if ! hdiutil detach "$mountPoint" -quiet >>"$outputLog" 2>&1 \
+    && ! hdiutil detach "$mountPoint" -force -quiet >>"$outputLog" 2>&1; then
+    noteWarned "$appLabel" "could not unmount $mountPoint, left in place"
+    return "$imageStillMountedStatus"
   fi
   if ((replaceStatus != 0)); then
     noteWarned "$appLabel" "copy into $(applicationsDirectory) failed: $(lastLogLine "$outputLog")"
@@ -333,17 +334,32 @@ installPinnedDmgApp() {
   local pinnedSha256="$3"
   local bundleName="$4"
   local appLabel="${bundleName%.app}"
+  local bundlePath
+  local installedVersion
   local workDirectory
-  if bundleIsAtLeastPinnedVersion "$(applicationsDirectory)/$bundleName" "$pinnedVersion"; then
-    notePresent "$appLabel" "already installed"
-    return 0
+  local copyStatus=0
+  bundlePath="$(applicationsDirectory)/$bundleName"
+  if [[ -d "$bundlePath" ]]; then
+    if ! installedVersion="$(installedBundleNumericVersion "$bundlePath")"; then
+      noteWarned "$appLabel" "installed version unreadable, left alone"
+      return 0
+    fi
+    if isVersionAtLeast "$installedVersion" "$pinnedVersion"; then
+      notePresent "$appLabel" "already installed"
+      return 0
+    fi
   fi
   noteStarting "$appLabel" "installing $pinnedVersion from its DMG"
   workDirectory="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-dmg.XXXXXX")"
-  if copyBundleFromVerifiedDmg "$appLabel" "$dmgUrl" "$pinnedSha256" "$bundleName" "$workDirectory"; then
+  copyBundleFromVerifiedDmg "$appLabel" "$dmgUrl" "$pinnedSha256" "$bundleName" "$workDirectory" \
+    || copyStatus=$?
+  if ((copyStatus == imageStillMountedStatus)); then
+    return 0
+  fi
+  if ((copyStatus == 0)); then
     noteInstalled "$appLabel" "installed $pinnedVersion"
   fi
-  rm -rf -- "$workDirectory"
+  rm -rf -- "$workDirectory" || noteWarned "$appLabel" "could not remove $workDirectory"
 }
 
 installProfileDmgApps() {
