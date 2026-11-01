@@ -1,11 +1,11 @@
 ---
 name: converging-reviews
-description: Runs review and fix rounds over local work until a round finds nothing left to fix, then hands the tree to /committing. Round 1 reviews the whole working diff with every lane, uncapped; each later round reviews only the previous round's fixes, and round.mjs classifies every round against a ledger so the loop stops on a stall, a cap of 8 rounds, or a question. Starts only by name. Use for /converging-reviews.
+description: Runs review and fix rounds over local work until a round finds nothing left to fix, then hands the tree to /committing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a stall, a cap of 8 rounds, or a question. Starts only by name. Use for /converging-reviews.
 ---
 
 # Converging Reviews
 
-An experiment: the review ladder with the loop it otherwise forbids, made safe by three rules `round.mjs` enforces. Each round after the first reviews only the delta its fixes made, so the same diff is swept once; the MEDIUM+ `ACTIONABLE` count must strictly fall, and a fixed finding coming back means the fixes are fighting; a finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/committing` stays the default gate.
+An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made, and only HIGH+ counts there; once one is clean, a sweep re-reviews the whole diff, where MEDIUM+ counts on the first sweep and HIGH+ after, so the loop tapers instead of minting fresh MEDIUMs. The `ACTIONABLE` count must strictly fall against the previous round of the same kind, and a fixed finding coming back means the fixes are fighting; a finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/committing` stays the default gate.
 
 ## Input
 
@@ -29,15 +29,15 @@ No cleaning pass runs: on a whole uncommitted pull request it deletes values a s
 
 ## Step 2: Review and classify
 
-Invoke `/reviewing-code` with `uncapped`, the context, base `TREE_{N-1}` and head `TREE_N` as its base-and-head form, and `git diff --name-only TREE_{N-1} TREE_N` as the changed-file set. Round 1 adds `allLanes`, since it is the only full sweep and a later round reviews only its fixes' delta. This session triages the return, then fixes in Step 4.
+Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, `BASE` and head `TREE_N` as its base-and-head form, and `git diff --name-only BASE TREE_N` as the changed-file set. `BASE` is `TREE_{N-1}`, except in a sweep round, where it is the `base` the `SWEEP` outcome returned. Every round keeps every lane so a fix round cannot narrow which concerns get checked. This session triages the return, then fixes in Step 4.
 
 Note the output file the qa-swarm Workflow notification names, and pipe the whole `/reviewing-code` return into:
 
 ```
-node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --base TREE_{N-1} --head TREE_N --swarm-output <qa-swarm output file>
+node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --base BASE --head TREE_N --swarm-output <qa-swarm output file>
 ```
 
-`classify` takes each finding's body verbatim from the swarm output, drops findings the ledger already settled and findings anchored away from the round's hunks (`droppedOffHunk`), then prints the outcome, the kept `actionable` (MEDIUM and above, recounted, unlike `/reviewing-code`'s `ACTIONABLE` header), `asked`, and below-HIGH `ambiguous` findings. `unmatchedBodies` counts findings whose body it could not match.
+`classify` takes each finding's body verbatim from the swarm output, drops findings the ledger already settled and findings anchored away from the round's hunks (`droppedOffHunk`), then prints the outcome, the kept `actionable` (at or above the round's `severityFloor`, recounted, unlike `/reviewing-code`'s `ACTIONABLE` header), `asked`, and below-HIGH `ambiguous` findings. `unmatchedBodies` counts findings whose body it could not match.
 
 ## Step 3: Act on the outcome
 
@@ -46,6 +46,7 @@ node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --ba
 | `CLEAN` | 0 | Run `/committing`; its review skips only when `round.mjs verify`, which pins the working tree itself, finds it equal to this CLEAN head, so an edit made after CLEAN still gets reviewed |
 | `CONTINUE` | 10 | Step 4, then the next round from Step 2 |
 | `RETRY` | 11 | Repeat Step 2 for the same round once |
+| `SWEEP` | 12 | Run round `nextRound` from Step 2 with its `base` and the same head; no fix lands between |
 | `ASKED` | 20 | Put each `asked` finding to the carbon unit with both readings, record the ruling, then rerun from Step 1 |
 | `STALLED` | 21 | Stop and report |
 | `CAPPED` | 22 | Stop and report |

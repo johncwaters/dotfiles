@@ -24,6 +24,7 @@ const EXIT_CODE_BY_OUTCOME = {
   CLEAN: 0,
   CONTINUE: 10,
   RETRY: 11,
+  SWEEP: 12,
   ASKED: 20,
   STALLED: 21,
   CAPPED: 22,
@@ -218,26 +219,52 @@ function atLeast(severity, floorSeverity) {
   return (SEVERITY_RANK[severity] ?? 0) >= SEVERITY_RANK[floorSeverity];
 }
 
-function decideOutcome({ review, round, ledger, actionableFindings, keptFindings }) {
-  const priorRounds = roundRows(ledger);
+function lastConcludedRounds(ledger) {
+  const latestRowByRound = new Map(roundRows(ledger).map((row) => [row.round, row]));
+  return [...latestRowByRound.values()].filter((row) => row.outcome !== "RETRY");
+}
+
+function roundPlan(ledger, round) {
+  const earlierRounds = lastConcludedRounds(ledger).filter((row) => row.round < round);
+  const previousRound = earlierRounds.at(-1);
+  if (!previousRound) return { kind: "full", severityFloor: "MEDIUM", sweepBase: null };
+  const sweepBase = earlierRounds[0].base;
+  if (previousRound.outcome === "SWEEP") {
+    const isFirstSweep = !earlierRounds.some((row) => row.kind === "sweep");
+    return { kind: "sweep", severityFloor: isFirstSweep ? "MEDIUM" : "HIGH", sweepBase };
+  }
+  return { kind: "delta", severityFloor: "HIGH", sweepBase };
+}
+
+function stallBaseline(ledger, round, plan) {
+  const earlierRounds = lastConcludedRounds(ledger).filter((row) => row.round < round && row.outcome === "CONTINUE");
+  if (plan.kind === "sweep") return earlierRounds.filter((row) => row.kind === "sweep").at(-1);
+  return earlierRounds.find((row) => row.round === round - 1 && row.kind === "delta");
+}
+
+function decideOutcome({ review, round, plan, ledger, actionableFindings, keptFindings }) {
   if (review.verdict === "FAILED") {
-    const hasFailedThisRound = priorRounds.some((row) => row.round === round && row.verdict === "FAILED");
+    const hasFailedThisRound = roundRows(ledger).some((row) => row.round === round && row.verdict === "FAILED");
     return hasFailedThisRound ? "FAILED" : "RETRY";
   }
   if (keptFindings.some((finding) => finding.disposition === "AMBIGUOUS" && atLeast(finding.severity, "HIGH"))) return "ASKED";
   if (review.truncatedLanes.length > 0) return "FAILED";
-  if (actionableFindings.length === 0) return "CLEAN";
-  const previousRound = priorRounds.filter((row) => row.round === round - 1 && row.outcome === "CONTINUE").at(-1);
-  if (previousRound && actionableFindings.length >= previousRound.actionable) return "STALLED";
   const fixedFingerprints = new Set(ledger.filter((row) => row.type === "fix" && row.outcome === "FIXED").map((row) => row.fingerprint));
-  if (actionableFindings.some((finding) => fixedFingerprints.has(finding.fingerprint))) return "STALLED";
+  const isFixedDefectBack = keptFindings.some((finding) => finding.disposition === "ACTIONABLE" && fixedFingerprints.has(finding.fingerprint));
+  if (isFixedDefectBack) return "STALLED";
+  if (actionableFindings.length === 0 && plan.kind !== "delta") return "CLEAN";
   if (round >= ROUND_CAP) return "CAPPED";
+  if (actionableFindings.length === 0) return "SWEEP";
+  const baselineRound = stallBaseline(ledger, round, plan);
+  if (baselineRound && actionableFindings.length >= baselineRound.actionable) return "STALLED";
   return "CONTINUE";
 }
 
-function classifyRound(repoPath, round, base, head, reviewText, swarmOutputPath) {
+function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOutputPath) {
   const ledgerFile = ledgerPath(repoPath);
   const ledger = readLedger(ledgerFile);
+  const plan = roundPlan(ledger, round);
+  const base = plan.kind === "sweep" ? plan.sweepBase : requestedBase;
   const parsedReview = parseReview(reviewText);
   const { findings: reviewFindings, unmatchedBodies } = withSwarmBodies(parsedReview.findings, swarmOutputPath);
   const review = { ...parsedReview, findings: reviewFindings };
@@ -262,8 +289,8 @@ function classifyRound(repoPath, round, base, head, reviewText, swarmOutputPath)
     const ruledDisposition = rulingByFingerprint.get(finding.fingerprint);
     keptFindings.push(ruledDisposition ? { ...finding, disposition: ruledDisposition } : finding);
   }
-  const actionableFindings = keptFindings.filter((finding) => finding.disposition === "ACTIONABLE" && atLeast(finding.severity, "MEDIUM"));
-  const outcome = decideOutcome({ review, round, ledger, actionableFindings, keptFindings });
+  const actionableFindings = keptFindings.filter((finding) => finding.disposition === "ACTIONABLE" && atLeast(finding.severity, plan.severityFloor));
+  const outcome = decideOutcome({ review, round, plan, ledger, actionableFindings, keptFindings });
   const findingRows = keptFindings.map((finding) => ({
     type: "finding",
     round,
@@ -277,6 +304,8 @@ function classifyRound(repoPath, round, base, head, reviewText, swarmOutputPath)
   const roundRow = {
     type: "round",
     round,
+    kind: plan.kind,
+    severityFloor: plan.severityFloor,
     base,
     head,
     verdict: review.verdict,
@@ -289,8 +318,12 @@ function classifyRound(repoPath, round, base, head, reviewText, swarmOutputPath)
   const reportedFinding = ({ fingerprint, filePath, lineNumber, severity, reviewer, body }) => ({ fingerprint, file: filePath, line: lineNumber ?? "general", severity, reviewer, body });
   const askedFindings = outcome === "ASKED" ? keptFindings.filter((finding) => finding.disposition === "AMBIGUOUS" && atLeast(finding.severity, "HIGH")) : [];
   const ambiguousBelowHighFindings = keptFindings.filter((finding) => finding.disposition === "AMBIGUOUS" && !atLeast(finding.severity, "HIGH"));
+  const sweepHandoff = outcome === "SWEEP" ? { nextRound: round + 1, base: plan.sweepBase, head } : {};
   finish(outcome, {
     round,
+    kind: plan.kind,
+    severityFloor: plan.severityFloor,
+    ...sweepHandoff,
     actionable: actionableFindings.map(reportedFinding),
     asked: askedFindings.map(reportedFinding),
     ambiguous: ambiguousBelowHighFindings.map(reportedFinding),

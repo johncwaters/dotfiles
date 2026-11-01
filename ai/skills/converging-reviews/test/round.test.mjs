@@ -81,3 +81,36 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   assert.equal(secondRound.report.droppedSettled, 1);
   assert.equal(runRound(repository, ledgerRoot, ["verify"]).exitCode, 24);
 });
+
+test("a clean delta round asks for a whole-diff sweep against the original base, whatever base the caller passes, and the severity bar tapers to HIGH after the first sweep", (context) => {
+  const repository = makeRepo();
+  const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
+  context.after(() => cleanup(repository, ledgerRoot));
+  commitFile(repository, "a.txt", linesWithChange([]));
+  const pinChange = (changedLineNumbers) => {
+    fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
+    return workingTreeId(repository, ledgerRoot);
+  };
+  const classify = (round, base, head, rows) => runRound(repository, ledgerRoot, ["classify", "--round", String(round), "--base", base, "--head", head], reviewWith(rows));
+
+  const firstTree = pinChange([5, 20]);
+  const baseTree = runRound(repository, ledgerRoot, ["start", "--tree", firstTree]).report.base;
+  const firstRound = classify(1, baseTree, firstTree, [findingRow(5, "MEDIUM", "Bound is off by one. Proof: a.txt:5.")]);
+  assert.equal(firstRound.report.outcome, "CONTINUE");
+  runRound(repository, ledgerRoot, ["record", "--fingerprint", firstRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "1"]);
+
+  const secondTree = pinChange([5, 6, 20]);
+  const deltaRound = classify(2, firstTree, secondTree, [findingRow(6, "MEDIUM", "Name could be clearer. Proof: a.txt:6.")]);
+  assert.equal(deltaRound.exitCode, 12);
+  assert.deepEqual([deltaRound.report.outcome, deltaRound.report.severityFloor, deltaRound.report.base, deltaRound.report.nextRound], ["SWEEP", "HIGH", baseTree, 3]);
+
+  const firstSweep = classify(3, secondTree, secondTree, [findingRow(20, "MEDIUM", "Missed guard on the new branch. Proof: a.txt:20.")]);
+  assert.deepEqual([firstSweep.report.outcome, firstSweep.report.kind, firstSweep.report.severityFloor], ["CONTINUE", "sweep", "MEDIUM"]);
+  runRound(repository, ledgerRoot, ["record", "--fingerprint", firstSweep.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "3"]);
+
+  const thirdTree = pinChange([5, 6, 20, 21]);
+  assert.equal(classify(4, secondTree, thirdTree, []).report.outcome, "SWEEP");
+  const secondSweep = classify(5, baseTree, thirdTree, [findingRow(21, "MEDIUM", "Comment wording drifts. Proof: a.txt:21.")]);
+  assert.deepEqual([secondSweep.report.outcome, secondSweep.report.severityFloor], ["CLEAN", "HIGH"]);
+  assert.equal(runRound(repository, ledgerRoot, ["verify"]).report.outcome, "VERIFIED");
+});
