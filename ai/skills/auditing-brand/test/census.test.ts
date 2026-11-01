@@ -95,3 +95,44 @@ test('the census lists every stylesheet, asset and path-rule surface of the fixt
   const accentGroup = summary.byKind.color.find((group: { normalized: string }) => group.normalized === '#c084fc');
   assert.deepEqual(accentGroup, { normalized: '#c084fc', count: 4, files: ['styles/legacy.less', 'styles/panel.scss', 'styles/tokens.css'] });
 });
+
+test('the census lists copy slots, product names, brand docs, UI text, markup typography, SVG and data-file surfaces', async () => {
+  const findings: Finding[] = (await runCensusCli()).trim().split('\n').map((line) => JSON.parse(line));
+  const describe = (finding: Finding) => `${finding.file}:${finding.line}:${finding.column} ${finding.normalized}`;
+
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'copy-slot').map((finding) => `${finding.detail?.slot}=${finding.raw}>${finding.target}`), [
+    'readme:h1=Lumen Relay>naming.productName', 'readme:bold=Calm light for busy rooms.>naming.tagline',
+    'readme:paragraph=Lumen Relay routes light signals between rooms — quietly. See the guide.>naming.descriptions', 'alt=Lumen Relay mark>voice.vocabulary',
+    'frontmatter:title=Voice and tone>naming.descriptions', 'package:name=@lumen/lumen-relay>naming.productName',
+    'package:description=Routes light signals between rooms.>naming.descriptions', 'package:keywords=light>naming.glossary', 'package:keywords=relay>naming.glossary',
+    'manifest:name=Lumen Relay>naming.productName', 'manifest:short_name=Lumen>naming.productName',
+    'html:title=Lumen Relay>naming.descriptions', 'meta:description=Calm light for busy rooms.>naming.descriptions', 'html:h1=Meet Lumen Relay>naming.tagline',
+  ]);
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'product-name').map(describe), [
+    'README.md:1:3 lumenrelay', 'README.md:5:1 lumenrelay', 'docs/RELEASE.md:3:1 lumenrelay', 'site/index.html:4:10 lumenrelay', 'site/index.html:10:58 lumenrelay',
+  ]);
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'typographic-char').map(describe), ['README.md:5:48 em-dash', 'docs/RELEASE.md:3:19 em-dash', 'docs/VOICE.md:7:17 ellipsis', 'site/components/Badge.vue:2:43 em-dash']);
+  assert.deepEqual(findings.filter((finding) => finding.kind.startsWith('brand-doc')).map((finding) => `${finding.kind}:${finding.raw}:${finding.detail?.lineStart ?? finding.detail?.signal}-${finding.detail?.lineEnd ?? ''}`), [
+    'brand-doc:docs/VOICE.md:name:voice-', 'brand-doc-section:Voice:5-11', 'brand-doc-section:Tone:9-11',
+  ]);
+  assert.ok(!findings.some((finding) => finding.kind === 'ui-text' && finding.raw.includes('--start')));
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'ui-text' && /Jerry|ships|Escaped/.test(finding.raw)).map((finding) => finding.raw), ['Lumen Relay ships \u2014 today', 'Escaped &mdash; stays literal.', 'Tom & Jerry \u2014 go']);
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'font-size' && !finding.file.startsWith('styles/')).map((finding) => `${describe(finding)} ${finding.detail?.source}`), [
+    'site/components/Badge.vue:2:16 text-tiny tailwind', 'site/components/Badge.vue:7:16 10px css', 'site/index.html:7:29 18px css', 'site/index.html:10:14 text-4xl tailwind', 'site/index.html:10:23 text-huge tailwind',
+    'site/index.html:11:54 13px style-attribute', 'site/index.html:12:133 11 svg-attribute', 'site/theme.yaml:2:13 28px data-file',
+  ]);
+  const markPaths = findings.filter((finding) => finding.kind === 'svg-path');
+  assert.deepEqual(markPaths.map((finding) => finding.file), ['assets/mark.svg', 'site/index.html']);
+  assert.equal(new Set(markPaths.map((finding) => finding.normalized)).size, 1);
+  assert.deepEqual(findingsWhere(findings, 'image-asset', 'assets/mark.svg').map((finding) => [finding.detail?.width, finding.detail?.height]), [[32, 16]]);
+  assert.deepEqual(findings.filter((finding) => finding.kind === 'asset-reference' && !finding.file.startsWith('styles/')).map((finding) => `${finding.file} ${finding.normalized} ${finding.detail?.slot}`), [
+    'README.md assets/logo.png md:image', 'site.webmanifest /assets/logo.png manifest:icons', 'site/index.html /assets/og.png og:image',
+  ]);
+  assert.deepEqual(findingsWhere(findings, 'color', 'site.webmanifest').map((finding) => finding.normalized), ['#0a0a12']);
+
+  const renamedFindings: Finding[] = (await runCensusCli('--name', 'Beacon')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(renamedFindings.filter((finding) => finding.kind === 'product-name' && finding.normalized === 'beacon').map(describe), ['docs/VOICE.md:11:19 beacon']);
+
+  const vocabulary = JSON.parse(await runCensusCli('--summary')).vocabulary;
+  assert.ok(vocabulary.phrases.some((entry: { term: string; count: number }) => entry.term === 'lumen relay' && entry.count >= 4));
+});

@@ -1,0 +1,6 @@
+{
+  "name": "Lumen Relay",
+  "short_name": "Lumen",
+  "theme_color": "#0A0A12",
+  "icons": [{ "src": "/assets/logo.png", "sizes": "192x192" }]
+}

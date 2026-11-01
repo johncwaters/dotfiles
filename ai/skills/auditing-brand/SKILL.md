@@ -9,12 +9,14 @@ A repo's bible is `brand-bible/`, one YAML file per section named in `bible/sche
 
 1. Validate the bible: `node ~/.claude/skills/auditing-brand/bible/load.ts <repo>/brand-bible`. It prints `{"ok":true}`, or exits 1 with every issue keyed by field path; fix each at that path.
 2. For editor autocomplete, write the section JSON Schemas with `node ~/.claude/skills/auditing-brand/bible/write-json-schemas.ts <repo>/brand-bible/.schema` and point each YAML file at its schema with a first line `# yaml-language-server: $schema=.schema/<section>.schema.json`.
-3. Take the census: `node ~/.claude/skills/auditing-brand/census.ts <repo> --out <file>.jsonl` writes one finding per line, sorted by file, line, column and kind. Each finding's `target` names the bible field it compares against, and `normalized` is its grouping key. `--summary` prints findings grouped by kind and normalized value instead. `--include` and `--exclude` take globs.
+3. Take the census: `node ~/.claude/skills/auditing-brand/census.ts <repo> --out <file>.jsonl` writes one finding per line, sorted by file, line, column and kind. Each finding's `target` names the bible field it compares against, and `normalized` is its grouping key. `--summary` prints findings grouped by kind and normalized value instead, plus a vocabulary of the words and two-word phrases in user-visible text. `--include` and `--exclude` take globs. The census derives product names from `package.json`, the README title and the repo folder; `--name` adds another, such as a former name.
 4. The census only lists, and judging each finding is the reader's job. Read the summary first to draft or check the bible, then compare each finding with the bible field its `target` names. A `skipped` finding names a file the census did not read and why.
 
 ## Scripts
 
 - `census.ts`: the census CLI; lists files, scans them concurrently, targets, sorts and prints findings.
 - `parse-css.ts`: reads stylesheets and CSS declarations from any source into findings.
+- `parse-markup.ts`: reads HTML-like markup and SVG: copy slots, UI text, style blocks and attributes, Tailwind classes, icons and asset references.
+- `parse-docs.ts`: reads Markdown, front matter, YAML and JSON: README and manifest copy slots, brand docs and their sections, and style values in data files.
 - `findings.ts`: shared value classifiers, source locations and image header reading.
 - `color.ts`: normalizes any CSS color literal to lowercase hex.

@@ -6,15 +6,15 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { targetFinding } from './bible/targets.ts';
 import type { Finding, FindingKind, UntargetedFinding } from './bible/targets.ts';
-import { addFinding, addWholeFileFinding, createCollector, imageRoleHint, isFontFile, isImageFile, rasterDimensions } from './findings.ts';
-import type { FindingCollector } from './findings.ts';
+import { addDeferredTailwindTextFindings, addFinding, addWholeFileFinding, createCollector, imageRoleHint, isFontFile, isImageFile, productNamePatternFor, rasterDimensions } from './findings.ts';
+import type { FindingCollector, ScanContext } from './findings.ts';
 import { scanCss } from './parse-css.ts';
-
-export type ScanContext = { productNames: string[]; tailwindTextNames: Set<string> };
+import { firstMarkdownHeading, scanDataFile, scanMarkdown } from './parse-docs.ts';
+import { scanMarkupFile } from './parse-markup.ts';
 
 type TextScanner = { phase: 1 | 2; scan: (collector: FindingCollector, text: string, context: ScanContext) => void };
 
-type CensusOptions = { repoDirectory: string; summary: boolean; outFile?: string; includes: string[]; excludes: string[] };
+type CensusOptions = { repoDirectory: string; summary: boolean; outFile?: string; includes: string[]; excludes: string[]; productNames: string[] };
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const MAX_ASSET_BYTES = 64 * 1024 * 1024;
@@ -36,6 +36,9 @@ export const TEXT_SCANNERS: Record<string, TextScanner> = {
   '.postcss': { phase: 1, scan: (collector, text, context) => scanStylesheet(collector, text, context, 'css') },
   '.scss': { phase: 1, scan: (collector, text, context) => scanStylesheet(collector, text, context, 'scss') },
   '.less': { phase: 1, scan: (collector, text, context) => scanStylesheet(collector, text, context, 'scss') },
+  ...Object.fromEntries(['.html', '.htm', '.svg', '.vue', '.svelte', '.astro'].map((extension) => [extension, { phase: 2, scan: scanMarkupFile }])),
+  ...Object.fromEntries(['.md', '.mdx', '.markdown'].map((extension) => [extension, { phase: 2, scan: scanMarkdown }])),
+  ...Object.fromEntries(['.json', '.webmanifest', '.yaml', '.yml'].map((extension) => [extension, { phase: 2, scan: scanDataFile }])),
 };
 
 function scanStylesheet(collector: FindingCollector, text: string, context: ScanContext, syntax: 'css' | 'scss'): void {
@@ -191,19 +194,62 @@ function phaseOf(file: string): 1 | 2 {
   return TEXT_SCANNERS[path.posix.extname(file).toLowerCase()]?.phase ?? 2;
 }
 
-export async function runCensus(repoDirectory: string, options: { includes: string[]; excludes: string[] }): Promise<Finding[]> {
+async function readOptionalText(file: string): Promise<string> {
+  return readFile(file, 'utf8').catch(() => '');
+}
+
+export async function deriveProductNames(repoDirectory: string): Promise<string[]> {
+  const packageText = await readOptionalText(path.join(repoDirectory, 'package.json'));
+  const packageName = /"name"\s*:\s*"(?:@[^/"]+\/)?([^"]+)"/.exec(packageText)?.[1];
+  const readmeFile = (await readdir(repoDirectory).catch(() => [] as string[])).find((name) => /^readme(?:\.md|\.markdown)?$/i.test(name));
+  const readmeHeading = readmeFile ? firstMarkdownHeading(await readOptionalText(path.join(repoDirectory, readmeFile))) : undefined;
+  const readmeName = readmeHeading && readmeHeading.split(/\s+/).length <= 3 ? readmeHeading : undefined;
+  return [packageName, readmeName, path.basename(repoDirectory)].filter((name): name is string => Boolean(name));
+}
+
+export async function runCensus(repoDirectory: string, options: { includes: string[]; excludes: string[]; productNames?: string[] }): Promise<Finding[]> {
   const files = await listRepoFiles(repoDirectory, options.includes, options.excludes);
-  const context: ScanContext = { productNames: [], tailwindTextNames: new Set() };
+  const productNames = [...(options.productNames ?? []), ...(await deriveProductNames(repoDirectory))];
+  const productNamePattern = productNamePatternFor(productNames);
+  const context: ScanContext = { tailwindTextNames: new Set(), deferredTailwindText: [], ...(productNamePattern ? { productNamePattern } : {}) };
   const concurrency = availableParallelism() * 4;
   const scanPhase = (phase: 1 | 2) => mapWithConcurrency(files.filter((file) => phaseOf(file) === phase), concurrency, (file) => scanFile(repoDirectory, file, context));
   const stylesheetFindings = await scanPhase(1);
   const otherFindings = await scanPhase(2);
+  addDeferredTailwindTextFindings(context);
   return [...stylesheetFindings, ...otherFindings].flat().map(targetFinding).sort(compareFindings);
 }
 
 type SummaryGroup = { normalized: string; count: number; files: string[] };
 
-export function summarize(findings: Finding[]): { totals: Partial<Record<FindingKind, number>>; byKind: Partial<Record<FindingKind, SummaryGroup[]>> } {
+type VocabularyEntry = { term: string; count: number };
+
+const MAX_VOCABULARY_ENTRIES = 500;
+
+function topTerms(countsByTerm: Map<string, number>): VocabularyEntry[] {
+  return [...countsByTerm]
+    .filter(([, count]) => count >= 2)
+    .map(([term, count]) => ({ term, count }))
+    .sort((left, right) => right.count - left.count || (left.term < right.term ? -1 : 1))
+    .slice(0, MAX_VOCABULARY_ENTRIES);
+}
+
+export function vocabularyOf(findings: Finding[]): { words: VocabularyEntry[]; phrases: VocabularyEntry[] } {
+  const wordCounts = new Map<string, number>();
+  const phraseCounts = new Map<string, number>();
+  for (const finding of findings) {
+    if (finding.kind !== 'ui-text') continue;
+    const words = finding.raw.toLowerCase().match(/\p{L}[\p{L}\p{N}'\u2019-]*/gu) ?? [];
+    words.forEach((word, index) => {
+      wordCounts.set(word, (wordCounts.get(word) ?? 0) + 1);
+      const nextWord = words[index + 1];
+      if (nextWord) phraseCounts.set(`${word} ${nextWord}`, (phraseCounts.get(`${word} ${nextWord}`) ?? 0) + 1);
+    });
+  }
+  return { words: topTerms(wordCounts), phrases: topTerms(phraseCounts) };
+}
+
+export function summarize(findings: Finding[]): { totals: Partial<Record<FindingKind, number>>; byKind: Partial<Record<FindingKind, SummaryGroup[]>>; vocabulary: ReturnType<typeof vocabularyOf> } {
   const groupsByKind = new Map<FindingKind, Map<string, { count: number; files: Set<string> }>>();
   for (const finding of findings) {
     const groups = groupsByKind.get(finding.kind) ?? new Map<string, { count: number; files: Set<string> }>();
@@ -221,15 +267,16 @@ export function summarize(findings: Finding[]): { totals: Partial<Record<Finding
       .map(([normalized, group]) => ({ normalized, count: group.count, files: [...group.files].sort() }))
       .sort((left, right) => right.count - left.count || (left.normalized < right.normalized ? -1 : 1));
   }
-  return { totals, byKind };
+  return { totals, byKind, vocabulary: vocabularyOf(findings) };
 }
 
 function parseArguments(commandArguments: string[]): CensusOptions | string {
-  const options: CensusOptions = { repoDirectory: '.', summary: false, includes: [], excludes: [] };
+  const options: CensusOptions = { repoDirectory: '.', summary: false, includes: [], excludes: [], productNames: [] };
   const valueFlags: Record<string, (value: string) => void> = {
     '--out': (value) => { options.outFile = value; },
     '--include': (value) => { options.includes.push(value); },
     '--exclude': (value) => { options.excludes.push(value); },
+    '--name': (value) => { options.productNames.push(value); },
   };
   for (let index = 0; index < commandArguments.length; index += 1) {
     const argument = commandArguments[index] ?? '';
@@ -254,7 +301,7 @@ function parseArguments(commandArguments: string[]): CensusOptions | string {
 async function main(commandArguments: string[]): Promise<void> {
   const options = parseArguments(commandArguments);
   if (typeof options === 'string') {
-    process.stderr.write(`${options}\nusage: node census.ts [repoDir=.] [--summary] [--out <file>] [--include <glob>]... [--exclude <glob>]...\n`);
+    process.stderr.write(`${options}\nusage: node census.ts [repoDir=.] [--summary] [--out <file>] [--include <glob>]... [--exclude <glob>]... [--name <product name>]...\n`);
     process.exitCode = 2;
     return;
   }

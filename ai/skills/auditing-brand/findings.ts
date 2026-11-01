@@ -7,6 +7,12 @@ export type SourceText = { text: string; lineText: (line: number) => string; loc
 
 export type FindingCollector = { file: string; source: SourceText; findings: UntargetedFinding[] };
 
+export type IndexLocator = (index: number) => SourceLocation;
+
+export type DeferredTailwindText = { collector: FindingCollector; location: SourceLocation; raw: string; utility: string; name: string; detail: FindingDetail };
+
+export type ScanContext = { productNamePattern?: RegExp; tailwindTextNames: Set<string>; deferredTailwindText: DeferredTailwindText[] };
+
 const MAX_CONTEXT_LENGTH = 200;
 
 export function createSourceText(text: string): SourceText {
@@ -282,6 +288,20 @@ function icoDimensions(bytes: Uint8Array): ImageDimensions | undefined {
   return { width: bytes[6] || 256, height: bytes[7] || 256 };
 }
 
+function svgDimensions(bytes: Uint8Array): ImageDimensions | undefined {
+  const rootTag = /<svg\b[^>]*>/i.exec(new TextDecoder().decode(bytes.subarray(0, 8192)))?.[0] ?? '';
+  const attributeNumber = (name: string): number | undefined => {
+    const value = new RegExp(`\\s${name}\\s*=\\s*["']\\s*((?:\\d+(?:\\.\\d*)?|\\.\\d+))(?:px)?\\s*["']`).exec(rootTag)?.[1];
+    return value === undefined ? undefined : Number(value);
+  };
+  const width = attributeNumber('width');
+  const height = attributeNumber('height');
+  if (width !== undefined && height !== undefined) return { width, height };
+  const viewBox = /\sviewBox\s*=\s*["']([^"']*)["']/.exec(rootTag)?.[1]?.trim().split(/[\s,]+/).map(Number);
+  if (viewBox?.length !== 4 || viewBox.some((part) => !Number.isFinite(part))) return undefined;
+  return { width: viewBox[2] ?? 0, height: viewBox[3] ?? 0 };
+}
+
 export function rasterDimensions(bytes: Uint8Array, extension: string): ImageDimensions | undefined {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const readerByExtension: Record<string, () => ImageDimensions | undefined> = {
@@ -291,6 +311,82 @@ export function rasterDimensions(bytes: Uint8Array, extension: string): ImageDim
     '.jpeg': () => jpegDimensions(bytes, view),
     '.webp': () => webpDimensions(bytes, view),
     '.ico': () => icoDimensions(bytes),
+    '.svg': () => svgDimensions(bytes),
   };
   return readerByExtension[extension]?.();
+}
+
+const TYPOGRAPHIC_CHAR_NAMES: Record<string, string> = {
+  '\u2014': 'em-dash', '\u2013': 'en-dash', '\u2026': 'ellipsis', '\u2018': 'left-single-quote', '\u2019': 'right-single-quote',
+  '\u201c': 'left-double-quote', '\u201d': 'right-double-quote', '\u2122': 'trademark', '\u00ae': 'registered', '\u00a9': 'copyright',
+};
+const TYPOGRAPHIC_CHAR_PATTERN = /[\u2013\u2014\u2026\u2018\u2019\u201c\u201d\u2122\u00ae\u00a9]|\p{Extended_Pictographic}/gu;
+
+const MAX_PRODUCT_NAME_LENGTH = 64;
+
+export function locatorFrom(location: SourceLocation, text: string): IndexLocator {
+  return (index) => advanceLocation(location, text.slice(0, index));
+}
+
+export function productNamePatternFor(names: string[]): RegExp | undefined {
+  const alternatives = [...new Set(names.map((name) => name.trim()).filter((name) => name.length >= 3))]
+    .map((name) => name.slice(0, MAX_PRODUCT_NAME_LENGTH).split(/[^\p{L}\p{N}]+|(?<=\p{Ll})(?=\p{Lu})/u).filter(Boolean).join('[\\s_.-]*'))
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+  if (alternatives.length === 0) return undefined;
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives.join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+}
+
+export function addProseFindings(collector: FindingCollector, text: string, locate: IndexLocator, context: ScanContext, detail: FindingDetail): void {
+  for (const match of text.matchAll(TYPOGRAPHIC_CHAR_PATTERN)) {
+    const name = TYPOGRAPHIC_CHAR_NAMES[match[0]] ?? 'emoji';
+    addFinding(collector, 'typographic-char', locate(match.index), match[0], name, { ...detail, codePoint: `U+${(match[0].codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}` });
+  }
+  if (!context.productNamePattern) return;
+  for (const match of text.matchAll(context.productNamePattern)) {
+    addFinding(collector, 'product-name', locate(match.index), match[0], match[0].toLowerCase().replace(/[\s_.-]+/g, ''), { ...detail, form: match[0] });
+  }
+}
+
+export function addUiText(collector: FindingCollector, text: string, locate: IndexLocator, context: ScanContext, detail: FindingDetail): void {
+  const collapsed = collapseWhitespace(text);
+  if (!/\p{L}/u.test(collapsed)) return;
+  const leadingWhitespaceLength = /^\s*/.exec(text)?.[0].length ?? 0;
+  addFinding(collector, 'ui-text', locate(leadingWhitespaceLength), collapsed, collapsed.toLowerCase(), detail);
+  addProseFindings(collector, text, locate, context, detail);
+}
+
+const TAILWIND_SIZE_NAMES = new Set(['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl', '9xl']);
+const TAILWIND_WEIGHT_NAMES = new Set(['thin', 'extralight', 'light', 'normal', 'medium', 'semibold', 'bold', 'extrabold', 'black']);
+const TAILWIND_TRANSFORMS: Record<string, string> = { uppercase: 'uppercase', lowercase: 'lowercase', capitalize: 'capitalize', 'normal-case': 'none' };
+
+function tailwindKind(utility: string): FindingKind | undefined {
+  const textMatch = /^text-(?:\[(.+)\]|([\w-]+?))(?:\/[\w.[\]-]+)?$/.exec(utility);
+  if (textMatch?.[1] !== undefined) return isSizeToken(textMatch[1].replace(/^length:/, '')) ? 'font-size' : undefined;
+  if (textMatch?.[2] !== undefined) return TAILWIND_SIZE_NAMES.has(textMatch[2]) ? 'font-size' : undefined;
+  const fontMatch = /^font-(?:\[(\d+)\]|(\w+))$/.exec(utility);
+  if (fontMatch?.[1] || (fontMatch?.[2] && TAILWIND_WEIGHT_NAMES.has(fontMatch[2]))) return 'font-weight';
+  if (/^tracking-(?:\[.+\]|[\w-]+)$/.test(utility)) return 'letter-spacing';
+  if (/^leading-(?:\[.+\]|[\w-]+)$/.test(utility)) return 'line-height';
+  if (TAILWIND_TRANSFORMS[utility]) return 'text-transform';
+  if (/^rounded(?:-[\w[\].-]+)?$/.test(utility)) return 'radius';
+  if (/^shadow(?:-[\w[\].-]+)?$/.test(utility)) return 'shadow';
+  return undefined;
+}
+
+export function addTailwindClassFindings(collector: FindingCollector, classList: string, location: SourceLocation, context: ScanContext, detail: FindingDetail): void {
+  for (const match of classList.matchAll(/\S+/g)) {
+    const utility = match[0].split(':').pop()?.replace(/^!/, '') ?? '';
+    const utilityLocation = advanceLocation(location, classList.slice(0, match.index));
+    const kind = tailwindKind(utility);
+    const customTextName = /^text-([\w-]+?)(?:\/[\w.[\]-]+)?$/.exec(utility)?.[1];
+    if (!kind && customTextName) context.deferredTailwindText.push({ collector, location: utilityLocation, raw: match[0], utility, name: customTextName, detail: { ...detail, source: 'tailwind' } });
+    if (kind) addFinding(collector, kind, utilityLocation, match[0], utility, { ...detail, source: 'tailwind' });
+  }
+}
+
+export function addDeferredTailwindTextFindings(context: ScanContext): void {
+  for (const deferred of context.deferredTailwindText) {
+    if (context.tailwindTextNames.has(deferred.name)) addFinding(deferred.collector, 'font-size', deferred.location, deferred.raw, deferred.utility, deferred.detail);
+  }
 }

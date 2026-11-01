@@ -1,0 +1,5 @@
+{
+  "name": "@lumen/lumen-relay",
+  "description": "Routes light signals between rooms.",
+  "keywords": ["light", "relay"]
+}
