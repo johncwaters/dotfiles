@@ -24,7 +24,7 @@ stagedRepo="$sandbox/staged-dotfiles"
 mkdir -p "$stagedRepo"
 stagedRepo="$(cd -- "$stagedRepo" && pwd)"
 cp -R "$repoRoot/." "$stagedRepo"
-rm -rf "$stagedRepo/.git" "$stagedRepo"/ai/skills/*/node_modules "$stagedRepo"/profiles/*/skills/*/node_modules
+rm -rf "$stagedRepo/.git" "$stagedRepo"/ai/skills/*/node_modules "$stagedRepo"/profiles/*/skills/*/node_modules "$stagedRepo/profiles/personal/mcp-servers.json"
 stagedTopicDir="$stagedRepo/ai"
 workSkillNames=()
 for workSkillPath in "$repoRoot"/profiles/work/skills/*/; do
