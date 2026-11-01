@@ -139,8 +139,8 @@ function guardPkillSelfMatch(command) {
 }
 
 async function guardRawCommit(command, transcriptPath) {
-  if (!GIT_COMMIT_OR_PUSH.test(maskSingleQuotedText(maskLiteralHeredocBodies(command)))) allow();
-  if (await hasLandingSkillRunSinceLastPrompt(transcriptPath)) allow();
+  if (!GIT_COMMIT_OR_PUSH.test(maskSingleQuotedText(maskLiteralHeredocBodies(command)))) return;
+  if (fs.existsSync(transcriptPath) && (await hasLandingSkillRunSinceLastPrompt(transcriptPath))) return;
   denyPreToolUse(RAW_COMMIT_REASON);
 }
 
@@ -254,13 +254,14 @@ async function guardSpecFirstForBash(command, sessionDirectory, transcriptPath) 
 
 async function main() {
   const payload = readPayload();
-  if (!payload || typeof payload !== "object" || !isAttendedMainLoopCall(payload)) allow();
-  if (typeof payload.transcript_path !== "string" || !fs.existsSync(payload.transcript_path)) allow();
+  if (!payload || typeof payload !== "object" || payload.agent_id) allow();
+  if (typeof payload.transcript_path !== "string") allow();
   const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
+  if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
+  if (!isAttendedMainLoopCall(payload) || !fs.existsSync(payload.transcript_path)) allow();
   const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
   if (payload.tool_name === "Bash") guardPkillSelfMatch(String(toolInput.command || ""));
   if (payload.tool_name === "Bash") await guardSpecFirstForBash(String(toolInput.command || ""), sessionDirectory, payload.transcript_path);
-  if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
   if (EDIT_TOOLS.has(payload.tool_name)) await guardSpecFirst(String(toolInput.file_path || ""), payload.transcript_path);
   allow();
 }

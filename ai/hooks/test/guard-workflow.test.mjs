@@ -127,11 +127,14 @@ test("a /landing or /opening-prs run allows raw commits until the next carbon-un
   assert.equal(decisionFor(bashCall("git commit -m x", rejectedRun)).decision, "deny");
 });
 
-test("subagents, unattended sessions, and unreadable input are never gated", () => {
+test("subagents and malformed input are never gated, and unattended or transcriptless sessions are gated only on raw commits", () => {
   const transcriptPath = writeTranscript([prompt("fix it")]);
   assert.equal(decisionFor(bashCall("git push", transcriptPath, { agent_id: "agent-1" })).decision, "allow");
-  assert.equal(decisionFor(bashCall("git push", transcriptPath), { CLAUDE_CODE_SESSION_ATTENDED: "0", HOME: sandboxHome }).decision, "allow");
-  assert.equal(decisionFor(bashCall("git push", path.join(sandboxHome, "missing.jsonl"))).decision, "allow");
+  const unattended = { CLAUDE_CODE_SESSION_ATTENDED: "0", HOME: sandboxHome };
+  assert.equal(decisionFor(bashCall("git push", transcriptPath), unattended).decision, "deny");
+  assert.equal(decisionFor(bashCall("pkill -f node", transcriptPath), unattended).decision, "allow");
+  assert.equal(decisionFor(bashCall("git push", path.join(sandboxHome, "missing.jsonl")), unattended).decision, "deny");
+  assert.equal(decisionFor(bashCall("ls", path.join(sandboxHome, "missing.jsonl"))).decision, "allow");
   const malformed = runHook("guard-workflow.mjs", "not json", ATTENDED);
   assert.equal(malformed.status, 0);
   assert.equal(malformed.stdout, "");

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -103,10 +104,25 @@ export function gateToRerun(stamp: StampRow | null): string {
 
 export function stampLedgerPath(git: Git): string {
   const baseDirectory = process.env.REVIEW_GATES_DIR || path.join(os.homedir(), ".claude", "review-gates");
-  const mainCheckoutName = path.basename(path.dirname(path.resolve(git.repo, git.commonDir())));
+  const mainCheckoutPath = path.dirname(path.resolve(git.repo, git.commonDir()));
+  const mainCheckoutName = `${path.basename(mainCheckoutPath)}-${createHash("sha1").update(mainCheckoutPath).digest("hex").slice(0, 12)}`;
   const headRef = git.run(["symbolic-ref", "-q", "HEAD"]).stdout.trim();
   const branchFileName = encodeURIComponent(headRef.replace(/^refs\/heads\//, "") || "HEAD");
-  return path.join(baseDirectory, mainCheckoutName, `${branchFileName}.jsonl`);
+  const ledgerFile = path.join(baseDirectory, mainCheckoutName, `${branchFileName}.jsonl`);
+  adoptBasenameKeyedLedger(path.join(baseDirectory, path.basename(mainCheckoutPath), `${branchFileName}.jsonl`), ledgerFile);
+  return ledgerFile;
+}
+
+function adoptBasenameKeyedLedger(legacyLedgerFile: string, ledgerFile: string): void {
+  for (const extension of [".jsonl", ".landed"]) {
+    const legacyFile = legacyLedgerFile.replace(/\.jsonl$/, extension);
+    const currentFile = ledgerFile.replace(/\.jsonl$/, extension);
+    if (fs.existsSync(currentFile) || !fs.existsSync(legacyFile)) {
+      continue;
+    }
+    fs.mkdirSync(path.dirname(currentFile), { recursive: true });
+    fs.renameSync(legacyFile, currentFile);
+  }
 }
 
 export function pinScopedTree(git: Git, paths: string[]): string | null {

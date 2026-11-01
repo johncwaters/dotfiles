@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { Git } from "../lib/git.ts";
+import { stampLedgerPath } from "../lib/stamp.ts";
 import { findWorktreeForBranch, listedUsernames } from "../lib/workspace.ts";
 import {
   cleanup,
@@ -805,3 +807,35 @@ test("a spec lands live: refused unreviewed, ticket commits scoped to the stamp,
     cleanup(origin, seed, local);
   }
 });
+
+test("two checkouts sharing a folder name keep separate stamp ledgers and adopt the folder-keyed one", (context) => {
+  const firstParent = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-a-"));
+  const secondParent = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-b-"));
+  const gatesDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-gates-"));
+  const previousGatesDirectory = process.env.REVIEW_GATES_DIR;
+  process.env.REVIEW_GATES_DIR = gatesDirectory;
+  context.after(() => {
+    restoreGatesDirectory(previousGatesDirectory);
+    cleanup(firstParent, secondParent, gatesDirectory);
+  });
+  const [firstRepo, secondRepo] = [firstParent, secondParent].map((parent) => {
+    const repo = path.join(parent, "app");
+    fs.mkdirSync(repo);
+    runGit(repo, ["init", "-q", "-b", "main"]);
+    return repo;
+  });
+  fs.mkdirSync(path.join(gatesDirectory, "app"));
+  fs.writeFileSync(path.join(gatesDirectory, "app", "main.jsonl"), "{}\n");
+
+  const firstLedger = stampLedgerPath(new Git(firstRepo));
+  assert.equal(fs.readFileSync(firstLedger, "utf8"), "{}\n");
+  assert.notEqual(stampLedgerPath(new Git(secondRepo)), firstLedger);
+});
+
+function restoreGatesDirectory(previousGatesDirectory: string | undefined): void {
+  if (previousGatesDirectory === undefined) {
+    delete process.env.REVIEW_GATES_DIR;
+    return;
+  }
+  process.env.REVIEW_GATES_DIR = previousGatesDirectory;
+}
