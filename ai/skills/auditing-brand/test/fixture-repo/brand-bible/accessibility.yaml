@@ -1,0 +1,4 @@
+minContrastText: 4.5
+minContrastLarge: 3
+focusRing: 2px solid accent
+minTargetPx: 24

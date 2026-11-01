@@ -7,10 +7,11 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 
-skillTreeDirectory="$topicDir/skills/rendering-skill-tree"
-if [[ ! -d "$skillTreeDirectory/node_modules" ]]; then
-  (cd -- "$skillTreeDirectory" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund > /dev/null)
-fi
+for skillWithDependenciesDirectory in "$topicDir/skills/rendering-skill-tree" "$topicDir/skills/auditing-brand"; do
+  if [[ ! -d "$skillWithDependenciesDirectory/node_modules" ]]; then
+    (cd -- "$skillWithDependenciesDirectory" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund > /dev/null)
+  fi
+done
 
 startSandboxHome "ai"
 
@@ -1182,6 +1183,7 @@ check "all behavior test groups are present" \
 if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
   check "hook, workflow, committing, running-retros, releasing, capturing-ui, composing-social-images, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
 fi
+check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-brand/test/census.test.ts"
 check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"
 check "designing-ui slop lint tests pass" node --test "$topicDir/skills/designing-ui/test/lint-slop.test.mjs"
 check "converging-reviews round tests pass" node --test "$topicDir/skills/converging-reviews/test/round.test.mjs"

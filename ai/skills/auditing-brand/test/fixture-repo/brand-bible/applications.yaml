@@ -1,0 +1,8 @@
+- id: readme
+  kind: readme
+  files:
+    - README.md
+- id: site
+  kind: docs-site
+  files:
+    - site/index.html

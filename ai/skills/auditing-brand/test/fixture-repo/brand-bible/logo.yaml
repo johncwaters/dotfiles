@@ -1,0 +1,16 @@
+mark:
+  file: assets/mark.svg
+  viewBox: 0 0 24 24
+  pathData:
+    - M4 12L12 4L20 12L12 20Z
+variants:
+  - id: primary
+    file: assets/mark.svg
+    use: Everywhere the mark appears alone
+clearSpaceRatio: 0.5
+minSizePx: 16
+colorways:
+  - foreground: accent
+    background: bg
+misuse:
+  - Never stretch the mark

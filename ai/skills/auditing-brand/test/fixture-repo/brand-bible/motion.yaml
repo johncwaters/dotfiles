@@ -1,0 +1,9 @@
+durationsMs:
+  quick: 120
+easings:
+  standard: cubic-bezier(0.2, 0, 0, 1)
+reducedMotion: required
+logoAnimation: The mark never animates.
+rules:
+  - rule: Motion marks a state change only.
+    why: Decorative motion hides real changes.

@@ -1,0 +1,15 @@
+direction:
+  lighting: Real screenshots only
+  composition: One focused window
+  colorTreatment: Untouched
+  subjects: The product at work
+  postProcessing: None
+  stock: No stock imagery
+formats:
+  - webp
+  - png
+maxBytes: 500000
+mascots:
+  allowed: false
+  where: []
+  why: The board is a control room, not a toy.

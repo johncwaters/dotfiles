@@ -1,0 +1,10 @@
+source:
+  library: Hand drawn
+  license: MIT
+viewBox: 0 0 16 16
+strokeWidth: 1.5
+fill: none
+linecap: round
+linejoin: round
+sizesPx:
+  - 16

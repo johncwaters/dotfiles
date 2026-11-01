@@ -1,0 +1,7 @@
+radius:
+  sm: 4
+spacing:
+  md: 16
+shadows:
+  raised: 0 2px 8px rgb(0 0 0 / 0.4)
+restingShadow: false

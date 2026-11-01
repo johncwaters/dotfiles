@@ -1,0 +1,31 @@
+families:
+  - id: mono
+    family: CommitMono
+    files:
+      - fonts/commit-mono-400.woff2
+    license: OFL-1.1
+    fallback:
+      - monospace
+scale:
+  meta:
+    token: type-meta
+    sizePx: 12
+    lineHeight: 1.5
+    weight: 400
+    trackingEm: 0
+    case: none
+  body:
+    token: type-body
+    sizePx: 14
+    lineHeight: 1.5
+    weight: 400
+    trackingEm: 0
+    case: none
+weights:
+  - 400
+  - 700
+minSizePx: 12
+features:
+  calt: "on"
+literalSizesAllowedIn:
+  - styles/tokens.css

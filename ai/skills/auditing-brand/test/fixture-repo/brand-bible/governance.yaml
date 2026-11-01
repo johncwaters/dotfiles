@@ -1,0 +1,10 @@
+owner: design
+reviewers:
+  - design
+reviewEveryMonths: 12
+exemptions:
+  - paths:
+      - test/**
+    kinds:
+      - color
+    why: Fixtures pin raw colors on purpose.

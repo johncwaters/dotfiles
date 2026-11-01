@@ -1,0 +1,28 @@
+tokens:
+  bg:
+    value: "#0a0a12"
+    role: surface
+    name: Night
+    use: Page background
+  text:
+    value: "#e8e8f0"
+    role: text
+    name: Mist
+    use: Body text
+  accent:
+    value: "#c084fc"
+    role: brand
+    name: Orchid
+    use: The single accent
+themes:
+  night:
+    label: Night
+    mode: dark
+    overrides: {}
+defaultTheme: night
+pairs:
+  - foreground: text
+    background: bg
+    minContrast: 4.5
+literalColorsAllowedIn:
+  - styles/tokens.css

@@ -1,0 +1,25 @@
+traits:
+  - even
+  - technical
+tone:
+  - context: error
+    tone: plain and specific
+    example: Relay north-3 stopped at 14:02.
+formality: neutral
+headingCase: sentence
+vocabulary:
+  banned:
+    - term: seamless
+      insteadUse: say what it does
+      why: Says nothing about the product.
+  preferred:
+    - term: relay
+      over:
+        - pipe
+characters:
+  - char: "!"
+    action: banned
+examples:
+  - onBrand: Relay north-3 needs you.
+    offBrand: Whoa, something went wrong!
+    why: Names the relay and drops the exclamation.

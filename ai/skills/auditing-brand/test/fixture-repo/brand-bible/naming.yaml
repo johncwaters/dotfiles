@@ -1,0 +1,19 @@
+productName: Lumen Relay
+allowedForms:
+  - form: lumen-relay
+    where: package
+  - form: lumen
+    where: cli
+forbiddenForms:
+  - LumenRelay
+  - lumen relay
+tagline: Every signal, one board.
+descriptions:
+  short: A board for every relay your team runs.
+  medium: Lumen Relay watches every relay your team runs and brings the one that needs you to the front.
+  long: Lumen Relay is a local board that watches every relay your team runs, reads status from structural signals, and brings the one that needs a person to the front.
+glossary:
+  - term: relay
+    definition: One forwarding process the board watches.
+    forbiddenAliases:
+      - pipe

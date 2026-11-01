@@ -1,0 +1,29 @@
+mission: Help small teams see which relay needs them.
+vision: Every signal reaches the one person who can act on it.
+values:
+  - name: Clarity
+    definition: Show the state that is known, never a guess.
+  - name: Restraint
+    definition: Speak only when something changed.
+positioning:
+  audience: Small operations teams
+  offer: One board for every relay
+  differentiator: Status comes from signals, not screen scraping
+audiences:
+  - name: Operator
+    needs: Know what needs attention now
+    context: Watching many relays at once
+personality:
+  - trait: precise
+    notTrait: cold
+  - trait: calm
+    notTrait: passive
+  - trait: direct
+    notTrait: blunt
+antiReferences:
+  - name: Generic SaaS dashboard
+    why: Gradient heroes say nothing about relays.
+principles:
+  - name: Earned signal
+    rule: Every color means a real state change.
+    why: A color that means nothing teaches the operator to ignore it.
