@@ -36,7 +36,7 @@ Stop on any failure; fix upstream while keeping every gate enforced.
 
 1. Freeze `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` per the repo's format; generate store notes when the profile defines them (respect caps).
 2. Bump `version_file` (and lockfile when the ecosystem pairs them).
-3. Land the release commit through `/landing` with `--promote`, with the repo's exact `release_commit_pattern` as its subject. Nothing else rides in the release commit except a newly derived profile on first run. `/landing --promote` pushes the resolved mainline itself, so present the release commit and get carbon-unit approval before running it. This path requires `git.release_from` to equal preflight's `policy.resolved.mainline` and `policy.afterCommit` to be `promote`; when either does not hold, stop and report.
+3. Stamp the bump without a review: `node "$HOME/.claude/skills/landing/stamp.ts" write --gate releasing --only <version_file> <lockfile> <changelog>`, adding `store_notes.path` when the profile defines it and a newly derived profile on first run; it refuses a tree that changes any other path. Then land the release commit through `/landing` with `--promote`, with the repo's exact `release_commit_pattern` as its subject. Nothing else rides in the release commit except the store notes and a newly derived profile on first run. `/landing --promote` pushes the resolved mainline itself, so present the release commit and get carbon-unit approval before running it. This path requires `git.release_from` to equal preflight's `policy.resolved.mainline` and `policy.afterCommit` to be `promote`; when either does not hold, stop and report.
 
 ## Step 4: Execute, by archetype
 

@@ -48,6 +48,7 @@ export type DigestOptions = { includeGit?: boolean };
 
 type JsonObject = Record<string, unknown>;
 type ToolUse = { name: string; command: string };
+const REVIEW_GATE_SKILLS = new Set(["gating-reviews", "converging-reviews"]);
 
 export function asObject(value: unknown): JsonObject | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
@@ -213,7 +214,7 @@ export async function digestTranscript(
   };
   const toolsById = new Map<string, ToolUse>();
   const failuresByCommand = new Map<string, { count: number; incident?: Incident }>();
-  let reviewCount = 0;
+  let hasGateRunSinceLanding = false;
   let hasPendingInterrupt = false;
 
   function addIncident(kind: IncidentKind, text: string, fields: Partial<Incident> = {}): Incident {
@@ -260,9 +261,9 @@ export async function digestTranscript(
       }
     }
     if (typeof block.id === "string") toolsById.set(block.id, { name, command });
-    if (name !== "Skill" || input?.skill !== "reviewing-code") return;
-    reviewCount += 1;
-    if (reviewCount > 1) addIncident("review-rework", "reviewing-code", { toolName: name });
+    if (name !== "Skill" || !REVIEW_GATE_SKILLS.has(asText(input?.skill))) return;
+    if (hasGateRunSinceLanding) addIncident("review-rework", asText(input?.skill), { toolName: name });
+    hasGateRunSinceLanding = true;
   }
 
   function recordToolResult(block: JsonObject, toolUseResult: JsonObject | null): void {
@@ -270,6 +271,7 @@ export async function digestTranscript(
     const tool = toolsById.get(asText(block.tool_use_id));
     const toolFields = tool?.name ? { toolName: tool.name } : {};
     if (isOversizedResult(text)) addIncident("oversized-result", text, toolFields);
+    if (tool?.name === "Bash" && /\bland\.ts\b/.test(tool.command) && /"outcome":"COMMITTED"/.test(text)) hasGateRunSinceLanding = false;
     if ((tool?.name === "Agent" || tool?.name === "Task" || typeof toolUseResult?.agentType === "string") && typeof toolUseResult?.totalTokens === "number" && toolUseResult.totalTokens >= 150000) {
       addIncident("costly-subagent", text, { ...toolFields, count: toolUseResult.totalTokens });
     }

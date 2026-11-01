@@ -118,6 +118,18 @@ export function pinScopedTree(git: Git, paths: string[]): string | null {
   }
 }
 
+export function changedPathsOutside(git: Git, allowedPaths: string[]): string[] | null {
+  const prefix = git.run(["rev-parse", "--show-prefix"]);
+  const status = git.run(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ":/"]);
+  if (prefix.code !== 0 || status.code !== 0) {
+    return null;
+  }
+  const allowedRootPaths = allowedPaths.map((allowedPath) => path.posix.normalize(path.posix.join(prefix.stdout.trim(), allowedPath)).replace(/\/+$/, ""));
+  const isAllowed = (changedPath: string) => allowedRootPaths.some((allowedPath) => changedPath === allowedPath || changedPath.startsWith(`${allowedPath}/`));
+  const changedPaths = status.stdout.split("\0").filter(Boolean).map((entry) => (/^[ MADRCU?!]{2} /.test(entry) ? entry.slice(3) : entry));
+  return changedPaths.filter((changedPath) => !isAllowed(changedPath));
+}
+
 function readStampRows(git: Git): StampRow[] {
   const ledgerFile = stampLedgerPath(git);
   if (!fs.existsSync(ledgerFile)) {

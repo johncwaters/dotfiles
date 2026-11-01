@@ -10,7 +10,7 @@ const scriptPath = join(import.meta.dirname, "../digest.ts");
 const fixturesDir = join(import.meta.dirname, "fixtures");
 const fixturePath = join(fixturesDir, "synthetic-project/synthetic-session.jsonl");
 
-test("CLI collects only touched spec graphs and deduplicates expanded paths", (context) => {
+test("CLI collects only touched spec graphs, deduplicates expanded paths, and counts no rework for a gate run after a landing", (context) => {
   const transcriptDirectory = mkdtempSync(join(tmpdir(), "retro-digest-"));
   context.after(() => rmSync(transcriptDirectory, { recursive: true, force: true }));
   const livePath = join(homedir(), ".claude/specs/dotfiles/session-spec.json");
@@ -27,9 +27,14 @@ test("CLI collects only touched spec graphs and deduplicates expanded paths", (c
     { name: "Bash", input: { command: `node ~/.claude/skills/specifying/archive.ts '${archivePath}' built` } },
     { name: "Bash", input: { command: `node ~/.claude/skills/specifying/cut.ts '${livePath.slice(0, -5)}.intent.json'` } },
   ];
-  writeFileSync(transcriptPath, JSON.stringify({
+  const gateRunsAroundALanding = [
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "gate-1", name: "Skill", input: { skill: "gating-reviews" } }, { type: "tool_use", id: "land-1", name: "Bash", input: { command: "node ~/.claude/skills/landing/land.ts" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "land-1", content: '{"outcome":"COMMITTED","commit":"abc"}' }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "gate-2", name: "Skill", input: { skill: "gating-reviews" } }] } },
+  ];
+  writeFileSync(transcriptPath, [{
     type: "assistant", message: { content: toolUses.map((toolUse) => ({ type: "tool_use", ...toolUse })) },
-  }));
+  }, ...gateRunsAroundALanding].map((entry) => JSON.stringify(entry)).join("\n"));
   const digestProcess = spawnSync(process.execPath, [scriptPath, transcriptPath, "--no-git"], {
     encoding: "utf8", timeout: 5000,
   });

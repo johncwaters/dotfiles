@@ -1,6 +1,6 @@
 ---
 name: running-retros
-description: Reviews finished coding sessions for agent-setup friction and proposes at most five enforceable AI-config fixes, with carbon-unit picks landed through /landing. Use for /running-retros, "retro this session", "what went wrong this session", "review my last sessions", or a SessionStart unreviewed-session reminder. Code-diff reviews belong to /landing or /reviewing-prs; sprint retro posts belong to posting-sprint-updates.
+description: Reviews finished coding sessions for agent-setup friction and proposes at most five enforceable AI-config fixes, with carbon-unit picks handed to /specifying. Use for /running-retros, "retro this session", "what went wrong this session", "review my last sessions", or a SessionStart unreviewed-session reminder. Code-diff reviews belong to /gating-reviews or /reviewing-prs; sprint retro posts belong to posting-sprint-updates.
 ---
 
 # Retro
@@ -71,8 +71,8 @@ Ask with AskUserQuestion, `multiSelect: true`, one option per proposal, offering
 ## Step 5: Apply
 
 1. Group picks by target repository. For the dotfiles, work in a fresh worktree off mainline, keeping `~/.dotfiles` itself untouched: `git -C ~/.dotfiles worktree add <scratchpad>/retro-dotfiles -b retro/<date>-<short id> origin/main`. For the session repo, use a worktree the same way unless this session is already in one with a clean tree.
-2. Make each picked change as its proposal states, smallest form first; a hook comes with its test under `ai/hooks/test/` and its row in `ai/hooks/AGENTS.md`.
-3. Run `/landing` in that worktree; it is the only gate. Mark each landed proposal `applied` with `set-status`. A change `/landing` could not land stays `pending` with the reason reported.
+2. Hand that repository's picks to `/specifying` in that worktree as one request, naming each proposal id and asking for each change as its proposal states, smallest form first; a hook comes with its test under `ai/hooks/test/` and its row in `ai/hooks/AGENTS.md`. Its build reviews and lands every ticket.
+3. Mark a proposal `applied` with `set-status` once the ticket implementing it lands. One whose ticket did not land stays `pending` with the reason reported.
 4. Undo is `git revert` of that commit; say which commit holds which proposal.
 
 ## Scripts
