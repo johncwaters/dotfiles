@@ -39,6 +39,10 @@ const RULINGS = new Set(["NIT", "ACTIONABLE"]);
 const VERDICTS = new Set(["APPROVE", "APPROVE WITH NITS", "REQUEST CHANGES", "BLOCKED", "FAILED"]);
 const DISPOSITIONS = new Set(["ACTIONABLE", "NIT", "AMBIGUOUS"]);
 const CITED_FILE_LINE = /([\w.@/-]+\.[\w]+):(\d+)/g;
+const HOOK_SCRIPT_RUN = /\b(npm|pnpm|yarn)\s+(?:run\s+)?(?:-{1,2}[\w-]+\s+)*([\w:.-]+)/g;
+const FALLBACK_GATE_SCRIPTS = ["check:fast", "test"];
+const GATE_OUTPUT_LINES = 30;
+const GATE_FAILURE_LINE = /^\s*not ok\b|^\s*✖|\bFAIL\b|\bError:|\berror TS\d+|^\s*\d+:\d+\s+error\b/;
 
 function finish(outcome, details = {}) {
   process.stdout.write(`${JSON.stringify({ outcome, ...details })}\n`);
@@ -215,6 +219,60 @@ function isAnchoredToChange(finding, isNearChangedLine) {
   return [...finding.body.matchAll(CITED_FILE_LINE)].some(([, citedFile, citedLine]) => isNearChangedLine(citedFile, "RIGHT", Number(citedLine), 0));
 }
 
+function prePushHookFiles(repoPath, repoRoot) {
+  const configuredHooksPath = spawnSync("git", ["config", "core.hooksPath"], { cwd: repoPath, encoding: "utf8" }).stdout.trim();
+  const hooksDirectory = configuredHooksPath ? path.resolve(repoRoot, configuredHooksPath) : path.resolve(repoPath, runGit(repoPath, ["rev-parse", "--git-path", "hooks"]).trim());
+  const isHuskyStubDirectory = path.basename(hooksDirectory) === "_";
+  const candidateFiles = [path.join(hooksDirectory, "pre-push"), ...(isHuskyStubDirectory ? [path.join(path.dirname(hooksDirectory), "pre-push")] : [])];
+  return candidateFiles.filter((hookFile) => fs.existsSync(hookFile));
+}
+
+function scriptRunIn(hookText, packageScripts) {
+  for (const [, runner, script] of hookText.matchAll(HOOK_SCRIPT_RUN)) {
+    if (Object.hasOwn(packageScripts, script)) return { runner, script };
+  }
+  return null;
+}
+
+function findGate(repoPath) {
+  const repoRoot = runGit(repoPath, ["rev-parse", "--show-toplevel"]).trim();
+  const packageFile = path.join(repoRoot, "package.json");
+  const packageScripts = fs.existsSync(packageFile) ? JSON.parse(fs.readFileSync(packageFile, "utf8")).scripts ?? {} : {};
+  const hookFiles = prePushHookFiles(repoPath, repoRoot);
+  for (const hookFile of hookFiles) {
+    const scriptRun = scriptRunIn(fs.readFileSync(hookFile, "utf8"), packageScripts);
+    if (scriptRun) return { command: [scriptRun.runner, "run", scriptRun.script], name: scriptRun.script, source: "pre-push hook" };
+  }
+  const userHookFile = hookFiles.at(-1);
+  if (userHookFile) return { command: ["sh", userHookFile], name: "pre-push", source: "pre-push hook, run whole since no package script was found in it" };
+  const fallbackScript = FALLBACK_GATE_SCRIPTS.find((scriptName) => Object.hasOwn(packageScripts, scriptName));
+  return fallbackScript ? { command: ["npm", "run", fallbackScript], name: fallbackScript, source: "package.json" } : null;
+}
+
+function gateFingerprint(gateName, outputLines) {
+  const failureLines = outputLines.filter((line) => GATE_FAILURE_LINE.test(line));
+  const identifyingLines = failureLines.length > 0 ? failureLines : outputLines.slice(-GATE_OUTPUT_LINES);
+  const normalizedLines = identifyingLines.map((line) => line.replace(/\d+(\.\d+)?\s*m?s\b/g, "").trim());
+  return createHash("sha1").update(`gate/${gateName}\n${normalizedLines.join("\n")}`).digest("hex").slice(0, 12);
+}
+
+function runGate(repoPath) {
+  const gateCommand = findGate(repoPath);
+  if (gateCommand === null) return { gate: null, gateFinding: null };
+  const [program, ...programArguments] = gateCommand.command;
+  const gateRun = spawnSync(program, programArguments, { cwd: repoPath, encoding: "utf8", input: "", maxBuffer: 256 * 1024 * 1024 });
+  const exitCode = gateRun.status ?? 1;
+  const gate = { command: gateCommand.command.join(" "), name: gateCommand.name, source: gateCommand.source, exitCode };
+  if (exitCode === 0) return { gate, gateFinding: null };
+  const outputLines = `${gateRun.stdout ?? ""}${gateRun.stderr ?? ""}${gateRun.error?.message ?? ""}`.split("\n").filter((line) => line.trim() !== "");
+  const firstFailureIndex = outputLines.findIndex((line) => GATE_FAILURE_LINE.test(line));
+  const proofLines = firstFailureIndex === -1 ? outputLines.slice(-GATE_OUTPUT_LINES) : outputLines.slice(firstFailureIndex, firstFailureIndex + GATE_OUTPUT_LINES);
+  const gateReviewer = `gate/${gateCommand.name}`;
+  const body = `\`${gate.command}\` from the ${gateCommand.source} exits ${exitCode}. Proof: it printed: ${proofLines.join("\n")}`;
+  const gateFinding = { filePath: gateReviewer, lineNumber: null, side: "RIGHT", severity: "HIGH", reviewer: gateReviewer, disposition: "ACTIONABLE", body, fingerprint: gateFingerprint(gateCommand.name, outputLines) };
+  return { gate, gateFinding };
+}
+
 function atLeast(severity, floorSeverity) {
   return (SEVERITY_RANK[severity] ?? 0) >= SEVERITY_RANK[floorSeverity];
 }
@@ -289,6 +347,8 @@ function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOu
     const ruledDisposition = rulingByFingerprint.get(finding.fingerprint);
     keptFindings.push(ruledDisposition ? { ...finding, disposition: ruledDisposition } : finding);
   }
+  const { gate, gateFinding } = runGate(repoPath);
+  if (gateFinding) keptFindings.push(gateFinding);
   const actionableFindings = keptFindings.filter((finding) => finding.disposition === "ACTIONABLE" && atLeast(finding.severity, plan.severityFloor));
   const outcome = decideOutcome({ review, round, plan, ledger, actionableFindings, keptFindings });
   const findingRows = keptFindings.map((finding) => ({
@@ -313,6 +373,7 @@ function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOu
     actionable: actionableFindings.length,
     droppedOffHunk: droppedOffHunkByReviewer,
     droppedSettled: droppedSettledCount,
+    gate,
   };
   appendRows(ledgerFile, [...findingRows, roundRow]);
   const reportedFinding = ({ fingerprint, filePath, lineNumber, severity, reviewer, body }) => ({ fingerprint, file: filePath, line: lineNumber ?? "general", severity, reviewer, body });
@@ -331,6 +392,7 @@ function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOu
     droppedSettled: droppedSettledCount,
     unmatchedBodies,
     truncatedLanes: review.truncatedLanes,
+    gate,
     ledger: ledgerFile,
   });
 }

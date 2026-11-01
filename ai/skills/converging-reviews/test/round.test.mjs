@@ -114,3 +114,27 @@ test("a clean delta round asks for a whole-diff sweep against the original base,
   assert.deepEqual([secondSweep.report.outcome, secondSweep.report.severityFloor], ["CLEAN", "HIGH"]);
   assert.equal(runRound(repository, ledgerRoot, ["verify"]).report.outcome, "VERIFIED");
 });
+
+test("a failing pre-push gate keeps a clean review from ending the round and its fix lets the loop move on", (context) => {
+  const repository = makeRepo();
+  const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
+  context.after(() => cleanup(repository, ledgerRoot));
+  commitFile(repository, "package.json", JSON.stringify({ scripts: { "check:fast": "node -e \"if (require('fs').existsSync('broken')) { console.log('not ok 1 - type token gate'); process.exit(1) }\"", test: "node -e \"process.exit(1)\"" } }));
+  fs.writeFileSync(path.join(repository, ".git", "hooks", "pre-push"), "#!/bin/sh\nnpm run -s check:fast || exit 1\n");
+  fs.writeFileSync(path.join(repository, "broken"), "");
+  const firstTree = workingTreeId(repository, ledgerRoot);
+  const baseTree = runRound(repository, ledgerRoot, ["start", "--tree", firstTree]).report.base;
+
+  const failingRound = runRound(repository, ledgerRoot, ["classify", "--round", "1", "--base", baseTree, "--head", firstTree], reviewWith([]));
+  assert.equal(failingRound.report.outcome, "CONTINUE");
+  assert.deepEqual([failingRound.report.gate.name, failingRound.report.gate.source], ["check:fast", "pre-push hook"]);
+  const [gateFinding] = failingRound.report.actionable;
+  assert.equal(gateFinding.reviewer, "gate/check:fast");
+  assert.match(gateFinding.body, /not ok 1 - type token gate/);
+  runRound(repository, ledgerRoot, ["record", "--fingerprint", gateFinding.fingerprint, "--fix", "FIXED", "--round", "1"]);
+
+  fs.rmSync(path.join(repository, "broken"));
+  const fixedTree = workingTreeId(repository, ledgerRoot);
+  const passingRound = runRound(repository, ledgerRoot, ["classify", "--round", "2", "--base", firstTree, "--head", fixedTree], reviewWith([]));
+  assert.deepEqual([passingRound.report.outcome, passingRound.report.gate.exitCode], ["SWEEP", 0]);
+});

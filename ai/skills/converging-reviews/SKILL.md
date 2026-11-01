@@ -37,7 +37,7 @@ Note the output file the qa-swarm Workflow notification names, and pipe the whol
 node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --base BASE --head TREE_N --swarm-output <qa-swarm output file>
 ```
 
-`classify` takes each finding's body verbatim from the swarm output, drops findings the ledger already settled and findings anchored away from the round's hunks (`droppedOffHunk`), then prints the outcome, the kept `actionable` (at or above the round's `severityFloor`, recounted, unlike `/reviewing-code`'s `ACTIONABLE` header), `asked`, and below-HIGH `ambiguous` findings. `unmatchedBodies` counts findings whose body it could not match.
+`classify` takes each finding's body verbatim from the swarm output, drops findings the ledger already settled and findings anchored away from the round's hunks (`droppedOffHunk`), then prints the outcome, the kept `actionable` (at or above the round's `severityFloor`, recounted, unlike `/reviewing-code`'s `ACTIONABLE` header), `asked`, and below-HIGH `ambiguous` findings. `unmatchedBodies` counts findings whose body it could not match. It also runs the repo's push gate in the working tree: the first `package.json` script its pre-push hook invokes (husky's `.husky/pre-push` included), else the hook itself, else `check:fast`, else `test`. A failure becomes a HIGH `ACTIONABLE` `gate/<name>` finding that no ruling settles while the gate still fails, so a round cannot end clean on a tree the push would reject; `gate` in its output names what ran, or `null` when the repo has none, which the report says.
 
 ## Step 3: Act on the outcome
 
@@ -66,7 +66,7 @@ Hand every `actionable` finding to `~/.claude/skills/committing/subskills/fix.md
 node "$HOME/.claude/skills/converging-reviews/round.mjs" record --fingerprint <fp> --fix FIXED|UNVERIFIED|DECLINED --round N
 ```
 
-Run the suite covering the changed files and fix a failure at its root cause; a suite that cannot run here goes in the report by name, with what ran instead. Pin the tree as `TREE_{N+1}`, the next round's head; `TREE_N` is its base.
+Fix a `gate/<name>` finding at its root cause like any other; with `gate: null`, run the suite covering the changed files instead, and a suite that cannot run here goes in the report by name, with what ran instead. Pin the tree as `TREE_{N+1}`, the next round's head; `TREE_N` is its base.
 
 ## Scripts
 
