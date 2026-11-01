@@ -81,7 +81,8 @@ function targetOfHeading(finding: UntargetedFinding): BibleTarget {
 }
 
 function targetOfLicensedFile(finding: UntargetedFinding): BibleTarget {
-  return /font|ofl|mono|sans|serif/i.test(finding.file) ? 'typography.families' : 'iconography';
+  if (/font|ofl|mono|sans|serif/i.test(finding.file)) return 'typography.families';
+  return /icon/i.test(finding.file) ? 'iconography' : 'governance';
 }
 
 const TARGET_BY_KIND: Record<FindingKind, BibleTarget | ((finding: UntargetedFinding) => BibleTarget)> = {
