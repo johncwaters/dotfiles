@@ -65,6 +65,7 @@ function renderIntent(spec: DesignSpec, specPath: string) {
     risk: goal.risk ?? "",
     boundary: oneLine(boundary),
     writeScopes: removeContainedScopes(tickets.flatMap((ticket) => ticket.writeScopes)),
+    reviewGate: spec.reviewGate ?? "gating-reviews",
     tickets,
   };
 }

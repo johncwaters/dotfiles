@@ -42,6 +42,8 @@ export type Design = {
 export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit | Design;
 export type EdgeKind = "blocks" | "implements" | "dependsOn" | "deferredBy";
 export type Edge = { from: Node["id"]; kind: EdgeKind; to: Node["id"] };
+export const REVIEW_GATES = ["gating-reviews", "converging-reviews"] as const;
+export type ReviewGate = (typeof REVIEW_GATES)[number];
 export type DesignSpec = {
   status: "sketch" | "grilled" | "sliced" | "challenged";
   request: string;
@@ -50,6 +52,7 @@ export type DesignSpec = {
   edges: Edge[];
   challengeStamp?: string;
   challengedUnitIds?: string[];
+  reviewGate?: ReviewGate;
 };
 
 export const READING_BUDGET_BYTES = 200000;
@@ -207,7 +210,10 @@ function validateShape(value: unknown): string[] {
     addError(errors, 1, "spec", "supply a DesignSpec object");
     return errors;
   }
-  rejectUnknownFields(value, ["status", "request", "repoRoot", "nodes", "edges", "challengeStamp", "challengedUnitIds"], "spec", errors);
+  rejectUnknownFields(value, ["status", "request", "repoRoot", "nodes", "edges", "challengeStamp", "challengedUnitIds", "reviewGate"], "spec", errors);
+  if (Object.hasOwn(value, "reviewGate") && !(REVIEW_GATES as readonly unknown[]).includes(value.reviewGate)) {
+    addError(errors, 1, "spec.reviewGate", `use one of ${REVIEW_GATES.join(", ")}`);
+  }
   if (typeof value.status !== "string" || !["sketch", "grilled", "sliced", "challenged"].includes(value.status)) {
     addError(errors, 1, "spec.status", "use sketch, grilled, sliced, or challenged");
   }
