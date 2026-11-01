@@ -37,7 +37,7 @@ const UNRESOLVED_TARGET_NAME = "unresolved-write-target";
 
 const RAW_COMMIT_REASON =
   "Raw `git commit` and `git push` are denied outside /landing, so every landing commits a tree a review gate stamped. " +
-  "Run the review gate (the intent's gate, else /gating-reviews), then /landing; /gating-reviews stamps a pure rename or a reviewer's suggestion applied verbatim without a review pass. " +
+  "Run the review gate (the intent's gate, else /gating-reviews), then /landing, which also commits without pushing (land.ts --no-push) when asked; /gating-reviews stamps a pure rename or a reviewer's suggestion applied verbatim without a review pass. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
 const PKILL_SELF_MATCH_REASON =

@@ -1,6 +1,6 @@
 ---
 name: landing
-description: Lands reviewed work through the personal commit workflow. Runs two deterministic steps (preflight, land) that stage exactly the tree a review gate stamped, commit, and push with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /landing, "commit this", "commit and push", or landing finished work.
+description: Lands reviewed work through the personal commit workflow. Runs two deterministic steps (preflight, land) that stage exactly the tree a review gate stamped, commit, and push (or, with --no-push, commit locally only) with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /landing, "commit this", "commit and push", "commit locally", or landing finished work.
 ---
 
 # Commit
