@@ -221,7 +221,7 @@ ensureDotfilesAlias() {
   noteApplied "~/.dotfiles" "points at $dotfilesRepo"
 }
 
-# The committing skill reads this marker, so a one-off profile must never rewrite it.
+# The landing skill reads this marker, so a one-off profile must never rewrite it.
 ensureProfileMarker() {
   local markedProfile
   markedProfile="$(readMarkedProfileName)"
