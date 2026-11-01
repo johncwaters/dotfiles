@@ -57,6 +57,7 @@ export type NextStep =
   | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause"; items: string[] }
   | { action: "resolveConflicts"; files: string[] }
   | { action: "askCarbonUnit"; question: string }
+  | { action: "relay"; report: string }
   | { action: "stop"; report: string };
 
 export type Result = { outcome: OutcomeName; next: NextStep } & Record<string, unknown>;
@@ -143,7 +144,10 @@ export const committed = defineOutcome("COMMITTED", {
   pushed: required("boolean"),
   promoted: required("stringList"),
   deletedRemoteBranches: optional("stringList"),
-}, () => ({ action: "done" }));
+  noPullRequestHost: optional("string"),
+}, ({ noPullRequestHost }) => noPullRequestHost
+  ? { action: "relay", report: `${noPullRequestHost}; /opening-prs does not recognize it as a GitHub remote, so the branch stays unmerged until a pull request is opened on its host.` }
+  : { action: "done" });
 
 export const messageValid = defineOutcome("READY", {}, () => ({ action: "proceed" }));
 

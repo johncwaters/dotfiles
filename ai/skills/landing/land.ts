@@ -59,6 +59,7 @@ import {
   verifyStamp,
 } from "./lib/stamp.ts";
 import { readStdin } from "./lib/stdio.ts";
+import { readGithubRemote } from "./lib/visibility.ts";
 import {
   computeScope,
   findWorktreeForBranch,
@@ -158,6 +159,7 @@ class Landing {
   private commitHash: string | null = null;
   private deferredFeatureBranch: string | null = null;
   private parkedFeatureBranch: string | null = null;
+  private featurePushRemote: string | null = null;
   private preRebaseFeatureTip: string | null = null;
   private readOnlyHolderMainlineTip: string | null = null;
   private noOriginPromoteWarned = false;
@@ -235,8 +237,21 @@ class Landing {
       ...(this.deletedRemoteBranches.length > 0
         ? { deletedRemoteBranches: this.deletedRemoteBranches }
         : {}),
+      ...this.pullRequestHostGap(),
       warnings: this.warnings,
     });
+  }
+
+  private pullRequestHostGap(): { noPullRequestHost?: string } {
+    if (this.config.promote || !this.pushed || this.featurePushRemote === null) {
+      return {};
+    }
+    const pushedRemote = readGithubRemote(this.git, this.featurePushRemote);
+    if (pushedRemote.repositoryName !== null || !pushedRemote.hasRemote) {
+      return {};
+    }
+    const remoteUrl = this.git.run(["remote", "get-url", pushedRemote.remote]).stdout.trim();
+    return { noPullRequestHost: `Pushed ${this.git.currentBranch()} to ${pushedRemote.remote} (${remoteUrl})` };
   }
 
   private followCoherenceJournal(): void {
@@ -487,6 +502,7 @@ class Landing {
     const mainline = resolveMainline(this.git, configuredMainline(readCommitPolicy().policy));
     const mainlineBranchNames = mainline === null ? NEVER_DELETED_BRANCHES : [mainline, ...NEVER_DELETED_BRANCHES];
     const target = this.git.resolveFeaturePushTarget(branch, mainlineBranchNames);
+    this.featurePushRemote = target.remote;
     if (!this.git.listRemotes().includes(target.remote)) {
       this.warnings.push(`no ${target.remote} remote configured; skipping push`);
       return null;

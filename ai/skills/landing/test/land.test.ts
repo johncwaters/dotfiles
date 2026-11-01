@@ -768,6 +768,7 @@ test("a spec lands live: refused unreviewed, ticket commits scoped to the stamp,
     assert.equal(stamp(local, ["ticket.txt"]).code, 0);
     const firstTicket = landUnstamped(local, [], ticketMessage("U1"));
     assert.equal(firstTicket.result.outcome, "COMMITTED");
+    assert.deepEqual(firstTicket.result.next, { action: "relay", report: `Pushed feature to origin (${gitOutput(local, ["remote", "get-url", "origin"])}); /opening-prs does not recognize it as a GitHub remote, so the branch stays unmerged until a pull request is opened on its host.` });
     assert.deepEqual(gitOutput(local, ["show", "--name-only", "--format=", "HEAD"]).split("\n"), ["ticket.txt"]);
     assert.equal(gitOutput(local, ["log", "-1", "--format=%(trailers:key=Ticket,valueonly)"]), "live-spec/U1");
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), firstTicket.result.commit);
