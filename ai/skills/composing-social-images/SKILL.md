@@ -57,7 +57,7 @@ Hand over the final PNGs somewhere the carbon unit can open them from a phone, w
 
 ## Clips
 
-A clip shows what a still cannot: an animation, a transition, a state change. Load `capturing-ui` to record it; its motion craft (timing, easing, staging) follows the `animating` skill (`~/.claude/skills/animating`).
+A clip shows what a still cannot: an animation, a transition, a state change. Load `capturing-ui` to record it; its motion craft (timing, easing, staging) follows the `animating` skill (`~/.claude/skills/animating`). A demo video of the whole running app goes to `recording-demo-videos`.
 
 ## Scripts
 
