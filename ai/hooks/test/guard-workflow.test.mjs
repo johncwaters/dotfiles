@@ -169,10 +169,19 @@ test("the first repo edit of a session without /specifying is denied once", () =
     [`cd ${repository}\nsed -i s/one/two/ a.txt`, outsideRepository],
     ["bash -c \"sed -i s/one/two/ a.txt\"", repository],
     ["bash -c 'sed -i s/one/two/ a.txt'", repository],
+    [`S=${repository}; cat > $S/a.txt <<'EOF'\ntwo\nEOF`, outsideRepository],
+    [`cat > $S/a.txt; S=${sandboxHome}`, repository],
+    [`S=${sandboxHome}; declare S=${repository}; echo x > $S/a.txt`, repository],
+    [`S=${repository}; (S=${sandboxHome}); echo x > $S/a.txt`, repository],
+    [`true || S=${sandboxHome}; echo x > $S/a.txt`, repository],
+    [`S=${sandboxHome} echo x > $S/a.txt`, repository],
+    [`echo "x;S=${sandboxHome}"; echo x > $S/a.txt`, repository],
+    [`# ;S=${sandboxHome}\necho x > $S/a.txt`, repository],
+    ['S="my notes"; printf x > "$S/a.txt"', repository],
   ]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd })).decision, "deny", command);
   }
-  for (const command of ["sed -n 1p a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee"]) {
+  for (const command of ["sed -n 1p a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee", `export S=${sandboxHome}; D="$S/notes"; cat > "$D/scratch.txt"`, `S=${sandboxHome}; cat > $S/tl.py <<'EOF'\nfor row in rows:  # (each)\n    print(row)\nEOF`]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd: repository })).decision, "allow", command);
   }
   assert.equal(decisionFor(bashCall("sed -i s/one/two/ a.txt", afterDenial, { cwd: repository })).decision, "allow");

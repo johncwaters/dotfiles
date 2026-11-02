@@ -27,6 +27,10 @@ const OUTPUT_REDIRECT = /(?:^|[^<>&\d=-])(?:\d|&)?>>?(?![&>(=])[ \t]*([^\s;&|()<
 const FILE_WRITING_COMMAND = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(?:\S*/)?(tee|sed|perl|ruby|patch|git${GIT_GLOBAL_OPTIONS}\s+apply)(?=\s|$)([^;&|\n]*)`, "gm");
 const FIND_EXEC_EDIT = /-(?:exec|execdir|ok|okdir)\s+(?:\S*\/)?(sed|perl|ruby)(?=\s)([^;&|\n]*)/g;
 const DIRECTORY_CHANGE = /(?:^|[;&|(\n])\s*(?:cd|pushd)\s+([^\s;&|)]+)/g;
+const VARIABLE_REFERENCE = /\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))/g;
+const PLAIN_ASSIGNMENT = /^(?:export\s+)?([A-Za-z_]\w*)=((?:'[^']*'|"[^"\\`$]*(?:\$\{?[A-Za-z_]\w*\}?[^"\\`$]*)*"|[^\s'"\\`])*)$/;
+const CONDITIONAL_OR_SUBSHELL_CODE = /(?:^|[\s;&|])(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function|\{|\}|#\S*)(?=$|[\s;&|])|(?<!\$)\(|`|\bcoproc\b/;
+const STATEMENT_SEPARATOR = /^(?:&&|\|\||;;|[;\n|&])/;
 const SHELL_RUNS_NEXT_WORD = /(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval)\s*$/;
 const IN_PLACE_FLAG = /^(?:-[A-Za-z0-9]*i|--in-place)/;
 const SCRIPT_TAKING_FLAG = /^(?:--expression|-f|--file)$/;
@@ -229,12 +233,78 @@ function maskQuotedTextForWriteScan(command) {
   return maskedCommand;
 }
 
+function expandAssignedVariables(word, valueByName) {
+  if (word.startsWith("'")) return word;
+  return word.replace(VARIABLE_REFERENCE, (reference, bracedName, bareName) => valueByName.get(bracedName ?? bareName) ?? reference);
+}
+
+function topLevelStatements(command) {
+  const statements = [];
+  let statementStart = 0;
+  let separatorBefore = "";
+  let index = 0;
+  while (index < command.length) {
+    const character = command[index];
+    if (character === "\\") {
+      index += 2;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      const closingIndex = closingQuoteIndex(command, index);
+      index = closingIndex === -1 ? command.length : closingIndex + 1;
+      continue;
+    }
+    const separator = command.slice(index).match(STATEMENT_SEPARATOR)?.[0];
+    if (!separator) {
+      index += 1;
+      continue;
+    }
+    statements.push({ text: command.slice(statementStart, index).trim(), offset: statementStart, separatorBefore, separatorAfter: separator });
+    separatorBefore = separator;
+    index += separator.length;
+    statementStart = index;
+  }
+  statements.push({ text: command.slice(statementStart).trim(), offset: statementStart, separatorBefore, separatorAfter: "" });
+  return statements;
+}
+
+function assignedValueOf(rawValue, valueByName) {
+  if (/^'[^']*'$/.test(rawValue)) return rawValue.slice(1, -1);
+  const doubleQuoted = rawValue.match(/^"([^"]*)"$/);
+  const unquotedValue = doubleQuoted ? doubleQuoted[1] : rawValue;
+  if (!doubleQuoted && /['"]/.test(rawValue)) return null;
+  return expandAssignedVariables(unquotedValue, valueByName);
+}
+
+function isRunUnconditionallyInThisShell({ separatorBefore, separatorAfter }) {
+  return ["", ";", "\n"].includes(separatorBefore) && !["|", "&"].includes(separatorAfter);
+}
+
+function provenVariableValues(command) {
+  const valueByName = new Map();
+  if (CONDITIONAL_OR_SUBSHELL_CODE.test(command)) return valueByName;
+  const bareWordCount = (name) => command.match(new RegExp(String.raw`(?<![$\w{])${name}(?!\w)`, "g")).length;
+  const firstReferenceOffset = (name) => command.search(new RegExp(String.raw`\$\{?${name}(?!\w)`));
+  for (const statement of topLevelStatements(command)) {
+    const assignment = statement.text.match(PLAIN_ASSIGNMENT);
+    if (!assignment || !isRunUnconditionallyInThisShell(statement)) continue;
+    const [, name, rawValue] = assignment;
+    const referenceOffset = firstReferenceOffset(name);
+    const isAssignedOnceBeforeUse = bareWordCount(name) === 1 && (referenceOffset === -1 || referenceOffset > statement.offset);
+    const value = isAssignedOnceBeforeUse ? assignedValueOf(rawValue, valueByName) : null;
+    if (value !== null && !value.includes("$")) valueByName.set(name, value);
+  }
+  return valueByName;
+}
+
 function bashWriteTargets(command, sessionDirectory) {
-  const scannedCommand = maskQuotedTextForWriteScan(maskLiteralHeredocBodies(command));
+  const commandWithoutLiteralHeredocs = maskLiteralHeredocBodies(command);
+  const scannedCommand = maskQuotedTextForWriteScan(commandWithoutLiteralHeredocs);
   let baseDirectory = sessionDirectory;
   for (const [, directoryWord] of scannedCommand.matchAll(DIRECTORY_CHANGE)) baseDirectory = resolveShellPath(directoryWord, baseDirectory) ?? baseDirectory;
   const fileInBaseDirectory = path.join(baseDirectory, UNRESOLVED_TARGET_NAME);
-  const resolveTarget = (word) => resolveShellPath(word, baseDirectory) ?? fileInBaseDirectory;
+  const valueByName = provenVariableValues(commandWithoutLiteralHeredocs);
+  const resolveTarget = (word) => resolveShellPath(expandAssignedVariables(word, valueByName), baseDirectory) ?? fileInBaseDirectory;
   const targets = [...scannedCommand.matchAll(OUTPUT_REDIRECT)].map((redirect) => resolveTarget(redirect[1]));
   for (const [, commandName, argumentText] of [...scannedCommand.matchAll(FILE_WRITING_COMMAND), ...scannedCommand.matchAll(FIND_EXEC_EDIT)]) {
     if (commandName === "patch" || commandName.startsWith("git")) {
