@@ -357,7 +357,7 @@ test("a branch the applied profile forbids reports branchAllowed false", () => {
   }
 });
 
-test("a retired forbidden-branch remedy refuses preflight and names the profile file", () => {
+test("a retired forbidden-branch remedy drops the policy from preflight and names the profile file", () => {
   const repo = makeRepo();
   const policyRoot = makePolicyRoot("legacy", {
     profile: "legacy",
@@ -368,12 +368,10 @@ test("a retired forbidden-branch remedy refuses preflight and names the profile 
     commitFile(repo, "a.txt", "one\n");
     const { code, result } = preflight(repo, [], { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
 
-    assert.equal(result.outcome, "POLICY_INVALID");
-    assert.equal(code, 27);
-    assert.match(
-      (result.errors as string[]).join("\n"),
-      /profiles\/legacy\/commit-policy\.json/,
-    );
+    assert.equal(result.outcome, "READY");
+    assert.equal(code, 0);
+    assert.equal(result.policy, undefined);
+    assert.match((result.warnings as string[]).join("\n"), /invalid commit policy, so promotion is skipped: .*profiles\/legacy\/commit-policy\.json/);
   } finally {
     cleanup(repo, policyRoot);
   }

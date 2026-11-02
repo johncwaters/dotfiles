@@ -150,7 +150,7 @@ test("a path-scoped land on an unborn branch unstages a file modified after stag
   }
 });
 
-test("land refuses a stale forbidden-branch remedy before committing", () => {
+test("an invalid commit policy commits without promotion and names the profile file", () => {
   const repo = makeRepo("feature");
   const policyRoot = makePolicyRoot("legacy", {
     profile: "legacy",
@@ -167,11 +167,11 @@ test("land refuses a stale forbidden-branch remedy before committing", () => {
       { CLAUDE_COMMIT_POLICY_ROOT: policyRoot },
     );
 
-    assert.equal(result.outcome, "POLICY_INVALID");
-    assert.equal(code, 27);
-    assert.equal(gitOutput(repo, ["rev-parse", "HEAD"]), headBefore);
-    assert.match(gitOutput(repo, ["status", "--short"]), /a\.txt/);
-    assert.match((result.errors as string[]).join("\n"), /profiles\/legacy\/commit-policy\.json/);
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(code, 0);
+    assert.deepEqual(result.promoted, []);
+    assert.notEqual(gitOutput(repo, ["rev-parse", "HEAD"]), headBefore);
+    assert.match((result.warnings as string[]).join("\n"), /promotion skipped: invalid commit policy: .*profiles\/legacy\/commit-policy\.json/);
   } finally {
     cleanup(repo, policyRoot);
   }

@@ -19,7 +19,6 @@ import {
   emit,
   homePathStaged,
   hookFailed,
-  mainlineAhead,
   mainlineUnverified,
   messageInvalid,
   nothingToCommit,
@@ -27,7 +26,6 @@ import {
   promoteConflict,
   promoteFailed,
   promoteWithheld,
-  policyInvalid,
   pushFailed,
   type Result,
 } from "./lib/outcome.ts";
@@ -84,7 +82,6 @@ type FailureOutcome =
   | "PUSH_FAILED"
   | "PROMOTE_CONFLICT"
   | "PROMOTE_FAILED"
-  | "MAINLINE_AHEAD"
   | "MAINLINE_UNVERIFIED"
   | "PROMOTE_WITHHELD";
 
@@ -95,7 +92,6 @@ type DetachedRebase =
 const SAFETY_PUSH_OUTCOMES = new Set<FailureOutcome>([
   "PROMOTE_FAILED",
   "PROMOTE_CONFLICT",
-  "MAINLINE_AHEAD",
   "MAINLINE_UNVERIFIED",
 ]);
 
@@ -103,7 +99,6 @@ const PARKED_OUTCOMES = new Set<FailureOutcome>([
   "PUSH_FAILED",
   "PROMOTE_CONFLICT",
   "PROMOTE_FAILED",
-  "MAINLINE_AHEAD",
   "MAINLINE_UNVERIFIED",
 ]);
 
@@ -148,14 +143,13 @@ function parseArguments(argv: string[]): Arguments {
 
 class Landing {
   private readonly git: Git;
-  private readonly config: Arguments;
+  private config: Arguments;
   private readonly warnings: string[] = [];
   private readonly promoted: string[] = [];
   private readonly deletedRemoteBranches: string[] = [];
   private denylistedStagedFiles: string[] = [];
   private homePathStagedLines: string[] = [];
   private conflicts: string[] = [];
-  private localOnlyCommits: string[] = [];
   private mainline: string | null = null;
   private pushed = false;
   private commitHash: string | null = null;
@@ -183,7 +177,8 @@ class Landing {
     const { policy, policyPath } = readCommitPolicy();
     const validationErrors = policyValidationErrors(policy, policyPath);
     if (validationErrors.length > 0) {
-      return policyInvalid({ errors: validationErrors });
+      this.config = { ...this.config, promote: false };
+      this.warnings.push(`promotion skipped: invalid commit policy: ${validationErrors.join("; ")}`);
     }
     const branch = this.git.currentBranch();
     const mainline = resolveMainline(this.git, configuredMainline(policy));
@@ -301,13 +296,6 @@ class Landing {
     }
     if (outcome === "PROMOTE_FAILED") {
       return promoteFailed(state);
-    }
-    if (outcome === "MAINLINE_AHEAD") {
-      return mainlineAhead({
-        ...state,
-        mainline: this.mainline ?? "",
-        localOnlyCommits: this.localOnlyCommits,
-      });
     }
     if (outcome === "MAINLINE_UNVERIFIED") {
       return mainlineUnverified({
@@ -643,7 +631,7 @@ class Landing {
     }
     const failureText = (restore.stderr || restore.stdout || "unknown error").trim();
     this.warnings.push(
-      `could not reset local ${mainline} to ${mainlineTipBeforePromotion} after its push failed; a rerun stops on MAINLINE_AHEAD: ${failureText}`,
+      `could not reset local ${mainline} to ${mainlineTipBeforePromotion} after its push failed; a rerun moves its local-only commits to a rescue branch: ${failureText}`,
     );
   }
 
@@ -964,15 +952,27 @@ class Landing {
     if (this.git.isAncestor(localRef, remoteRef)) {
       return this.fastForwardDestination(remoteRef, mainline);
     }
-    if (this.git.isAncestor(remoteRef, localRef)) {
-      this.localOnlyCommits = this.git.revList(`${remoteRef}..${localRef}`);
-      this.warnings.push(
-        `local ${mainline} is ahead of origin/${mainline}; resolve local-only commits before promotion`,
-      );
-      return "MAINLINE_AHEAD";
+    return this.rescueLocalMainline(mainline, localTip, remoteTip);
+  }
+
+  private rescueLocalMainline(mainline: string, localTip: string, remoteTip: string): FailureOutcome | null {
+    const rescueBranch = `rescue/${mainline}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}`;
+    const createRescue = this.git.run(["branch", rescueBranch, localTip]);
+    if (createRescue.code !== 0) {
+      this.warnings.push(`could not keep local ${mainline}'s local-only commits on ${rescueBranch}; promotion stopped: ${createRescue.stderr.trim()}`);
+      return "PROMOTE_FAILED";
     }
-    this.warnings.push(`local ${mainline} has diverged from origin/${mainline}; promotion stopped`);
-    return "PROMOTE_CONFLICT";
+    const worktrees = this.git.worktreeListPorcelain();
+    const holder = worktrees.code === 0 ? findWorktreeForBranch(worktrees.stdout, mainline) : null;
+    const reset = holder === null
+      ? this.git.updateRef(`refs/heads/${mainline}`, remoteTip, localTip)
+      : this.git.resetKeepIn(holder, remoteTip);
+    if (reset.code !== 0) {
+      this.warnings.push(`kept local ${mainline}'s local-only commits on ${rescueBranch} but could not reset ${mainline} to origin/${mainline}; promotion stopped: ${(reset.stderr || reset.stdout).trim()}`);
+      return "PROMOTE_FAILED";
+    }
+    this.warnings.push(`local ${mainline} held commits absent from origin/${mainline}; kept them on ${rescueBranch} and reset ${mainline} to origin/${mainline}`);
+    return null;
   }
 
   private fastForwardDestination(source: string, destination: string): FailureOutcome | null {

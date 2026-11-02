@@ -411,54 +411,31 @@ test("a failed mainline fetch returns MAINLINE_UNVERIFIED and never creates orig
   }
 });
 
-test("an ahead mainline preserves mainline refs and safety-pushes the feature", () => {
-  const { origin, seed, local } = seedOrigin();
-  try {
-    runGit(local, ["checkout", "-q", "main"]);
-    commitFile(local, "local-only.txt", "local only\n", "local only");
-    const localOnlyCommit = gitOutput(local, ["rev-parse", "main"]);
-    runGit(local, ["checkout", "-q", "feature"]);
-    const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
-    writeFile(local, "base.txt", "base\nfeature change\n");
-    const { code, result } = land(local, ["--promote"], VALID_MESSAGE);
+test("an ahead or diverged mainline moves its local-only commits to a rescue branch and promotes", () => {
+  for (const hasRemoteAdvance of [false, true]) {
+    const { origin, seed, local } = seedOrigin();
+    try {
+      runGit(local, ["checkout", "-q", "main"]);
+      commitFile(local, "local-only.txt", "local only\n", "local only");
+      const localOnlyCommit = gitOutput(local, ["rev-parse", "main"]);
+      runGit(local, ["checkout", "-q", "feature"]);
+      if (hasRemoteAdvance) {
+        runGit(seed, ["checkout", "-q", "main"]);
+        commitFile(seed, "remote-only.txt", "remote only\n", "remote only");
+        runGit(seed, ["push", "-q", "origin", "main"]);
+      }
+      const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
+      writeFile(local, "base.txt", "base\nfeature change\n");
+      const { result } = land(local, ["--promote"], VALID_MESSAGE);
 
-    assert.equal(result.outcome, "MAINLINE_AHEAD");
-    assert.equal(code, 26);
-    assert.equal(result.mainline, "main");
-    assert.equal(result.pushed, true);
-    assert.deepEqual(result.localOnlyCommits, [localOnlyCommit]);
-    assert.equal(gitOutput(local, ["rev-parse", "main"]), localOnlyCommit);
-    assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
-    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
-    assert.equal(gitOutput(local, ["rev-parse", "--abbrev-ref", "HEAD"]), "feature");
-  } finally {
-    cleanup(origin, seed, local);
-  }
-});
-
-test("a diverged mainline preserves mainline refs and safety-pushes the feature", () => {
-  const { origin, seed, local } = seedOrigin();
-  try {
-    runGit(local, ["checkout", "-q", "main"]);
-    commitFile(local, "local-only.txt", "local only\n", "local only");
-    const localMainBefore = gitOutput(local, ["rev-parse", "main"]);
-    runGit(local, ["checkout", "-q", "feature"]);
-    runGit(seed, ["checkout", "-q", "main"]);
-    commitFile(seed, "remote-only.txt", "remote only\n", "remote only");
-    runGit(seed, ["push", "-q", "origin", "main"]);
-    const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
-    writeFile(local, "base.txt", "base\nfeature change\n");
-    const { code, result } = land(local, ["--promote"], VALID_MESSAGE);
-
-    assert.equal(result.outcome, "PROMOTE_CONFLICT");
-    assert.equal(code, 23);
-    assert.deepEqual(result.conflicts, []);
-    assert.equal(result.pushed, true);
-    assert.equal(gitOutput(local, ["rev-parse", "main"]), localMainBefore);
-    assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
-    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
-  } finally {
-    cleanup(origin, seed, local);
+      assert.equal(result.outcome, "COMMITTED");
+      assert.deepEqual(result.promoted, ["main"]);
+      assert.equal(gitOutput(origin, ["rev-parse", "main^"]), originMainBefore);
+      const rescueBranch = /kept them on (rescue\/main-\S+)/.exec((result.warnings as string[]).join("\n"))?.[1] ?? "";
+      assert.equal(gitOutput(local, ["rev-parse", rescueBranch]), localOnlyCommit);
+    } finally {
+      cleanup(origin, seed, local);
+    }
   }
 });
 
@@ -557,9 +534,9 @@ test("--no-push records a parked branch with pushed false", () => {
   const { origin, seed, local } = seedOrigin();
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();
   try {
-    runGit(local, ["checkout", "-q", "main"]);
-    commitFile(local, "local-only.txt", "local only\n", "local only");
-    runGit(local, ["checkout", "-q", "feature"]);
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nremote change\n", "remote change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
 
     const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE, {
@@ -567,7 +544,7 @@ test("--no-push records a parked branch with pushed false", () => {
     });
     const [entry] = parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries;
 
-    assert.equal(result.outcome, "MAINLINE_AHEAD");
+    assert.equal(result.outcome, "PROMOTE_CONFLICT");
     assert.equal(entry?.pushed, false);
   } finally {
     cleanup(origin, seed, local, ledgerDirectory);
@@ -577,16 +554,16 @@ test("--no-push records a parked branch with pushed false", () => {
 test("an unwritable ledger keeps the promotion outcome and adds a warning", () => {
   const { origin, seed, local } = seedOrigin();
   try {
-    runGit(local, ["checkout", "-q", "main"]);
-    commitFile(local, "local-only.txt", "local only\n", "local only");
-    runGit(local, ["checkout", "-q", "feature"]);
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nremote change\n", "remote change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
 
     const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE, {
       CLAUDE_COMMIT_LEDGER: os.tmpdir(),
     });
 
-    assert.equal(result.outcome, "MAINLINE_AHEAD");
+    assert.equal(result.outcome, "PROMOTE_CONFLICT");
     assert.match((result.warnings as string[]).join("\n"), /could not record parked branch/);
   } finally {
     cleanup(origin, seed, local);
@@ -912,16 +889,16 @@ test("--promote --no-push updates local mainline without pushing any ref", () =>
 test("--no-push suppresses the feature safety push on a mainline refusal", () => {
   const { origin, seed, local } = seedOrigin();
   try {
-    runGit(local, ["checkout", "-q", "main"]);
-    commitFile(local, "local-only.txt", "local only\n", "local only");
-    runGit(local, ["checkout", "-q", "feature"]);
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nremote change\n", "remote change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
     const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
     const originFeatureBefore = gitOutput(origin, ["rev-parse", "feature"]);
     writeFile(local, "base.txt", "base\nfeature change\n");
 
     const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE);
 
-    assert.equal(result.outcome, "MAINLINE_AHEAD");
+    assert.equal(result.outcome, "PROMOTE_CONFLICT");
     assert.equal(result.pushed, false);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), originFeatureBefore);

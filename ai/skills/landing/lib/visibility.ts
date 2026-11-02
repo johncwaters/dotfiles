@@ -100,24 +100,30 @@ function resolveOwnedRepository(repositoryName: string, login: string): AfterCom
 export type ResolvedPolicyLookup = {
   profile?: string;
   policy?: CommitPolicy & { afterCommit: AfterCommitResolution["mode"]; resolved: { mainline: string | null } };
-  validationErrors: string[];
+  branchPolicy?: CommitPolicy;
   mainline: string | null;
   remoteVisibility: RemoteVisibility;
   warnings: string[];
 };
 
 export function readResolvedPolicy(git: Git): ResolvedPolicyLookup {
-  const { profile, policy, policyPath, warning } = readCommitPolicy();
-  const mainline = resolveMainline(git, configuredMainline(policy));
+  const { profile, policy: configuredPolicy, policyPath, warning } = readCommitPolicy();
+  const validationErrors = policyValidationErrors(configuredPolicy, policyPath);
+  const policy = validationErrors.length > 0 ? undefined : configuredPolicy;
+  const mainline = resolveMainline(git, configuredMainline(configuredPolicy));
   const origin = readGithubRemote(git);
   const ownershipResolution = resolveAfterCommit(origin);
   return {
     ...(profile ? { profile } : {}),
     ...(policy ? { policy: { ...policy, afterCommit: ownershipResolution.mode, resolved: { mainline } } } : {}),
-    validationErrors: policyValidationErrors(policy, policyPath),
+    ...(configuredPolicy ? { branchPolicy: configuredPolicy } : {}),
     mainline,
     remoteVisibility: readRemoteVisibility(origin),
-    warnings: [warning, ownershipResolution.warning].filter((message): message is string => message !== undefined),
+    warnings: [
+      warning,
+      ownershipResolution.warning,
+      validationErrors.length > 0 ? `invalid commit policy, so promotion is skipped: ${validationErrors.join("; ")}` : undefined,
+    ].filter((message): message is string => message !== undefined),
   };
 }
 

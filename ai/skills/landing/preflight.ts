@@ -7,7 +7,6 @@ import {
   emit,
   messageInvalid,
   messageValid,
-  policyInvalid,
   ready,
   type Result,
 } from "./lib/outcome.ts";
@@ -138,10 +137,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
   const branch = git.currentBranch();
   const { changed, untracked } = computeScope(git, paths);
   const resolvedScopePaths = [...new Set([...changed, ...untracked])].sort();
-  const { profile, policy, validationErrors, mainline, remoteVisibility, warnings } = readResolvedPolicy(git);
-  if (validationErrors.length > 0) {
-    return policyInvalid({ errors: validationErrors });
-  }
+  const { profile, policy, branchPolicy, mainline, remoteVisibility, warnings } = readResolvedPolicy(git);
   const mainlineFreshness = mainline === null || noFetch
     ? undefined
     : checkMainlineFreshness(git, mainline);
@@ -173,7 +169,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
   return {
     ...ready({
       branch,
-      branchAllowed: isBranchAllowed(branch, policy, mainline),
+      branchAllowed: isBranchAllowed(branch, branchPolicy, mainline),
       changed: [...changed].sort(),
       untracked,
       ...(profile ? { profile } : {}),

@@ -11,8 +11,6 @@ export const EXIT_CODES = {
   PUSH_FAILED: 22,
   PROMOTE_CONFLICT: 23,
   PROMOTE_FAILED: 24,
-  MAINLINE_AHEAD: 26,
-  POLICY_INVALID: 27,
   BRANCH_FORBIDDEN: 28,
   MAINLINE_UNVERIFIED: 29,
   HOME_PATH_STAGED: 30,
@@ -56,7 +54,6 @@ export type NextStep =
   | { action: "runGate"; gate: string; then: "landing"; commits?: string[] }
   | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause" | "finding"; items: string[] }
   | { action: "resolveConflicts"; files: string[] }
-  | { action: "askCarbonUnit"; question: string }
   | { action: "relay"; report: string }
   | { action: "stop"; report: string };
 
@@ -193,25 +190,13 @@ export const promoteConflict = defineOutcome("PROMOTE_CONFLICT", {
 }, ({ conflicts }) =>
     conflicts.length > 0
       ? { action: "resolveConflicts", files: conflicts }
-      : { action: "askCarbonUnit", question: "Local mainline diverged from origin; how should it be reconciled?" });
+      : { action: "rerun", script: "land.ts", after: "fetching origin, since the mainline fast-forward was rejected" });
 
 export const promoteFailed = defineOutcome("PROMOTE_FAILED", {
   commit: optional("string"),
   pushed: required("boolean"),
   promoted: required("stringList"),
 }, () => ({ action: "rerun", script: "land.ts", after: "fixing the promote failure named in warnings, by Push and promote recovery" }));
-
-export const mainlineAhead = defineOutcome("MAINLINE_AHEAD", {
-  commit: optional("string"),
-  pushed: required("boolean"),
-  promoted: required("stringList"),
-  mainline: required("string"),
-  localOnlyCommits: required("stringList"),
-}, ({ mainline, localOnlyCommits }) => ({ action: "askCarbonUnit", question: `Local ${mainline} holds commits absent from origin (${localOnlyCommits.join(", ")}); push or drop them?` }));
-
-export const policyInvalid = defineOutcome("POLICY_INVALID", {
-  errors: required("stringList"),
-}, ({ errors }) => ({ action: "askCarbonUnit", question: `The applied profile's commit policy is invalid: ${errors.join("; ")}. How should the profile change?` }));
 
 export const branchForbidden = defineOutcome("BRANCH_FORBIDDEN", {
   branch: required("string"),
