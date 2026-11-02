@@ -38,6 +38,7 @@ const ROUND_CAP = 8;
 const HUNK_SLACK_LINES = 3;
 const SEVERITY_RANK = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
 const FIX_OUTCOMES = new Set(["FIXED", "UNVERIFIED", "DECLINED"]);
+const CLAIMED_FIX_OUTCOMES = new Set(["FIXED", "UNVERIFIED"]);
 const RULINGS = new Set(["NIT", "ACTIONABLE"]);
 const VERDICTS = new Set(["APPROVE", "APPROVE WITH NITS", "REQUEST CHANGES", "BLOCKED", "FAILED"]);
 const DISPOSITIONS = new Set(["ACTIONABLE", "NIT", "AMBIGUOUS"]);
@@ -101,9 +102,21 @@ function pendingRoundFor(ledger, round) {
   return pendingRows(ledger).findLast((row) => row.round === round);
 }
 
-function reviewReport(pendingRound, ledgerFile) {
+function fixesClaimedBy(ledger, round) {
+  const findingByFingerprint = new Map(ledger.filter((row) => row.type === "finding").map((row) => [row.fingerprint, row]));
+  return ledger
+    .filter((row) => row.type === "fix" && row.round === round && CLAIMED_FIX_OUTCOMES.has(row.outcome))
+    .map(({ fingerprint }) => {
+      const finding = findingByFingerprint.get(fingerprint);
+      return { fingerprint, file: finding?.file ?? null, line: finding?.line ?? null, defect: finding?.body ? firstDefectSentence(finding.body) : null };
+    });
+}
+
+function reviewReport(pendingRound, ledgerFile, ledger) {
   const { round, kind, base, head } = pendingRound;
-  return { round, kind, base, head, reviewCmd: `git diff ${base} ${head}`, ledger: ledgerFile };
+  const report = { round, kind, base, head, reviewCmd: `git diff ${base} ${head}`, ledger: ledgerFile };
+  if (kind !== "delta") return report;
+  return { ...report, fixed: fixesClaimedBy(ledger, round - 1) };
 }
 
 function workingTreeOf(repoPath) {
@@ -117,7 +130,7 @@ function startRun(repoPath) {
   const workingTree = workingTreeOf(repoPath);
   const lastRound = roundRows(ledger).at(-1);
   if (lastRound?.outcome === "ASKED" && lastRound.head === workingTree) {
-    finish("RESUME", reviewReport(lastRound, ledgerFile));
+    finish("RESUME", reviewReport(lastRound, ledgerFile, ledger));
   }
   if (fs.existsSync(ledgerFile)) {
     const setAsidePath = ledgerFile.replace(/\.jsonl$/, `.${new Date().toISOString().replaceAll(":", "-")}.jsonl`);
@@ -126,7 +139,7 @@ function startRun(repoPath) {
   const headTree = runGit(repoPath, ["rev-parse", "HEAD^{tree}"]).trim();
   const firstRound = { type: "pending", round: 1, kind: "full", base: headTree, head: workingTree };
   appendRows(ledgerFile, [firstRound]);
-  finish("FRESH", reviewReport(firstRound, ledgerFile));
+  finish("FRESH", reviewReport(firstRound, ledgerFile, []));
 }
 
 function nextRound(repoPath) {
@@ -138,12 +151,12 @@ function nextRound(repoPath) {
   const lastConcluded = concludedRounds.at(-1);
   const isPendingUnreviewed = !concludedRounds.some((row) => row.round === latestPending.round);
   if (isPendingUnreviewed) {
-    if (latestPending.kind !== "delta") finish("REVIEW", reviewReport(latestPending, ledgerFile));
+    if (latestPending.kind !== "delta") finish("REVIEW", reviewReport(latestPending, ledgerFile, ledger));
     const workingTree = workingTreeOf(repoPath);
-    if (latestPending.head === workingTree) finish("REVIEW", reviewReport(latestPending, ledgerFile));
+    if (latestPending.head === workingTree) finish("REVIEW", reviewReport(latestPending, ledgerFile, ledger));
     const refreshedRound = { ...latestPending, head: workingTree };
     appendRows(ledgerFile, [refreshedRound]);
-    finish("REVIEW", reviewReport(refreshedRound, ledgerFile));
+    finish("REVIEW", reviewReport(refreshedRound, ledgerFile, ledger));
   }
   if (!["CONTINUE", "SWEEP"].includes(lastConcluded.outcome)) {
     failUsage(`round ${lastConcluded.round} ended ${lastConcluded.outcome}; only CONTINUE or SWEEP leads to a next round`);
@@ -154,7 +167,7 @@ function nextRound(repoPath) {
   const base = plan.kind === "sweep" ? plan.sweepBase : lastConcluded.head;
   const pendingRound = { type: "pending", round, kind: plan.kind, base, head };
   appendRows(ledgerFile, [pendingRound]);
-  finish("REVIEW", reviewReport(pendingRound, ledgerFile));
+  finish("REVIEW", reviewReport(pendingRound, ledgerFile, ledger));
 }
 
 function stampCleanTree(repoPath, paths) {
@@ -173,10 +186,13 @@ function stampCleanTree(repoPath, paths) {
   finish("STAMPED", { tree: workingTree, stamp });
 }
 
-function defectSentence(body) {
+function firstDefectSentence(body) {
   const beforeProof = body.split(/\bProof:/)[0];
-  const firstSentence = beforeProof.split(/(?<=[.!?])\s/)[0];
-  return firstSentence
+  return beforeProof.split(/(?<=[.!?])\s/)[0].trim();
+}
+
+function defectSentence(body) {
+  return firstDefectSentence(body)
     .toLowerCase()
     .replace(/`[^`]*`|"[^"]*"|'[^']*'/g, "")
     .replace(/\d+/g, "")
@@ -403,6 +419,7 @@ function classifyRound(repoPath, round, reviewText, swarmOutputPath) {
     severity: finding.severity,
     reviewer: finding.reviewer,
     disposition: finding.disposition,
+    body: finding.body,
   }));
   const roundRow = {
     type: "round",

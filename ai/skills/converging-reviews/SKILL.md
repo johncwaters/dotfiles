@@ -29,7 +29,7 @@ No cleaning pass runs: on a whole uncommitted pull request it deletes values a s
 
 ## Step 2: Review and classify
 
-Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. This session triages the return, then fixes in Step 4.
+Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. A delta round's `fixed` lists each defect the previous round's fixes claim to remove; put it in the context and ask whether each fix removed its defect everywhere in the diff, siblings and the test that pins it included, since a partial fix otherwise surfaces only in a later sweep, which stalls on it. This session triages the return, then fixes in Step 4.
 
 Note the output file the qa-swarm Workflow notification names, and pipe the whole `/reviewing-code` return into:
 

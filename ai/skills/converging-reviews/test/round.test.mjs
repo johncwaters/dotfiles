@@ -73,7 +73,7 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).report.outcome, "UNSTAMPED");
 });
 
-test("every actionable finding counts whatever its severity, next resumes an unreviewed round, and a clean delta round sweeps the whole diff from the original base", (context) => {
+test("every actionable finding counts whatever its severity, next resumes an unreviewed round with the fixes it checks, and a clean delta round sweeps the whole diff from the original base", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
@@ -91,6 +91,7 @@ test("every actionable finding counts whatever its severity, next resumes an unr
   const deltaRoundPlan = runRound(repository, ledgerRoot, ["next"]).report;
   assert.deepEqual(runRound(repository, ledgerRoot, ["next"]).report, deltaRoundPlan);
   assert.deepEqual([deltaRoundPlan.outcome, deltaRoundPlan.round, deltaRoundPlan.kind, deltaRoundPlan.base], ["REVIEW", 2, "delta", firstRoundPlan.head]);
+  assert.deepEqual(deltaRoundPlan.fixed, [{ fingerprint: firstRound.report.actionable[0].fingerprint, file: "a.txt", line: 5, defect: "Bound is off by one." }]);
   const deltaRound = classify(2, [findingRow(6, "LOW", "Fix introduced an unchecked null. Proof: a.txt:6.")]);
   assert.deepEqual([deltaRound.report.outcome, deltaRound.report.actionable.length, Object.hasOwn(deltaRound.report, "severityFloor")], ["CONTINUE", 1, false]);
   runRound(repository, ledgerRoot, ["record", "--fingerprint", deltaRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "2"]);
