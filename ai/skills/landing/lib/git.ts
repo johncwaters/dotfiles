@@ -188,7 +188,7 @@ export class Git {
   }
 
   patchIdsByCommit(revisionArgs: string[]): Map<string, string> {
-    const patches = this.run(["log", "--no-merges", "-p", "--format=commit %H", ...revisionArgs]);
+    const patches = this.run(["log", "--no-merges", "-p", "-U0", "--format=commit %H", ...revisionArgs]);
     if (patches.code !== 0) {
       return new Map();
     }

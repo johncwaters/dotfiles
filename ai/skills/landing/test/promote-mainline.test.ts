@@ -328,6 +328,30 @@ test("a behind mainline is fast-forwarded from origin before the feature rebase"
   }
 });
 
+test("a landed commit rebased onto a mainline that changed its neighbouring lines still promotes", () => {
+  const { origin, seed, local } = seedOrigin();
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "notes.txt", "a\nb\nc\nd\ne\nf\n", "add notes");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["rebase", "-q", "origin/main"]);
+    writeFile(local, "notes.txt", "a\nb\nc\nd\ne\nf\ng\n");
+    assert.equal(land(local, [], VALID_MESSAGE).result.outcome, "COMMITTED");
+
+    commitFile(seed, "notes.txt", "a\nb\nc\nD\ne\nf\n", "neighbouring edit");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["rebase", "-q", "origin/main"]);
+    const { result } = landUnstamped(local, ["--promote"], "");
+
+    assert.equal(result.outcome, "NOTHING_TO_COMMIT");
+    assert.deepEqual(result.promoted, ["main"]);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
 test("a remote-only mainline is materialized as a local tracking branch before promotion", () => {
   const { origin, seed, local } = seedOrigin();
   try {
