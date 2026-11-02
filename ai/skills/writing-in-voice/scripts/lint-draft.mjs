@@ -3,7 +3,9 @@ import fs from "node:fs";
 import { proseLines } from "../../../hooks/skill-lint.mjs";
 
 const SUBORDINATE_OPENERS = new Set(["if", "when", "because", "since", "while", "although", "though", "once", "after", "before", "unless", "until", "whenever"]);
-const AFFIRMATION_OPENERS = new Set(["yeh", "yah", "yeah", "yep", "yes", "ok", "okay", "sure", "true", "gotcha", "right", "oh", "ah"]);
+const PREPOSITIONAL_OPENERS = new Set(["in", "for", "to", "on", "at", "from", "without", "instead", "during", "with"]);
+const SUBJECT_PRONOUN = /\b(?:i|you|we|they|he|she|it)\b/i;
+const AFFIRMATION_OPENERS = new Set(["yeh", "yah", "yeah", "yep", "yes", "ok", "okay", "sure", "true", "gotcha", "right", "oh", "ah", "for sure", "right on"]);
 const SPLICE_AFTER_COMMA = /,\s+(?:(?:i|you|we|they|it|that|this|these|those|he|she|there)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+(?!and\b|or\b)[a-z']+|(?:the|my|your|our|their)\s+[a-z][\w-]*)/i;
 const LIST_CONTINUATION = /,\s+(?:and|or)\s/i;
 const NOT_X_ITS_Y = /\b(?:it|this|that)(?:['’]s|\s+is)\s+not\b[^.!?]*?[,;]\s*(?:it|this|that)(?:['’]s|\s+is)\b/gi;
@@ -20,7 +22,11 @@ const SHARED_PATTERN_RULES = [
 const LONGFORM_PATTERN_RULES = [
   { rule: "vague-quantity", pattern: /\b(?:a lot|soon|quickly|better)\b/i },
   { rule: "emoji-bullet", pattern: /^\s*(?:[-*+]\s+)?\p{Extended_Pictographic}/u },
+  { rule: "british-form", pattern: /\b(?:mustn['’]t|shan['’]t|whilst|amongst)\b/i },
+  { rule: "hedge", pattern: /\bpretty (?:good|average|much)\b/i },
+  { rule: "volatile-number", pattern: /^(?=.*\]\(\/docs)(?=.*\b\d+\s*(?:days?|seconds?|minutes?|hours?|requests?)\b)/i },
 ];
+
 
 function sentencesOf(text) {
   return text.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
@@ -31,13 +37,20 @@ function openingWordOf(clause) {
   return firstWord === "right" && SUBORDINATE_OPENERS.has(secondWord) ? secondWord : firstWord;
 }
 
+function isIntroductoryPhrase(clause) {
+  const openingWord = openingWordOf(clause);
+  if (SUBORDINATE_OPENERS.has(openingWord)) return true;
+  return PREPOSITIONAL_OPENERS.has(openingWord) && !SUBJECT_PRONOUN.test(clause);
+}
+
 function isCommaSplice(sentence) {
   const splice = sentence.match(SPLICE_AFTER_COMMA);
   if (!splice) return false;
   const clauseBeforeComma = sentence.slice(0, splice.index).trim();
-  const openerAfterLabel = clauseBeforeComma.split(/:\s/).pop().trim();
-  if (SUBORDINATE_OPENERS.has(openingWordOf(openerAfterLabel))) return false;
+  const openerAfterLabel = clauseBeforeComma.split(/:\**\s|\s-\s/).pop().trim();
+  if (SUBORDINATE_OPENERS.has(openingWordOf(sentence))) return false;
   if (AFFIRMATION_OPENERS.has(openerAfterLabel.toLowerCase())) return true;
+  if (isIntroductoryPhrase(openerAfterLabel)) return false;
   if (!/\s/.test(openerAfterLabel)) return false;
   return !LIST_CONTINUATION.test(sentence.slice(splice.index + splice[0].length));
 }
@@ -78,6 +91,13 @@ function repeatedContrastFlags(lines) {
   return flags;
 }
 
+function mixedApostropheFlags(lines) {
+  const hasStraight = lines.some((line) => /[a-z]'[a-z]/i.test(line.text));
+  const firstCurlyLine = lines.find((line) => /[a-z]’[a-z]/i.test(line.text));
+  if (!hasStraight || !firstCurlyLine) return [];
+  return [{ line: firstCurlyLine.number, rule: "mixed-apostrophes", text: firstCurlyLine.text.trim() }];
+}
+
 function lintDraft(rawDraft, { isLongform = false } = {}) {
   const draft = rawDraft.replace(/\r\n/g, "\n");
   const lines = draftLines(draft);
@@ -91,7 +111,7 @@ function lintDraft(rawDraft, { isLongform = false } = {}) {
     }
   }
   if (!isLongform) return flags;
-  return [...flags, ...repeatedContrastFlags(lines), ...headingSectionFlags(draft)].sort((first, second) => first.line - second.line);
+  return [...flags, ...repeatedContrastFlags(lines), ...headingSectionFlags(draft), ...mixedApostropheFlags(lines)].sort((first, second) => first.line - second.line);
 }
 
 function runCommandLine(argumentList) {
