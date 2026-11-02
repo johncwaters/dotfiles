@@ -54,6 +54,7 @@ PLAYWRIGHT
 chmod +x "$skillDirectory/node_modules/.bin/playwright-core"
 STUB
 chmod +x "$skillDependencyStubBin/npm"
+pathWithoutNpmStub="$PATH"
 export PATH="$skillDependencyStubBin:$PATH"
 export SKILL_DEPENDENCY_LOG="$skillDependencyLog"
 export XDG_STATE_HOME="$sandbox/.local/state"
@@ -1186,7 +1187,7 @@ fi
 check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-brand/test/census.test.ts"
 check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"
 check "designing-ui slop lint tests pass" node --test "$topicDir/skills/designing-ui/test/lint-slop.test.mjs"
-check "converging-reviews round tests pass" node --test "$topicDir/skills/converging-reviews/test/round.test.mjs"
+check "converging-reviews round tests pass" env PATH="$pathWithoutNpmStub" node --test "$topicDir/skills/converging-reviews/test/round.test.mjs"
 if ((${#workSkillTestFiles[@]} > 0)); then
   check "work profile skill behavior tests pass" node --test "${workSkillTestFiles[@]}"
 fi
