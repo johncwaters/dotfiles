@@ -300,10 +300,10 @@ function provenVariableValues(command) {
 function bashWriteTargets(command, sessionDirectory) {
   const commandWithoutLiteralHeredocs = maskLiteralHeredocBodies(command);
   const scannedCommand = maskQuotedTextForWriteScan(commandWithoutLiteralHeredocs);
-  let baseDirectory = sessionDirectory;
-  for (const [, directoryWord] of scannedCommand.matchAll(DIRECTORY_CHANGE)) baseDirectory = resolveShellPath(directoryWord, baseDirectory) ?? baseDirectory;
-  const fileInBaseDirectory = path.join(baseDirectory, UNRESOLVED_TARGET_NAME);
   const valueByName = provenVariableValues(commandWithoutLiteralHeredocs);
+  let baseDirectory = sessionDirectory;
+  for (const [, directoryWord] of scannedCommand.matchAll(DIRECTORY_CHANGE)) baseDirectory = resolveShellPath(expandAssignedVariables(directoryWord, valueByName), baseDirectory) ?? baseDirectory;
+  const fileInBaseDirectory = path.join(baseDirectory, UNRESOLVED_TARGET_NAME);
   const resolveTarget = (word) => resolveShellPath(expandAssignedVariables(word, valueByName), baseDirectory) ?? fileInBaseDirectory;
   const targets = [...scannedCommand.matchAll(OUTPUT_REDIRECT)].map((redirect) => resolveTarget(redirect[1]));
   for (const [, commandName, argumentText] of [...scannedCommand.matchAll(FILE_WRITING_COMMAND), ...scannedCommand.matchAll(FIND_EXEC_EDIT)]) {
