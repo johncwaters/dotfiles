@@ -37,24 +37,15 @@ committing on this branch. `policy.commitBranches.onForbidden` permits only
 `create-feature-branch`: create
 a branch named for the work item, switch to it, and proceed.
 
-**Mainline freshness.** A `mainlineFreshness.behind` above zero means integrate
-`origin/<mainline>` with the verb the warning names, then re-run preflight.
+**Mainline freshness.** A `rerun` next on a branch behind mainline comes only on a clean
+tree: integrate `origin/<mainline>` with the verb the warning names, then re-run preflight.
 Merge only for `afterCommit: pull-request` with an upstream, since rebasing a pushed
 branch needs a force-push; a landing that passes `--promote` rebases, because
-promotion's rebase drops a merge commit. Set uncommitted work aside only in a WIP commit;
-the stash is shared across worktrees and sessions; the `Bash(git *stash)` deny rule
-matches any command ending in `stash`. On a dirty tree, first `git add -A` and
-`git commit -m "WIP set-aside"`, then:
-
-- rebase: `git rebase origin/<mainline>`, then, since rebase drops a WIP already upstream,
-  `test "$(git log -1 --format=%s)" = "WIP set-aside" && git reset --soft HEAD~1`
-- merge: `git switch --detach HEAD~1`,
-  `git merge -m "Merge <mainline> into <branch>" origin/<mainline>`,
-  `git cherry-pick --no-commit <branch>`, `git switch -C <branch>`; the branch holds the
-  WIP commit, so the merge excludes it
-
-On a conflict, resolve by step 2 of [Conflict resolution](../landing/subskills/recovery.md#conflict-resolution), `git add` each resolved file, then
-`git rebase --continue`, `git merge --continue`, or `git cherry-pick --quit`. No re-review,
+promotion's rebase drops a merge commit. A tree holding uncommitted work proceeds behind
+mainline: integrating first would mean committing or stashing unreviewed work, and
+`land.ts --promote` already rebases the landed commit onto mainline while carrying the
+files left uncommitted. On a conflict, resolve by step 2 of [Conflict resolution](../landing/subskills/recovery.md#conflict-resolution), `git add` each resolved file, then
+`git rebase --continue` or `git merge --continue`. No re-review,
 since nothing has been reviewed yet.
 `checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
 

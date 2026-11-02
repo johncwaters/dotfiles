@@ -121,16 +121,17 @@ export const ready = defineOutcome("READY", {
   branchAllowed: required("boolean"),
   changed: required("stringList"),
   untracked: required("stringList"),
+  hasUncommittedWork: required("boolean"),
   profile: optional("string"),
   policy: optional("object"),
   mainlineFreshness: optional("object"),
   remoteVisibility: optional("object"),
-}, ({ branchAllowed, mainlineFreshness }) => {
+}, ({ branchAllowed, mainlineFreshness, hasUncommittedWork }) => {
   if (!branchAllowed) {
     return { action: "rerun", script: "preflight.ts", after: "creating and switching to a feature branch named for the work" };
   }
   const commitsBehindMainline = Number(mainlineFreshness?.behind ?? 0);
-  if (commitsBehindMainline > 0) {
+  if (commitsBehindMainline > 0 && !hasUncommittedWork) {
     return { action: "rerun", script: "preflight.ts", after: `integrating origin/${String(mainlineFreshness?.mainline)} with the verb its warning names` };
   }
   return { action: "proceed" };

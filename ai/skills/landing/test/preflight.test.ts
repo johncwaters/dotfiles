@@ -115,7 +115,7 @@ test("a clean tree is READY with an empty scope", () => {
   }
 });
 
-test("two mainline commits ahead report freshness and one warning", () => {
+test("two mainline commits ahead ask a clean tree to integrate and let a dirty one, in scope or not, proceed to landing", () => {
   const origin = makeBareOrigin();
   const seed = makeRepo();
   try {
@@ -127,11 +127,21 @@ test("two mainline commits ahead report freshness and one warning", () => {
       commitFile(seed, "b.txt", "two\n", "second");
       commitFile(seed, "c.txt", "three\n", "third");
       runGit(seed, ["push", "-q", "origin", "main"]);
+      runGit(local, ["switch", "-q", "-c", "feature"]);
 
       const { result } = preflight(local);
 
       assert.deepEqual(result.mainlineFreshness, { checked: true, mainline: "main", behind: 2 });
       assert.match((result.warnings as string[]).join("\n"), /2 commits behind origin\/main; rebase onto origin\/main/);
+      assert.equal((result.next as { action: string }).action, "rerun");
+
+      fs.writeFileSync(path.join(local, "new.txt"), "untracked\n");
+      const cleanScope = preflight(local, ["--paths", "a.txt"]).result;
+      assert.equal((cleanScope.next as { action: string }).action, "proceed");
+      fs.writeFileSync(path.join(local, "a.txt"), "one edited\n");
+      const dirty = preflight(local).result;
+      assert.equal((dirty.next as { action: string }).action, "proceed");
+      assert.match((dirty.warnings as string[]).join("\n"), /2 commits behind origin\/main; rebase onto it once this work is committed/);
     } finally {
       cleanup(local);
     }

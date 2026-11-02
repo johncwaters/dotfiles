@@ -137,6 +137,8 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
   const branch = git.currentBranch();
   const { changed, untracked } = computeScope(git, paths);
   const resolvedScopePaths = [...new Set([...changed, ...untracked])].sort();
+  const wholeTree = paths.length === 0 ? { changed, untracked } : computeScope(git, []);
+  const hasUncommittedWork = wholeTree.changed.size > 0 || wholeTree.untracked.length > 0;
   const { profile, policy, branchPolicy, mainline, remoteVisibility, warnings } = readResolvedPolicy(git);
   const mainlineFreshness = mainline === null || noFetch
     ? undefined
@@ -144,9 +146,10 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
   if (mainlineFreshness?.checked && mainlineFreshness.behind > 0) {
     const shouldMergeMainline = policy?.afterCommit === "pull-request" && git.hasUpstream();
     const integrationVerb = shouldMergeMainline ? "merge" : "rebase onto";
-    warnings.push(
-      `branch is ${mainlineFreshness.behind} commits behind origin/${mainlineFreshness.mainline}; ${integrationVerb} origin/${mainlineFreshness.mainline} before review`,
-    );
+    const integrationAdvice = hasUncommittedWork
+      ? `${integrationVerb} it once this work is committed; landing with --promote does that itself`
+      : `${integrationVerb} origin/${mainlineFreshness.mainline} before review`;
+    warnings.push(`branch is ${mainlineFreshness.behind} commits behind origin/${mainlineFreshness.mainline}; ${integrationAdvice}`);
   }
   if (policy && mainline === null) {
     warnings.push(unresolvedMainlineWarning(git, branch, configuredMainline(policy), noFetch));
@@ -172,6 +175,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
       branchAllowed: isBranchAllowed(branch, branchPolicy, mainline),
       changed: [...changed].sort(),
       untracked,
+      hasUncommittedWork,
       ...(profile ? { profile } : {}),
       ...(policy ? { policy } : {}),
       ...(mainlineFreshness ? { mainlineFreshness } : {}),

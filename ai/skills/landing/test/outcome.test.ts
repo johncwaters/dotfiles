@@ -26,7 +26,7 @@ function roundTrip(result: Result): Record<string, unknown> {
 
 test("every outcome constructor round-trips through JSON", () => {
   const results: Result[] = [
-    ready({ branch: "feature", branchAllowed: true, changed: ["a.ts"], untracked: [] }),
+    ready({ branch: "feature", branchAllowed: true, changed: ["a.ts"], untracked: [], hasUncommittedWork: true }),
     committed({ commit: "abc123", pushed: true, promoted: ["main"] }),
     notARepo({}),
     detachedHead({}),
