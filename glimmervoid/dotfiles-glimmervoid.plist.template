@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.dotfiles.glimmervoid</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{BASH}}</string>
+    <string>-c</string>
+    <string>set -a; if [[ -f "$0" ]]; then source "$0"; fi; set +a; npm run build &amp;&amp; exec node dist/server/index.js</string>
+    <string>{{HOME}}/.glimmervoid/secrets.env</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{{HOME}}/Projects/glimmervoid</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>GLIMMERVOID_SUPERVISOR</key>
+    <string>launchd</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key>
+    <integer>65536</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>{{STATE}}/glimmervoid.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{STATE}}/glimmervoid.stderr.log</string>
+</dict>
+</plist>

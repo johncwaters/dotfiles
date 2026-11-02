@@ -11,6 +11,8 @@ fi
 source "$dotfilesRepo/script/lib/systemd.sh"
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
+# shellcheck source=../script/lib/launchd.sh
+source "$dotfilesRepo/script/lib/launchd.sh"
 # shellcheck source=./service.sh
 source "$dotfilesRepo/glimmervoid/service.sh"
 # shellcheck source=./serve.sh
@@ -599,6 +601,13 @@ fi
 reportGlimmervoidSecrets
 
 if ! requireGlimmervoidApp; then
+  finishTopic
+fi
+
+# The devbox carries remote access and pairing, so a Mac serves only its own local dashboard.
+if isDarwin; then
+  installDarwinLaunchAgent "glimmervoid service" dev.dotfiles.glimmervoid \
+    "$dotfilesRepo/glimmervoid/dotfiles-glimmervoid.plist.template" || true
   finishTopic
 fi
 

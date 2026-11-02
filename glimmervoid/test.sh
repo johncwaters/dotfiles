@@ -312,13 +312,28 @@ source "$topicDir/test/install.sh" || exit 1
 : > "$commandLog"
 mkdir -p "$darwinWorkHome/.glimmervoid"
 printf '{"port":%s}\n' "$isolatedWorkPort" > "$darwinWorkHome/.glimmervoid/config.json"
+printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=placeholder\nGLIMMERVOID_POSTHOG_API_KEY=placeholder\n' \
+  > "$darwinWorkHome/.glimmervoid/secrets.env"
+makeGlimmervoidApp "$darwinWorkHome"
+writeStub launchctl <<'STUB'
+#!/usr/bin/env bash
+printf 'launchctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+[[ "${1:-}" == bootstrap ]]
+STUB
+provideCommand launchctl
 darwinWorkStatus=0
 darwinWorkOutput="$(runInstall "$darwinWorkHome" work "" /dev/null darwin)" || darwinWorkStatus=$?
 check "the work profile applies shared settings on darwin" test "$darwinWorkStatus" -eq 0
 check "darwin keeps the work profile config" test -f "$darwinWorkHome/.glimmervoid/config.json"
-check "darwin exits through the non-serving path" \
-  outputHas "$darwinWorkOutput" "skipped, profile does not serve glimmervoid"
+check "darwin serves glimmervoid as a launch agent" \
+  logHas "launchctl bootstrap gui/$(id -u) $darwinWorkHome/Library/LaunchAgents/dev.dotfiles.glimmervoid.plist"
+darwinGlimmervoidPlist="$darwinWorkHome/Library/LaunchAgents/dev.dotfiles.glimmervoid.plist"
+check "the launch agent tells glimmervoid launchd supervises it" \
+  grep -q '<string>launchd</string>' "$darwinGlimmervoidPlist"
+check "the launch agent runs the work checkout" \
+  grep -q "<string>$darwinWorkHome/Projects/glimmervoid</string>" "$darwinGlimmervoidPlist"
 check "darwin never touches systemd" logLacks "systemctl "
+check "darwin never touches tailscale serve" logLacks "tailscale serve"
 
 [[ -s "$topicDir/test/service.sh" ]] || exit 1
 # shellcheck source=./test/service.sh
