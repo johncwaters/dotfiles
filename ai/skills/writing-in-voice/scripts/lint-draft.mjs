@@ -26,13 +26,17 @@ function sentencesOf(text) {
   return text.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
 }
 
+function openingWordOf(clause) {
+  const [firstWord = "", secondWord = ""] = clause.toLowerCase().match(/[a-z]+/g) ?? [];
+  return firstWord === "right" && SUBORDINATE_OPENERS.has(secondWord) ? secondWord : firstWord;
+}
+
 function isCommaSplice(sentence) {
-  const firstWord = sentence.match(/^[^a-z]*([a-z]+)/i)?.[1]?.toLowerCase() ?? "";
-  if (SUBORDINATE_OPENERS.has(firstWord)) return false;
   const splice = sentence.match(SPLICE_AFTER_COMMA);
   if (!splice) return false;
   const clauseBeforeComma = sentence.slice(0, splice.index).trim();
   const openerAfterLabel = clauseBeforeComma.split(/:\s/).pop().trim();
+  if (SUBORDINATE_OPENERS.has(openingWordOf(openerAfterLabel))) return false;
   if (AFFIRMATION_OPENERS.has(openerAfterLabel.toLowerCase())) return true;
   if (!/\s/.test(openerAfterLabel)) return false;
   return !LIST_CONTINUATION.test(sentence.slice(splice.index + splice[0].length));
