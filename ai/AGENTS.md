@@ -34,7 +34,7 @@ Before any completion claim or landing: zero pending tasks, tests passing, and v
 
 <tests>
 Write few tests; the default for a change is zero new ones. Agent-written unit tests mostly restate the code, pin implementation details, or mock the unit under test, so they catch nothing and tax every later change.
-- Add a test only for a bug actually fixed (one regression test reproducing it) or a contract other code depends on whose break would be silent. Drive it through the real components, not doubles.
+- Add a test only for a bug actually fixed (one regression test reproducing it, seen failing with the fix reverted) or a contract other code depends on whose break would be silent. Drive it through the real components, not doubles.
 - Never write tests per function or branch for coverage; tests of constants, config shape, getters, or framework behavior; assertions that mirror the implementation; or snapshots of incidental output.
 - Extend an existing test before adding one. One end-to-end check beats many unit tests of its parts.
 - Verification is running the change and the existing suite, not writing a test for it.
