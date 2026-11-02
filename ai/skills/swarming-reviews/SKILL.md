@@ -15,8 +15,6 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLane
 
 **No `REVIEW_CMD`, no run.** Say so and stop. Pinning scope is `reviewing-code`'s job, and computing a second pin here would let two layers review two different trees while believing they reviewed one.
 
-**No changed-file set or rule lanes, no run.** The script refuses either; the empty set above explains why.
-
 ## Output
 
 **Guaranteed output.** One `STRUCTURED_FINDINGS` block plus one `OVERALL_SUMMARY`, and nothing after them.
@@ -25,7 +23,7 @@ Workflow args: `{ reviewCmd, repoPath, context, changedFiles: string[], ruleLane
 
 ## Step 1: Pick rule lanes
 
-Run `node ~/.claude/skills/swarming-reviews/scripts/route-lanes.mjs --review-cmd "<REVIEW_CMD>" --repo <repo path> -- <changed files>`, plus `--all-lanes` when asked all lanes, and pass its JSON as `ruleLanes`. Exit 2: the diff could not be read; stop and report it.
+Run `node ~/.claude/skills/swarming-reviews/scripts/route-lanes.mjs --review-cmd "<REVIEW_CMD>" --repo <repo path> -- <changed files>` (`--all-lanes` when asked all lanes) and pass its JSON as `ruleLanes`. Exit 2: unreadable diff; stop and report it. Refused: pass `{lanes: ['code'], filesByLane: {code: <changed files>}}` and still run Step 2; the workflow router widens it.
 
 ## Step 2: Run the workflow
 
@@ -33,7 +31,7 @@ Call `Workflow({name: 'qa-swarm', args})` and relay its result verbatim. A resul
 
 To re-run a dead retry under `resumeFromRunId` without replaying its cached output, pass a new `retryAttemptId`.
 
-Workflow tool absent in this session: read `~/.claude/workflows/qa-swarm.js`, spawn the rule lanes in one message with multiple calls, and converge by the rules in that script.
+No Workflow tool: read `~/.claude/workflows/qa-swarm.js`, spawn its rule lanes in one message, and converge by its rules.
 
 ## Step 3: Return
 
