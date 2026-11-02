@@ -1,6 +1,6 @@
 ---
 name: landing
-description: Lands reviewed work through the personal commit workflow. Runs two deterministic steps (preflight, land) that stage exactly the tree a review gate stamped, commit, and push (or, with --no-push, commit locally only) with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /landing, "commit this", "commit and push", "commit locally", or landing finished work.
+description: Lands reviewed work through the personal commit workflow. Reads the review stamp, then runs land.ts, which stages exactly the tree a review gate stamped, commits, and pushes (or, with --no-push, commits locally only) with typed outcomes, then promotes the feature branch onto the resolved mainline or leaves it pushed for /opening-prs, per the machine's commit policy. Use for /landing, "commit this", "commit and push", "commit locally", or landing finished work.
 ---
 
 # Commit
@@ -10,51 +10,23 @@ Two deterministic steps own everything that touches git. A review gate
 within [recovery](subskills/recovery.md).
 
 ```
-node "$HOME/.claude/skills/landing/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]
+node "$HOME/.claude/skills/landing/stamp.ts" verify
 node "$HOME/.claude/skills/landing/land.ts" [--promote] [--no-push] <<'MSG'
 <commit message>
 MSG
 ```
 
-Both print one JSON object on stdout and set the exit code from the outcome table.
+Both print one JSON object on stdout.
 
-## Step 1: preflight
+## Step 1: read the stamp
 
-Run `preflight.ts` first, with `--paths` when you know exactly which files this session
-changed.
-`land.ts` stages exactly the review stamp's paths.
-
-**Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
-committing on this branch. `policy.commitBranches.onForbidden` permits only
-`create-feature-branch`: create
-a branch named for the work item, switch to it, and proceed.
-
-**Mainline freshness.** A `mainlineFreshness.behind` above zero means integrate
-`origin/<mainline>` with the verb the warning names, then re-run preflight.
-Merge only for `afterCommit: pull-request` with an upstream, since rebasing a pushed
-branch needs a force-push; a landing that passes `--promote` rebases, because
-promotion's rebase drops a merge commit. Set uncommitted work aside only in a WIP commit;
-the stash is shared across worktrees and sessions; the `Bash(git *stash)` deny rule
-matches any command ending in `stash`. On a dirty tree, first `git add -A` and
-`git commit -m "WIP set-aside"`, then:
-
-- rebase: `git rebase origin/<mainline>`, then, since rebase drops a WIP already upstream,
-  `test "$(git log -1 --format=%s)" = "WIP set-aside" && git reset --soft HEAD~1`
-- merge: `git switch --detach HEAD~1`,
-  `git merge -m "Merge <mainline> into <branch>" origin/<mainline>`,
-  `git cherry-pick --no-commit <branch>`, `git switch -C <branch>`; the branch holds the
-  WIP commit, so the merge excludes it
-
-On a conflict, resolve by step 2 of [Conflict resolution](subskills/recovery.md#conflict-resolution), `git add` each resolved file, then
-`git rebase --continue`, `git merge --continue`, or `git cherry-pick --quit`. No re-review,
-since nothing has been reviewed yet.
-`checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
-
-An unresolved mainline warns; landing pushes the feature branch without promotion, unless the warning names a mainline `--promote` founds, which happens only while the current branch is the repo's only branch locally and on origin.
+Run `stamp.ts verify`. The review gate already ran preflight, so it prints what landing needs:
+the stamp, `policy` (with `afterCommit` and `resolved.mainline`), and `remoteVisibility`.
+`matches: false` means no gate judged this tree: run the gate the stamp names, or
+`/gating-reviews`. `land.ts` stages exactly the stamp's paths.
 
 **No policy.** A missing `policy` field (the warning names the reason) means the machine
-profile has not been applied. `main` and `master` are still guarded, so `branchAllowed`
-still answers the branch question. Run `land.ts` without `--promote` and
+profile has not been applied. Run `land.ts` without `--promote` and
 tell the carbon unit to run `~/.dotfiles/script/bootstrap --profile <name>` from the main checkout.
 
 ## Step 2: write the message
@@ -79,7 +51,7 @@ Ticket: <spec-slug>/<ticket-id>
 `description` is one line, 72 characters or fewer, no trailing period. Trailers are
 optional as a block, but a message that carries any trailer must carry `Confidence` and
 must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested` are
-included only when they apply (`stamp.ts verify` prints the stamp: its `unverifiedFindings`
+included only when they apply (the stamp from Step 1: its `unverifiedFindings`
 go in `Not-tested`, which keeps `Confidence` below `high`, its `preexistingFailures` in
 `Constraint`, and each live HIGH+ in the body), and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the whole trailer block only for a genuinely trivial change (a
 version bump with no logic change).
@@ -142,9 +114,9 @@ Flags:
 
 ## Scripts
 
-- `preflight.ts`: run first to resolve policy, freshness, branch eligibility, and scoped paths.
+- `preflight.ts`: review gates run it first to resolve policy, freshness, branch eligibility, and scoped paths.
 - `land.ts`: run after the message and disclosure checks to stage, commit, push, and optionally promote.
-- `stamp.ts`: review gates write the stamp; `verify` prints it.
+- `stamp.ts`: review gates write the stamp; `verify` prints it with the policy and remote visibility.
 
 ## Outcomes
 
@@ -154,27 +126,6 @@ Exit code carries the outcome; the JSON carries the detail and a typed `next`. A
 [Conflict resolution](subskills/recovery.md#conflict-resolution); `askCarbonUnit` asks
 `question`; `relay` passes `report` on verbatim, then continues the caller's flow; `stop` relays `report`. Report one line with the outcome, short hash, and
 message subject, then one line per finding fixed.
-
-| Outcome | Exit |
-|---|---|
-| `COMMITTED` | 0 |
-| `NOTHING_TO_COMMIT` | 13 |
-| `MESSAGE_INVALID` | 20 |
-| `HOOK_FAILED` | 21 |
-| `DENYLISTED_FILE_STAGED` | 25 |
-| `PUSH_FAILED` | 22 |
-| `PROMOTE_CONFLICT` | 23 |
-| `PROMOTE_FAILED` | 24 |
-| `MAINLINE_AHEAD` | 26 |
-| `POLICY_INVALID` | 27 |
-| `BRANCH_FORBIDDEN` | 28 |
-| `MAINLINE_UNVERIFIED` | 29 |
-| `HOME_PATH_STAGED` | 30 |
-| `NOT_REVIEWED` | 31 |
-| `PROMOTE_WITHHELD` | 32 |
-| `NOT_A_REPO` | 10 |
-| `DETACHED_HEAD` | 11 |
-| `OPERATION_IN_PROGRESS` | 12 |
 
 `pushed: false` after successful mainline promotion is normal. Report safety-push failures
 from `warnings`; the outcome stays unchanged.

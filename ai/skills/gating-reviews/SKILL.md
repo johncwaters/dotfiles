@@ -17,6 +17,43 @@ A stamp row over preflight's `paths`, carrying the findings left live or unverif
 
 ## Steps
 
-1. Run Step 1 of `/landing` (preflight, branch guard, freshness), so the stamp covers the integrated tree. Preflight's `paths` is the scope of every step here.
+1. Run [Preflight](#preflight), so the stamp covers the integrated tree.
 2. Follow [Review](subskills/review.md), which routes findings to [Fix](subskills/fix.md) and ends by writing the stamp.
 3. Run `/landing`, carrying over any commit-only or local-only instruction.
+
+## Preflight
+
+Run `node "$HOME/.claude/skills/landing/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]`, with `--paths` when you know exactly which files this session
+changed. Its `paths` is the scope of every step here.
+
+**Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
+committing on this branch. `policy.commitBranches.onForbidden` permits only
+`create-feature-branch`: create
+a branch named for the work item, switch to it, and proceed.
+
+**Mainline freshness.** A `mainlineFreshness.behind` above zero means integrate
+`origin/<mainline>` with the verb the warning names, then re-run preflight.
+Merge only for `afterCommit: pull-request` with an upstream, since rebasing a pushed
+branch needs a force-push; a landing that passes `--promote` rebases, because
+promotion's rebase drops a merge commit. Set uncommitted work aside only in a WIP commit;
+the stash is shared across worktrees and sessions; the `Bash(git *stash)` deny rule
+matches any command ending in `stash`. On a dirty tree, first `git add -A` and
+`git commit -m "WIP set-aside"`, then:
+
+- rebase: `git rebase origin/<mainline>`, then, since rebase drops a WIP already upstream,
+  `test "$(git log -1 --format=%s)" = "WIP set-aside" && git reset --soft HEAD~1`
+- merge: `git switch --detach HEAD~1`,
+  `git merge -m "Merge <mainline> into <branch>" origin/<mainline>`,
+  `git cherry-pick --no-commit <branch>`, `git switch -C <branch>`; the branch holds the
+  WIP commit, so the merge excludes it
+
+On a conflict, resolve by step 2 of [Conflict resolution](../landing/subskills/recovery.md#conflict-resolution), `git add` each resolved file, then
+`git rebase --continue`, `git merge --continue`, or `git cherry-pick --quit`. No re-review,
+since nothing has been reviewed yet.
+`checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
+
+An unresolved mainline warns; landing pushes the feature branch without promotion, unless the warning names a mainline `--promote` founds, which happens only while the current branch is the repo's only branch locally and on origin.
+
+**No policy.** A missing `policy` field (the warning names the reason) means the machine
+profile has not been applied. `main` and `master` are still guarded, so `branchAllowed`
+still answers the branch question.

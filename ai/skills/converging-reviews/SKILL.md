@@ -17,7 +17,7 @@ A review stamp over the changed-file set on `CLEAN`, which the caller lands thro
 
 ## Step 1: Preflight and start
 
-Run `node "$HOME/.claude/skills/landing/preflight.ts"` and act on it as `/landing` Step 1 says, integrating mainline before round 1 so no merge lands inside the loop; its `paths` are the changed-file set. Pin the working tree once through a throwaway index, as `reviewing-code` Step 1 does for `working`, giving `TREE_1`. Then:
+Run `node "$HOME/.claude/skills/landing/preflight.ts"` and act on it as `/gating-reviews` [Preflight](../gating-reviews/SKILL.md#preflight) says, integrating mainline before round 1 so no merge lands inside the loop; its `paths` are the changed-file set. Pin the working tree once through a throwaway index, as `reviewing-code` Step 1 does for `working`, giving `TREE_1`. Then:
 
 ```
 node "$HOME/.claude/skills/converging-reviews/round.mjs" start --tree "$TREE_1"
