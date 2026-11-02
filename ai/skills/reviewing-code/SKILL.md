@@ -58,7 +58,7 @@ Before applying severity rules, remove any finding whose `file` is outside the c
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
-| `ACTIONABLE` | The body's `Proof:` is one the writer can run again (a command with the output it produced, or quoted lines with file:line), it shows the defect on a path the change's own callers, tests, or documented commands reach, or, for a `boundary/` finding, on an input the quoted line of the peer's protocol or documentation says it can send, run against a fake peer, fixture, or environment variable, and the fix is bounded | Hands it to a writer, who re-runs that proof before and after the edit. The only disposition a writer ever sees |
+| `ACTIONABLE` | The body's `Proof:` is one the writer can run again (a command with the output it produced, or quoted lines with file:line), it shows the defect on a path the change's own callers, tests, or documented commands reach, or, for `boundary/`, on an input `boundary-reviewer.md`'s proof bar admits, and the fix is bounded | Hands it to a writer, who re-runs that proof before and after the edit. The only disposition a writer ever sees |
 | `NIT` | Style, preference, a duplicate of another finding, plainly out of the change's scope, or a `Proof:` that is a scenario rather than a run or a quote | Records it; leaves it unfixed and nonblocking |
 | `AMBIGUOUS` | Contested between lanes, cross-cutting enough that the fix is a design decision, or the intent behind the code is unclear | Stops and asks the carbon unit, with both readings stated |
 
@@ -68,7 +68,7 @@ Rules that decide the hard cases:
 - A finding whose `body` carries `Confidence: low` is ineligible for `ACTIONABLE`. Only a `contested:` merge carries it now. It is `AMBIGUOUS` if it would block, `NIT` if it would not.
 - A `convergent:` finding is `ACTIONABLE` if its fix is bounded and one of its parts carries a re-runnable proof. Agreement between lanes confirms a proof; it requires one.
 - A CRITICAL or HIGH finding is ineligible for `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
-- Lanes no longer report LOW. A LOW finding that survives as a straggler is recorded only as `NIT`. A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
+- A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
 - A finding tagged `code/scale`, or carrying a `convergent:` tag that names it, whose fix is a local rewrite inside the changed-file set — a flat-array index or a keyed lookup when keys are sparse, a single pass, a bottom-up table, a structure-of-arrays layout, or hoisting a query out of a loop — is `ACTIONABLE` at HIGH and above. One whose fix needs a schema, index, pagination contract, or data-model change is a design decision and is `AMBIGUOUS` at HIGH and above, with both readings stated.
 
 ## Step 4: Verdict

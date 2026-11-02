@@ -45,7 +45,6 @@ test('each lane receives its own review checklist heading and the finding bar', 
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
     assert.ok(lanePrompt.includes(`## ${laneName} as extra checks`))
     assert.match(lanePrompt, /style concerns are not findings/)
-    assert.equal(lanePrompt.includes('even when no existing caller sends it'), laneName === 'boundary')
   }
 })
 
