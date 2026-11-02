@@ -9,5 +9,5 @@ Each finding's `body` names the defect, the `Proof:` that shows it, and usually 
 3. Run the same proof again and give the finding one outcome:
    - `FIXED`: the proof no longer shows the defect.
    - `UNVERIFIED`: you edited but the proof cannot run here.
-   - `DECLINED`: no edit, because the proof shows no defect, the fix needs a design decision the finding leaves open (ask the carbon unit), it needs a file outside the write scope, or two findings prescribe contradictory fixes to the same lines. A declined finding leaves no edit behind.
+   - `DECLINED`: no edit, because the proof shows no defect, the fix needs a design decision neither the finding nor the design spec or intent settles (surface it as a design question), it needs a file outside the write scope, or two findings prescribe contradictory fixes to the same lines. A declined finding leaves no edit behind.
 4. Name a defect you notice on the way in the commit report and leave it alone.

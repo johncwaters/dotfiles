@@ -25,9 +25,9 @@ the stamp, `policy` (with `afterCommit` and `resolved.mainline`), and `remoteVis
 `matches: false` means no gate judged this tree: run the gate the stamp names, or
 `/gating-reviews`. `land.ts` stages exactly the stamp's paths.
 
-**No policy.** A missing `policy` field (the warning names the reason) means the machine
-profile has not been applied. Run `land.ts` without `--promote` and
-tell the carbon unit to run `~/.dotfiles/script/bootstrap --profile <name>` from the main checkout.
+**No policy.** A missing `policy` field means the machine profile is unapplied or invalid;
+the warning names which. Run `land.ts` without `--promote`; an invalid policy also makes
+`land.ts` skip promotion itself. Report the warning; bootstrap is the carbon unit's to run.
 
 ## Step 2: write the message
 
@@ -72,12 +72,18 @@ Keep these off a public remote:
   or a message describing the attack. The diff alone shows attackers what was open.
 - Credentials, customer names or data, PII, internal hostnames, or incident details.
 
-When the change carries any of them, run `land.ts` with `--no-push` and without
-`--promote`, so the commit stays local, then stop and tell the carbon unit what you found.
-A vulnerability fix goes through the repo's private channel instead: a GitHub security
-advisory's temporary private fork, or whatever the repo's `SECURITY.md` names. Strip a
-secret or customer detail out of the tree instead, then rerun the gate; one that already
-reached a remote needs rotating, not just deleting.
+Resolve each, then report what you did:
+
+- A secret, credential, customer detail, PII, internal hostname, or incident detail: strip
+  it from the tree and the message. When an unpushed commit carries it, first fold the
+  unpushed range into the working tree with `git reset --soft <the base read above>`, so no
+  pushed commit keeps it. Rerun the gate, then land. One that already reached a
+  remote needs rotating, not just deleting; name it in the report.
+- An undisclosed vulnerability fix: run `land.ts` with `--no-push` and without `--promote`.
+  When the repo's `SECURITY.md` names a private channel, use it. When the remote is GitHub,
+  open a draft advisory with `gh api repos/<owner>/<repo>/security-advisories`, create its
+  private fork through the advisory's `forks` endpoint, push the commit there, and report the
+  advisory URL. With neither available, report the local commit.
 
 Everything else lands normally. On a public remote, still write the message as public
 text: name the defect class; keep exploit steps and customer identities out.
@@ -123,8 +129,7 @@ Flags:
 Exit code carries the outcome; the JSON carries the detail and a typed `next`. Act on it:
 `proceed` continues to the next step; `done` reports; `runGate` runs `gate`, then lands again, except that with `commits` (oldest first) it passes them to the gate, which reruns `land.ts --promote` itself; `rerun` reruns `script` with the same flags once `after` is done;
 `fixAndRerun` fixes each of `items`, then reruns; `resolveConflicts` follows
-[Conflict resolution](subskills/recovery.md#conflict-resolution); `askCarbonUnit` asks
-`question`; `relay` passes `report` on verbatim, then continues the caller's flow; `stop` relays `report`. Report one line with the outcome, short hash, and
+[Conflict resolution](subskills/recovery.md#conflict-resolution); `relay` passes `report` on verbatim, then continues the caller's flow; `stop` relays `report`. Report one line with the outcome, short hash, and
 message subject, then one line per finding fixed.
 
 `pushed: false` after successful mainline promotion is normal. Report safety-push failures

@@ -21,9 +21,11 @@ and you re-run that proof in place of a confirming review.
 2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
    - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
      and report; a failed review counts only as failed.
-   - An `AMBIGUOUS` finding at HIGH or higher: stop and put it to the carbon unit with
-     both readings stated. Fix it makes it `ACTIONABLE`, with the answer written into its
-     body, and it joins the batch below; leave it makes it a `NIT`. Report lower severity
+   - An `AMBIGUOUS` finding at HIGH or higher: when a decision in the design spec or
+     intent settles it, apply that decision: fix it makes it `ACTIONABLE`, with the
+     decision written into its body, and it joins the batch below; leave it makes it a
+     `NIT`. When none settles it, surface it as a design question with both readings
+     stated, as a spec surfaces an open decision, and act on the answer the same way. Report lower severity
      `AMBIGUOUS` findings without interrupting.
    - `ACTIONABLE` at HIGH or higher: fix exactly those by [Fix](fix.md). MEDIUM findings
      and `NIT`s are listed in the commit report and left alone.

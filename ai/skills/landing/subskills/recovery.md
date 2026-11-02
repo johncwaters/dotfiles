@@ -10,7 +10,7 @@ Every result carries a typed `next`; do what it names. This file holds only the 
 
 ## A flagged file that belongs
 
-`DENYLISTED_FILE_STAGED` and `HOME_PATH_STAGED` name files or lines `next` says to unstage or replace. When one genuinely belongs in the commit, put it to the carbon unit instead; there is no override, so a home path that belongs is committed by the carbon unit by hand.
+`DENYLISTED_FILE_STAGED` and `HOME_PATH_STAGED` name files or lines `next` says to unstage or replace. When one genuinely belongs in the commit, unstage it anyway, land the rest, and report the file left out; there is no override.
 
 ## Conflict resolution
 
@@ -25,13 +25,13 @@ Every result carries a typed `next`; do what it names. This file holds only the 
 5. Re-run `land.ts` with the same flags so it finishes the fast-forward and push.
    `NOTHING_TO_COMMIT` there is expected.
 
-An empty `conflicts` list means local mainline diverged from origin. Stop and put the
-listed branch relationship to the carbon unit; leave a diverged mainline intact, without
-merging, resetting, rebasing, or force-pushing it.
+A local mainline ahead of or diverged from origin is not a conflict: `land.ts` keeps its
+local-only commits on the `rescue/<mainline>-<UTC>` branch its warning names, resets
+mainline to origin, and promotes. Report the rescue branch.
 
-Stop and report instead when the same hop conflicts again after two attempts, a conflict
-involves changes you cannot attribute, or resolving would mean discarding one side
-wholesale.
+When the same hop conflicts again after two attempts, a conflict involves changes you
+cannot attribute, or resolving would mean discarding one side wholesale, abort the rebase,
+leave the feature branch pushed and unpromoted, and report the conflicting files.
 
 ## Push and promote recovery
 
