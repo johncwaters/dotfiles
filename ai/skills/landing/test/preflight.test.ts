@@ -183,7 +183,7 @@ test("an up-to-date mainline reports zero behind with no warning", () => {
       const { result } = preflight(local);
 
       assert.deepEqual(result.mainlineFreshness, { checked: true, mainline: "main", behind: 0 });
-      assert.equal(/behind origin\/main/.test((result.warnings as string[]).join("\n")), false);
+      assert.equal(result.warnings, undefined);
     } finally {
       cleanup(local);
     }

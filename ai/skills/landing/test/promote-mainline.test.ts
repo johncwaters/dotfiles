@@ -614,8 +614,12 @@ test("a failed mainline push resets the holding worktree's main so a rerun with 
   }
 });
 
-for (const readOnlyPart of ["index", "working tree"] as const) {
-  test(`a mainline checked out with a read-only ${readOnlyPart} is pushed to origin without touching that checkout`, () => {
+for (const [readOnlyPart, hasLocalOnlyCommit] of [
+  ["index", false],
+  ["working tree", false],
+  ["working tree", true],
+] as const) {
+  test(`a mainline checked out with a read-only ${readOnlyPart}${hasLocalOnlyCommit ? " holding a local-only commit" : ""} is pushed to origin without touching that checkout`, () => {
     const { origin, seed, local } = seedOrigin();
     const holder = cloneRepo(origin);
     const session = path.join(path.dirname(holder), "session");
@@ -624,6 +628,9 @@ for (const readOnlyPart of ["index", "working tree"] as const) {
       runGit(holder, ["worktree", "add", "-b", "feature", session, "origin/feature"]);
       advanceOriginMain(seed, "mainline.txt");
       writeFile(session, "base.txt", "base\nfeature change\n");
+      if (hasLocalOnlyCommit) {
+        commitFile(holder, "local-only.txt", "local only\n", "local only");
+      }
       const mainBefore = gitOutput(holder, ["rev-parse", "main"]);
       fs.chmodSync(readOnlyPath, readOnlyPart === "index" ? 0o444 : 0o555);
       const { result } = land(session, ["--promote"], VALID_MESSAGE);
@@ -633,6 +640,7 @@ for (const readOnlyPart of ["index", "working tree"] as const) {
       assert.equal(gitOutput(origin, ["rev-parse", `${result.commit}^`]), gitOutput(seed, ["rev-parse", "main"]));
       assert.equal(gitOutput(holder, ["rev-parse", "main"]), mainBefore);
       assert.equal(gitOutput(holder, ["status", "--porcelain"]), "");
+      assert.equal(gitOutput(holder, ["branch", "--list", "rescue/*"]), "");
       assert.match((result.warnings as string[]).join("\n"), /checked out read-only/);
     } finally {
       fs.chmodSync(readOnlyPath, 0o755);

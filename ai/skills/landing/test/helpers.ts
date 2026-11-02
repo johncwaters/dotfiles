@@ -161,7 +161,7 @@ export function runSkillScript(
   const childEnv = { ...process.env, ...env };
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();
   if (!("CLAUDE_COMMIT_POLICY_ROOT" in env)) {
-    delete childEnv.CLAUDE_COMMIT_POLICY_ROOT;
+    childEnv.CLAUDE_COMMIT_POLICY_ROOT = defaultPolicyRoot();
   }
   if (!("CLAUDE_COMMIT_LEDGER" in env)) {
     childEnv.CLAUDE_COMMIT_LEDGER = ledgerPath;
@@ -263,6 +263,17 @@ export function preflight(
   env: Record<string, string> = {},
 ): RunResult {
   return runSkillScript("preflight.ts", repo, args, "", env);
+}
+
+let sharedPolicyRoot: string | null = null;
+
+function defaultPolicyRoot(): string {
+  sharedPolicyRoot ??= makePolicyRoot("personal", {
+    profile: "personal",
+    commitBranches: { forbid: ["main", "master"], onForbidden: "create-feature-branch" },
+    mainline: "auto",
+  });
+  return sharedPolicyRoot;
 }
 
 export function makePolicyRoot(profile: string, policy: Record<string, unknown>): string {

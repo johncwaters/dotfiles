@@ -174,11 +174,16 @@ class Landing {
       return guard;
     }
 
-    const { policy, policyPath } = readCommitPolicy();
+    const { policy, policyPath, warning: missingPolicyReason } = readCommitPolicy();
     const validationErrors = policyValidationErrors(policy, policyPath);
     if (validationErrors.length > 0) {
       this.config = { ...this.config, promote: false };
       this.warnings.push(`promotion skipped: invalid commit policy: ${validationErrors.join("; ")}`);
+    }
+    const isPolicyObject = typeof policy === "object" && policy !== null && !Array.isArray(policy);
+    if (!isPolicyObject && this.config.promote) {
+      this.config = { ...this.config, promote: false };
+      this.warnings.push(`promotion skipped: no commit policy: ${missingPolicyReason ?? `${policyPath} holds no policy object`}`);
     }
     const branch = this.git.currentBranch();
     const mainline = resolveMainline(this.git, configuredMainline(policy));
@@ -956,14 +961,23 @@ class Landing {
   }
 
   private rescueLocalMainline(mainline: string, localTip: string, remoteTip: string): FailureOutcome | null {
+    const worktrees = this.git.worktreeListPorcelain();
+    const holder = worktrees.code === 0 ? findWorktreeForBranch(worktrees.stdout, mainline) : null;
+    if (holder !== null && !this.isHolderWritable(holder, remoteTip, mainline)) {
+      this.warnings.push(`local ${mainline} holds commits absent from origin/${mainline} and is checked out read-only in ${holder}; left it untouched`);
+      return this.deferToReadOnlyHolder(remoteTip, mainline, holder);
+    }
     const rescueBranch = `rescue/${mainline}-${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}`;
     const createRescue = this.git.run(["branch", rescueBranch, localTip]);
     if (createRescue.code !== 0) {
       this.warnings.push(`could not keep local ${mainline}'s local-only commits on ${rescueBranch}; promotion stopped: ${createRescue.stderr.trim()}`);
       return "PROMOTE_FAILED";
     }
-    const worktrees = this.git.worktreeListPorcelain();
-    const holder = worktrees.code === 0 ? findWorktreeForBranch(worktrees.stdout, mainline) : null;
+    if (holder !== null && this.git.revParseHeadIn(holder) !== localTip) {
+      this.git.run(["branch", "-D", rescueBranch]);
+      this.warnings.push(`local ${mainline} moved in ${holder} during the rescue; nothing was reset, so a rerun rescues its new tip`);
+      return "PROMOTE_FAILED";
+    }
     const reset = holder === null
       ? this.git.updateRef(`refs/heads/${mainline}`, remoteTip, localTip)
       : this.git.resetKeepIn(holder, remoteTip);

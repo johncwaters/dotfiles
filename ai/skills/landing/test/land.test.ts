@@ -150,6 +150,31 @@ test("a path-scoped land on an unborn branch unstages a file modified after stag
   }
 });
 
+for (const policyFileBody of [null, "null", "[]"]) {
+test(`a missing commit policy${policyFileBody === null ? "" : ` (${policyFileBody})`} commits without promotion and names the reason`, () => {
+  const repo = makeRepo("feature");
+  const policyRoot = policyFileBody === null
+    ? fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-no-policy-"))
+    : makePolicyRoot("personal", {});
+  if (policyFileBody !== null) {
+    fs.writeFileSync(path.join(policyRoot, "profiles", "personal", "commit-policy.json"), policyFileBody);
+  }
+  try {
+    commitFile(repo, "a.txt", "one\n");
+    writeFile(repo, "a.txt", "two\n");
+
+    const { code, result } = land(repo, ["--promote"], VALID_MESSAGE, { CLAUDE_COMMIT_POLICY_ROOT: policyRoot });
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.equal(code, 0);
+    assert.deepEqual(result.promoted, []);
+    assert.match((result.warnings as string[]).join("\n"), /promotion skipped: no commit policy: (no machine profile marker|.*holds no policy object)/);
+  } finally {
+    cleanup(repo, policyRoot);
+  }
+});
+}
+
 test("an invalid commit policy commits without promotion and names the profile file", () => {
   const repo = makeRepo("feature");
   const policyRoot = makePolicyRoot("legacy", {
