@@ -18,18 +18,18 @@ and you re-run that proof in place of a confirming review.
    it serves. Use only `working`: `land.ts` stages every tracked
    modification in scope plus the scoped untracked files, so a `staged` review would
    approve a subset of what gets committed.
-2. Read its header lines — `VERDICT`, `ACTIONABLE`, `TRUNCATED` — and act:
+2. Act on `VERDICT`, `TRUNCATED`, and the rows, not the HIGH+ `ACTIONABLE` count:
    - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
      and report; a failed review counts only as failed.
-   - An `AMBIGUOUS` finding at HIGH or higher: when a decision in the design spec or
+   - An `AMBIGUOUS` finding at MEDIUM or higher: when a decision in the design spec or
      intent settles it, apply that decision: fix it makes it `ACTIONABLE`, with the
      decision written into its body, and it joins the batch below; leave it makes it a
      `NIT`. When none settles it, surface it as a design question with both readings
-     stated, as a spec surfaces an open decision, and act on the answer the same way. Report lower severity
+     stated, as a spec surfaces an open decision, and act on the answer the same way. Report LOW
      `AMBIGUOUS` findings without interrupting.
-   - `ACTIONABLE` at HIGH or higher: fix exactly those by [Fix](fix.md). MEDIUM findings
+   - `ACTIONABLE` at MEDIUM or higher: fix exactly those by [Fix](fix.md). LOW findings
      and `NIT`s are listed in the commit report and left alone.
-   - No `ACTIONABLE` finding at HIGH or higher: go to **Stamp the tree**.
+   - No `ACTIONABLE` finding at MEDIUM or higher: go to **Stamp the tree**.
 3. Report each fixed finding's outcome, then run the test suite that covers the changed
    files, since the fixes postdate the review:
    - `FIXED`: one line in the commit report.
@@ -46,7 +46,7 @@ and you re-run that proof in place of a confirming review.
 **Stamp the tree** last, after every fix and the suite, skipped review included:
 `node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings -`
 with `{liveFindings, unverifiedFindings, preexistingFailures, truncatedLanes, droppedUnproven}`
-on stdin, each finding `{severity, file, summary}`. A live or `UNVERIFIED` HIGH+ on any branch
+on stdin, each finding `{severity, file, summary}`. A live or `UNVERIFIED` MEDIUM+ on any branch
 stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`.
 
 A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the

@@ -53,7 +53,7 @@ optional as a block, but a message that carries any trailer must carry `Confiden
 must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested` are
 included only when they apply (the stamp from Step 1: its `unverifiedFindings`
 go in `Not-tested`, which keeps `Confidence` below `high`, its `preexistingFailures` in
-`Constraint`, and each live HIGH+ in the body), and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the whole trailer block only for a genuinely trivial change (a
+`Constraint`, and each live MEDIUM+ in the body), and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the trailer block only for a genuinely trivial change (a
 version bump with no logic change).
 
 ## Step 3: disclosure check

@@ -34,7 +34,7 @@ export type StampVerification =
   | { matches: true; stamp: StampRow }
   | { matches: false; stamp: StampRow | null; tree: string | null };
 
-const BLOCKING_SEVERITIES = new Set(["HIGH", "CRITICAL"]);
+const BLOCKING_SEVERITIES = new Set(["MEDIUM", "HIGH", "CRITICAL"]);
 const KNOWN_SEVERITIES = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
 const FINDING_LIST_KEYS = ["liveFindings", "unverifiedFindings"] as const;
 const STRING_LIST_KEYS = ["preexistingFailures", "truncatedLanes"] as const;

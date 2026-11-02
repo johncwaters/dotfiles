@@ -61,7 +61,7 @@ test("promotion rebases a feature branch onto main and pushes one mainline ref",
   }
 });
 
-test("an unstamped tree is NOT_REVIEWED and a live HIGH on the stamp withholds promotion", () => {
+test("an unstamped tree is NOT_REVIEWED and a live MEDIUM on the stamp withholds promotion", () => {
   const { origin, seed, local } = seedOrigin();
   try {
     const mainBefore = gitOutput(origin, ["rev-parse", "main"]);
@@ -71,13 +71,13 @@ test("an unstamped tree is NOT_REVIEWED and a live HIGH on the stamp withholds p
     assert.equal(unreviewed.code, 31);
     assert.deepEqual(unreviewed.result.next, { action: "runGate", gate: "gating-reviews", then: "landing" });
 
-    const highFinding = { severity: "HIGH", file: "base.txt", summary: "drops the base line" };
-    assert.equal(stamp(local, ["base.txt"], { liveFindings: [highFinding] }).code, 0);
+    const mediumFinding = { severity: "MEDIUM", file: "base.txt", summary: "drops the base line" };
+    assert.equal(stamp(local, ["base.txt"], { liveFindings: [mediumFinding] }).code, 0);
     const withheld = landUnstamped(local, ["--promote"], VALID_MESSAGE);
     assert.equal(withheld.result.outcome, "PROMOTE_WITHHELD");
     assert.equal(withheld.code, 32);
-    assert.deepEqual(withheld.result.findings, ["HIGH base.txt: drops the base line"]);
-    assert.deepEqual(withheld.result.next, { action: "fixAndRerun", fix: "finding", items: ["HIGH base.txt: drops the base line"] });
+    assert.deepEqual(withheld.result.findings, ["MEDIUM base.txt: drops the base line"]);
+    assert.deepEqual(withheld.result.next, { action: "fixAndRerun", fix: "finding", items: ["MEDIUM base.txt: drops the base line"] });
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), withheld.result.commit);
 
