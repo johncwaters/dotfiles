@@ -48,6 +48,7 @@ In teaching guides, reviewers flag these as "Claudish", from a PostHog docs revi
 - A flourish tail on a plain claim: "you flip the flag off, and nobody waits on a revert". End on the fact: "without needing a revert".
 - A balanced contrast pair the reader must decode: "A flag decides whether someone gets a feature, and a payload lets it decide how". Say what the thing is: "A feature flag can carry a payload, which …".
 - A dramatized cost: "A rollback is a revert, a build, and a deploy, and your users see the bug for as long as all three take". Name the concrete steps plainly.
+- A setup line narrating the story's progress: "It's a pretty average conversation, nothing really out of the norm", "Now Twig's engineers have a pretty good understanding of …". Start at the event: "Another visitor reports a bug: …".
 
 ## Revision checklist
 
@@ -65,4 +66,4 @@ In teaching guides, reviewers flag these as "Claudish", from a PostHog docs revi
 
 ## Critique mode
 
-When asked to review rather than write, return findings in checklist order, each as quoted line, problem, rewrite. Lead with the single biggest fix (usually a missing obstacle or a buried answer), and rewrite the whole piece only when asked.
+When asked to review rather than write, return findings in chat as one table, `# | Location | Comment | Suggested text`, in checklist order, leading with the single biggest fix (usually a missing obstacle or a buried answer). "Draft comments" means this table: post nothing to GitHub or anywhere else until the carbon unit asks. Rewrite the whole piece only when asked.
