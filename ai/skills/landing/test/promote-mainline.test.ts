@@ -941,7 +941,7 @@ test("a commit land.ts did not make withholds promotion, even after a branch ren
     assert.equal(result.outcome, "PROMOTE_WITHHELD");
     assert.equal(code, 32);
     assert.match((result.findings as string[]).join("\n"), /^UNREVIEWED [0-9a-f]{12}: not landed through land\.ts$/);
-    assert.equal((result.next as { action: string }).action, "stop");
+    assert.deepEqual(result.next, { action: "runGate", gate: "gating-reviews", then: "landing", commits: [(result.findings as string[])[0]!.slice(11, 23)] });
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBefore);
 
     const clear = spawnSync("node", [path.join(SKILL_DIR, "stamp.ts"), "clear"], { cwd: local, encoding: "utf8", env: { ...process.env, REVIEW_GATES_DIR: reviewGatesDirectory(local) } });

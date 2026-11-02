@@ -121,7 +121,7 @@ Flags:
 ## Outcomes
 
 Exit code carries the outcome; the JSON carries the detail and a typed `next`. Act on it:
-`proceed` continues to the next step; `done` reports; `runGate` runs `gate`, then lands again; `rerun` reruns `script` with the same flags once `after` is done;
+`proceed` continues to the next step; `done` reports; `runGate` runs `gate`, then lands again, except that with `commits` (oldest first) it passes them to the gate, which reruns `land.ts --promote` itself; `rerun` reruns `script` with the same flags once `after` is done;
 `fixAndRerun` fixes each of `items`, then reruns; `resolveConflicts` follows
 [Conflict resolution](subskills/recovery.md#conflict-resolution); `askCarbonUnit` asks
 `question`; `relay` passes `report` on verbatim, then continues the caller's flow; `stop` relays `report`. Report one line with the outcome, short hash, and

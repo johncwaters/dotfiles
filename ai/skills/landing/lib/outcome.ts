@@ -53,7 +53,7 @@ export type NextStep =
   | { action: "done" }
   | { action: "proceed" }
   | { action: "rerun"; script: "land.ts" | "preflight.ts"; after: string }
-  | { action: "runGate"; gate: string; then: "landing" }
+  | { action: "runGate"; gate: string; then: "landing"; commits?: string[] }
   | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause" | "finding"; items: string[] }
   | { action: "resolveConflicts"; files: string[] }
   | { action: "askCarbonUnit"; question: string }
@@ -240,7 +240,8 @@ export const promoteWithheld = defineOutcome("PROMOTE_WITHHELD", {
   if (blockingFindings.length > 0) {
     return { action: "fixAndRerun", fix: "finding", items: blockingFindings };
   }
-  return { action: "stop", report: `Promotion withheld; the branch stays pushed until a carbon unit looks at ${findings.join("; ")} and releases it with stamp.ts clear` };
+  const unreviewedCommits = findings.map((finding) => /^UNREVIEWED ([0-9a-f]+):/.exec(finding)?.[1]).filter((commit) => commit !== undefined).reverse();
+  return { action: "runGate", gate: "gating-reviews", then: "landing", commits: unreviewedCommits };
 });
 
 export function emit(result: Result): never {

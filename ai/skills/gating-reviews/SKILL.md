@@ -11,6 +11,12 @@ One review pass over local work, ending in a stamp that `land.ts` checks before 
 
 Uncommitted local work, and one or two sentences of what changed and the goal it serves.
 
+Or the `commits` a `PROMOTE_WITHHELD` result names, oldest first: commits on the branch that never passed through `land.ts`.
+
+## Commits
+
+For `commits`, skip Preflight and the working-tree review. Invoke `/reviewing-code` with the base and head target `<oldest commit>^` and `HEAD`, and act on its findings as [Review](subskills/review.md) step 2 says: a fix lands through the steps below as new work. Once no `ACTIONABLE` finding at HIGH or higher stands, run `node "$HOME/.claude/skills/landing/stamp.ts" clear`, which records the branch's commits as landed, then rerun `land.ts --promote` with no message.
+
 ## Output
 
 A stamp row over preflight's `paths`, carrying the findings left live or unverified, the pre-existing failures, and the truncated lanes. `/landing` writes its trailers from it.
