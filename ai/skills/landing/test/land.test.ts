@@ -808,7 +808,7 @@ test("a spec lands live: refused unreviewed, ticket commits scoped to the stamp,
   }
 });
 
-test("two checkouts sharing a folder name keep separate stamp ledgers and adopt the folder-keyed one", (context) => {
+test("two checkouts sharing a folder name keep separate stamp ledgers", (context) => {
   const firstParent = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-a-"));
   const secondParent = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-b-"));
   const gatesDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-gates-"));
@@ -824,12 +824,8 @@ test("two checkouts sharing a folder name keep separate stamp ledgers and adopt 
     runGit(repo, ["init", "-q", "-b", "main"]);
     return repo;
   });
-  fs.mkdirSync(path.join(gatesDirectory, "app"));
-  fs.writeFileSync(path.join(gatesDirectory, "app", "main.jsonl"), "{}\n");
 
-  const firstLedger = stampLedgerPath(new Git(firstRepo));
-  assert.equal(fs.readFileSync(firstLedger, "utf8"), "{}\n");
-  assert.notEqual(stampLedgerPath(new Git(secondRepo)), firstLedger);
+  assert.notEqual(stampLedgerPath(new Git(secondRepo)), stampLedgerPath(new Git(firstRepo)));
 });
 
 function restoreGatesDirectory(previousGatesDirectory: string | undefined): void {

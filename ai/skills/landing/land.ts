@@ -191,16 +191,15 @@ class Landing {
       return branchForbidden({ branch });
     }
 
-    const messageErrors = validateMessage(message);
-    if (messageErrors.length > 0) {
-      return messageInvalid({ errors: messageErrors });
-    }
-
     const stamp = lastStamp(this.git);
     this.stampedPaths = stamp?.paths ?? [];
     const operatorScope = computeScope(this.git, this.stampedPaths);
     if (operatorScope.changed.size === 0 && operatorScope.untracked.length === 0) {
       return this.landNothing();
+    }
+    const messageErrors = validateMessage(message);
+    if (messageErrors.length > 0) {
+      return messageInvalid({ errors: messageErrors });
     }
     const verification = verifyStamp(this.git);
     if (!verification.matches) {
@@ -545,7 +544,7 @@ class Landing {
     const mainline =
       existingMainline ?? (originHoldsOnlyCurrentBranch ? foundingMainlineName(this.git, configuredMainline(policy)) : null);
     this.mainline = mainline;
-    const featureBranch = this.featureBranchForPromotion(current, mainline);
+    const featureBranch = current === mainline ? null : current;
     this.parkedFeatureBranch = featureBranch;
     if (mainline === null) {
       this.warnings.push("promotion skipped: no mainline");
@@ -654,16 +653,6 @@ class Landing {
       return null;
     }
     return this.pushFeatureRef(deferredBranch);
-  }
-
-  private featureBranchForPromotion(current: string, mainline: string | null): string | null {
-    if (this.deferredFeatureBranch) {
-      return this.deferredFeatureBranch;
-    }
-    if (current === mainline) {
-      return null;
-    }
-    return current;
   }
 
   private pushFeatureAfterFailedMainlinePromotion(

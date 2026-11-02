@@ -577,7 +577,7 @@ test("a mainline checked out in a clean worktree is fast-forwarded there", () =>
   }
 });
 
-test("a failed mainline push resets the holding worktree's main so a rerun promotes", () => {
+test("a failed mainline push resets the holding worktree's main so a rerun with no message promotes", () => {
   const { origin, seed, local } = seedOrigin();
   const holder = cloneRepo(origin);
   const session = path.join(path.dirname(holder), "session");
@@ -592,7 +592,7 @@ test("a failed mainline push resets the holding worktree's main so a rerun promo
     assert.equal(gitOutput(holder, ["rev-parse", "main"]), originMainBefore);
 
     fs.rmSync(path.join(origin, "hooks", "update"));
-    const rerun = land(session, ["--promote"], VALID_MESSAGE);
+    const rerun = land(session, ["--promote"], "");
 
     assert.equal(rerun.result.outcome, "NOTHING_TO_COMMIT");
     assert.deepEqual(rerun.result.promoted, ["main"]);

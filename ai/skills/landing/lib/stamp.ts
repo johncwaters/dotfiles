@@ -108,21 +108,7 @@ export function stampLedgerPath(git: Git): string {
   const mainCheckoutName = `${path.basename(mainCheckoutPath)}-${createHash("sha1").update(mainCheckoutPath).digest("hex").slice(0, 12)}`;
   const headRef = git.run(["symbolic-ref", "-q", "HEAD"]).stdout.trim();
   const branchFileName = encodeURIComponent(headRef.replace(/^refs\/heads\//, "") || "HEAD");
-  const ledgerFile = path.join(baseDirectory, mainCheckoutName, `${branchFileName}.jsonl`);
-  adoptBasenameKeyedLedger(path.join(baseDirectory, path.basename(mainCheckoutPath), `${branchFileName}.jsonl`), ledgerFile);
-  return ledgerFile;
-}
-
-function adoptBasenameKeyedLedger(legacyLedgerFile: string, ledgerFile: string): void {
-  for (const extension of [".jsonl", ".landed"]) {
-    const legacyFile = legacyLedgerFile.replace(/\.jsonl$/, extension);
-    const currentFile = ledgerFile.replace(/\.jsonl$/, extension);
-    if (fs.existsSync(currentFile) || !fs.existsSync(legacyFile)) {
-      continue;
-    }
-    fs.mkdirSync(path.dirname(currentFile), { recursive: true });
-    fs.renameSync(legacyFile, currentFile);
-  }
+  return path.join(baseDirectory, mainCheckoutName, `${branchFileName}.jsonl`);
 }
 
 export function pinScopedTree(git: Git, paths: string[]): string | null {
