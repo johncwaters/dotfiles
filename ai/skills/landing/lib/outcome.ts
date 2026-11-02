@@ -54,7 +54,7 @@ export type NextStep =
   | { action: "proceed" }
   | { action: "rerun"; script: "land.ts" | "preflight.ts"; after: string }
   | { action: "runGate"; gate: string; then: "landing" }
-  | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause"; items: string[] }
+  | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause" | "finding"; items: string[] }
   | { action: "resolveConflicts"; files: string[] }
   | { action: "askCarbonUnit"; question: string }
   | { action: "relay"; report: string }
@@ -235,7 +235,13 @@ export const promoteWithheld = defineOutcome("PROMOTE_WITHHELD", {
   pushed: required("boolean"),
   promoted: required("stringList"),
   findings: required("stringList"),
-}, ({ findings }) => ({ action: "stop", report: `Promotion withheld; the branch stays pushed until a carbon unit looks at ${findings.join("; ")} and releases it with stamp.ts clear` }));
+}, ({ findings }) => {
+  const blockingFindings = findings.filter((finding) => !finding.startsWith("UNREVIEWED "));
+  if (blockingFindings.length > 0) {
+    return { action: "fixAndRerun", fix: "finding", items: blockingFindings };
+  }
+  return { action: "stop", report: `Promotion withheld; the branch stays pushed until a carbon unit looks at ${findings.join("; ")} and releases it with stamp.ts clear` };
+});
 
 export function emit(result: Result): never {
   process.stdout.write(`${JSON.stringify(result)}\n`);

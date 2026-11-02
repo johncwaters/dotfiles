@@ -1,10 +1,10 @@
 import { Git } from "./lib/git.ts";
 import {
   changedPathsOutside,
-  clearStampLedger,
   EMPTY_FINDINGS,
   isStampGate,
   parseStampFindings,
+  releaseBranch,
   STAMP_GATES,
   type StampFindings,
   verifyStamp,
@@ -14,6 +14,14 @@ import { readStdin } from "./lib/stdio.ts";
 import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings -] | verify | clear`;
+
+function releaseBaseRef(git: Git): string | null {
+  const { mainline } = readResolvedPolicy(git);
+  if (mainline === null) {
+    return null;
+  }
+  return [`refs/remotes/origin/${mainline}`, `refs/heads/${mainline}`].find((ref) => git.verifyRef(ref)) ?? null;
+}
 
 function fail(reason: string): never {
   process.stderr.write(`${reason}\n${USAGE}\n`);
@@ -87,7 +95,7 @@ if (command === "verify") {
   process.exit(verification.matches ? 0 : 1);
 }
 if (command === "clear") {
-  clearStampLedger(git);
+  releaseBranch(git, releaseBaseRef(git));
   process.exit(0);
 }
 fail(`unknown command ${command ?? "(none)"}`);

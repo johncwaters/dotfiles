@@ -27,6 +27,7 @@ export type StampRow = StampFindings & {
   head: string | null;
   tree: string;
   paths: string[];
+  prefix?: string;
 };
 
 export type StampVerification =
@@ -171,7 +172,8 @@ export function writeStamp(git: Git, gate: StampGate, paths: string[], findings:
   if (tree === null) {
     throw new Error(`could not pin the tree over ${paths.join(", ")}`);
   }
-  const row: StampRow = { v: 1, at: new Date().toISOString(), gate, head: git.revParseHead(), tree, paths, ...findings };
+  const prefix = git.run(["rev-parse", "--show-prefix"]).stdout.trim();
+  const row: StampRow = { v: 1, at: new Date().toISOString(), gate, head: git.revParseHead(), tree, paths, prefix, ...findings };
   const ledgerFile = stampLedgerPath(git);
   fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
   fs.appendFileSync(ledgerFile, `${JSON.stringify(row)}\n`);
@@ -194,10 +196,41 @@ export function verifyStamp(git: Git): StampVerification {
   return { matches: true, stamp };
 }
 
+function reviewCoversFile(stamp: StampRow, file: string): boolean {
+  if (!(REVIEW_GATES as readonly string[]).includes(stamp.gate)) {
+    return false;
+  }
+  return stamp.paths.some((stampPath) => {
+    const coveredPath = path.posix.normalize(path.posix.join(stamp.prefix ?? "", stampPath)).replace(/\/+$/, "");
+    return coveredPath === "." || file === coveredPath || file.startsWith(`${coveredPath}/`);
+  });
+}
+
 export function branchBlockingFindings(git: Git): StampFinding[] {
-  return readStampRows(git).flatMap((stamp) =>
-    [...stamp.liveFindings, ...stamp.unverifiedFindings].filter((finding) => BLOCKING_SEVERITIES.has(finding.severity)),
-  );
+  const pendingFindingsByFile = new Map<string, StampFinding[]>();
+  for (const stamp of readStampRows(git)) {
+    for (const file of pendingFindingsByFile.keys()) {
+      if (reviewCoversFile(stamp, file)) {
+        pendingFindingsByFile.delete(file);
+      }
+    }
+    const blockingFindings = [...stamp.liveFindings, ...stamp.unverifiedFindings].filter((finding) => BLOCKING_SEVERITIES.has(finding.severity));
+    for (const finding of blockingFindings) {
+      pendingFindingsByFile.set(finding.file, [...(pendingFindingsByFile.get(finding.file) ?? []), finding]);
+    }
+  }
+  return [...pendingFindingsByFile.values()].flat();
+}
+
+export function releaseBranch(git: Git, baseRef: string | null): void {
+  fs.rmSync(stampLedgerPath(git), { force: true });
+  const branchPatchIds = [...git.patchIdsByCommit([baseRef === null ? "HEAD" : `${baseRef}..HEAD`]).values()];
+  if (branchPatchIds.length === 0) {
+    return;
+  }
+  const landedFile = landedLedgerPath(git);
+  fs.mkdirSync(path.dirname(landedFile), { recursive: true });
+  fs.appendFileSync(landedFile, branchPatchIds.map((patchId) => `${patchId}\n`).join(""));
 }
 
 export function clearStampLedger(git: Git): void {

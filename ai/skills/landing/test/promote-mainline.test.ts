@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { parseLedger } from "../lib/ledger.ts";
 import {
@@ -16,9 +17,11 @@ import {
   makePolicyRoot,
   makeRepo,
   parkedEntryFixture,
+  reviewGatesDirectory,
   runGit,
   runSkillScript,
   seedOrigin,
+  SKILL_DIR,
   stamp,
   tryGit,
   VALID_MESSAGE,
@@ -74,8 +77,15 @@ test("an unstamped tree is NOT_REVIEWED and a live HIGH on the stamp withholds p
     assert.equal(withheld.result.outcome, "PROMOTE_WITHHELD");
     assert.equal(withheld.code, 32);
     assert.deepEqual(withheld.result.findings, ["HIGH base.txt: drops the base line"]);
+    assert.deepEqual(withheld.result.next, { action: "fixAndRerun", fix: "finding", items: ["HIGH base.txt: drops the base line"] });
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), withheld.result.commit);
+
+    writeFile(local, "base.txt", "base\nfeature change, keeping the base line\n");
+    assert.equal(stamp(local, ["base.txt"]).code, 0);
+    const fixed = landUnstamped(local, ["--promote"], VALID_MESSAGE);
+    assert.equal(fixed.result.outcome, "COMMITTED");
+    assert.deepEqual(fixed.result.promoted, ["main"]);
   } finally {
     cleanup(origin, seed, local);
   }
@@ -931,7 +941,13 @@ test("a commit land.ts did not make withholds promotion, even after a branch ren
     assert.equal(result.outcome, "PROMOTE_WITHHELD");
     assert.equal(code, 32);
     assert.match((result.findings as string[]).join("\n"), /^UNREVIEWED [0-9a-f]{12}: not landed through land\.ts$/);
+    assert.equal((result.next as { action: string }).action, "stop");
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBefore);
+
+    const clear = spawnSync("node", [path.join(SKILL_DIR, "stamp.ts"), "clear"], { cwd: local, encoding: "utf8", env: { ...process.env, REVIEW_GATES_DIR: reviewGatesDirectory(local) } });
+    assert.equal(clear.status, 0, clear.stderr);
+    const released = landUnstamped(local, ["--promote"], "");
+    assert.deepEqual(released.result.promoted, ["main"]);
   } finally {
     cleanup(origin, seed, local);
   }
