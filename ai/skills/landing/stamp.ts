@@ -11,6 +11,7 @@ import {
   writeStamp,
 } from "./lib/stamp.ts";
 import { readStdin } from "./lib/stdio.ts";
+import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings -] | verify | clear`;
 
@@ -81,7 +82,8 @@ if (command === "write") {
 }
 if (command === "verify") {
   const verification = verifyStamp(git);
-  process.stdout.write(`${JSON.stringify(verification)}\n`);
+  const { profile, policy, remoteVisibility, warnings } = readResolvedPolicy(git);
+  process.stdout.write(`${JSON.stringify({ ...verification, ...(profile ? { profile } : {}), ...(policy ? { policy } : {}), remoteVisibility, warnings })}\n`);
   process.exit(verification.matches ? 0 : 1);
 }
 if (command === "clear") {

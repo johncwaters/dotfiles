@@ -11,15 +11,10 @@ import {
   ready,
   type Result,
 } from "./lib/outcome.ts";
-import {
-  configuredMainline,
-  isBranchAllowed,
-  policyValidationErrors,
-  readCommitPolicy,
-} from "./lib/policy.ts";
+import { configuredMainline, isBranchAllowed } from "./lib/policy.ts";
 import { readStdin } from "./lib/stdio.ts";
-import { readGithubRemote, readRemoteVisibility, resolveAfterCommit } from "./lib/visibility.ts";
-import { checkMainlineFreshness, computeScope, foundingMainlineName, originHoldsOnlyBranch, resolveMainline } from "./lib/workspace.ts";
+import { readResolvedPolicy } from "./lib/visibility.ts";
+import { checkMainlineFreshness, computeScope, foundingMainlineName, originHoldsOnlyBranch } from "./lib/workspace.ts";
 
 type Arguments = { paths: string[]; checkMessage: boolean; noFetch: boolean };
 
@@ -143,25 +138,15 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
   const branch = git.currentBranch();
   const { changed, untracked } = computeScope(git, paths);
   const resolvedScopePaths = [...new Set([...changed, ...untracked])].sort();
-  const { profile, policy, policyPath, warning } = readCommitPolicy();
-  const validationErrors = policyValidationErrors(policy, policyPath);
+  const { profile, policy, validationErrors, mainline, remoteVisibility, warnings } = readResolvedPolicy(git);
   if (validationErrors.length > 0) {
     return policyInvalid({ errors: validationErrors });
-  }
-
-  const mainline = resolveMainline(git, configuredMainline(policy));
-  const warnings = warning ? [warning] : [];
-  const origin = readGithubRemote(git);
-  const ownershipResolution = resolveAfterCommit(origin);
-  const resolvedPolicy = policy ? { ...policy, afterCommit: ownershipResolution.mode, resolved: { mainline } } : undefined;
-  if (ownershipResolution.warning) {
-    warnings.push(ownershipResolution.warning);
   }
   const mainlineFreshness = mainline === null || noFetch
     ? undefined
     : checkMainlineFreshness(git, mainline);
   if (mainlineFreshness?.checked && mainlineFreshness.behind > 0) {
-    const shouldMergeMainline = resolvedPolicy?.afterCommit === "pull-request" && git.hasUpstream();
+    const shouldMergeMainline = policy?.afterCommit === "pull-request" && git.hasUpstream();
     const integrationVerb = shouldMergeMainline ? "merge" : "rebase onto";
     warnings.push(
       `branch is ${mainlineFreshness.behind} commits behind origin/${mainlineFreshness.mainline}; ${integrationVerb} origin/${mainlineFreshness.mainline} before review`,
@@ -192,9 +177,9 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
       changed: [...changed].sort(),
       untracked,
       ...(profile ? { profile } : {}),
-      ...(resolvedPolicy ? { policy: resolvedPolicy } : {}),
+      ...(policy ? { policy } : {}),
       ...(mainlineFreshness ? { mainlineFreshness } : {}),
-      remoteVisibility: readRemoteVisibility(origin),
+      remoteVisibility,
       warnings,
     }),
     paths: resolvedScopePaths,

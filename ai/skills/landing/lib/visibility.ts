@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import type { Git } from "./git.ts";
+import { type CommitPolicy, configuredMainline, policyValidationErrors, readCommitPolicy } from "./policy.ts";
+import { resolveMainline } from "./workspace.ts";
 
 export type RemoteVisibility =
   | { remote: string; visibility: "public" | "private" | "internal" }
@@ -93,6 +95,30 @@ function resolveOwnedRepository(repositoryName: string, login: string): AfterCom
   }
   const isOwnedByLogin = resolvedOwner.toLowerCase() === login.toLowerCase();
   return { mode: isOwnedByLogin && isForkAnswer === "false" ? "promote" : "pull-request" };
+}
+
+export type ResolvedPolicyLookup = {
+  profile?: string;
+  policy?: CommitPolicy & { afterCommit: AfterCommitResolution["mode"]; resolved: { mainline: string | null } };
+  validationErrors: string[];
+  mainline: string | null;
+  remoteVisibility: RemoteVisibility;
+  warnings: string[];
+};
+
+export function readResolvedPolicy(git: Git): ResolvedPolicyLookup {
+  const { profile, policy, policyPath, warning } = readCommitPolicy();
+  const mainline = resolveMainline(git, configuredMainline(policy));
+  const origin = readGithubRemote(git);
+  const ownershipResolution = resolveAfterCommit(origin);
+  return {
+    ...(profile ? { profile } : {}),
+    ...(policy ? { policy: { ...policy, afterCommit: ownershipResolution.mode, resolved: { mainline } } } : {}),
+    validationErrors: policyValidationErrors(policy, policyPath),
+    mainline,
+    remoteVisibility: readRemoteVisibility(origin),
+    warnings: [warning, ownershipResolution.warning].filter((message): message is string => message !== undefined),
+  };
 }
 
 export function readRemoteVisibility(origin: GithubRemote): RemoteVisibility {
