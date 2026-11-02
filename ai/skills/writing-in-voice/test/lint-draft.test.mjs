@@ -41,4 +41,6 @@ test("shared voice rules flag on every draft and long-form rules only with --lon
   const pocketGuideDraft = "---\nsubtitle: Understand AI token usage, model costs, and latency. Use PostHog AI Observability to investigate expensive conversations.\n---\n\nIt's kept for [30 days](/docs/ai-observability/data-retention). A missing capacity mustn’t count. Now they have a pretty good understanding of the trace.\n";
   assert.equal(lintDraft(pocketGuideDraft).exitCode, 0);
   assert.deepEqual(lintDraft(pocketGuideDraft, "--longform").rules, ["volatile-number", "british-form", "hedge", "mixed-apostrophes"]);
+  const hyphenAndPossessiveDraft = "It's covered by [90-day data retention](/docs/data-retention).\n\nThe 2024’s costs are below.\n";
+  assert.deepEqual(lintDraft(hyphenAndPossessiveDraft, "--longform").rules, ["volatile-number", "mixed-apostrophes"]);
 });

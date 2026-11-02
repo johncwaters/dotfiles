@@ -24,7 +24,7 @@ const LONGFORM_PATTERN_RULES = [
   { rule: "emoji-bullet", pattern: /^\s*(?:[-*+]\s+)?\p{Extended_Pictographic}/u },
   { rule: "british-form", pattern: /\b(?:mustn['’]t|shan['’]t|whilst|amongst)\b/i },
   { rule: "hedge", pattern: /\bpretty (?:good|average|much)\b/i },
-  { rule: "volatile-number", pattern: /^(?=.*\]\(\/docs)(?=.*\b\d+\s*(?:days?|seconds?|minutes?|hours?|requests?)\b)/i },
+  { rule: "volatile-number", pattern: /^(?=.*\]\(\/docs)(?=.*\b\d+(?:\s*|-)(?:days?|seconds?|minutes?|hours?|requests?)\b)/i },
 ];
 
 
@@ -92,8 +92,8 @@ function repeatedContrastFlags(lines) {
 }
 
 function mixedApostropheFlags(lines) {
-  const hasStraight = lines.some((line) => /[a-z]'[a-z]/i.test(line.text));
-  const firstCurlyLine = lines.find((line) => /[a-z]’[a-z]/i.test(line.text));
+  const hasStraight = lines.some((line) => /[a-z0-9]'[a-z]/i.test(line.text));
+  const firstCurlyLine = lines.find((line) => /[a-z0-9]’[a-z]/i.test(line.text));
   if (!hasStraight || !firstCurlyLine) return [];
   return [{ line: firstCurlyLine.number, rule: "mixed-apostrophes", text: firstCurlyLine.text.trim() }];
 }
