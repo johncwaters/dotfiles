@@ -58,7 +58,7 @@ Before applying severity rules, remove any finding whose `file` is outside the c
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
-| `ACTIONABLE` | The body's `Proof:` is one the writer can run again (a command with the output it produced, or quoted lines with file:line), it shows the defect on a path the change's own callers, tests, or documented commands reach, and the fix is bounded | Hands it to a writer, who re-runs that proof before and after the edit. The only disposition a writer ever sees |
+| `ACTIONABLE` | The body's `Proof:` is one the writer can run again (a command with the output it produced, or quoted lines with file:line), it shows the defect on a path the change's own callers, tests, or documented commands reach, or, for a `boundary/` finding, on an input the quoted line of the peer's protocol or documentation says it can send, run against a fake peer, fixture, or environment variable, and the fix is bounded | Hands it to a writer, who re-runs that proof before and after the edit. The only disposition a writer ever sees |
 | `NIT` | Style, preference, a duplicate of another finding, plainly out of the change's scope, or a `Proof:` that is a scenario rather than a run or a quote | Records it; leaves it unfixed and nonblocking |
 | `AMBIGUOUS` | Contested between lanes, cross-cutting enough that the fix is a design decision, or the intent behind the code is unclear | Stops and asks the carbon unit, with both readings stated |
 

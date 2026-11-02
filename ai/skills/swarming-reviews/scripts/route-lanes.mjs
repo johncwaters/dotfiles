@@ -49,6 +49,9 @@ export function selectRuleLanes({ changedFiles, changedLines, allLanes = false }
   if (redteamFiles.length > 0) {
     filesByLane.redteam = redteamFiles
   }
+  if (codeFiles.length > 0) {
+    filesByLane.boundary = codeFiles
+  }
   return { lanes: Object.keys(filesByLane), filesByLane }
 }
 

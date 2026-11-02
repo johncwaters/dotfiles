@@ -15,6 +15,12 @@ const laneDefinitions = [
     name: 'redteam',
     trigger: 'the diff adds or changes a guarantee something must not bypass: a gate, policy, limit, quota, charge, revocation, or a side effect that must always run',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Red-team review', phase: 'Review', agentType: 'redteam-reviewer' })
+  },
+  {
+    name: 'boundary',
+    trigger: 'the diff reads from or writes to something it does not own: a peer process or protocol, a worker or thread, a cache or persisted state, a shared file, git or another tool, or the environment',
+    proofBar: 'For this lane, an input a peer or environment the code talks to can send per its protocol or documentation counts as reached, even when no existing caller sends it: prove it with a run against a fake peer, fixture, or environment variable, or, where you may execute nothing, with the quoted protocol or documentation line beside the quoted code that mishandles it.',
+    spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Boundary review', phase: 'Review', agentType: 'boundary-reviewer' })
   }
 ]
 
@@ -442,6 +448,14 @@ function proofRunClauseFor(reviewCmd) {
   return 'This diff is somebody else\'s change, so execute none of its code and extract nothing: prove by quoted lines read with git show <head>:<path>, or by searches.'
 }
 
+function laneProofBarFor(laneName) {
+  const laneProofBar = laneDefinitionsByName.get(laneName)?.proofBar
+  if (!laneProofBar) {
+    return ''
+  }
+  return ` ${laneProofBar}`
+}
+
 function buildLanePrompt(laneName, matchedFiles, reviewedFileNames, reviewCmd) {
   return `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
 Out of scope: pre-existing issues outside that set; unchanged lines inside it are read, never anchored
@@ -452,7 +466,7 @@ Exact REVIEW_CMD: ${reviewCmd}
 Caller context, verbatim:
 ${args.context}
 
-Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped, so a suspicion you could not prove gets one summary sentence naming what would prove it. Design, placement, naming, duplication, and style concerns are not findings; put at most one summary sentence on them.
+Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped, so a suspicion you could not prove gets one summary sentence naming what would prove it. Design, placement, naming, duplication, and style concerns are not findings; put at most one summary sentence on them.${laneProofBarFor(laneName)}
 
 Files matched for this lane: ${formatLines(matchedFiles)}
 

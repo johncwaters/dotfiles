@@ -39,12 +39,13 @@ const baseWorkflowArgs = {
 test('each lane receives its own review checklist heading and the finding bar', () => {
   const buildLanePrompt = workflowFunctionNamed('buildLanePrompt', baseWorkflowArgs)
 
-  for (const laneName of ['code', 'security', 'redteam']) {
+  for (const laneName of ['code', 'security', 'redteam', 'boundary']) {
     const lanePrompt = buildLanePrompt(laneName, baseWorkflowArgs.changedFiles, baseWorkflowArgs.changedFiles, baseWorkflowArgs.reviewCmd)
 
     assert.match(lanePrompt, /~\/\.claude\/review-checklist\.md/)
     assert.ok(lanePrompt.includes(`## ${laneName} as extra checks`))
     assert.match(lanePrompt, /style concerns are not findings/)
+    assert.equal(lanePrompt.includes('even when no existing caller sends it'), laneName === 'boundary')
   }
 })
 
@@ -218,7 +219,7 @@ test('the router only adds an unpicked lane naming a changed file, even as a dif
   const addingResponse = await runWorkflow(baseWorkflowArgs, addingRuntime)
 
   assert.deepEqual(spawnedLabels.sort(), ['Code review', 'Red-team review'])
-  assert.match(addingResponse, /Lanes run: code, redteam\. Lanes skipped: security\./)
+  assert.match(addingResponse, /Lanes run: code, redteam\. Lanes skipped: security, boundary\./)
 
   const deadRouterResponse = await runWorkflow(baseWorkflowArgs, workflowRuntimeReturning(() => laneResponse, null))
   const loggedLines = []
@@ -248,10 +249,11 @@ test('route-lanes picks the same lanes from a pinned diff on every run, docs alo
   const codeChange = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'])
 
   assert.deepEqual(codeChange, routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js']))
-  assert.deepEqual(codeChange.lanes, ['code', 'security', 'redteam'])
+  assert.deepEqual(codeChange.lanes, ['code', 'security', 'redteam', 'boundary'])
+  assert.deepEqual(codeChange.filesByLane.boundary, ['src/quota-gate.js'])
   assert.deepEqual(codeChange.filesByLane.redteam, ['src/quota-gate.js'])
   assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md']).lanes, ['code'])
   const allLanes = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'], ['--all-lanes'])
-  assert.deepEqual(allLanes.filesByLane, { code: ['README.md', 'src/quota-gate.js'], security: ['README.md', 'src/quota-gate.js'], redteam: ['src/quota-gate.js'] })
+  assert.deepEqual(allLanes.filesByLane, { code: ['README.md', 'src/quota-gate.js'], security: ['README.md', 'src/quota-gate.js'], redteam: ['src/quota-gate.js'], boundary: ['src/quota-gate.js'] })
   assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md'], ['--all-lanes']).lanes, ['code', 'security'])
 })
