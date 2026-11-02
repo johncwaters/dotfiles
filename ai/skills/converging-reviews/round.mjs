@@ -20,6 +20,7 @@ import { EMPTY_FINDINGS, pinScopedTree, writeStamp } from "../landing/lib/stamp.
 const EXIT_CODE_BY_OUTCOME = {
   FRESH: 0,
   RESUME: 0,
+  REVIEW: 0,
   RECORDED: 0,
   CLEAN: 0,
   CONTINUE: 10,
@@ -92,23 +93,73 @@ function roundRows(ledger) {
   return ledger.filter((row) => row.type === "round");
 }
 
-function startRun(repoPath, workingTree) {
+function pendingRows(ledger) {
+  return ledger.filter((row) => row.type === "pending");
+}
+
+function pendingRoundFor(ledger, round) {
+  return pendingRows(ledger).findLast((row) => row.round === round);
+}
+
+function reviewReport(pendingRound, ledgerFile) {
+  const { round, kind, base, head } = pendingRound;
+  return { round, kind, base, head, reviewCmd: `git diff ${base} ${head}`, ledger: ledgerFile };
+}
+
+function workingTreeOf(repoPath) {
+  const repoRoot = runGit(repoPath, ["rev-parse", "--show-toplevel"]).trim();
+  return pinScopedTree(new Git(repoRoot), ["."]);
+}
+
+function startRun(repoPath) {
   const ledgerFile = ledgerPath(repoPath);
-  const lastRound = roundRows(readLedger(ledgerFile)).at(-1);
+  const ledger = readLedger(ledgerFile);
+  const workingTree = workingTreeOf(repoPath);
+  const lastRound = roundRows(ledger).at(-1);
   if (lastRound?.outcome === "ASKED" && lastRound.head === workingTree) {
-    finish("RESUME", { round: lastRound.round, base: lastRound.base, head: lastRound.head, ledger: ledgerFile });
+    finish("RESUME", reviewReport(lastRound, ledgerFile));
   }
   if (fs.existsSync(ledgerFile)) {
     const setAsidePath = ledgerFile.replace(/\.jsonl$/, `.${new Date().toISOString().replaceAll(":", "-")}.jsonl`);
     fs.renameSync(ledgerFile, setAsidePath);
   }
   const headTree = runGit(repoPath, ["rev-parse", "HEAD^{tree}"]).trim();
-  finish("FRESH", { round: 1, base: headTree, ledger: ledgerFile });
+  const firstRound = { type: "pending", round: 1, kind: "full", base: headTree, head: workingTree };
+  appendRows(ledgerFile, [firstRound]);
+  finish("FRESH", reviewReport(firstRound, ledgerFile));
+}
+
+function nextRound(repoPath) {
+  const ledgerFile = ledgerPath(repoPath);
+  const ledger = readLedger(ledgerFile);
+  const latestPending = pendingRows(ledger).at(-1);
+  if (!latestPending) failUsage("no run in the ledger; run start first");
+  const concludedRounds = lastConcludedRounds(ledger);
+  const lastConcluded = concludedRounds.at(-1);
+  const isPendingUnreviewed = !concludedRounds.some((row) => row.round === latestPending.round);
+  if (isPendingUnreviewed) {
+    if (latestPending.kind !== "delta") finish("REVIEW", reviewReport(latestPending, ledgerFile));
+    const workingTree = workingTreeOf(repoPath);
+    if (latestPending.head === workingTree) finish("REVIEW", reviewReport(latestPending, ledgerFile));
+    const refreshedRound = { ...latestPending, head: workingTree };
+    appendRows(ledgerFile, [refreshedRound]);
+    finish("REVIEW", reviewReport(refreshedRound, ledgerFile));
+  }
+  if (!["CONTINUE", "SWEEP"].includes(lastConcluded.outcome)) {
+    failUsage(`round ${lastConcluded.round} ended ${lastConcluded.outcome}; only CONTINUE or SWEEP leads to a next round`);
+  }
+  const round = lastConcluded.round + 1;
+  const plan = roundPlan(ledger, round);
+  const head = plan.kind === "sweep" ? lastConcluded.head : workingTreeOf(repoPath);
+  const base = plan.kind === "sweep" ? plan.sweepBase : lastConcluded.head;
+  const pendingRound = { type: "pending", round, kind: plan.kind, base, head };
+  appendRows(ledgerFile, [pendingRound]);
+  finish("REVIEW", reviewReport(pendingRound, ledgerFile));
 }
 
 function stampCleanTree(repoPath, paths) {
   const git = new Git(repoPath);
-  const workingTree = pinScopedTree(git, ["."]);
+  const workingTree = workingTreeOf(repoPath);
   const ledger = readLedger(ledgerPath(repoPath));
   const lastRound = roundRows(ledger).at(-1);
   if (lastRound?.outcome !== "CLEAN" || lastRound.head !== workingTree) {
@@ -278,13 +329,10 @@ function lastConcludedRounds(ledger) {
 function roundPlan(ledger, round) {
   const earlierRounds = lastConcludedRounds(ledger).filter((row) => row.round < round);
   const previousRound = earlierRounds.at(-1);
-  if (!previousRound) return { kind: "full", severityFloor: "MEDIUM", sweepBase: null };
+  if (!previousRound) return { kind: "full", sweepBase: null };
   const sweepBase = earlierRounds[0].base;
-  if (previousRound.outcome === "SWEEP") {
-    const isFirstSweep = !earlierRounds.some((row) => row.kind === "sweep");
-    return { kind: "sweep", severityFloor: isFirstSweep ? "MEDIUM" : "HIGH", sweepBase };
-  }
-  return { kind: "delta", severityFloor: "HIGH", sweepBase };
+  if (previousRound.outcome === "SWEEP") return { kind: "sweep", sweepBase };
+  return { kind: "delta", sweepBase };
 }
 
 function stallBaseline(ledger, round, plan) {
@@ -311,11 +359,13 @@ function decideOutcome({ review, round, plan, ledger, actionableFindings, keptFi
   return "CONTINUE";
 }
 
-function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOutputPath) {
+function classifyRound(repoPath, round, reviewText, swarmOutputPath) {
   const ledgerFile = ledgerPath(repoPath);
   const ledger = readLedger(ledgerFile);
-  const plan = roundPlan(ledger, round);
-  const base = plan.kind === "sweep" ? plan.sweepBase : requestedBase;
+  const pendingRound = pendingRoundFor(ledger, round);
+  if (!pendingRound) failUsage(`round ${round} has no pending row; run start or next first`);
+  const { base, head } = pendingRound;
+  const plan = { kind: pendingRound.kind };
   const parsedReview = parseReview(reviewText);
   const { findings: reviewFindings, unmatchedBodies } = withSwarmBodies(parsedReview.findings, swarmOutputPath);
   const review = { ...parsedReview, findings: reviewFindings };
@@ -342,7 +392,7 @@ function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOu
   }
   const { gate, gateFinding } = runGate(repoPath);
   if (gateFinding) keptFindings.push(gateFinding);
-  const actionableFindings = keptFindings.filter((finding) => finding.disposition === "ACTIONABLE" && atLeast(finding.severity, plan.severityFloor));
+  const actionableFindings = keptFindings.filter((finding) => finding.disposition === "ACTIONABLE");
   const outcome = decideOutcome({ review, round, plan, ledger, actionableFindings, keptFindings });
   const findingRows = keptFindings.map((finding) => ({
     type: "finding",
@@ -358,7 +408,6 @@ function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOu
     type: "round",
     round,
     kind: plan.kind,
-    severityFloor: plan.severityFloor,
     base,
     head,
     verdict: review.verdict,
@@ -372,12 +421,9 @@ function classifyRound(repoPath, round, requestedBase, head, reviewText, swarmOu
   const reportedFinding = ({ fingerprint, filePath, lineNumber, severity, reviewer, body }) => ({ fingerprint, file: filePath, line: lineNumber ?? "general", severity, reviewer, body });
   const askedFindings = outcome === "ASKED" ? keptFindings.filter((finding) => finding.disposition === "AMBIGUOUS" && atLeast(finding.severity, "HIGH")) : [];
   const ambiguousBelowHighFindings = keptFindings.filter((finding) => finding.disposition === "AMBIGUOUS" && !atLeast(finding.severity, "HIGH"));
-  const sweepHandoff = outcome === "SWEEP" ? { nextRound: round + 1, base: plan.sweepBase, head } : {};
   finish(outcome, {
     round,
     kind: plan.kind,
-    severityFloor: plan.severityFloor,
-    ...sweepHandoff,
     actionable: actionableFindings.map(reportedFinding),
     asked: askedFindings.map(reportedFinding),
     ambiguous: ambiguousBelowHighFindings.map(reportedFinding),
@@ -410,10 +456,7 @@ function main() {
     allowPositionals: true,
     options: {
       repo: { type: "string", default: process.cwd() },
-      tree: { type: "string" },
       round: { type: "string" },
-      base: { type: "string" },
-      head: { type: "string" },
       "swarm-output": { type: "string" },
       fingerprint: { type: "string" },
       fix: { type: "string" },
@@ -421,23 +464,21 @@ function main() {
     },
   });
   const repoPath = path.resolve(values.repo);
-  if (command === "start") {
-    if (!values.tree) failUsage("start needs --tree <working tree id>");
-    startRun(repoPath, values.tree);
-  }
+  if (command === "start") startRun(repoPath);
+  if (command === "next") nextRound(repoPath);
   if (command === "stamp") {
     if (positionals.length === 0) failUsage("stamp needs the changed-file paths after --");
     stampCleanTree(repoPath, positionals);
   }
   if (command === "classify") {
-    if (!values.round || !values.base || !values.head) failUsage("classify needs --round, --base and --head, with the review on stdin");
-    classifyRound(repoPath, Number(values.round), values.base, values.head, fs.readFileSync(0, "utf8"), values["swarm-output"]);
+    if (!values.round) failUsage("classify needs --round, with the review on stdin");
+    classifyRound(repoPath, Number(values.round), fs.readFileSync(0, "utf8"), values["swarm-output"]);
   }
   if (command === "record") {
     if (!values.fingerprint) failUsage("record needs --fingerprint");
     recordOutcome(repoPath, values);
   }
-  failUsage("use start, classify, record or stamp");
+  failUsage("use start, next, classify, record or stamp");
 }
 
 main();

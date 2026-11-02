@@ -18,14 +18,6 @@ function runRound(repository, ledgerRoot, argumentList, reviewText = "") {
   return { exitCode: processResult.status, report: JSON.parse(processResult.stdout) };
 }
 
-function workingTreeId(repository, scratchDirectory) {
-  const indexCopy = path.join(scratchDirectory, "index");
-  fs.copyFileSync(path.join(repository, ".git", "index"), indexCopy);
-  const gitWithIndex = (argumentList) => spawnSync("git", argumentList, { cwd: repository, encoding: "utf8", env: { ...process.env, GIT_INDEX_FILE: indexCopy } });
-  gitWithIndex(["add", "-A"]);
-  return gitWithIndex(["write-tree"]).stdout.trim();
-}
-
 function reviewWith(findingRows) {
   return ["VERDICT: REQUEST CHANGES", "ACTIONABLE: 0", "TRUNCATED: none", "", "STRUCTURED_FINDINGS:", ...findingRows, "", "OVERALL_SUMMARY:", "Summary."].join("\n");
 }
@@ -44,9 +36,8 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   context.after(() => cleanup(repository, ledgerRoot));
   commitFile(repository, "a.txt", linesWithChange([]));
   fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5]));
-  const firstTree = workingTreeId(repository, ledgerRoot);
 
-  const started = runRound(repository, ledgerRoot, ["start", "--tree", firstTree]);
+  const started = runRound(repository, ledgerRoot, ["start"]);
   assert.equal(started.report.outcome, "FRESH");
 
   const inLaneBody = "Off-by-one in the loop bound. Proof: a.txt:5 reads `changed 5`.";
@@ -54,7 +45,7 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   const swarmOutput = path.join(ledgerRoot, "swarm.output");
   const swarmRows = [findingRow(5, "MEDIUM", inLaneBody), findingRow(28, "HIGH", upstreamBody), findingRow(28, "MEDIUM", "Another defect on that line. Proof: a.txt:28.")];
   fs.writeFileSync(swarmOutput, JSON.stringify({ result: ["STRUCTURED_FINDINGS:", ...swarmRows.map((row) => row.replace(" | disposition: ACTIONABLE", "")), "", "OVERALL_SUMMARY:", "Summary."].join("\n") }));
-  const firstRound = runRound(repository, ledgerRoot, ["classify", "--round", "1", "--base", started.report.base, "--head", firstTree, "--swarm-output", swarmOutput], reviewWith([
+  const firstRound = runRound(repository, ledgerRoot, ["classify", "--round", "1", "--swarm-output", swarmOutput], reviewWith([
     findingRow(5, "MEDIUM", "Loop bound is off by one, paraphrased. Proof: a.txt:5."),
     findingRow(25, "MEDIUM", "Unrelated naming drift. Proof: line 25 reads `line 25`."),
     findingRow(28, "HIGH", upstreamBody),
@@ -71,8 +62,8 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   runRound(repository, ledgerRoot, ["record", "--fingerprint", upstreamFinding.fingerprint, "--fix", "DECLINED", "--round", "1"]);
 
   fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5, 6]));
-  const secondTree = workingTreeId(repository, ledgerRoot);
-  const secondRound = runRound(repository, ledgerRoot, ["classify", "--round", "2", "--base", firstTree, "--head", secondTree], reviewWith([
+  assert.equal(runRound(repository, ledgerRoot, ["next"]).report.base, started.report.head);
+  const secondRound = runRound(repository, ledgerRoot, ["classify", "--round", "2"], reviewWith([
     findingRow(6, "MEDIUM", inLaneBody, "convergent: code/logic + redteam/silent-failure"),
     findingRow(6, "HIGH", upstreamBody),
   ]));
@@ -82,39 +73,37 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).report.outcome, "UNSTAMPED");
 });
 
-test("a clean delta round asks for a whole-diff sweep against the original base, whatever base the caller passes, and the severity bar tapers to HIGH after the first sweep", (context) => {
+test("every actionable finding counts whatever its severity, next resumes an unreviewed round, and a clean delta round sweeps the whole diff from the original base", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
   commitFile(repository, "a.txt", linesWithChange([]));
-  const pinChange = (changedLineNumbers) => {
-    fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
-    return workingTreeId(repository, ledgerRoot);
-  };
-  const classify = (round, base, head, rows) => runRound(repository, ledgerRoot, ["classify", "--round", String(round), "--base", base, "--head", head], reviewWith(rows));
+  const changeLines = (changedLineNumbers) => fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
+  const classify = (round, rows) => runRound(repository, ledgerRoot, ["classify", "--round", String(round)], reviewWith(rows));
 
-  const firstTree = pinChange([5, 20]);
-  const baseTree = runRound(repository, ledgerRoot, ["start", "--tree", firstTree]).report.base;
-  const firstRound = classify(1, baseTree, firstTree, [findingRow(5, "MEDIUM", "Bound is off by one. Proof: a.txt:5.")]);
+  changeLines([5, 20]);
+  const firstRoundPlan = runRound(repository, ledgerRoot, ["start"]).report;
+  const firstRound = classify(1, [findingRow(5, "MEDIUM", "Bound is off by one. Proof: a.txt:5.")]);
   assert.equal(firstRound.report.outcome, "CONTINUE");
   runRound(repository, ledgerRoot, ["record", "--fingerprint", firstRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "1"]);
 
-  const secondTree = pinChange([5, 6, 20]);
-  const deltaRound = classify(2, firstTree, secondTree, [findingRow(6, "MEDIUM", "Name could be clearer. Proof: a.txt:6.")]);
-  assert.equal(deltaRound.exitCode, 12);
-  assert.deepEqual([deltaRound.report.outcome, deltaRound.report.severityFloor, deltaRound.report.base, deltaRound.report.nextRound], ["SWEEP", "HIGH", baseTree, 3]);
+  changeLines([5, 6, 20]);
+  const deltaRoundPlan = runRound(repository, ledgerRoot, ["next"]).report;
+  assert.deepEqual(runRound(repository, ledgerRoot, ["next"]).report, deltaRoundPlan);
+  assert.deepEqual([deltaRoundPlan.outcome, deltaRoundPlan.round, deltaRoundPlan.kind, deltaRoundPlan.base], ["REVIEW", 2, "delta", firstRoundPlan.head]);
+  const deltaRound = classify(2, [findingRow(6, "LOW", "Fix introduced an unchecked null. Proof: a.txt:6.")]);
+  assert.deepEqual([deltaRound.report.outcome, deltaRound.report.actionable.length, Object.hasOwn(deltaRound.report, "severityFloor")], ["CONTINUE", 1, false]);
+  runRound(repository, ledgerRoot, ["record", "--fingerprint", deltaRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "2"]);
 
-  const firstSweep = classify(3, secondTree, secondTree, [findingRow(20, "MEDIUM", "Missed guard on the new branch. Proof: a.txt:20.")]);
-  assert.deepEqual([firstSweep.report.outcome, firstSweep.report.kind, firstSweep.report.severityFloor], ["CONTINUE", "sweep", "MEDIUM"]);
-  runRound(repository, ledgerRoot, ["record", "--fingerprint", firstSweep.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "3"]);
-
-  const thirdTree = pinChange([5, 6, 20, 21]);
-  assert.equal(classify(4, secondTree, thirdTree, []).report.outcome, "SWEEP");
-  const secondSweep = classify(5, baseTree, thirdTree, [findingRow(21, "MEDIUM", "Comment wording drifts. Proof: a.txt:21.")]);
-  assert.deepEqual([secondSweep.report.outcome, secondSweep.report.severityFloor], ["CLEAN", "HIGH"]);
+  changeLines([5, 6, 7, 20]);
+  runRound(repository, ledgerRoot, ["next"]);
+  assert.equal(classify(3, []).exitCode, 12);
+  const sweepPlan = runRound(repository, ledgerRoot, ["next"]).report;
+  assert.deepEqual([sweepPlan.round, sweepPlan.kind, sweepPlan.base], [4, "sweep", firstRoundPlan.base]);
+  assert.equal(classify(4, []).report.outcome, "CLEAN");
   const cleanStamp = runRound(repository, ledgerRoot, ["stamp", "a.txt"]);
   assert.deepEqual([cleanStamp.exitCode, cleanStamp.report.outcome, cleanStamp.report.stamp.gate], [0, "STAMPED", "converging-reviews"]);
-  fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5, 6, 20, 21, 22]));
+  changeLines([5, 6, 7, 20, 22]);
   assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).exitCode, 24);
 });
 
@@ -125,10 +114,9 @@ test("a failing pre-push gate keeps a clean review from ending the round and its
   commitFile(repository, "package.json", JSON.stringify({ scripts: { "check:fast": "node -e \"if (require('fs').existsSync('broken')) { console.log('not ok 1 - type token gate'); process.exit(1) }\"", test: "node -e \"process.exit(1)\"" } }));
   fs.writeFileSync(path.join(repository, ".git", "hooks", "pre-push"), "#!/bin/sh\nnpm run -s check:fast || exit 1\n");
   fs.writeFileSync(path.join(repository, "broken"), "");
-  const firstTree = workingTreeId(repository, ledgerRoot);
-  const baseTree = runRound(repository, ledgerRoot, ["start", "--tree", firstTree]).report.base;
+  runRound(repository, ledgerRoot, ["start"]);
 
-  const failingRound = runRound(repository, ledgerRoot, ["classify", "--round", "1", "--base", baseTree, "--head", firstTree], reviewWith([]));
+  const failingRound = runRound(repository, ledgerRoot, ["classify", "--round", "1"], reviewWith([]));
   assert.equal(failingRound.report.outcome, "CONTINUE");
   assert.deepEqual([failingRound.report.gate.name, failingRound.report.gate.source], ["check:fast", "pre-push hook"]);
   const [gateFinding] = failingRound.report.actionable;
@@ -137,7 +125,7 @@ test("a failing pre-push gate keeps a clean review from ending the round and its
   runRound(repository, ledgerRoot, ["record", "--fingerprint", gateFinding.fingerprint, "--fix", "FIXED", "--round", "1"]);
 
   fs.rmSync(path.join(repository, "broken"));
-  const fixedTree = workingTreeId(repository, ledgerRoot);
-  const passingRound = runRound(repository, ledgerRoot, ["classify", "--round", "2", "--base", firstTree, "--head", fixedTree], reviewWith([]));
+  runRound(repository, ledgerRoot, ["next"]);
+  const passingRound = runRound(repository, ledgerRoot, ["classify", "--round", "2"], reviewWith([]));
   assert.deepEqual([passingRound.report.outcome, passingRound.report.gate.exitCode], ["SWEEP", 0]);
 });

@@ -5,7 +5,7 @@ description: Runs review and fix rounds over local work until a round finds noth
 
 # Converging Reviews
 
-An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made, and only HIGH+ counts there; once one is clean, a sweep re-reviews the whole diff, where MEDIUM+ counts on the first sweep and HIGH+ after, so the loop tapers instead of minting fresh MEDIUMs. The `ACTIONABLE` count must strictly fall against the previous round of the same kind, and a fixed finding coming back means the fixes are fighting; a finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/gating-reviews` stays the default gate.
+An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made; once one is clean, a sweep re-reviews the whole diff. Every `ACTIONABLE` finding counts at any severity, since a floor ships a proven defect unfixed; the loop tapers through the stall rule and the cap instead. The `ACTIONABLE` count must strictly fall against the previous round of the same kind, and a fixed finding coming back means the fixes are fighting; a finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/gating-reviews` stays the default gate.
 
 ## Input
 
@@ -17,36 +17,36 @@ A review stamp over the changed-file set on `CLEAN`, which the caller lands thro
 
 ## Step 1: Preflight and start
 
-Run `node "$HOME/.claude/skills/landing/preflight.ts"` and act on it as `/gating-reviews` [Preflight](../gating-reviews/SKILL.md#preflight) says, integrating mainline before round 1 so no merge lands inside the loop; its `paths` are the changed-file set. Pin the working tree once through a throwaway index, as `reviewing-code` Step 1 does for `working`, giving `TREE_1`. Then:
+Run `node "$HOME/.claude/skills/landing/preflight.ts"` and act on it as `/gating-reviews` [Preflight](../gating-reviews/SKILL.md#preflight) says, integrating mainline before round 1 so no merge lands inside the loop; its `paths` are the changed-file set. Then:
 
 ```
-node "$HOME/.claude/skills/converging-reviews/round.mjs" start --tree "$TREE_1"
+node "$HOME/.claude/skills/converging-reviews/round.mjs" start
 ```
 
-`FRESH` returns round 1 and `base`, which is `TREE_0`, the HEAD tree; it sets any older ledger aside. `RESUME` returns the round an `ASKED` stop left on this same tree: rerun that round's `classify` on the same review return and swarm output, since a fresh swarm rewords findings and the ruling is keyed by fingerprint. Review again only when that return is lost.
+`round.mjs` pins every tree itself and keeps it in the ledger, so no tree id lives in this session's context. `FRESH` returns round 1 with its `kind`, `base` (the HEAD tree), `head` (the pinned working tree) and `reviewCmd`; it sets any older ledger aside. `RESUME` returns the round an `ASKED` stop left on this same tree: rerun that round's `classify` on the same review return and swarm output, since a fresh swarm rewords findings and the ruling is keyed by fingerprint. Review again only when that return is lost.
 
 No cleaning pass runs: on a whole uncommitted pull request it deletes values a stacked change may use, and the loop edits only what a finding proves.
 
 ## Step 2: Review and classify
 
-Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, `BASE` and head `TREE_N` as its base-and-head form, and `git diff --name-only BASE TREE_N` as the changed-file set. `BASE` is `TREE_{N-1}`, except in a sweep round, where it is the `base` the `SWEEP` outcome returned. Every round keeps every lane so a fix round cannot narrow which concerns get checked. This session triages the return, then fixes in Step 4.
+Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. This session triages the return, then fixes in Step 4.
 
 Note the output file the qa-swarm Workflow notification names, and pipe the whole `/reviewing-code` return into:
 
 ```
-node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --base BASE --head TREE_N --swarm-output <qa-swarm output file>
+node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --swarm-output <qa-swarm output file>
 ```
 
-`classify` takes each finding's body verbatim from the swarm output, drops findings the ledger already settled and findings anchored away from the round's hunks (`droppedOffHunk`), then prints the outcome, the kept `actionable` (at or above the round's `severityFloor`, recounted, unlike `/reviewing-code`'s `ACTIONABLE` header), `asked`, and below-HIGH `ambiguous` findings. `unmatchedBodies` counts findings whose body it could not match. It also runs the repo's push gate in the working tree: the first `package.json` script its pre-push hook invokes (husky's `.husky/pre-push` included), else the hook itself, else `check:fast`, else `test`. A failure becomes a HIGH `ACTIONABLE` `gate/<name>` finding that no ruling settles while the gate still fails, so a round cannot end clean on a tree the push would reject; `gate` in its output names what ran, or `null` when the repo has none, which the report says.
+`classify` takes each finding's body verbatim from the swarm output, drops findings the ledger already settled and findings anchored away from the round's hunks (`droppedOffHunk`), then prints the outcome, the kept `actionable` (every severity, recounted, unlike `/reviewing-code`'s `ACTIONABLE` header), `asked`, and below-HIGH `ambiguous` findings. `unmatchedBodies` counts findings whose body it could not match. It also runs the repo's push gate in the working tree: the first `package.json` script its pre-push hook invokes (husky's `.husky/pre-push` included), else the hook itself, else `check:fast`, else `test`. A failure becomes a HIGH `ACTIONABLE` `gate/<name>` finding that no ruling settles while the gate still fails, so a round cannot end clean on a tree the push would reject; `gate` in its output names what ran, or `null` when the repo has none, which the report says.
 
 ## Step 3: Act on the outcome
 
 | Outcome | Exit | Action |
 |---|---|---|
 | `CLEAN` | 0 | Before any further edit, run `round.mjs stamp <preflight paths>`. It stamps only a tree equal to this CLEAN head, carrying every `UNVERIFIED` fix; `UNSTAMPED` (exit 24) means the tree moved, so rerun from Step 1. An edit after the stamp makes `land.ts` return `NOT_REVIEWED` |
-| `CONTINUE` | 10 | Step 4, then the next round from Step 2 |
+| `CONTINUE` | 10 | Step 4, then `round.mjs next` and Step 2 |
 | `RETRY` | 11 | Repeat Step 2 for the same round once |
-| `SWEEP` | 12 | Run round `nextRound` from Step 2 with its `base` and the same head; no fix lands between |
+| `SWEEP` | 12 | `round.mjs next`, then Step 2; no fix lands between |
 | `ASKED` | 20 | Put each `asked` finding to the carbon unit with both readings, record the ruling, then rerun from Step 1 |
 | `STALLED` | 21 | Stop and report, writing no stamp; inside a build this stops the build |
 | `CAPPED` | 22 | Stop and report, writing no stamp; inside a build this stops the build |
@@ -66,8 +66,8 @@ Hand every `actionable` finding to `~/.claude/skills/gating-reviews/subskills/fi
 node "$HOME/.claude/skills/converging-reviews/round.mjs" record --fingerprint <fp> --fix FIXED|UNVERIFIED|DECLINED --round N
 ```
 
-Fix a `gate/<name>` finding at its root cause like any other; with `gate: null`, run the suite covering the changed files instead, and a suite that cannot run here goes in the report by name, with what ran instead. Pin the tree as `TREE_{N+1}`, the next round's head; `TREE_N` is its base.
+Fix a `gate/<name>` finding at its root cause like any other; with `gate: null`, run the suite covering the changed files instead, and a suite that cannot run here goes in the report by name, with what ran instead. Then run `round.mjs next`, which pins the fixed tree as the next round's head over this round's head as base.
 
 ## Scripts
 
-- `round.mjs`: `start`, `classify` (`--swarm-output` reads the qa-swarm task output file), `record`, and `stamp`; keeps the ledger at `~/.claude/converging-reviews/<repo>/<branch>.jsonl` (`CONVERGING_REVIEWS_DIR` overrides) and owns every stop rule.
+- `round.mjs`: `start`, `next`, `classify` (`--swarm-output` reads the qa-swarm task output file), `record`, and `stamp`; keeps the ledger at `~/.claude/converging-reviews/<repo>/<branch>.jsonl` (`CONVERGING_REVIEWS_DIR` overrides) and owns every stop rule.
