@@ -25,7 +25,7 @@ Each installed skill whose name starts with `capturing-ui-` extends this one wit
 
 ## Clips
 
-A clip shows what a still cannot: an animation, a transition, a state change. A demo video of the whole running app is the `recording-demo-videos` skill's job instead. A clip runs the project's real component code and stylesheet on made-up data, excluding mocks and live sessions, because a mock shows something the product does not do and a live session shows the carbon unit's private work.
+A clip shows what a still cannot: an animation, a transition, a state change. A demo video of the whole live app is the `recording-demo-videos` skill's job instead. A clip runs the project's real component code and stylesheet on made-up data, excluding mocks and live sessions, because a mock shows something the product does not do and a live session shows the carbon unit's private work.
 
 1. Build a harness directory. Its `index.html` loads the project's real stylesheet and fonts plus one script, bundled with the project's own bundler from an entry file that imports the real component module and exposes a global function per behavior (`window.playScene = (sceneIndex, message) => celebrateMerge(message, scenes[sceneIndex])`). Framing copy and position overrides go only in the harness page, keeping project code unchanged. The recorder serves the directory over loopback, because real stylesheets use root-absolute font and asset URLs that `file://` cannot resolve.
 2. Write `marketing/social/clip.json` and run `node <skill-dir>/scripts/record-clip.mjs --manifest marketing/social/clip.json`. Each scene's `run` is evaluated in the page at that scene's first frame.

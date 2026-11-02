@@ -16,7 +16,7 @@ Each installed skill whose name starts with `opening-prs-` extends this one with
 ## Step 1: Preconditions
 
 - Base repository: `gh repo view --json isFork,parent,owner,name,viewerPermission`. Below `WRITE` (`READ`, `TRIAGE`, or no permission), the work needs a fork: ask the carbon unit first, since it creates a new public repo on their account, then run `gh repo fork --remote`. On a fork, the PR targets `parent` and its default branch, and `<mainline>` below means the parent's: add it as an `upstream` remote when missing, then `git fetch upstream`. Set `<base>` to `upstream/<mainline>`; the branch must be rebased onto it before its work lands. Otherwise the PR targets origin's mainline and `<base>` is `origin/<mainline>`.
-- Uncommitted changes: stop, and say to land them first through `/specifying` or `/gating-reviews`. This skill opens or updates PRs only from commits already on the branch; landing them is the gate's job.
+- Uncommitted changes: stop, and route them to `/specifying` or `/gating-reviews` to land first. This skill opens or updates PRs only from commits already on the branch; landing them is the gate's job.
 - Branch is mainline: stop. A PR needs a feature branch.
 - Remote branch missing or not at local HEAD (`git fetch origin <branch>`, then `git rev-parse HEAD` differs from `git rev-parse origin/<branch>`): stop and ask the carbon unit to push. Reviewers see only what was pushed.
 - `gh pr view --json number,url,body,isDraft,state,author` (on a fork, `gh pr list --repo <parent> --head <branch> --state open --json number,url,body,isDraft,state,author`) finds a PR for this branch with state `OPEN`: this run is update mode. A merged or closed PR does not count; open a new one. Record the mode and act on it only after Step 2.
