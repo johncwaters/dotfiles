@@ -54,7 +54,10 @@ must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested`
 included only when they apply (the stamp from Step 1: its `unverifiedFindings`
 go in `Not-tested`, which keeps `Confidence` below `high`, its `preexistingFailures` in
 `Constraint`, and each live MEDIUM+ in the body), and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the trailer block only for a genuinely trivial change (a
-version bump with no logic change).
+version bump with no logic change); a header-only message is refused unless its type is `chore`.
+Check a message without committing by piping it into
+`node "$HOME/.claude/skills/landing/preflight.ts" --check-message`; send `land.ts` only the
+final message, since it commits and pushes whatever it accepts.
 
 ## Step 3: disclosure check
 

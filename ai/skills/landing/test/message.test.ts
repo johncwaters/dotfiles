@@ -16,8 +16,10 @@ test("a trivial message with no trailers passes", () => {
   assert.deepEqual(validateMessage("chore: bump version to 1.2.3\n\nNo logic change.\n"), []);
 });
 
-test("a header-only message passes", () => {
-  assert.deepEqual(validateMessage("docs: fix a typo"), []);
+test("a header-only message passes only for chore", () => {
+  assert.deepEqual(validateMessage("chore: bump version to 1.2.3"), []);
+  assert.match(validateMessage("refactor(settings): x").join("\n"), /header-only message is allowed only for chore/);
+  assert.match(validateMessage("refactor(settings): x\n\n   \n").join("\n"), /header-only message is allowed only for chore/);
 });
 
 test("an unknown type is rejected", () => {

@@ -76,6 +76,10 @@ function validateHeader(header: string, errors: string[]): void {
   }
 }
 
+function isChoreHeader(header: string): boolean {
+  return HEADER_PATTERN.exec(header)?.groups?.type === "chore";
+}
+
 function validateTrailers(block: string[], errors: string[]): void {
   if (block.length === 0) {
     return;
@@ -119,6 +123,11 @@ export function validateMessage(message: string): string[] {
   }
 
   validateHeader(lines[0] ?? "", errors);
+
+  const isHeaderOnly = lines.slice(1).every((line) => line.trim() === "");
+  if (isHeaderOnly && !isChoreHeader(lines[0] ?? "")) {
+    errors.push("a header-only message is allowed only for chore; add a body saying why, or the trailer block");
+  }
 
   if (lines.length > 1 && lines[1] !== "") {
     errors.push("the line after the header must be blank");

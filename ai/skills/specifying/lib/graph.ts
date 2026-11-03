@@ -545,22 +545,22 @@ export function validateGraph(value: unknown): string[] {
     addError(errors, 18, "spec.nodes", `add design nodes from subskills/design.md; a spec settles its design before slicing unless its risk is low (risk is ${goalRisk ?? "unset"})`);
   }
   if (resolvedRoot === undefined || errors.some((error) => error.startsWith("Rule 6:"))) return errors;
+  const reachableDependentsById = new Map<string, Set<string>>();
+  for (const unit of units) {
+    const reachableDependents = new Set<string>();
+    const pendingIds: string[] = [unit.id];
+    for (let index = 0; index < pendingIds.length; index++) {
+      for (const dependentId of dependentsById.get(pendingIds[index]) ?? []) {
+        if (reachableDependents.has(dependentId)) continue;
+        reachableDependents.add(dependentId);
+        pendingIds.push(dependentId);
+      }
+    }
+    reachableDependentsById.set(unit.id, reachableDependents);
+  }
   if (isSliced) {
     const resolvedChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => resolveExistingPath(path.resolve(spec.repoRoot, candidate)))]));
     const lexicalChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate.trim().replace(/\\/g, "/")))]));
-    const reachableDependentsById = new Map<string, Set<string>>();
-    for (const unit of units) {
-      const reachableDependents = new Set<string>();
-      const pendingIds: string[] = [unit.id];
-      for (let index = 0; index < pendingIds.length; index++) {
-        for (const dependentId of dependentsById.get(pendingIds[index]) ?? []) {
-          if (reachableDependents.has(dependentId)) continue;
-          reachableDependents.add(dependentId);
-          pendingIds.push(dependentId);
-        }
-      }
-      reachableDependentsById.set(unit.id, reachableDependents);
-    }
     const resolvedSharedRepoPathsByUnitPair = findSharedRepoPathsByUnitPair(resolvedRoot, resolvedChangedPathsById);
     const lexicalSharedRepoPathsByUnitPair = findSharedRepoPathsByUnitPair(spec.repoRoot, lexicalChangedPathsById);
     for (const [unitIndex, unit] of units.entries()) {
@@ -575,10 +575,13 @@ export function validateGraph(value: unknown): string[] {
   }
   for (const unit of units) {
     if (!isSliced || unit.budgetWaiver !== undefined) continue;
-    const readPaths = unit.reads.map((candidate) => path.resolve(spec.repoRoot, candidate));
-    const changedOnlyPaths = unit.changes
+    const changedPaths = unit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate));
+    const pathsPrerequisitesChange = new Set(units.filter((otherUnit) => reachableDependentsById.get(otherUnit.id)?.has(unit.id)).flatMap((otherUnit) => otherUnit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate))));
+    const isSplit = changedPaths.some((changedPath) => !fs.existsSync(changedPath) && !pathsPrerequisitesChange.has(changedPath));
+    const readPaths = unit.reads
       .map((candidate) => path.resolve(spec.repoRoot, candidate))
-      .filter((changedPath) => !readPaths.some((readPath) => staysInside(readPath, changedPath)));
+      .filter((readPath) => !isSplit || !changedPaths.includes(readPath));
+    const changedOnlyPaths = changedPaths.filter((changedPath) => !readPaths.some((readPath) => staysInside(readPath, changedPath)));
     const readMeasurement = measureReadingBytes(resolvedRoot, readPaths);
     const changedOnlyMeasurements = [...new Set(changedOnlyPaths)].map((changedPath) => measureReadingBytes(resolvedRoot, [changedPath]));
     const totalBytes = changedOnlyMeasurements.reduce((runningBytes, measurement) => runningBytes + Math.min(measurement.totalBytes, CHANGED_ONLY_PATH_CAP_BYTES), readMeasurement.totalBytes);

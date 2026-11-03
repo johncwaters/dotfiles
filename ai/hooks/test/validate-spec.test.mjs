@@ -217,6 +217,17 @@ test("a large file the unit only changes counts at the changed-only cap", () => 
   assertAllowed(writeSpec(spec));
   unit.reads = ["core.ts", "CHANGELOG.md"];
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*579000 bytes.*budgetWaiver/);
+  fs.writeFileSync(path.join(repoRoot, "registry.ts"), "x".repeat(250000));
+  unit.reads = ["registry.ts"];
+  unit.changes = ["registry.ts"];
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*250000 bytes.*budgetWaiver/);
+  unit.changes = ["registry.ts", "registry-sections.ts"];
+  assertAllowed(writeSpec(spec));
+  spec.nodes.push({ id: "U2", kind: "unit", title: "Create the sections", reads: [], changes: ["registry-sections.ts"], checks: [{ run: "node --test" }], serves: [1] });
+  spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U1", kind: "dependsOn", to: "U2" });
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*250000 bytes.*budgetWaiver/);
+  spec.edges[spec.edges.length - 1] = { from: "U2", kind: "dependsOn", to: "U1" };
+  assertAllowed(writeSpec(spec));
 });
 
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {
