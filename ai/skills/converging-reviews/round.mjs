@@ -27,7 +27,6 @@ const EXIT_CODE_BY_OUTCOME = {
   RETRY: 11,
   SWEEP: 12,
   ASKED: 20,
-  STALLED: 21,
   CAPPED: 22,
   FAILED: 23,
   STAMPED: 0,
@@ -351,12 +350,6 @@ function roundPlan(ledger, round) {
   return { kind: "delta", sweepBase };
 }
 
-function stallBaseline(ledger, round, plan) {
-  const earlierRounds = lastConcludedRounds(ledger).filter((row) => row.round < round && row.outcome === "CONTINUE");
-  if (plan.kind === "sweep") return earlierRounds.filter((row) => row.kind === "sweep").at(-1);
-  return earlierRounds.find((row) => row.round === round - 1 && row.kind === "delta");
-}
-
 function decideOutcome({ review, round, plan, ledger, actionableFindings, keptFindings }) {
   if (review.verdict === "FAILED") {
     const hasFailedThisRound = roundRows(ledger).some((row) => row.round === round && row.verdict === "FAILED");
@@ -364,14 +357,9 @@ function decideOutcome({ review, round, plan, ledger, actionableFindings, keptFi
   }
   if (keptFindings.some((finding) => finding.disposition === "AMBIGUOUS" && atLeast(finding.severity, "HIGH"))) return "ASKED";
   if (review.truncatedLanes.length > 0) return "FAILED";
-  const fixedFingerprints = new Set(ledger.filter((row) => row.type === "fix" && row.outcome === "FIXED").map((row) => row.fingerprint));
-  const isFixedDefectBack = keptFindings.some((finding) => finding.disposition === "ACTIONABLE" && fixedFingerprints.has(finding.fingerprint));
-  if (isFixedDefectBack) return "STALLED";
   if (actionableFindings.length === 0 && plan.kind !== "delta") return "CLEAN";
   if (round >= ROUND_CAP) return "CAPPED";
   if (actionableFindings.length === 0) return "SWEEP";
-  const baselineRound = stallBaseline(ledger, round, plan);
-  if (baselineRound && actionableFindings.length >= baselineRound.actionable) return "STALLED";
   return "CONTINUE";
 }
 

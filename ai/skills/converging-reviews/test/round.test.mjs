@@ -30,7 +30,7 @@ function linesWithChange(changedLineNumbers) {
   return Array.from({ length: 30 }, (_, index) => (changedLineNumbers.includes(index + 1) ? `changed ${index + 1}` : `line ${index + 1}`)).join("\n") + "\n";
 }
 
-test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findings and stalls when a fixed finding returns under another reviewer", (context) => {
+test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findings, and keeps going when a fixed finding returns or a delta round finds as many as the last", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
@@ -67,9 +67,14 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
     findingRow(6, "MEDIUM", inLaneBody, "convergent: code/logic + redteam/silent-failure"),
     findingRow(6, "HIGH", upstreamBody),
   ]));
-  assert.equal(secondRound.exitCode, 21);
-  assert.equal(secondRound.report.outcome, "STALLED");
+  assert.deepEqual([secondRound.exitCode, secondRound.report.outcome, secondRound.report.actionable.length], [10, "CONTINUE", 1]);
   assert.equal(secondRound.report.droppedSettled, 1);
+  runRound(repository, ledgerRoot, ["record", "--fingerprint", secondRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "2"]);
+
+  fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5, 6, 7]));
+  runRound(repository, ledgerRoot, ["next"]);
+  const thirdRound = runRound(repository, ledgerRoot, ["classify", "--round", "3"], reviewWith([findingRow(7, "LOW", "The new guard skips the last row. Proof: a.txt:7.")]));
+  assert.deepEqual([thirdRound.exitCode, thirdRound.report.kind, thirdRound.report.outcome], [10, "delta", "CONTINUE"]);
   assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).report.outcome, "UNSTAMPED");
 });
 

@@ -1,11 +1,11 @@
 ---
 name: converging-reviews
-description: Runs review and fix rounds over local work until a round finds nothing left to fix, then stamps the tree for /landing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a stall, a cap of 8 rounds, or a question. Starts only by name. Use for /converging-reviews.
+description: Runs review and fix rounds over local work until a round finds nothing left to fix, then stamps the tree for /landing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a cap of 8 rounds or a question. Starts only by name. Use for /converging-reviews.
 ---
 
 # Converging Reviews
 
-An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made; once one is clean, a sweep re-reviews the whole diff. Every `ACTIONABLE` finding counts at any severity, since a floor ships a proven defect unfixed; the loop tapers through the stall rule and the cap instead. The `ACTIONABLE` count must strictly fall against the previous round of the same kind, and a fixed finding coming back means the fixes are fighting; a finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/gating-reviews` stays the default gate.
+An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made; once one is clean, a sweep re-reviews the whole diff. Every `ACTIONABLE` finding counts at any severity, since a floor ships a proven defect unfixed; only the cap bounds the loop, since without a floor a flat count at the tail is a converging loop, not a stuck one. A finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/gating-reviews` stays the default gate.
 
 ## Input
 
@@ -13,7 +13,7 @@ Uncommitted local work on a feature branch, and one or two sentences of what cha
 
 ## Output
 
-A review stamp over the changed-file set on `CLEAN`, which the caller lands through `/landing`, or a stop report on `STALLED`, `CAPPED`, or `FAILED` naming the round, the ledger path, and every live `ACTIONABLE` finding. The ledger stays for the next run either way.
+A review stamp over the changed-file set on `CLEAN`, which the caller lands through `/landing`, or a stop report on `CAPPED` or `FAILED` naming the round, the ledger path, and every live `ACTIONABLE` finding. The ledger stays for the next run either way.
 
 ## Step 1: Preflight and start
 
@@ -29,7 +29,7 @@ No cleaning pass runs: on a whole uncommitted pull request it deletes values a s
 
 ## Step 2: Review and classify
 
-Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. A delta round's `fixed` lists each defect the previous round's fixes claim to remove; put it in the context and ask whether each fix removed its defect everywhere in the diff, siblings and the test that pins it included, since a partial fix otherwise surfaces only in a later sweep, which stalls on it. This session triages the return, then fixes in Step 4.
+Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. A delta round's `fixed` lists each defect the previous round's fixes claim to remove; put it in the context and ask whether each fix removed its defect everywhere in the diff, siblings and the test that pins it included, since a partial fix otherwise surfaces only in a later sweep. This session triages the return, then fixes in Step 4.
 
 Note the output file the qa-swarm Workflow notification names, and pipe the whole `/reviewing-code` return into:
 
@@ -48,7 +48,6 @@ node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --sw
 | `RETRY` | 11 | Repeat Step 2 for the same round once |
 | `SWEEP` | 12 | `round.mjs next`, then Step 2; no fix lands between |
 | `ASKED` | 20 | Put each `asked` finding to the carbon unit with both readings, record the ruling, then rerun from Step 1 |
-| `STALLED` | 21 | Stop and report, writing no stamp; inside a build this stops the build |
 | `CAPPED` | 22 | Stop and report, writing no stamp; inside a build this stops the build |
 | `FAILED` | 23 | Stop and report, writing no stamp; inside a build this stops the build. A truncated lane fails too, since nothing would sweep its overflow |
 
