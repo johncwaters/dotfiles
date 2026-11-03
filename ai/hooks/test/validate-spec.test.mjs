@@ -221,13 +221,16 @@ test("a large file the unit only changes counts at the changed-only cap", () => 
   unit.reads = ["registry.ts"];
   unit.changes = ["registry.ts"];
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*250000 bytes.*budgetWaiver/);
+  unit.splits = "registry.ts";
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*add the file the split moves blocks into to changes/);
   unit.changes = ["registry.ts", "registry-sections.ts"];
   assertAllowed(writeSpec(spec));
-  spec.nodes.push({ id: "U2", kind: "unit", title: "Create the sections", reads: [], changes: ["registry-sections.ts"], checks: [{ run: "node --test" }], serves: [1] });
-  spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U1", kind: "dependsOn", to: "U2" });
-  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*250000 bytes.*budgetWaiver/);
-  spec.edges[spec.edges.length - 1] = { from: "U2", kind: "dependsOn", to: "U1" };
+  fs.writeFileSync(path.join(repoRoot, "registry-sections.ts"), "x".repeat(20000));
   assertAllowed(writeSpec(spec));
+  delete unit.splits;
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*270000 bytes.*budgetWaiver/);
+  unit.splits = "registry-sections.ts";
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*list the splits path in both reads and changes/);
 });
 
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {

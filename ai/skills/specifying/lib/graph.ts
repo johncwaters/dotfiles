@@ -30,6 +30,7 @@ export type Unit = {
   checks: { run: string }[];
   serves?: number[];
   budgetWaiver?: string;
+  splits?: string;
 };
 export type Design = {
   id: `I${number}`;
@@ -77,7 +78,7 @@ const NODE_FIELDS = {
   branch: ["id", "kind", "question", "leaning"],
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint"],
   openQuestion: ["id", "kind", "question", "settledBy"],
-  unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver"],
+  unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver", "splits"],
   design: ["id", "kind", "layer", "title", "code", "at"],
 } satisfies Record<Node["kind"], string[]>;
 const NODE_ID_PATTERNS = {
@@ -134,7 +135,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "risk", "criteria", "layer", "at"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -186,6 +187,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     paths.forEach((entry: unknown, pathIndex: number) => requireString(entry, `${subject}.${field}[${pathIndex}]`, errors));
   }
   if (Object.hasOwn(value, "budgetWaiver")) requireString(value.budgetWaiver, `${subject}.budgetWaiver`, errors);
+  if (Object.hasOwn(value, "splits")) requireString(value.splits, `${subject}.splits`, errors);
   if (Object.hasOwn(value, "serves") && (!Array.isArray(value.serves) || !value.serves.every((criterionNumber: unknown) => Number.isInteger(criterionNumber) && Number(criterionNumber) >= 1))) {
     addError(errors, 1, `${subject}.serves`, "supply serves as an array of goal criterion numbers starting at 1, or omit it");
   }
@@ -435,6 +437,16 @@ function validateChallengeStamp(spec: DesignSpec, units: Unit[], errors: string[
   );
 }
 
+function isSplitWellFormed(splitPath: string, readPaths: string[], changedPaths: string[], subject: string, errors: string[]): boolean {
+  if (!readPaths.includes(splitPath) || !changedPaths.includes(splitPath)) {
+    addError(errors, 13, subject, `list the splits path in both reads and changes, or remove splits`);
+    return false;
+  }
+  if (changedPaths.some((changedPath) => changedPath !== splitPath)) return true;
+  addError(errors, 13, subject, `add the file the split moves blocks into to changes, or remove splits`);
+  return false;
+}
+
 export function validateGraph(value: unknown): string[] {
   const errors = validateShape(value);
   if (errors.length > 0) return errors;
@@ -545,22 +557,22 @@ export function validateGraph(value: unknown): string[] {
     addError(errors, 18, "spec.nodes", `add design nodes from subskills/design.md; a spec settles its design before slicing unless its risk is low (risk is ${goalRisk ?? "unset"})`);
   }
   if (resolvedRoot === undefined || errors.some((error) => error.startsWith("Rule 6:"))) return errors;
-  const reachableDependentsById = new Map<string, Set<string>>();
-  for (const unit of units) {
-    const reachableDependents = new Set<string>();
-    const pendingIds: string[] = [unit.id];
-    for (let index = 0; index < pendingIds.length; index++) {
-      for (const dependentId of dependentsById.get(pendingIds[index]) ?? []) {
-        if (reachableDependents.has(dependentId)) continue;
-        reachableDependents.add(dependentId);
-        pendingIds.push(dependentId);
-      }
-    }
-    reachableDependentsById.set(unit.id, reachableDependents);
-  }
   if (isSliced) {
     const resolvedChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => resolveExistingPath(path.resolve(spec.repoRoot, candidate)))]));
     const lexicalChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate.trim().replace(/\\/g, "/")))]));
+    const reachableDependentsById = new Map<string, Set<string>>();
+    for (const unit of units) {
+      const reachableDependents = new Set<string>();
+      const pendingIds: string[] = [unit.id];
+      for (let index = 0; index < pendingIds.length; index++) {
+        for (const dependentId of dependentsById.get(pendingIds[index]) ?? []) {
+          if (reachableDependents.has(dependentId)) continue;
+          reachableDependents.add(dependentId);
+          pendingIds.push(dependentId);
+        }
+      }
+      reachableDependentsById.set(unit.id, reachableDependents);
+    }
     const resolvedSharedRepoPathsByUnitPair = findSharedRepoPathsByUnitPair(resolvedRoot, resolvedChangedPathsById);
     const lexicalSharedRepoPathsByUnitPair = findSharedRepoPathsByUnitPair(spec.repoRoot, lexicalChangedPathsById);
     for (const [unitIndex, unit] of units.entries()) {
@@ -576,11 +588,10 @@ export function validateGraph(value: unknown): string[] {
   for (const unit of units) {
     if (!isSliced || unit.budgetWaiver !== undefined) continue;
     const changedPaths = unit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate));
-    const pathsPrerequisitesChange = new Set(units.filter((otherUnit) => reachableDependentsById.get(otherUnit.id)?.has(unit.id)).flatMap((otherUnit) => otherUnit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate))));
-    const isSplit = changedPaths.some((changedPath) => !fs.existsSync(changedPath) && !pathsPrerequisitesChange.has(changedPath));
-    const readPaths = unit.reads
-      .map((candidate) => path.resolve(spec.repoRoot, candidate))
-      .filter((readPath) => !isSplit || !changedPaths.includes(readPath));
+    const splitPath = unit.splits === undefined ? undefined : path.resolve(spec.repoRoot, unit.splits);
+    const allReadPaths = unit.reads.map((candidate) => path.resolve(spec.repoRoot, candidate));
+    if (splitPath !== undefined && !isSplitWellFormed(splitPath, allReadPaths, changedPaths, `node ${unit.id}`, errors)) continue;
+    const readPaths = allReadPaths.filter((readPath) => readPath !== splitPath);
     const changedOnlyPaths = changedPaths.filter((changedPath) => !readPaths.some((readPath) => staysInside(readPath, changedPath)));
     const readMeasurement = measureReadingBytes(resolvedRoot, readPaths);
     const changedOnlyMeasurements = [...new Set(changedOnlyPaths)].map((changedPath) => measureReadingBytes(resolvedRoot, [changedPath]));
