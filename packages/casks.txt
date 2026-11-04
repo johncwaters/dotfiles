@@ -3,3 +3,4 @@ alt-tab AltTab.app
 hammerspoon Hammerspoon.app
 logi-options+ logioptionsplus.app
 screen-studio Screen Studio.app
+secretive Secretive.app
