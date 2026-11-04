@@ -6,12 +6,17 @@ import {
   findCspProblems,
   findLockfileProblems,
   findMissingIntegrity,
+  findPublicSecrets,
   findSecretLiterals,
   findUnfrozenInstalls,
   findUnpinnedDependencies,
   hasPosthogSnippet,
 } from "./generic.ts";
+import { clerkModule } from "./sdk/clerk.ts";
+import { convexModule } from "./sdk/convex.ts";
 import { posthogModule } from "./sdk/posthog.ts";
+import { stripeModule } from "./sdk/stripe.ts";
+import { supabaseModule } from "./sdk/supabase.ts";
 
 export type CheckId =
   | "exact-pin"
@@ -32,13 +37,14 @@ export type SdkModule = {
   packages: string[];
   secretEnvNames: string[];
   secretLiterals: RegExp[];
+  serverPackages?: string[];
   check?(files: TrackedFile[]): CheckFailure[];
 };
 type RepoListing = { trackedPaths: Set<string>; files: TrackedFile[] };
 export type AuditReport = { applies: boolean; sdks: string[]; failures: CheckFailure[]; waived: CheckFailure[] };
 type Waiver = { check: string; paths: string; reason: string };
 
-const SDK_MODULES: SdkModule[] = [posthogModule];
+const SDK_MODULES: SdkModule[] = [posthogModule, stripeModule, clerkModule, supabaseModule, convexModule];
 const WAIVER_FILE = ".browser-sdk-waivers.json";
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const REPOSITORY_OVERRIDE_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES"];
@@ -49,10 +55,10 @@ export function auditBrowserCode(repoRoot: string): AuditReport {
   const { trackedPaths, files } = readTrackedFiles(repoRoot);
   const manifests = readPackageManifests(files);
   const dependencyNames = new Set(manifests.flatMap((manifest) => Object.entries(manifest.dependencies).flatMap(installedPackageNames)));
-  const usedModules = SDK_MODULES.filter((sdkModule) => sdkModule.packages.some((packageName) => usesPackage(dependencyNames, packageName)));
+  const usedModules = SDK_MODULES.filter((sdkModule) => usesModule(dependencyNames, sdkModule));
   const usedPackageNames = usedModules.flatMap((sdkModule) => sdkModule.packages);
   const pageFilesLoadingThirdPartyScripts = files.filter((file) => crossOriginScriptTags(file).length > 0 || hasPosthogSnippet(file));
-  const secretFailures = findSecretLiterals(files, SDK_MODULES);
+  const secretFailures = [...findSecretLiterals(files, SDK_MODULES), ...findPublicSecrets(files, SDK_MODULES)];
   if (usedModules.length === 0 && pageFilesLoadingThirdPartyScripts.length === 0) {
     return { applies: secretFailures.length > 0, sdks: [], ...applyWaivers(secretFailures, files) };
   }
@@ -155,6 +161,11 @@ function stringRecord(value: unknown): Record<string, string> {
 function installedPackageNames([dependencyName, specifier]: [string, string]): string[] {
   const aliasTarget = NPM_ALIAS_TARGET_PATTERN.exec(specifier)?.[1];
   return aliasTarget === undefined ? [dependencyName] : [dependencyName, aliasTarget];
+}
+
+function usesModule(dependencyNames: Set<string>, sdkModule: SdkModule): boolean {
+  const browserDependencyNames = new Set([...dependencyNames].filter((dependencyName) => !sdkModule.serverPackages?.includes(dependencyName)));
+  return sdkModule.packages.some((packageName) => usesPackage(browserDependencyNames, packageName));
 }
 
 function usesPackage(dependencyNames: Set<string>, packageName: string): boolean {

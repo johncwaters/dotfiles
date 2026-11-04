@@ -315,23 +315,47 @@ function directiveSources(declaration: PolicyDeclaration, directiveNames: string
   return null;
 }
 
-const SECRET_SCAN_EXCLUDED_PATTERN = /(?:^|\/)\.env\.example$|\.example(?:\.[^/]+)?$|\.(?:md|mdx|lock)$|(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
+const SECRET_SCAN_EXCLUDED_PATTERN = /\.example(?:\.[^/]+)?$|\.lock$|(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
 
 export function findSecretLiterals(files: TrackedFile[], sdkModules: SdkModule[]): CheckFailure[] {
   const scannedFiles = files.filter((file) => !isTestOrFixture(file.path) && !SECRET_SCAN_EXCLUDED_PATTERN.test(file.path));
-  return sdkModules.flatMap((sdkModule) =>
-    sdkModule.secretLiterals.flatMap((secretPattern) =>
-      scannedFiles.flatMap((file) => {
-        const match = new RegExp(secretPattern.source, secretPattern.flags.replace("g", "")).exec(file.text);
-        if (match === null) return [];
-        return [{
-          check: "secret-literal" as const,
-          path: file.path,
-          line: lineAt(file.text, match.index),
-          problem: `a ${sdkModule.name} secret (${match[0].slice(0, 8)}...) is committed`,
-          fix: "revoke it now, since it is in git history, then read the replacement from a server-side environment variable",
-        }];
-      }),
-    ),
+  const ownerNamesByPattern = new Map<RegExp, string[]>();
+  for (const sdkModule of sdkModules) {
+    for (const secretPattern of sdkModule.secretLiterals) ownerNamesByPattern.set(secretPattern, [...(ownerNamesByPattern.get(secretPattern) ?? []), sdkModule.name]);
+  }
+  return [...ownerNamesByPattern].flatMap(([secretPattern, ownerNames]) =>
+    scannedFiles.flatMap((file) => {
+      const match = new RegExp(secretPattern.source, secretPattern.flags.replace("g", "")).exec(file.text);
+      if (match === null) return [];
+      return [{
+        check: "secret-literal" as const,
+        path: file.path,
+        line: lineAt(file.text, match.index),
+        problem: `a ${ownerNames.join(" or ")} secret (${match[0].slice(0, 8)}...) is committed`,
+        fix: "revoke it now, since it is in git history, then read the replacement from a server-side environment variable",
+      }];
+    }),
   );
+}
+
+const CLIENT_ENV_PREFIXES = ["NEXT_PUBLIC_", "NUXT_PUBLIC_", "EXPO_PUBLIC_", "PUBLIC_", "VITE_", "REACT_APP_", "VUE_APP_", "GATSBY_"];
+const PUBLIC_SECRET_EXCLUDED_PATTERN = /\.(?:md|mdx|lock)$|(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
+
+export function findPublicSecrets(files: TrackedFile[], sdkModules: SdkModule[]): CheckFailure[] {
+  const scannedFiles = files.filter((file) => !isTestOrFixture(file.path) && !PUBLIC_SECRET_EXCLUDED_PATTERN.test(file.path));
+  return sdkModules.flatMap((sdkModule) => {
+    if (sdkModule.secretEnvNames.length === 0) return [];
+    const publicSecretPattern = new RegExp(`(?<![A-Za-z0-9_])(?:${CLIENT_ENV_PREFIXES.join("|")})(?:${sdkModule.secretEnvNames.join("|")})(?![A-Za-z0-9_])`);
+    return scannedFiles.flatMap((file) => {
+      const match = publicSecretPattern.exec(file.text);
+      if (match === null) return [];
+      return [{
+        check: "public-secret" as const,
+        path: file.path,
+        line: lineAt(file.text, match.index),
+        problem: `${match[0]} exposes a server-only ${sdkModule.name} secret, since its prefix inlines it into the browser bundle`,
+        fix: "rename it without the client prefix, read it only in server code, and rotate it if a build has shipped it",
+      }];
+    });
+  });
 }

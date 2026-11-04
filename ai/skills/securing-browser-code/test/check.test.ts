@@ -128,3 +128,31 @@ test("a committed personal key fails even in a repo with no browser code", () =>
   assert.equal(exitCode, 1, output);
   assert.match(output, /FAIL secret-literal scripts\/sync\.ts:1 a posthog secret/);
 });
+
+test("Stripe, Clerk, Supabase, and Convex secrets fail when committed or given a client prefix", () => {
+  const jwtWithPayload = (payload: Record<string, string>) => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.c2lnbmF0dXJl`;
+  const repoDirectory = createRepo({
+    "package.json": JSON.stringify({ dependencies: { "@stripe/stripe-js": "5.0.0", "@clerk/react-router": "1.0.0", "@supabase/supabase-js": "2.50.0", convex: "1.20.0" } }),
+    ".env.example": "NEXT_PUBLIC_STRIPE_SECRET_KEY=\nSTRIPE_SECRET_KEY=\n",
+    "src/clerk.ts": "const secret = import.meta.env.VITE_CLERK_SECRET_KEY;",
+    "src/convex.ts": "const deployKey = process.env.EXPO_PUBLIC_CONVEX_DEPLOY_KEY;",
+    "src/stripe.ts": `const key = "sk_live_${"x9Y8".repeat(8)}";`,
+    "src/supabase.ts": `const admin = "${jwtWithPayload({ iss: "supabase", ref: "abc", role: "service_role" })}";`,
+    "src/supabase-anon.ts": `const anon = "${jwtWithPayload({ iss: "supabase", ref: "abc", role: "anon" })}";`,
+    "server/billing.ts": "const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);",
+    "server/webhook.ts": `const signingSecret = "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD";`,
+    "src/vue.ts": "const key = process.env.VUE_APP_STRIPE_SECRET_KEY;",
+    "docs/setup.md": "Set STRIPE_SECRET_KEY=rk_live_51HxYz9aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+  });
+  const { output } = runCheck(repoDirectory);
+  assert.match(output, /SDK modules: stripe, clerk, supabase, convex/);
+  assert.match(output, /FAIL public-secret \.env\.example:1 NEXT_PUBLIC_STRIPE_SECRET_KEY exposes a server-only stripe secret/);
+  assert.match(output, /FAIL public-secret src\/clerk\.ts:1 VITE_CLERK_SECRET_KEY exposes a server-only clerk secret/);
+  assert.match(output, /FAIL public-secret src\/convex\.ts:1 EXPO_PUBLIC_CONVEX_DEPLOY_KEY exposes a server-only convex secret/);
+  assert.match(output, /FAIL secret-literal src\/stripe\.ts:1 a stripe or clerk secret \(sk_live_\.\.\.\)/);
+  assert.match(output, /FAIL secret-literal server\/webhook\.ts:1 a stripe or clerk secret \(whsec_C2\.\.\.\)/);
+  assert.match(output, /FAIL secret-literal docs\/setup\.md:1 a stripe secret \(rk_live_\.\.\.\)/);
+  assert.match(output, /FAIL public-secret src\/vue\.ts:1 VUE_APP_STRIPE_SECRET_KEY/);
+  assert.match(output, /FAIL secret-literal src\/supabase\.ts:1 a supabase secret/);
+  assert.doesNotMatch(output, /supabase-anon|server\/billing/);
+});
