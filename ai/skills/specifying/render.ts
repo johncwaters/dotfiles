@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Design, DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
+import { specArchiveDirectory } from "./lib/spec-store.ts";
 import { unitsInDependencyOrder } from "./lib/unit-order.ts";
 
 function oneLine(text: string): string {
@@ -87,7 +87,7 @@ function renderSpec(specArgument: string | undefined, mode: string | undefined):
 }
 
 function readRenderableSpec(specArgument: string | undefined): ReturnType<typeof readSpec> {
-  const archiveDirectory = path.join(os.homedir(), ".claude", "spec-archive");
+  const archiveDirectory = specArchiveDirectory();
   if (!specArgument || !path.resolve(specArgument).startsWith(`${archiveDirectory}${path.sep}`)) return readSpec(specArgument);
   try {
     const spec = JSON.parse(fs.readFileSync(specArgument, "utf8")) as DesignSpec;

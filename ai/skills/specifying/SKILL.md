@@ -11,7 +11,9 @@ Terms: design spec, sketch, branch, question round, decision, design node, open 
 
 **Input.** The feature in the carbon unit's words and the repo in the working directory.
 
-**Output.** A design spec at `~/.claude/specs/<repo>/<slug>.json` with status `challenged`, its intent file beside it, and the intent built.
+**Output.** A design spec at `~/.agents/specs/<repo>/<slug>.json` with status `challenged`, its intent file beside it, and the intent built.
+
+**Paths.** `<skill-dir>` is the directory you loaded this SKILL.md from; the scripts and `subskills/` live there, whichever agent runs the skill.
 
 ## Subskills
 
@@ -66,7 +68,7 @@ The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` fo
 A `challenged` design spec with every open question answered cuts into one intent, a ticket per unit:
 
 ```
-node ~/.claude/skills/specifying/cut.ts <spec.json>
+node <skill-dir>/cut.ts <spec.json>
 ```
 
 It writes `<slug>.intent.json` beside the design spec, or names what to settle first. The session that wrote the design spec becomes the intent's one dedicated session and builds all of it: read `subskills/build.md`.
@@ -77,8 +79,8 @@ Show the `tree` rendering, then reply with the path, the goal's criteria, every 
 
 ## Scripts
 
-- `validate.ts`: `node ~/.claude/skills/specifying/validate.ts <spec.json>` runs the same graph checks the write hook runs, at any status.
-- `render.ts`: `node ~/.claude/skills/specifying/render.ts <spec.json> tree|design` draws the graph; `tree` also reads an archive's structure.
-- `cut.ts`: `node ~/.claude/skills/specifying/cut.ts <spec.json>` cuts a `challenged` design spec into its intent file, or names what to settle first.
-- `archive.ts`: `node ~/.claude/skills/specifying/archive.ts <spec.json> built|abandoned` archives a design spec and its intent file.
-- `report.ts`: `node ~/.claude/skills/specifying/report.ts` lists archived specs with landed tickets and sweeps specs idle 14 days as abandoned.
+- `validate.ts`: `node <skill-dir>/validate.ts <spec.json>` runs the same graph checks the write hook runs, at any status.
+- `render.ts`: `node <skill-dir>/render.ts <spec.json> tree|design` draws the graph; `tree` also reads an archive's structure.
+- `cut.ts`: `node <skill-dir>/cut.ts <spec.json>` cuts a `challenged` design spec into its intent file, or names what to settle first.
+- `archive.ts`: `node <skill-dir>/archive.ts <spec.json> built|abandoned` archives a design spec and its intent file.
+- `report.ts`: `node <skill-dir>/report.ts` lists archived specs with landed tickets and sweeps specs idle 14 days as abandoned.

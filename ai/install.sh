@@ -262,6 +262,30 @@ linkEntry "types" "ai/types" "$claudeHome/types"
 linkEntry "hooks" "ai/hooks" "$claudeHome/hooks"
 linkEntry "hud" "ai/hud" "$claudeHome/hud"
 
+migrateSpecStore() {
+  local storeName legacyStoreDirectory agentStoreDirectory legacyFilePath relativeFilePath movedFileCount
+  for storeName in specs spec-archive; do
+    legacyStoreDirectory="$claudeHome/$storeName"
+    agentStoreDirectory="$HOME/.agents/$storeName"
+    [[ -d "$legacyStoreDirectory" && ! -L "$legacyStoreDirectory" ]] || continue
+    movedFileCount=0
+    while IFS= read -r -d '' legacyFilePath; do
+      relativeFilePath="${legacyFilePath#"$legacyStoreDirectory/"}"
+      if [[ -e "$agentStoreDirectory/$relativeFilePath" || -L "$agentStoreDirectory/$relativeFilePath" ]]; then
+        noteWarned "spec store $storeName" "$agentStoreDirectory/$relativeFilePath exists, left $legacyFilePath"
+        continue
+      fi
+      mkdir -p -- "$(dirname -- "$agentStoreDirectory/$relativeFilePath")"
+      mv -- "$legacyFilePath" "$agentStoreDirectory/$relativeFilePath"
+      movedFileCount=$((movedFileCount + 1))
+    done < <(find "$legacyStoreDirectory" -type f -print0)
+    find "$legacyStoreDirectory" -depth -type d -empty -delete
+    ((movedFileCount == 0)) || noteApplied "spec store $storeName" "moved $movedFileCount files to $agentStoreDirectory"
+  done
+}
+
+migrateSpecStore
+
 if [[ -z "${profileName:-}" ]]; then
   noteWarned "profile files" "no profile resolved, profile-dependent convergence skipped"
   finishTopic

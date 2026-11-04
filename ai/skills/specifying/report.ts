@@ -1,9 +1,9 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { archiveSpec } from "./archive.ts";
 import type { DesignSpec } from "./lib/graph.ts";
+import { specArchiveDirectory, specsDirectory } from "./lib/spec-store.ts";
 import { readTicketHistory } from "./lib/ticket-history.ts";
 import type { TicketHistory } from "./lib/ticket-history.ts";
 
@@ -46,9 +46,8 @@ export function reportSpecs(now = new Date()): void {
     return history;
   }
 
-  const claudeDirectory = path.join(os.homedir(), ".claude");
   const staleBeforeMs = now.getTime() - 14 * 24 * 60 * 60 * 1000;
-  for (const { specPath, spec } of readStoredSpecs(path.join(claudeDirectory, "specs"))) {
+  for (const { specPath, spec } of readStoredSpecs(specsDirectory())) {
     if (typeof spec.repoRoot !== "string" || spec.repoRoot.trim() === "") {
       warn(`Skipping ${specPath}: missing repoRoot`);
       continue;
@@ -73,7 +72,7 @@ export function reportSpecs(now = new Date()): void {
     }
   }
 
-  const archives = readStoredSpecs(path.join(claudeDirectory, "spec-archive")).flatMap((storedSpec) => {
+  const archives = readStoredSpecs(specArchiveDirectory()).flatMap((storedSpec) => {
     const filename = path.basename(storedSpec.specPath).match(/^(.+)\.(built|abandoned)\.(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.json$/);
     if (!filename) return [];
     const [, slug, outcome, date, sequence = "1"] = filename;

@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { specArchiveDirectory } from "./lib/spec-store.ts";
 import { readTicketHistory } from "./lib/ticket-history.ts";
 
 type ArchiveReport =
@@ -49,7 +49,7 @@ export function archiveSpec(specArgument: string | undefined, outcome: string | 
     const slug = path.basename(specPath, ".json");
     const intentPath = path.join(path.dirname(specPath), `${slug}.intent.json`);
     const intentBytes = fs.existsSync(intentPath) ? fs.readFileSync(intentPath) : null;
-    const archiveDirectory = path.join(os.homedir(), ".claude", "spec-archive", repo);
+    const archiveDirectory = path.join(specArchiveDirectory(), repo);
     const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     if (outcome === "built") {
       if (intentBytes === null) return { outcome: "REFUSED", errors: [`built needs ${slug}.intent.json; cut the spec first or archive abandoned`] };

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { allow, COMMAND_START, COMMAND_WRAPPERS, denyPreToolUse, isAttendedMainLoopCall, nearestExistingDirectory, readPayload } from "./hook-io.mjs";
 import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
+import { specsDirectory } from "../skills/specifying/lib/spec-store.ts";
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const SPEC_GATE_MARKER = "[spec-gate]";
@@ -156,7 +157,7 @@ function isSpecGatedPath(filePath) {
 }
 
 async function denyUnlessSpecGateCleared(transcriptPath) {
-  if (await hasSpecGateCleared(transcriptPath, path.join(os.homedir(), ".claude", "specs"))) return;
+  if (await hasSpecGateCleared(transcriptPath, specsDirectory())) return;
   denyPreToolUse(SPEC_GATE_REASON);
 }
 

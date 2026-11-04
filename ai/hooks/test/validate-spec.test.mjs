@@ -7,7 +7,7 @@ import { runHook } from "./harness.mjs";
 
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "validate-spec-"));
 const repoRoot = path.join(temporaryHome, "repo");
-const specPath = path.join(temporaryHome, ".claude", "specs", "repo", "graph.json");
+const specPath = path.join(temporaryHome, ".agents", "specs", "repo", "graph.json");
 fs.mkdirSync(repoRoot, { recursive: true });
 fs.mkdirSync(path.dirname(specPath), { recursive: true });
 after(() => fs.rmSync(temporaryHome, { recursive: true, force: true }));
@@ -235,7 +235,7 @@ test("a large file the unit only changes counts at the changed-only cap", () => 
 
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {
   assertAllowed(writeSpec({}, path.join(temporaryHome, "outside.json")));
-  const unreadableSpecPath = path.join(temporaryHome, ".claude", "specs", "unreadable.json");
+  const unreadableSpecPath = path.join(temporaryHome, ".agents", "specs", "unreadable.json");
   fs.mkdirSync(unreadableSpecPath);
   assertAllowed(writeSpec({}, unreadableSpecPath));
   for (const payload of [null, false, [], {}, { tool_name: "Write", tool_input: null }, { tool_name: "Write", tool_input: { file_path: specPath, content: "{invalid" } }, { tool_name: "Edit", tool_input: { file_path: unreadableSpecPath, old_string: "old", new_string: "new" } }]) {

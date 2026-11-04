@@ -8,11 +8,11 @@ here.
 - **design spec**: The single document that states what a feature is, what it is not, and
   every decision behind it, complete enough that an agent holding none of the originating
   conversation could build it. It is a typed JSON graph of nodes and edges that the `specifying`
-  skill writes to `~/.claude/specs/<repo>/<slug>.json`; `ai/skills/specifying/lib/graph.ts` is
+  skill writes to `~/.agents/specs/<repo>/<slug>.json`; `ai/skills/specifying/lib/graph.ts` is
   the type, and a write hook refuses a graph that breaks it. Once its tickets are built,
-  it moves to `~/.claude/spec-archive/<repo>/` to review spec effectiveness over time,
-  outside `~/.claude/specs` so no agent resumes or trusts a design that drifts from the
-  code; `guard-workflow` clears the `/specifying` gate on reads inside `~/.claude/specs`.
+  it moves to `~/.agents/spec-archive/<repo>/` to review spec effectiveness over time,
+  outside `~/.agents/specs` so no agent resumes or trusts a design that drifts from the
+  code; `guard-workflow` clears the `/specifying` gate on reads inside `~/.agents/specs`.
   It replaces the Claude Code plan as what `challenging-plans` judges.
 - **sketch**: The first draft of a design spec, written from the feature request and a read
   of the repo before any question is asked. It exists so questions attack something

@@ -195,7 +195,7 @@ test("running /specifying or a review gate or reading a design spec clears the s
     const gateRun = writeTranscript([prompt(`/${gate}`), ...skillRun(gate)]);
     assert.equal(decisionFor(editCall(repoFile, gateRun)).decision, "allow");
   }
-  const intentRead = writeTranscript([prompt("build it"), toolUse("Read", { file_path: path.join(sandboxHome, ".claude/specs/repo/export.intent.json") })]);
+  const intentRead = writeTranscript([prompt("build it"), toolUse("Read", { file_path: path.join(sandboxHome, ".agents/specs/repo/export.intent.json") })]);
   assert.equal(decisionFor(editCall(repoFile, intentRead)).decision, "allow");
 });
 

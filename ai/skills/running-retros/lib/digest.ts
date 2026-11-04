@@ -4,6 +4,7 @@ import { createReadStream, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { specArchiveDirectory, specsDirectory } from "../../specifying/lib/spec-store.ts";
 
 export type IncidentKind =
   | "correction"
@@ -246,7 +247,8 @@ export async function digestTranscript(
     const expandedPath = filePath.startsWith("~/") ? join(homedir(), filePath.slice(2)) : filePath;
     if (!isAbsolute(expandedPath) || !expandedPath.endsWith(".json") || expandedPath.endsWith(".intent.json")) return;
     const specPath = resolve(expandedPath);
-    if (!["specs", "spec-archive"].some((directory) => specPath.startsWith(`${join(homedir(), ".claude", directory)}/`))) return;
+    const specStoreDirectories = [specsDirectory(), specArchiveDirectory(), join(homedir(), ".claude", "specs"), join(homedir(), ".claude", "spec-archive")];
+    if (!specStoreDirectories.some((directory) => specPath.startsWith(`${directory}/`))) return;
     if (!digest.specPaths.includes(specPath)) digest.specPaths.push(specPath);
   }
 

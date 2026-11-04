@@ -1,9 +1,9 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { replayEdits } from "./edit-replay.mjs";
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
 import { validateGraph } from "../skills/specifying/lib/graph.ts";
+import { specsDirectory } from "../skills/specifying/lib/spec-store.ts";
 
 function resolveExistingPath(filePath) {
   if (fs.existsSync(filePath)) return fs.realpathSync(filePath);
@@ -26,9 +26,9 @@ try {
   const filePath = toolInput.file_path || toolInput.filePath;
   if (typeof filePath !== "string" || !filePath.endsWith(".json")) allow();
   const absolutePath = path.resolve(filePath);
-  const specsDirectory = resolveExistingPath(path.join(os.homedir(), ".claude", "specs"));
+  const resolvedSpecsDirectory = resolveExistingPath(specsDirectory());
   const resolvedPath = resolveExistingPath(absolutePath);
-  const relativePath = path.relative(specsDirectory, resolvedPath);
+  const relativePath = path.relative(resolvedSpecsDirectory, resolvedPath);
   if (!relativePath || relativePath === ".." || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) allow();
   if (typeof toolInput.content !== "string") {
     if (payload.tool_name === "Write") allow();

@@ -16,7 +16,7 @@ test("archive built refuses until every unit has a pushed Ticket trailer", () =>
     git("remote", "add", "origin", path.join(temporaryHome, "origin.git"));
     git("commit", "-q", "--allow-empty", "-m", "Add the CSV writer", "-m", "Ticket: export/U1");
     git("push", "-q", "origin", "main");
-    const specPath = path.join(temporaryHome, ".claude", "specs", "decks", "export.json");
+    const specPath = path.join(temporaryHome, ".agents", "specs", "decks", "export.json");
     fs.mkdirSync(path.dirname(specPath), { recursive: true });
     const unit = (id: string) => ({ id, kind: "unit", title: id, reads: [], changes: ["src"], checks: [], serves: [1] });
     fs.writeFileSync(specPath, JSON.stringify({ status: "challenged", repoRoot, nodes: [unit("U1"), unit("U2")], edges: [] }));

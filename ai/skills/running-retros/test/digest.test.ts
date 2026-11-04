@@ -13,7 +13,7 @@ const fixturePath = join(fixturesDir, "synthetic-project/synthetic-session.jsonl
 test("CLI collects only touched spec graphs, deduplicates expanded paths, and counts no rework for a gate run after a landing", (context) => {
   const transcriptDirectory = mkdtempSync(join(tmpdir(), "retro-digest-"));
   context.after(() => rmSync(transcriptDirectory, { recursive: true, force: true }));
-  const livePath = join(homedir(), ".claude/specs/dotfiles/session-spec.json");
+  const livePath = join(homedir(), ".agents/specs/dotfiles/session-spec.json");
   const archivePath = join(homedir(), ".claude/spec-archive/dotfiles/session-spec.built.2026-10-20.json");
   const transcriptPath = join(transcriptDirectory, "spec-session.jsonl");
   const toolUses = [
@@ -23,7 +23,7 @@ test("CLI collects only touched spec graphs, deduplicates expanded paths, and co
     { name: "Write", input: { file_path: `${livePath.slice(0, -5)}.intent.json` } },
     { name: "Edit", input: { file_path: join(transcriptDirectory, "unrelated.json") } },
     { name: "Bash", input: { command: `node ~/.claude/skills/specifying/render.ts ${livePath} tree` } },
-    { name: "Bash", input: { command: 'node ~/.claude/skills/specifying/validate.ts "~/.claude/specs/dotfiles/session-spec.json" && node ~/.claude/skills/specifying/cut.ts ~/.claude/specs/dotfiles/session-spec.json' } },
+    { name: "Bash", input: { command: 'node ~/.claude/skills/specifying/validate.ts "~/.agents/specs/dotfiles/session-spec.json" && node ~/.claude/skills/specifying/cut.ts ~/.agents/specs/dotfiles/session-spec.json' } },
     { name: "Bash", input: { command: `node ~/.claude/skills/specifying/archive.ts '${archivePath}' built` } },
     { name: "Bash", input: { command: `node ~/.claude/skills/specifying/cut.ts '${livePath.slice(0, -5)}.intent.json'` } },
   ];
