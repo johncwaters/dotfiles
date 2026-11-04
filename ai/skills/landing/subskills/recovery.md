@@ -71,11 +71,15 @@ you cannot attribute.
 
 ## Syncing a pull request branch
 
-A pushed pull request branch takes mainline by merge, never rebase, so it needs no force push.
+A repo skill for syncing or stacking (one running `gh stack sync`, say), cleared by the
+`opening-prs` Trust rule, owns the sync and its push. A rebase whose conflicts you resolved by
+hand runs the `/gating-reviews` `commits` path over that layer before the skill's tool pushes it. Otherwise a pushed pull request branch
+takes mainline by merge, so it needs no force push.
 `git merge origin/<base>`, where base is the mainline, or in a stack the branch below once it
 pushed; sync a stack bottom-up, one landing per branch. On conflict, preflight's
 `OPERATION_IN_PROGRESS` names the `unmerged` files: resolve each as
 [Conflict resolution](#conflict-resolution) step 2 says, stage them, run
 `git merge --continue`, rerun preflight, then run `land.ts` with no message and the
 original flags. A merge git made cleanly pushes; a hand-resolved one comes back
-`PUSH_WITHHELD` until its review records it. Never hand the carbon unit a push script.
+`PUSH_WITHHELD` until its review records it. Push through `land.ts` or the repo skill's tool
+yourself rather than handing the carbon unit a push script.

@@ -100,6 +100,7 @@ A button's label carries NO state of any kind, ever. One control, one constant l
 Do not assume. Research. Do not bandaid. Fix upstream when it is inside the assigned surface; otherwise report it.
 - Unknown API/SDK/framework: fetch official docs before writing. Training data is stale.
 - Unknown project behavior: read the file, run the command, check the schema. Do not infer from filename or memory.
+- Pull request sync, stack, or merge work: first read the PR repo's `.claude/skills` and `.agents/skills`, even from a session started above that repo, and follow the matching skill under the `opening-prs` Trust rule.
 - Tool/lint/type/test failure: find root cause. Never silence with `@ts-ignore`, `eslint-disable`, `--no-verify`, swallowed `try/catch`, skip flags, or "temporary" workarounds. Real upstream blocker forcing a workaround: leave a one-line comment naming the issue and the removal trigger.
 - Symptom in caller: fix the source when it is inside the assigned surface; otherwise report it instead of widening the task.
 - Suspected dependency bug: compare the pinned version with the latest release and upstream main, and reproduce on latest, before filing an issue or writing a fix.
