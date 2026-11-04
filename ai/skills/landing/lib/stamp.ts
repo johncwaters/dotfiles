@@ -191,15 +191,39 @@ function readLandedEntries(git: Git): Set<string> {
   return new Set(fs.existsSync(landedFile) ? fs.readFileSync(landedFile, "utf8").split("\n").filter(Boolean) : []);
 }
 
-function needsReview(merge: { parents: string[]; remergeFiles: string[] | null }): boolean {
-  return merge.remergeFiles === null || merge.parents.length > 2 || merge.remergeFiles.length > 0;
+type ClassifiedMerge = { commit: string; parents: string[]; remergeFiles: string[] | null };
+
+function isFastForwardMerge(git: Git, merge: ClassifiedMerge, filePaths: string[]): boolean {
+  const [firstParent = "", secondParent = ""] = merge.parents;
+  const mergeBase = git.mergeBase(firstParent, secondParent);
+  if (mergeBase === null) return false;
+  const mergedEntries = git.treeEntriesByPath(merge.commit, filePaths);
+  const firstParentEntries = git.treeEntriesByPath(firstParent, filePaths);
+  const secondParentEntries = git.treeEntriesByPath(secondParent, filePaths);
+  const firstParentHistory = git.treeEntriesInHistoryByPath(`${mergeBase}..${firstParent}`, filePaths);
+  const secondParentHistory = git.treeEntriesInHistoryByPath(`${mergeBase}..${secondParent}`, filePaths);
+  return filePaths.every((filePath) => {
+    const mergedEntry = mergedEntries.get(filePath);
+    const firstParentEntry = firstParentEntries.get(filePath);
+    const secondParentEntry = secondParentEntries.get(filePath);
+    if (mergedEntry === undefined || firstParentEntry === undefined || secondParentEntry === undefined) return false;
+    if (mergedEntry === firstParentEntry) return firstParentHistory.get(filePath)?.has(secondParentEntry) ?? false;
+    if (mergedEntry === secondParentEntry) return secondParentHistory.get(filePath)?.has(firstParentEntry) ?? false;
+    return false;
+  });
+}
+
+function needsReview(git: Git, merge: ClassifiedMerge): boolean {
+  if (merge.remergeFiles === null || merge.parents.length > 2) return true;
+  if (merge.remergeFiles.length === 0) return false;
+  return !isFastForwardMerge(git, merge, merge.remergeFiles);
 }
 
 export function commitsNotLandedSince(git: Git, revisionArgs: string[]): string[] {
   const landedEntries = readLandedEntries(git);
   const unlandedCommits = new Set([...git.patchIdsByCommit(revisionArgs)].filter(([, patchId]) => !landedEntries.has(patchId)).map(([commit]) => commit));
   for (const merge of git.mergesWithRemergeFiles(revisionArgs)) {
-    if (!landedEntries.has(merge.commit) && needsReview(merge)) unlandedCommits.add(merge.commit);
+    if (!landedEntries.has(merge.commit) && needsReview(git, merge)) unlandedCommits.add(merge.commit);
   }
   if (unlandedCommits.size === 0) return [];
   return git.revListNewestFirst(revisionArgs).filter((commit) => unlandedCommits.has(commit));

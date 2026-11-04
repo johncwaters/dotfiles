@@ -200,7 +200,7 @@ export class Git {
   }
 
   mergesWithRemergeFiles(revisionArgs: string[]): { commit: string; parents: string[]; remergeFiles: string[] | null }[] {
-    const mergeLog = this.run(["log", "--merges", "--remerge-diff", "--name-only", "--format=%x00%H %P", ...revisionArgs]);
+    const mergeLog = this.run(["-c", "core.quotePath=false", "log", "--merges", "--remerge-diff", "--name-only", "--format=%x00%H %P", ...revisionArgs]);
     if (mergeLog.code !== 0) {
       return nonEmptyLines(this.run(["rev-list", "--merges", "--parents", ...revisionArgs]).stdout).map((line) => {
         const [commit = "", ...parents] = line.trim().split(" ");
@@ -212,6 +212,44 @@ export class Git {
       const [commit = "", ...parents] = headerLine.trim().split(" ");
       return { commit, parents, remergeFiles: fileLines.map((line) => line.trim()) };
     });
+  }
+
+  treeEntriesByPath(commit: string, filePaths: string[]): Map<string, string> {
+    const listing = this.run(["ls-tree", "-z", "--full-tree", commit, "--", ...filePaths], { env: { GIT_LITERAL_PATHSPECS: "1" } });
+    const entriesByPath = new Map<string, string>();
+    if (listing.code !== 0) {
+      return entriesByPath;
+    }
+    for (const record of listing.stdout.split("\0").filter(Boolean)) {
+      const [header = "", filePath = ""] = record.split("\t");
+      const [mode = "", , oid = ""] = header.split(" ");
+      entriesByPath.set(filePath, `${mode} ${oid}`);
+    }
+    return entriesByPath;
+  }
+
+  treeEntriesInHistoryByPath(range: string, filePaths: string[]): Map<string, Set<string>> {
+    const literalPathspecs = filePaths.map((filePath) => `:(top,literal)${filePath}`);
+    const history = this.run(["log", "-z", "--full-history", "--diff-merges=first-parent", "--no-renames", "--raw", "--no-abbrev", "--format=", range, "--", ...literalPathspecs]);
+    const entriesByPath = new Map<string, Set<string>>();
+    if (history.code !== 0) {
+      return entriesByPath;
+    }
+    const tokens = history.stdout.split("\0").map((token) => token.replace(/^\n+/, ""));
+    let index = 0;
+    while (index < tokens.length) {
+      const rawStatus = /^:\d{6} (\d{6}) [0-9a-f]+ ([0-9a-f]+) \S+$/.exec(tokens[index] ?? "");
+      if (rawStatus === null) {
+        index += 1;
+        continue;
+      }
+      const filePath = tokens[index + 1] ?? "";
+      const entries = entriesByPath.get(filePath) ?? new Set<string>();
+      entries.add(`${rawStatus[1]} ${rawStatus[2]}`);
+      entriesByPath.set(filePath, entries);
+      index += 2;
+    }
+    return entriesByPath;
   }
 
   revListNewestFirst(revisionArgs: string[]): string[] {

@@ -648,7 +648,7 @@ test("a clean rerun with --no-push leaves an unpushed branch alone", () => {
   }
 });
 
-test("a mainline sync pushes git's clean merge but withholds a hand-resolved merge until stamp.ts clear records its review", () => {
+test("a mainline sync pushes git's clean merge and a stack-after-squash merge that kept the side already holding the other's version, but withholds a hand-edited merge until stamp.ts clear records its review", () => {
   const origin = makeBareOrigin();
   const repo = cloneRepo(origin);
   const reviewGatesEnv = { REVIEW_GATES_DIR: reviewGatesDirectory(repo) };
@@ -691,6 +691,28 @@ test("a mainline sync pushes git's clean merge but withholds a hand-resolved mer
     const reviewedSync = landUnstamped(repo, [], "", reviewGatesEnv);
     assert.equal(reviewedSync.result.outcome, "NOTHING_TO_COMMIT");
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), resolvedMerge);
+
+    runGit(repo, ["switch", "-q", "-c", "lower", "origin/main"]);
+    commitFile(repo, "stacked.txt", "lower\n", "lower work");
+    runGit(repo, ["push", "-q", "origin", "lower"]);
+    runGit(repo, ["switch", "-q", "feature"]);
+    runGit(repo, ["merge", "-q", "--no-edit", "origin/lower"]);
+    commitFile(repo, "stacked.txt", "lower\ntop\n", "top work");
+    const stackRecorded = spawnSync("node", [path.join(SKILL_DIR, "stamp.ts"), "clear"], { cwd: repo, encoding: "utf8", env: { ...process.env, ...reviewGatesEnv } });
+    assert.equal(stackRecorded.status, 0, stackRecorded.stderr ?? "");
+    assert.equal(landUnstamped(repo, [], "", reviewGatesEnv).result.pushed, true);
+    runGit(repo, ["switch", "-q", "main"]);
+    runGit(repo, ["merge", "-q", "--squash", "origin/lower"]);
+    runGit(repo, ["commit", "-q", "-m", "squash lower"]);
+    runGit(repo, ["push", "-q", "origin", "main"]);
+    runGit(repo, ["switch", "-q", "feature"]);
+    assert.notEqual(tryGit(repo, ["merge", "-q", "--no-edit", "origin/main"]), 0);
+    runGit(repo, ["checkout", "--ours", "stacked.txt"]);
+    runGit(repo, ["add", "stacked.txt"]);
+    runGit(repo, ["commit", "-q", "--no-edit"]);
+    const stackSync = landUnstamped(repo, [], "", reviewGatesEnv);
+    assert.equal(stackSync.result.outcome, "NOTHING_TO_COMMIT");
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
   } finally {
     cleanup(origin, repo);
   }
