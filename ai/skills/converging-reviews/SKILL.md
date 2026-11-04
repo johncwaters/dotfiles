@@ -43,7 +43,7 @@ node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --sw
 
 | Outcome | Exit | Action |
 |---|---|---|
-| `CLEAN` | 0 | Before any further edit, run `round.mjs stamp <preflight paths>`. It stamps only a tree equal to this CLEAN head, carrying every `UNVERIFIED` fix; `UNSTAMPED` (exit 24) means the tree moved, so rerun from Step 1. An edit after the stamp makes `land.ts` return `NOT_REVIEWED` |
+| `CLEAN` | 0 | Before any further edit, run `round.mjs stamp <preflight paths>`. It stamps only a tree equal to this CLEAN head, carrying every `UNVERIFIED` fix; `UNSTAMPED` (exit 24) means the tree moved, so rerun from Step 1. `BROWSER_CODE_FAILED` (exit 30) lists the `/securing-browser-code` failures blocking an owned repo: fix them as new work, then rerun from Step 1. An edit after the stamp makes `land.ts` return `NOT_REVIEWED` |
 | `CONTINUE` | 10 | Step 4, then `round.mjs next` and Step 2 |
 | `RETRY` | 11 | Repeat Step 2 for the same round once |
 | `SWEEP` | 12 | `round.mjs next`, then Step 2; no fix lands between |

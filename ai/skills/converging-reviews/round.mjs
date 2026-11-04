@@ -15,7 +15,7 @@ import {
   runGit,
 } from "../../hooks/check-finding-scope.mjs";
 import { Git } from "../landing/lib/git.ts";
-import { EMPTY_FINDINGS, pinScopedTree, writeStamp } from "../landing/lib/stamp.ts";
+import { BrowserCodeFailed, EMPTY_FINDINGS, pinScopedTree, writeStamp } from "../landing/lib/stamp.ts";
 
 const EXIT_CODE_BY_OUTCOME = {
   FRESH: 0,
@@ -31,6 +31,7 @@ const EXIT_CODE_BY_OUTCOME = {
   FAILED: 23,
   STAMPED: 0,
   UNSTAMPED: 24,
+  BROWSER_CODE_FAILED: 30,
   USAGE: 2,
 };
 const ROUND_CAP = 8;
@@ -181,8 +182,13 @@ function stampCleanTree(repoPath, paths) {
   const unverifiedFindings = ledger
     .filter((row) => row.type === "finding" && unverifiedFingerprints.has(row.fingerprint))
     .map((row) => ({ severity: row.severity, file: row.file, summary: `${row.reviewer} finding ${row.fingerprint}, fix unverified` }));
-  const stamp = writeStamp(git, "converging-reviews", paths, { ...EMPTY_FINDINGS, unverifiedFindings });
-  finish("STAMPED", { tree: workingTree, stamp });
+  try {
+    const stamp = writeStamp(git, "converging-reviews", paths, { ...EMPTY_FINDINGS, unverifiedFindings });
+    finish("STAMPED", { tree: workingTree, stamp });
+  } catch (error) {
+    if (!(error instanceof BrowserCodeFailed)) throw error;
+    finish("BROWSER_CODE_FAILED", { tree: workingTree, failures: error.failureLines });
+  }
 }
 
 function firstDefectSentence(body) {

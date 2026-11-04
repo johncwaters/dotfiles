@@ -1,5 +1,6 @@
 import { Git } from "./lib/git.ts";
 import {
+  BrowserCodeFailed,
   changedPathsOutside,
   EMPTY_FINDINGS,
   isStampGate,
@@ -7,12 +8,15 @@ import {
   releaseBranch,
   STAMP_GATES,
   type StampFindings,
+  type StampGate,
+  type StampRow,
   verifyStamp,
   writeStamp,
 } from "./lib/stamp.ts";
 import { readStdin } from "./lib/stdio.ts";
 import { readResolvedPolicy } from "./lib/visibility.ts";
 
+const BROWSER_CODE_FAILED_EXIT_CODE = 30;
 const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings -] | verify | clear`;
 
 function releaseBaseRef(git: Git): string | null {
@@ -79,7 +83,17 @@ async function writeCommand(git: Git, argv: string[]): Promise<void> {
     }
   }
   const findings: StampFindings = readsFindings ? parseStampFindings(JSON.parse(await readStdin())) : EMPTY_FINDINGS;
-  process.stdout.write(`${JSON.stringify(writeStamp(git, gate, paths, findings))}\n`);
+  process.stdout.write(`${JSON.stringify(writeStampOrExit(git, gate, paths, findings))}\n`);
+}
+
+function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: StampFindings): StampRow {
+  try {
+    return writeStamp(git, gate, paths, findings);
+  } catch (error) {
+    if (!(error instanceof BrowserCodeFailed)) throw error;
+    process.stderr.write(`BROWSER_CODE_FAILED: fix each failure as new work, then review again\n${error.failureLines.join("\n")}\n`);
+    process.exit(BROWSER_CODE_FAILED_EXIT_CODE);
+  }
 }
 
 const git = new Git(process.cwd());

@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { auditBrowserCode, formatFailure } from "../../securing-browser-code/lib/audit.ts";
 import type { Git } from "./git.ts";
+import { readGithubRemote, resolveAfterCommit } from "./visibility.ts";
+
+const MAX_BROWSER_CODE_NOTES = 20;
 
 export const REVIEW_GATES = ["gating-reviews", "converging-reviews"] as const;
 
@@ -94,6 +98,29 @@ export function parseStampFindings(raw: unknown): StampFindings {
   return findings;
 }
 
+function isReviewGate(gate: string): boolean {
+  return (REVIEW_GATES as readonly string[]).includes(gate);
+}
+
+function browserCodeFailureLines(git: Git): string[] {
+  const repoRoot = git.run(["rev-parse", "--show-toplevel"]).stdout.trim();
+  return auditBrowserCode(repoRoot).failures.map(formatFailure);
+}
+
+function blocksBrowserCodeFailures(git: Git): boolean {
+  const origin = readGithubRemote(git);
+  const resolution = resolveAfterCommit(origin);
+  const ownershipLookupFailed = origin.repositoryName !== null && resolution.warning !== undefined;
+  return resolution.mode === "promote" || ownershipLookupFailed;
+}
+
+function browserCodeNotes(failureLines: string[]): string[] {
+  const notes = failureLines.slice(0, MAX_BROWSER_CODE_NOTES).map((failureLine) => `browser-code: ${failureLine}`);
+  const omittedCount = failureLines.length - notes.length;
+  if (omittedCount === 0) return notes;
+  return [...notes, `browser-code: ${omittedCount} more; run node ~/.claude/skills/securing-browser-code/check.ts for the full list`];
+}
+
 export function isStampGate(value: string): value is StampGate {
   return (STAMP_GATES as readonly string[]).includes(value);
 }
@@ -167,13 +194,28 @@ export function commitsNotLandedSince(git: Git, baseRef: string | null): string[
     .map(([commit]) => commit);
 }
 
+export class BrowserCodeFailed extends Error {
+  readonly failureLines: string[];
+
+  constructor(failureLines: string[]) {
+    super(`browser-code checks fail:\n${failureLines.join("\n")}`);
+    this.name = "BrowserCodeFailed";
+    this.failureLines = failureLines;
+  }
+}
+
 export function writeStamp(git: Git, gate: StampGate, paths: string[], findings: StampFindings): StampRow {
   const tree = pinScopedTree(git, paths);
   if (tree === null) {
     throw new Error(`could not pin the tree over ${paths.join(", ")}`);
   }
+  const browserCodeFailures = isReviewGate(gate) ? browserCodeFailureLines(git) : [];
+  if (browserCodeFailures.length > 0 && blocksBrowserCodeFailures(git)) {
+    throw new BrowserCodeFailed(browserCodeFailures);
+  }
+  const preexistingFailures = [...findings.preexistingFailures, ...browserCodeNotes(browserCodeFailures)];
   const prefix = git.run(["rev-parse", "--show-prefix"]).stdout.trim();
-  const row: StampRow = { v: 1, at: new Date().toISOString(), gate, head: git.revParseHead(), tree, paths, prefix, ...findings };
+  const row: StampRow = { v: 1, at: new Date().toISOString(), gate, head: git.revParseHead(), tree, paths, prefix, ...findings, preexistingFailures };
   const ledgerFile = stampLedgerPath(git);
   fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
   fs.appendFileSync(ledgerFile, `${JSON.stringify(row)}\n`);

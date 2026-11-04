@@ -25,6 +25,7 @@ import {
   seedOrigin,
   SKILL_DIR,
   stamp,
+  writeExecutable,
   writeFile,
   writeOriginHook,
 } from "./helpers.ts";
@@ -860,3 +861,30 @@ function restoreGatesDirectory(previousGatesDirectory: string | undefined): void
   }
   process.env.REVIEW_GATES_DIR = previousGatesDirectory;
 }
+
+test("a review gate refuses to stamp an untracked browser-code failure in an owned repo or when gh cannot tell, and records it for another org's repo", (context) => {
+  const repo = makeRepo();
+  const ghStubDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-gh-"));
+  const previousPath = process.env.PATH;
+  context.after(() => {
+    process.env.PATH = previousPath;
+    cleanup(repo, ghStubDirectory);
+  });
+  commitFile(repo, "base.txt", "base\n", "init");
+  writeFile(repo, "package.json", JSON.stringify({ dependencies: { "posthog-js": "^1.400.0" } }));
+
+  const ownedRefusal = stamp(repo, ["package.json"]);
+  assert.equal(ownedRefusal.code, 30, ownedRefusal.stderr);
+  assert.match(ownedRefusal.stderr, /^FAIL exact-pin package\.json posthog-js uses "\^1\.400\.0".*Fix: /m);
+  assert.equal(fs.existsSync(stampLedgerPath(new Git(repo))), false);
+
+  runGit(repo, ["remote", "add", "origin", "git@github.com:Example/widget.git"]);
+  process.env.PATH = `${ghStubDirectory}${path.delimiter}${previousPath ?? ""}`;
+  writeExecutable(path.join(ghStubDirectory, "gh"), "#!/bin/sh\necho 'error connecting to api.github.com' >&2\nexit 1\n");
+  assert.equal(stamp(repo, ["package.json"]).code, 30);
+
+  writeExecutable(path.join(ghStubDirectory, "gh"), "#!/bin/sh\necho someone-else\n");
+  const orgStamp = stamp(repo, ["package.json"]);
+  assert.equal(orgStamp.code, 0, orgStamp.stderr);
+  assert.match((orgStamp.result.preexistingFailures as string[]).join("\n"), /^browser-code: FAIL exact-pin package\.json/m);
+});

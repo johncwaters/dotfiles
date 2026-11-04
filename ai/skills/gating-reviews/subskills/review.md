@@ -47,7 +47,9 @@ and you re-run that proof in place of a confirming review.
 `node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings -`
 with `{liveFindings, unverifiedFindings, preexistingFailures, truncatedLanes, droppedUnproven}`
 on stdin, each finding `{severity, file, summary}`. A live or `UNVERIFIED` MEDIUM+ on any branch
-stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`.
+stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 (`BROWSER_CODE_FAILED`) means the
+repo ships third-party browser code that fails `/securing-browser-code`: fix each printed `FAIL` line as new
+work, then review again. In a repo `gh` names another owner for, at most 20 of the same lines land in `preexistingFailures`.
 
 A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
 overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review

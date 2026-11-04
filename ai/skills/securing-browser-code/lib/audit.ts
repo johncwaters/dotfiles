@@ -91,7 +91,7 @@ function hasCrossOriginScript(markup: string): boolean {
 }
 
 function readTrackedFiles(repoRoot: string): RepoListing {
-  const listing = runGitIn(repoRoot, ["ls-files", "-z"]);
+  const listing = runGitIn(repoRoot, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
   if (listing.code !== 0) throw new Error(`git ls-files failed in ${repoRoot}: ${listing.stderr.trim()}`);
   const trackedPaths = new Set(listing.stdout.split("\0").filter(Boolean));
   const files = [...trackedPaths].flatMap((trackedPath) => {
