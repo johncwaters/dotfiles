@@ -1185,6 +1185,7 @@ if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFi
   check "hook, workflow, landing, running-retros, releasing, capturing-ui, composing-social-images, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
 fi
 check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-brand/test/census.test.ts"
+check "securing-browser-code check tests pass" node --test "$topicDir/skills/securing-browser-code/test/check.test.ts"
 check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"
 check "designing-ui slop lint tests pass" node --test "$topicDir/skills/designing-ui/test/lint-slop.test.mjs"
 check "converging-reviews round tests pass" env PATH="$pathWithoutNpmStub" node --test "$topicDir/skills/converging-reviews/test/round.test.mjs"
