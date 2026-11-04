@@ -63,7 +63,7 @@ test("an unborn branch is READY and reports its branch name", () => {
   }
 });
 
-test("a conflicted merge left in progress is OPERATION_IN_PROGRESS", () => {
+test("a conflicted merge left in progress is OPERATION_IN_PROGRESS naming its unmerged files and the continue step", () => {
   const repo = makeRepo();
   try {
     commitFile(repo, "a.txt", "one\n");
@@ -76,6 +76,8 @@ test("a conflicted merge left in progress is OPERATION_IN_PROGRESS", () => {
     const { code, result } = preflight(repo);
     assert.equal(result.outcome, "OPERATION_IN_PROGRESS");
     assert.equal(result.operation, "MERGE_HEAD");
+    assert.deepEqual(result.unmerged, ["a.txt"]);
+    assert.deepEqual(result.next, { action: "rerun", script: "preflight.ts", after: "resolving a.txt by the sync path in recovery, then git merge --continue" });
     assert.equal(code, 12);
   } finally {
     cleanup(repo);

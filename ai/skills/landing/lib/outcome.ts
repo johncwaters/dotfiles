@@ -16,6 +16,7 @@ export const EXIT_CODES = {
   HOME_PATH_STAGED: 30,
   NOT_REVIEWED: 31,
   PROMOTE_WITHHELD: 32,
+  PUSH_WITHHELD: 33,
 } as const;
 
 export type OutcomeName = keyof typeof EXIT_CODES;
@@ -155,7 +156,10 @@ export const detachedHead = defineOutcome("DETACHED_HEAD", {}, () => ({ action: 
 
 export const operationInProgress = defineOutcome("OPERATION_IN_PROGRESS", {
   operation: required("string"),
-}, ({ operation }) => ({ action: "stop", report: `A ${operation} is in flight; nothing was written.` }));
+  unmerged: optional("stringList"),
+}, ({ operation, unmerged = [] }) => operation === "MERGE_HEAD"
+  ? { action: "rerun", script: "preflight.ts", after: `resolving ${unmerged.length > 0 ? unmerged.join(", ") : "the merge"} by the sync path in recovery, then git merge --continue` }
+  : { action: "stop", report: `A ${operation} is in flight; nothing was written.` });
 
 export const nothingToCommit = defineOutcome("NOTHING_TO_COMMIT", {
   pushed: optional("boolean"),
@@ -216,19 +220,25 @@ export const notReviewed = defineOutcome("NOT_REVIEWED", {
   stampTree: optional("string"),
 }, ({ gate }) => ({ action: "runGate", gate, then: "landing" }));
 
-export const promoteWithheld = defineOutcome("PROMOTE_WITHHELD", {
+const withheldFields = {
   commit: optional("string"),
   pushed: required("boolean"),
   promoted: required("stringList"),
   findings: required("stringList"),
-}, ({ findings }) => {
+};
+
+function reviewWithheldCommits({ findings }: { findings: string[] }): NextStep {
   const blockingFindings = findings.filter((finding) => !finding.startsWith("UNREVIEWED "));
   if (blockingFindings.length > 0) {
     return { action: "fixAndRerun", fix: "finding", items: blockingFindings };
   }
   const unreviewedCommits = findings.map((finding) => /^UNREVIEWED ([0-9a-f]+):/.exec(finding)?.[1]).filter((commit) => commit !== undefined).reverse();
   return { action: "runGate", gate: "gating-reviews", then: "landing", commits: unreviewedCommits };
-});
+}
+
+export const promoteWithheld = defineOutcome("PROMOTE_WITHHELD", withheldFields, reviewWithheldCommits);
+
+export const pushWithheld = defineOutcome("PUSH_WITHHELD", withheldFields, reviewWithheldCommits);
 
 export function emit(result: Result): never {
   process.stdout.write(`${JSON.stringify(result)}\n`);

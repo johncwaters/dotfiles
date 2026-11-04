@@ -7,6 +7,7 @@ Every result carries a typed `next`; do what it names. This file holds only the 
 - [A flagged file that belongs](#a-flagged-file-that-belongs)
 - [Conflict resolution](#conflict-resolution)
 - [Push and promote recovery](#push-and-promote-recovery)
+- [Syncing a pull request branch](#syncing-a-pull-request-branch)
 
 ## A flagged file that belongs
 
@@ -68,3 +69,13 @@ is main, master, develop, or the resolved mainline, or the push there is denied 
 the same failure survives two recovery passes; or when fixing would mean touching changes
 you cannot attribute.
 
+## Syncing a pull request branch
+
+A pushed pull request branch takes mainline by merge, never rebase, so it needs no force push.
+`git merge origin/<base>`, where base is the mainline, or in a stack the branch below once it
+pushed; sync a stack bottom-up, one landing per branch. On conflict, preflight's
+`OPERATION_IN_PROGRESS` names the `unmerged` files: resolve each as
+[Conflict resolution](#conflict-resolution) step 2 says, stage them, run
+`git merge --continue`, rerun preflight, then run `land.ts` with no message and the
+original flags. A merge git made cleanly pushes; a hand-resolved one comes back
+`PUSH_WITHHELD` until its review records it. Never hand the carbon unit a push script.

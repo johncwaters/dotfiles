@@ -44,6 +44,7 @@ const RAW_COMMIT_REASON =
   "Raw `git commit` and `git push` are denied outside /landing, so every landing commits a tree a review gate stamped. " +
   "Run the review gate (the intent's gate, else /gating-reviews), then /landing, which also commits without pushing (land.ts --no-push) when asked; /gating-reviews stamps a pure rename or a reviewer's suggestion applied verbatim without a review pass. " +
   "Never commit a WIP set-aside to integrate mainline: uncommitted work proceeds behind mainline, land.ts --promote rebases the landed commit onto it, and a conflict there resolves through landing recovery. " +
+  "Commits already made (a mainline sync's merge) push through /landing's land.ts with no message, which withholds any commit no review recorded. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
 const PKILL_SELF_MATCH_REASON =

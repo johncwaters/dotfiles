@@ -25,7 +25,7 @@ A stamp row over preflight's `paths`, carrying the findings left live or unverif
 
 ## Commits
 
-For `commits`, skip Preflight and the working-tree review. Invoke `/reviewing-code` with the base and head target `<oldest commit>^` and `HEAD`, and act on its findings as [Review](subskills/review.md) step 2 says: a fix lands through the [Steps](#steps) above as new work. Once step 2 leaves nothing to fix, run `node "$HOME/.claude/skills/landing/stamp.ts" clear`, which records the branch's commits as landed, then rerun `land.ts --promote` with no message.
+For `commits`, skip Preflight and the working-tree review. Invoke `/reviewing-code` with the base and head target `<oldest commit>^` and `HEAD`; a merge commit among them is reviewed as `<merge>^1..<merge>` over the files `git show --remerge-diff --name-only <merge>` lists, with that diff as context. Act on its findings as [Review](subskills/review.md) step 2 says: a fix lands through the [Steps](#steps) above as new work. Once step 2 leaves nothing to fix, run `node "$HOME/.claude/skills/landing/stamp.ts" clear`, which records the branch's commits and merges as landed, then rerun `land.ts` with no message and the withheld landing's flags.
 
 ## Preflight
 

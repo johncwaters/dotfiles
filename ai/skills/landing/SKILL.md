@@ -25,6 +25,10 @@ the stamp, `policy` (with `afterCommit` and `resolved.mainline`), and `remoteVis
 `matches: false` means no gate judged this tree: run the gate the stamp names, or
 `/gating-reviews`. `land.ts` stages exactly the stamp's paths.
 
+**Commits already made.** A clean tree with unpushed commits (a mainline sync's merge,
+a withheld landing) needs no stamp or message: after the Step 3 disclosure check, run
+`land.ts` with no message, and follow `PUSH_WITHHELD` like `PROMOTE_WITHHELD`.
+
 **No policy.** A missing `policy` field means the machine profile is unapplied or invalid;
 the warning names which. Run `land.ts` without `--promote`; an invalid policy also makes
 `land.ts` skip promotion itself. Report the warning; bootstrap is the carbon unit's to run.

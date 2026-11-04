@@ -27,6 +27,7 @@ import {
   promoteFailed,
   promoteWithheld,
   pushFailed,
+  pushWithheld,
   type Result,
 } from "./lib/outcome.ts";
 import {
@@ -49,6 +50,7 @@ import {
 import { repoRequiresSignoff } from "./lib/signoff.ts";
 import {
   branchBlockingFindings,
+  clearReviewStamps,
   clearStampLedger,
   commitsNotLandedSince,
   gateToRerun,
@@ -83,7 +85,8 @@ type FailureOutcome =
   | "PROMOTE_CONFLICT"
   | "PROMOTE_FAILED"
   | "MAINLINE_UNVERIFIED"
-  | "PROMOTE_WITHHELD";
+  | "PROMOTE_WITHHELD"
+  | "PUSH_WITHHELD";
 
 type DetachedRebase =
   | { rebasedTip: string; failure: null }
@@ -101,6 +104,10 @@ const PARKED_OUTCOMES = new Set<FailureOutcome>([
   "PROMOTE_FAILED",
   "MAINLINE_UNVERIFIED",
 ]);
+
+function unreviewedCommitFindings(git: Git, revisionArgs: string[]): string[] {
+  return commitsNotLandedSince(git, revisionArgs).map((commit) => `UNREVIEWED ${commit.slice(0, 12)}: not landed through land.ts`);
+}
 
 type Arguments = {
   promote: boolean;
@@ -311,6 +318,9 @@ class Landing {
     if (outcome === "PROMOTE_WITHHELD") {
       return promoteWithheld({ ...state, findings: this.withheldFindings });
     }
+    if (outcome === "PUSH_WITHHELD") {
+      return pushWithheld({ ...state, findings: this.withheldFindings });
+    }
     if (outcome === "NOTHING_TO_COMMIT") {
       return nothingToCommit({ pushed: this.pushed, promoted: this.promoted, warnings: this.warnings });
     }
@@ -506,6 +516,11 @@ class Landing {
       this.markFeaturePushed(branch);
       return null;
     }
+    const unreviewedFindings = unreviewedCommitFindings(this.git, ["HEAD", "--not", "--remotes"]);
+    if (unreviewedFindings.length > 0) {
+      this.withheldFindings = [...new Set([...this.withheldFindings, ...unreviewedFindings])];
+      return "PUSH_WITHHELD";
+    }
 
     const outcome = this.pushPendingRefs(pending, !target.hasUpstream, "PUSH_FAILED", target.remote);
     if (outcome) {
@@ -518,12 +533,16 @@ class Landing {
 
   private withholdPromotion(mainlineRef: string | null): FailureOutcome | null {
     const blockingFindings = branchBlockingFindings(this.git).map((finding) => `${finding.severity} ${finding.file}: ${finding.summary}`);
-    const unreviewedCommits = commitsNotLandedSince(this.git, mainlineRef).map((commit) => `UNREVIEWED ${commit.slice(0, 12)}: not landed through land.ts`);
+    const unreviewedCommits = unreviewedCommitFindings(this.git, [mainlineRef === null ? "HEAD" : `${mainlineRef}..HEAD`]);
     this.withheldFindings = [...blockingFindings, ...unreviewedCommits];
     if (this.withheldFindings.length === 0) {
       return null;
     }
-    return this.pushDeferredFeatureBranch() ?? "PROMOTE_WITHHELD";
+    const deferredPushOutcome = this.pushDeferredFeatureBranch();
+    if (deferredPushOutcome === null || deferredPushOutcome === "PUSH_WITHHELD") {
+      return "PROMOTE_WITHHELD";
+    }
+    return deferredPushOutcome;
   }
 
   private promote(): FailureOutcome | null {
@@ -595,10 +614,11 @@ class Landing {
 
     this.promoted.push(mainline);
     this.clearParkedBranch(featureBranch);
-    clearStampLedger(this.git);
     if (this.config.noPush) {
+      clearReviewStamps(this.git);
       return null;
     }
+    clearStampLedger(this.git);
     this.deleteMergedRemoteFeatureBranch(featureBranch, mainline);
     return null;
   }
@@ -658,6 +678,10 @@ class Landing {
 
     const pushOutcome = this.pushFeatureRef(featureBranch);
     if (!pushOutcome) {
+      return;
+    }
+    if (pushOutcome === "PUSH_WITHHELD") {
+      this.warnings.push(`promotion failed and the safety push of ${featureBranch} was withheld for review: ${this.withheldFindings.join("; ")}`);
       return;
     }
     this.warnings.push(`promotion failed and safety push of ${featureBranch} also failed`);

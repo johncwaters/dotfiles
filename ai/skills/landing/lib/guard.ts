@@ -25,9 +25,13 @@ export function repositoryGuard(git: Git): Result | null {
     return detachedHead({});
   }
   for (const marker of IN_PROGRESS_MARKERS) {
-    if (isOperationInProgress(git, marker)) {
-      return operationInProgress({ operation: marker });
+    if (!isOperationInProgress(git, marker)) {
+      continue;
     }
+    if (marker === "MERGE_HEAD") {
+      return operationInProgress({ operation: marker, unmerged: git.conflictingFilesIn(git.repo) });
+    }
+    return operationInProgress({ operation: marker });
   }
   return null;
 }

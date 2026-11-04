@@ -199,6 +199,25 @@ export class Git {
     }));
   }
 
+  mergesWithRemergeFiles(revisionArgs: string[]): { commit: string; parents: string[]; remergeFiles: string[] | null }[] {
+    const mergeLog = this.run(["log", "--merges", "--remerge-diff", "--name-only", "--format=%x00%H %P", ...revisionArgs]);
+    if (mergeLog.code !== 0) {
+      return nonEmptyLines(this.run(["rev-list", "--merges", "--parents", ...revisionArgs]).stdout).map((line) => {
+        const [commit = "", ...parents] = line.trim().split(" ");
+        return { commit, parents, remergeFiles: null };
+      });
+    }
+    return mergeLog.stdout.split("\0").filter((entry) => entry.trim() !== "").map((entry) => {
+      const [headerLine = "", ...fileLines] = nonEmptyLines(entry);
+      const [commit = "", ...parents] = headerLine.trim().split(" ");
+      return { commit, parents, remergeFiles: fileLines.map((line) => line.trim()) };
+    });
+  }
+
+  revListNewestFirst(revisionArgs: string[]): string[] {
+    return nonEmptyLines(this.run(["rev-list", ...revisionArgs]).stdout);
+  }
+
   revList(range: string): string[] {
     return nonEmptyLines(this.run(["rev-list", "--reverse", range]).stdout);
   }

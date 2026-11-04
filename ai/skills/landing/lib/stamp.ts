@@ -186,12 +186,23 @@ export function recordLandedCommit(git: Git, commit: string): void {
   fs.appendFileSync(landedFile, `${patchId}\n`);
 }
 
-export function commitsNotLandedSince(git: Git, baseRef: string | null): string[] {
+function readLandedEntries(git: Git): Set<string> {
   const landedFile = landedLedgerPath(git);
-  const landedPatchIds = new Set(fs.existsSync(landedFile) ? fs.readFileSync(landedFile, "utf8").split("\n").filter(Boolean) : []);
-  return [...git.patchIdsByCommit([baseRef === null ? "HEAD" : `${baseRef}..HEAD`])]
-    .filter(([, patchId]) => !landedPatchIds.has(patchId))
-    .map(([commit]) => commit);
+  return new Set(fs.existsSync(landedFile) ? fs.readFileSync(landedFile, "utf8").split("\n").filter(Boolean) : []);
+}
+
+function needsReview(merge: { parents: string[]; remergeFiles: string[] | null }): boolean {
+  return merge.remergeFiles === null || merge.parents.length > 2 || merge.remergeFiles.length > 0;
+}
+
+export function commitsNotLandedSince(git: Git, revisionArgs: string[]): string[] {
+  const landedEntries = readLandedEntries(git);
+  const unlandedCommits = new Set([...git.patchIdsByCommit(revisionArgs)].filter(([, patchId]) => !landedEntries.has(patchId)).map(([commit]) => commit));
+  for (const merge of git.mergesWithRemergeFiles(revisionArgs)) {
+    if (!landedEntries.has(merge.commit) && needsReview(merge)) unlandedCommits.add(merge.commit);
+  }
+  if (unlandedCommits.size === 0) return [];
+  return git.revListNewestFirst(revisionArgs).filter((commit) => unlandedCommits.has(commit));
 }
 
 export class BrowserCodeFailed extends Error {
@@ -266,13 +277,20 @@ export function branchBlockingFindings(git: Git): StampFinding[] {
 
 export function releaseBranch(git: Git, baseRef: string | null): void {
   fs.rmSync(stampLedgerPath(git), { force: true });
-  const branchPatchIds = [...git.patchIdsByCommit([baseRef === null ? "HEAD" : `${baseRef}..HEAD`]).values()];
-  if (branchPatchIds.length === 0) {
+  const branchRevisionArgs = [baseRef === null ? "HEAD" : `${baseRef}..HEAD`];
+  const branchPatchIds = [...git.patchIdsByCommit(branchRevisionArgs).values()];
+  const branchMerges = git.revListNewestFirst(["--merges", ...branchRevisionArgs]);
+  const landedEntries = [...branchPatchIds, ...branchMerges];
+  if (landedEntries.length === 0) {
     return;
   }
   const landedFile = landedLedgerPath(git);
   fs.mkdirSync(path.dirname(landedFile), { recursive: true });
-  fs.appendFileSync(landedFile, branchPatchIds.map((patchId) => `${patchId}\n`).join(""));
+  fs.appendFileSync(landedFile, landedEntries.map((entry) => `${entry}\n`).join(""));
+}
+
+export function clearReviewStamps(git: Git): void {
+  fs.rmSync(stampLedgerPath(git), { force: true });
 }
 
 export function clearStampLedger(git: Git): void {

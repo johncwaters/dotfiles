@@ -25,6 +25,7 @@ import {
   seedOrigin,
   SKILL_DIR,
   stamp,
+  tryGit,
   writeExecutable,
   writeFile,
   writeOriginHook,
@@ -642,6 +643,54 @@ test("a clean rerun with --no-push leaves an unpushed branch alone", () => {
     assert.equal(result.outcome, "NOTHING_TO_COMMIT");
     assert.equal(result.pushed, false);
     assert.notEqual(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
+  } finally {
+    cleanup(origin, repo);
+  }
+});
+
+test("a mainline sync pushes git's clean merge but withholds a hand-resolved merge until stamp.ts clear records its review", () => {
+  const origin = makeBareOrigin();
+  const repo = cloneRepo(origin);
+  const reviewGatesEnv = { REVIEW_GATES_DIR: reviewGatesDirectory(repo) };
+  try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+    commitFile(repo, "a.txt", "base\n");
+    commitFile(repo, "b.txt", "base\n");
+    runGit(repo, ["push", "-q", "-u", "origin", "main"]);
+    runGit(repo, ["switch", "-q", "-c", "feature"]);
+    commitFile(repo, "b.txt", "feature\n", "feature work");
+    runGit(repo, ["push", "-q", "-u", "origin", "feature"]);
+    const advanceMainline = (file: string, content: string) => {
+      runGit(repo, ["switch", "-q", "main"]);
+      commitFile(repo, file, content, `mainline ${file}`);
+      runGit(repo, ["push", "-q", "origin", "main"]);
+      runGit(repo, ["switch", "-q", "feature"]);
+    };
+
+    advanceMainline("a.txt", "mainline\n");
+    runGit(repo, ["merge", "-q", "--no-edit", "origin/main"]);
+    const cleanSync = landUnstamped(repo, [], "", reviewGatesEnv);
+    assert.equal(cleanSync.result.outcome, "NOTHING_TO_COMMIT");
+    assert.equal(cleanSync.result.pushed, true);
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
+
+    advanceMainline("b.txt", "mainline\n");
+    assert.notEqual(tryGit(repo, ["merge", "-q", "--no-edit", "origin/main"]), 0);
+    writeFile(repo, "b.txt", "resolved by hand\n");
+    runGit(repo, ["add", "b.txt"]);
+    runGit(repo, ["commit", "-q", "--no-edit"]);
+    const resolvedMerge = gitOutput(repo, ["rev-parse", "HEAD"]);
+    const withheldSync = landUnstamped(repo, [], "", reviewGatesEnv);
+    assert.equal(withheldSync.result.outcome, "PUSH_WITHHELD");
+    assert.equal(withheldSync.result.pushed, false);
+    assert.deepEqual(withheldSync.result.next, { action: "runGate", gate: "gating-reviews", then: "landing", commits: [resolvedMerge.slice(0, 12)] });
+    assert.notEqual(gitOutput(origin, ["rev-parse", "feature"]), resolvedMerge);
+
+    const clear = spawnSync("node", [path.join(SKILL_DIR, "stamp.ts"), "clear"], { cwd: repo, encoding: "utf8", env: { ...process.env, ...reviewGatesEnv } });
+    assert.equal(clear.status, 0, clear.stderr ?? "");
+    const reviewedSync = landUnstamped(repo, [], "", reviewGatesEnv);
+    assert.equal(reviewedSync.result.outcome, "NOTHING_TO_COMMIT");
+    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), resolvedMerge);
   } finally {
     cleanup(origin, repo);
   }
