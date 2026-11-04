@@ -25,7 +25,10 @@ function runCheck(repoDirectory: string): { exitCode: number | null; output: str
 }
 
 test("a repo with no browser SDK and no cross-origin script is skipped", () => {
-  const repoDirectory = createRepo({ "package.json": JSON.stringify({ dependencies: { "posthog-node": "^5.0.0" } }) });
+  const repoDirectory = createRepo({
+    "package.json": JSON.stringify({ dependencies: { "posthog-node": "^5.0.0" } }),
+    "test/snippet.test.ts": `t.createElement("script"); p.src=s.api_host+"/static/array.js"; <script src="https://cdn.example.com/x.js"></script>`,
+  });
   const { exitCode, output } = runCheck(repoDirectory);
   assert.equal(exitCode, 0, output);
   assert.match(output, /skipped: no third-party browser code/);
@@ -38,6 +41,11 @@ test("a browser SDK repo fails each unmet practice, and a reasoned waiver clears
     "examples/demo/package-lock.json": "{}",
     "examples/demo/pnpm-lock.yaml": "",
     ".github/workflows/ci.yml": "steps:\n  - run: npm install\n  - run: npm install -g vercel\n",
+    "public/index.html": [
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'">`,
+      `<script src="https://cdn.example.com/widget.js"></script>`,
+      `<script src="https://cdn.example.com/pinned.js" integrity="sha384-abc" crossorigin="anonymous"></script>`,
+    ].join("\n"),
     ".browser-sdk-waivers.json": JSON.stringify([
       { check: "exact-pin", paths: "examples/**", reason: "docs samples track the latest minor" },
       { check: "lockfile", paths: "package.json" },
@@ -53,4 +61,36 @@ test("a browser SDK repo fails each unmet practice, and a reasoned waiver clears
   assert.match(output, /FAIL frozen-install \.github\/workflows\/ci\.yml:2 "npm install"/);
   assert.doesNotMatch(output, /ci\.yml:3/);
   assert.match(output, /FAIL waiver-reason \.browser-sdk-waivers\.json entry 2/);
+  assert.match(output, /FAIL script-integrity public\/index\.html:2 cross-origin script lacks integrity and crossorigin/);
+  assert.doesNotMatch(output, /index\.html:3/);
+  assert.match(output, /FAIL csp-unsafe public\/index\.html:1 script-src grants 'unsafe-inline'/);
+});
+
+test("a PostHog snippet install with only a report-only policy fails integrity and CSP", () => {
+  const repoDirectory = createRepo({
+    "src/layout.html": [
+      `<link rel="stylesheet" href="https://cdn.example.com/x.css" integrity="sha384-abc" crossorigin="anonymous">`,
+      ...Array.from({ length: 60 }, () => "<p>filler paragraph that pushes the stylesheet out of the snippet's reach</p>"),
+      `<script>!function(t,e){(p=t.createElement("script")).src=s.api_host+"/static/array.js"}(document,window.posthog||[]);</script>`,
+    ].join("\n"),
+    "_headers": "/*\n  Content-Security-Policy-Report-Only: script-src 'self'\n",
+    "server/app.js": `app.use(helmet({ contentSecurityPolicy: { reportOnly: true, directives: { scriptSrc: ["'self'"] } } }));`,
+    "docs/csp.mdx": "Configure a Content-Security-Policy header to allow PostHog.",
+  });
+  const { exitCode, output } = runCheck(repoDirectory);
+  assert.equal(exitCode, 1, output);
+  assert.match(output, /FAIL script-integrity src\/layout\.html:62 PostHog snippet loads its loader without subresource integrity/);
+  assert.match(output, /FAIL csp-missing _headers:2 the Content-Security-Policy is report-only/);
+});
+
+test("a policy built in a variable is judged by its script-src, not by an earlier script-src-elem", () => {
+  const repoDirectory = createRepo({
+    "package.json": JSON.stringify({ dependencies: { "posthog-js": "1.400.0" } }),
+    "src/middleware.ts": [
+      "const cspHeader = `default-src 'self'; script-src-elem 'self'; script-src 'self' 'unsafe-eval';`;",
+      "response.headers.set('Content-Security-Policy', cspHeader);",
+    ].join("\n"),
+  });
+  const { output } = runCheck(repoDirectory);
+  assert.match(output, /FAIL csp-unsafe src\/middleware\.ts:2 script-src grants 'unsafe-eval'/);
 });

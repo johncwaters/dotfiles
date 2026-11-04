@@ -16,6 +16,9 @@ Fix each failure in the target repo as ordinary work under that repo's review ga
 - `exact-pin`: every direct dependency in every `package.json` names one version. Install with `--save-exact` and commit `"save-exact": true` in `.npmrc`, so a later install keeps it.
 - `lockfile`: one committed lockfile covers each `package.json`. Keep the lockfile of the package manager CI and deploy use and delete the other.
 - `frozen-install`: CI and deploy install from the lockfile as is: `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`, `bun install --frozen-lockfile`. It reads GitHub workflows and composite actions, `.gitlab-ci.yml`, `netlify.toml`, `vercel.json`, and Dockerfiles; a repo with no install command in any of them fails, because the platform default may rewrite the lockfile.
+- `script-integrity`: a cross-origin `<script src>` carries `integrity` and `crossorigin`, or the code is bundled. A PostHog snippet install (`/static/array.js` or `loader.js`) uses the snippet from posthog-js 1.445.0 or later with the pinned hashes from its `integrity.json`; an npm install needs neither.
+- `csp-missing`: each package shipping browser code is covered by an enforced `Content-Security-Policy`, declared inside that package or in a root `netlify.toml`, `vercel.json`, or `_headers`. A `Content-Security-Policy-Report-Only` alone fails, since it blocks nothing.
+- `csp-unsafe`: `script-src` (or `default-src` without one) grants neither `'unsafe-eval'` nor a bare `'unsafe-inline'`. Inline scripts get a per-response nonce or a sha256 hash; `'unsafe-inline'` beside one is ignored by browsers and passes.
 - `waiver-reason`: a waiver needs a reason a reviewer can judge.
 
 ## Waivers

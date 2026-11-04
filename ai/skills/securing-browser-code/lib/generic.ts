@@ -153,3 +153,164 @@ const FROZEN_INSTALL_FIX_BY_MANAGER: Record<string, string> = {
 function frozenInstallFor(manager: string): string {
   return FROZEN_INSTALL_FIX_BY_MANAGER[manager] ?? "use the package manager's frozen install";
 }
+
+const MARKUP_EXTENSIONS = new Set([".html", ".htm", ".astro", ".vue", ".svelte", ".jsx", ".tsx", ".hbs", ".ejs", ".njk", ".liquid", ".php", ".erb"]);
+const SCRIPT_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
+const TEST_DIRECTORY_NAMES = new Set(["test", "tests", "__tests__", "spec", "fixtures", "__fixtures__", "node_modules"]);
+const TEST_FILE_PATTERN = /\.(?:test|spec)\.[^/]+$/;
+const MAX_SCRIPT_TAG_CHARACTERS = 2048;
+const SCRIPT_TAG_OPENING = "<script";
+const CROSS_ORIGIN_SRC_PATTERN = /\bsrc\s*=\s*\{?\s*["'`]?(?:https?:)?\/\//i;
+const INTEGRITY_ATTRIBUTE_PATTERN = /\bintegrity\s*=/i;
+const CROSSORIGIN_ATTRIBUTE_PATTERN = /\bcross[oO]rigin\b/i;
+const POSTHOG_SNIPPET_PATTERN = /\/static\/(?:\d+\/)?(?:array|loader)\.js\b/;
+const SCRIPT_ELEMENT_CREATION_PATTERN = /createElement\(\s*["'`]script["'`]\s*\)/;
+const SNIPPET_WINDOW_CHARACTERS = 2048;
+const POLICY_HEADER_PATTERN = /Content-Security-Policy(?:-Report-Only)?\b|\bcontentSecurityPolicy\b(?!\s*:\s*false)/g;
+const REPORT_ONLY_PATTERN = /^Content-Security-Policy-Report-Only|reportOnly\s*:\s*true/;
+const MAX_POLICY_CHARACTERS = 2048;
+const ROOT_DEPLOY_CONFIG_NAMES = new Set(["netlify.toml", "vercel.json", "_headers"]);
+const NONCE_OR_HASH_PATTERN = /'(?:nonce-|sha(?:256|384|512)-)/i;
+
+type ScriptTag = { text: string; offset: number };
+type PolicyDeclaration = { path: string; line: number; isReportOnly: boolean; policyText: string; fileText: string };
+
+function isTestOrFixture(filePath: string): boolean {
+  return TEST_FILE_PATTERN.test(filePath) || filePath.split("/").slice(0, -1).some((directoryName) => TEST_DIRECTORY_NAMES.has(directoryName));
+}
+
+function extensionOf(filePath: string): string {
+  return path.posix.extname(filePath).toLowerCase();
+}
+
+export function crossOriginScriptTags(file: TrackedFile): ScriptTag[] {
+  if (!MARKUP_EXTENSIONS.has(extensionOf(file.path)) || isTestOrFixture(file.path)) return [];
+  return scriptTagsIn(file.text).filter((tag) => CROSS_ORIGIN_SRC_PATTERN.test(tag.text));
+}
+
+export function hasPosthogSnippet(file: TrackedFile): boolean {
+  return posthogSnippetOffset(file) !== -1;
+}
+
+function posthogSnippetOffset(file: TrackedFile): number {
+  const extension = extensionOf(file.path);
+  const isPageSource = MARKUP_EXTENSIONS.has(extension) || SCRIPT_EXTENSIONS.has(extension);
+  if (!isPageSource || isTestOrFixture(file.path) || !SCRIPT_ELEMENT_CREATION_PATTERN.test(file.text)) return -1;
+  return file.text.search(POSTHOG_SNIPPET_PATTERN);
+}
+
+function scriptTagsIn(markup: string): ScriptTag[] {
+  const lowercaseMarkup = markup.toLowerCase();
+  const tags: ScriptTag[] = [];
+  let tagStart = lowercaseMarkup.indexOf(SCRIPT_TAG_OPENING);
+  while (tagStart !== -1) {
+    const nextTagStart = lowercaseMarkup.indexOf(SCRIPT_TAG_OPENING, tagStart + 1);
+    const tagEnd = markup.indexOf(">", tagStart);
+    const scanEnd = Math.min(tagEnd === -1 ? markup.length : tagEnd, nextTagStart === -1 ? markup.length : nextTagStart, tagStart + MAX_SCRIPT_TAG_CHARACTERS);
+    tags.push({ text: markup.slice(tagStart, scanEnd), offset: tagStart });
+    tagStart = nextTagStart;
+  }
+  return tags;
+}
+
+function lineAt(text: string, offset: number): number {
+  let lineNumber = 1;
+  for (let index = text.indexOf("\n"); index !== -1 && index < offset; index = text.indexOf("\n", index + 1)) lineNumber += 1;
+  return lineNumber;
+}
+
+export function findMissingIntegrity(files: TrackedFile[]): CheckFailure[] {
+  const tagFailures = files.flatMap((file) =>
+    crossOriginScriptTags(file).flatMap((tag) => {
+      const missingAttributes = [
+        INTEGRITY_ATTRIBUTE_PATTERN.test(tag.text) ? null : "integrity",
+        CROSSORIGIN_ATTRIBUTE_PATTERN.test(tag.text) ? null : "crossorigin",
+      ].filter((attribute) => attribute !== null);
+      if (missingAttributes.length === 0) return [];
+      return [{
+        check: "script-integrity" as const,
+        path: file.path,
+        line: lineAt(file.text, tag.offset),
+        problem: `cross-origin script lacks ${missingAttributes.join(" and ")}`,
+        fix: 'bundle the script, or pin its exact URL and add integrity="sha384-..." crossorigin="anonymous"',
+      }];
+    }),
+  );
+  const snippetFailures = files.flatMap((file) => {
+    const snippetOffset = posthogSnippetOffset(file);
+    if (snippetOffset === -1) return [];
+    const snippetWindow = file.text.slice(Math.max(0, snippetOffset - SNIPPET_WINDOW_CHARACTERS), snippetOffset + SNIPPET_WINDOW_CHARACTERS);
+    if (INTEGRITY_ATTRIBUTE_PATTERN.test(snippetWindow)) return [];
+    return [{
+      check: "script-integrity" as const,
+      path: file.path,
+      line: lineAt(file.text, snippetOffset),
+      problem: "PostHog snippet loads its loader without subresource integrity",
+      fix: "install posthog-js from npm, or use the snippet from posthog-js 1.445.0 or later with the pinned loader.js and array.js hashes from its integrity.json",
+    }];
+  });
+  return [...tagFailures, ...snippetFailures];
+}
+
+export function findCspProblems(files: TrackedFile[], browserCodeDirectories: string[]): CheckFailure[] {
+  const policyFiles = files.filter(canDeclarePolicy);
+  return browserCodeDirectories.flatMap((directory) => {
+    const declarations = policyFiles.filter((file) => coversDirectory(file.path, directory)).flatMap(policyDeclarations);
+    const enforcedDeclarations = declarations.filter((declaration) => !declaration.isReportOnly);
+    if (enforcedDeclarations.length > 0) return enforcedDeclarations.flatMap(unsafeScriptSourceFailure);
+    const reportOnlyDeclaration = declarations[0];
+    return [{
+      check: "csp-missing" as const,
+      path: reportOnlyDeclaration?.path ?? directory,
+      ...(reportOnlyDeclaration === undefined ? {} : { line: reportOnlyDeclaration.line }),
+      problem: reportOnlyDeclaration === undefined ? "no Content-Security-Policy covers the browser code here" : "the Content-Security-Policy is report-only, so it blocks nothing",
+      fix: "send an enforced Content-Security-Policy header (netlify.toml, _headers, vercel.json, or server code) or a <meta http-equiv> tag, with script-src and connect-src listing only the origins the page needs",
+    }];
+  });
+}
+
+function canDeclarePolicy(file: TrackedFile): boolean {
+  if (isTestOrFixture(file.path)) return false;
+  const extension = extensionOf(file.path);
+  return ROOT_DEPLOY_CONFIG_NAMES.has(path.posix.basename(file.path)) || MARKUP_EXTENSIONS.has(extension) || SCRIPT_EXTENSIONS.has(extension);
+}
+
+function coversDirectory(filePath: string, directory: string): boolean {
+  if (directory === "." || filePath.startsWith(`${directory}/`)) return true;
+  return path.posix.dirname(filePath) === "." && ROOT_DEPLOY_CONFIG_NAMES.has(filePath);
+}
+
+function policyDeclarations(file: TrackedFile): PolicyDeclaration[] {
+  return [...file.text.matchAll(POLICY_HEADER_PATTERN)].map((match) => {
+    const policyText = file.text.slice(match.index, match.index + MAX_POLICY_CHARACTERS);
+    return { path: file.path, line: lineAt(file.text, match.index), isReportOnly: REPORT_ONLY_PATTERN.test(policyText), policyText, fileText: file.text };
+  });
+}
+
+function unsafeScriptSourceFailure(declaration: PolicyDeclaration): CheckFailure[] {
+  const scriptSources = directiveSources(declaration, ["script-src", "scriptSrc"]) ?? directiveSources(declaration, ["default-src", "defaultSrc"]);
+  const location = { check: "csp-unsafe" as const, path: declaration.path, line: declaration.line };
+  if (scriptSources === null) {
+    return [{ ...location, problem: "the policy sets neither script-src nor default-src, so scripts load from anywhere", fix: "add script-src listing only the origins the page needs" }];
+  }
+  const elementSources = directiveSources(declaration, ["script-src-elem", "scriptSrcElem"]) ?? scriptSources;
+  const grantsUnsafeEval = scriptSources.includes("'unsafe-eval'");
+  const grantsUnsafeInline = [scriptSources, elementSources].some((sources) => sources.includes("'unsafe-inline'") && !NONCE_OR_HASH_PATTERN.test(sources));
+  const grants = [grantsUnsafeInline ? "'unsafe-inline'" : null, grantsUnsafeEval ? "'unsafe-eval'" : null].filter((grant) => grant !== null);
+  if (grants.length === 0) return [];
+  return [{ ...location, problem: `script-src grants ${grants.join(" and ")}`, fix: "drop it; allow inline scripts with a per-response nonce or a sha256 hash, and replace code that needs eval" }];
+}
+
+function directiveSources(declaration: PolicyDeclaration, directiveNames: string[]): string | null {
+  const directivePatterns = directiveNames.flatMap((directiveName) => [
+    new RegExp(`\\b${directiveName}\\s([^;"\`\\n]*)`, "i"),
+    new RegExp(`["']?\\b${directiveName}["']?\\s*:\\s*\\[([^\\]]*)\\]`),
+  ]);
+  for (const searchedText of [declaration.policyText, declaration.fileText]) {
+    for (const directivePattern of directivePatterns) {
+      const sources = directivePattern.exec(searchedText)?.[1];
+      if (sources !== undefined) return sources;
+    }
+  }
+  return null;
+}

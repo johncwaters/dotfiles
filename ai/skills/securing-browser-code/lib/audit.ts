@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Git, type GitResult } from "../../landing/lib/git.ts";
-import { findLockfileProblems, findUnfrozenInstalls, findUnpinnedDependencies } from "./generic.ts";
+import {
+  crossOriginScriptTags,
+  findCspProblems,
+  findLockfileProblems,
+  findMissingIntegrity,
+  findUnfrozenInstalls,
+  findUnpinnedDependencies,
+  hasPosthogSnippet,
+} from "./generic.ts";
 import { posthogModule } from "./sdk/posthog.ts";
 
 export type CheckId =
@@ -32,27 +40,26 @@ type Waiver = { check: string; paths: string; reason: string };
 const SDK_MODULES: SdkModule[] = [posthogModule];
 const WAIVER_FILE = ".browser-sdk-waivers.json";
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
-const MAX_SCRIPT_TAG_CHARACTERS = 2048;
-const SCRIPT_TAG_OPENING = "<script";
-const CROSS_ORIGIN_SRC_PATTERN = /\bsrc\s*=\s*\{?\s*["'`]?(?:https?:)?\/\//i;
 const REPOSITORY_OVERRIDE_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES"];
 const DEPENDENCY_FIELDS = ["devDependencies", "optionalDependencies", "dependencies"];
 const NPM_ALIAS_TARGET_PATTERN = /^npm:((?:@[^/@]+\/)?[^@]+)@/;
-const MARKUP_EXTENSIONS = new Set([".html", ".htm", ".astro", ".vue", ".svelte", ".jsx", ".tsx", ".hbs", ".ejs", ".njk", ".liquid", ".php", ".erb"]);
 
 export function auditBrowserCode(repoRoot: string): AuditReport {
   const { trackedPaths, files } = readTrackedFiles(repoRoot);
   const manifests = readPackageManifests(files);
   const dependencyNames = new Set(manifests.flatMap((manifest) => Object.entries(manifest.dependencies).flatMap(installedPackageNames)));
   const usedModules = SDK_MODULES.filter((sdkModule) => sdkModule.packages.some((packageName) => usesPackage(dependencyNames, packageName)));
-  const loadsCrossOriginScript = files.some((file) => isMarkupFile(file.path) && hasCrossOriginScript(file.text));
-  if (usedModules.length === 0 && !loadsCrossOriginScript) {
+  const usedPackageNames = usedModules.flatMap((sdkModule) => sdkModule.packages);
+  const pageFilesLoadingThirdPartyScripts = files.filter((file) => crossOriginScriptTags(file).length > 0 || hasPosthogSnippet(file));
+  if (usedModules.length === 0 && pageFilesLoadingThirdPartyScripts.length === 0) {
     return { applies: false, sdks: [], failures: [], waived: [] };
   }
   const failures = [
     ...findUnpinnedDependencies(manifests),
     ...findLockfileProblems(manifests, trackedPaths),
     ...findUnfrozenInstalls(files),
+    ...findMissingIntegrity(files),
+    ...findCspProblems(files, browserCodeDirectories(manifests, usedPackageNames, pageFilesLoadingThirdPartyScripts)),
     ...usedModules.flatMap((sdkModule) => sdkModule.check?.(files) ?? []),
   ];
   const { waivers, waiverFailures } = readWaivers(files);
@@ -61,13 +68,27 @@ export function auditBrowserCode(repoRoot: string): AuditReport {
   return { applies: true, sdks: usedModules.map((sdkModule) => sdkModule.name), failures: [...unwaived, ...waiverFailures], waived };
 }
 
+function browserCodeDirectories(manifests: PackageManifest[], usedPackageNames: string[], pageFiles: TrackedFile[]): string[] {
+  const manifestDirectories = new Set(manifests.map((manifest) => path.posix.dirname(manifest.path)));
+  const sdkDirectories = manifests
+    .filter((manifest) => {
+      const installedNames = new Set(Object.entries(manifest.dependencies).flatMap(installedPackageNames));
+      return usedPackageNames.some((packageName) => usesPackage(installedNames, packageName));
+    })
+    .map((manifest) => path.posix.dirname(manifest.path));
+  const pageDirectories = pageFiles.map((file) => nearestManifestDirectory(file.path, manifestDirectories));
+  return [...new Set([...sdkDirectories, ...pageDirectories])];
+}
+
+function nearestManifestDirectory(filePath: string, manifestDirectories: Set<string>): string {
+  let directory = path.posix.dirname(filePath);
+  while (directory !== "." && !manifestDirectories.has(directory)) directory = path.posix.dirname(directory);
+  return directory;
+}
+
 export function formatFailure(failure: CheckFailure): string {
   const location = failure.line === undefined ? failure.path : `${failure.path}:${failure.line}`;
   return `FAIL ${failure.check} ${location} ${failure.problem}. Fix: ${failure.fix}`;
-}
-
-function isMarkupFile(filePath: string): boolean {
-  return MARKUP_EXTENSIONS.has(path.posix.extname(filePath).toLowerCase());
 }
 
 export function runGitIn(directory: string, gitArguments: string[]): GitResult {
@@ -75,19 +96,6 @@ export function runGitIn(directory: string, gitArguments: string[]): GitResult {
     Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined && !REPOSITORY_OVERRIDE_VARIABLES.includes(entry[0])),
   );
   return new Git(directory).run(gitArguments, { env: environment, replacesInheritedEnv: true });
-}
-
-function hasCrossOriginScript(markup: string): boolean {
-  const lowercaseMarkup = markup.toLowerCase();
-  let tagStart = lowercaseMarkup.indexOf(SCRIPT_TAG_OPENING);
-  while (tagStart !== -1) {
-    const nextTagStart = lowercaseMarkup.indexOf(SCRIPT_TAG_OPENING, tagStart + 1);
-    const tagEnd = markup.indexOf(">", tagStart);
-    const scanEnd = Math.min(tagEnd === -1 ? markup.length : tagEnd, nextTagStart === -1 ? markup.length : nextTagStart, tagStart + MAX_SCRIPT_TAG_CHARACTERS);
-    if (CROSS_ORIGIN_SRC_PATTERN.test(markup.slice(tagStart, scanEnd))) return true;
-    tagStart = nextTagStart;
-  }
-  return false;
 }
 
 function readTrackedFiles(repoRoot: string): RepoListing {
