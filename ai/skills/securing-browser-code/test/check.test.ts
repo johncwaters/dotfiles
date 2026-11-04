@@ -41,6 +41,9 @@ test("a browser SDK repo fails each unmet practice, and a reasoned waiver clears
     "examples/demo/package-lock.json": "{}",
     "examples/demo/pnpm-lock.yaml": "",
     ".github/workflows/ci.yml": "steps:\n  - run: npm install\n  - run: npm install -g vercel\n",
+    "src/analytics.ts": `posthog.init("phc_public", { api_host: "https://us.i.posthog.com" });`,
+    "src/bundled.ts": `posthog.init("phc_public", { disable_external_dependency_loading: true });`,
+    "src/admin.ts": `const personalKey = "phx_${"a1B2".repeat(10)}";`,
     "public/index.html": [
       `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'">`,
       `<script src="https://cdn.example.com/widget.js"></script>`,
@@ -64,6 +67,10 @@ test("a browser SDK repo fails each unmet practice, and a reasoned waiver clears
   assert.match(output, /FAIL script-integrity public\/index\.html:2 cross-origin script lacks integrity and crossorigin/);
   assert.doesNotMatch(output, /index\.html:3/);
   assert.match(output, /FAIL csp-unsafe public\/index\.html:1 script-src grants 'unsafe-inline'/);
+  assert.match(output, /FAIL runtime-loading src\/analytics\.ts:1 /);
+  assert.doesNotMatch(output, /src\/bundled\.ts/);
+  assert.match(output, /FAIL secret-literal src\/admin\.ts:1 a posthog secret \(phx_a1B2\.\.\.\) is committed/);
+  assert.doesNotMatch(output, /a1B2a1B2a1B2/);
 });
 
 test("a PostHog snippet install with only a report-only policy fails integrity and CSP", () => {
@@ -93,4 +100,31 @@ test("a policy built in a variable is judged by its script-src, not by an earlie
   });
   const { output } = runCheck(repoDirectory);
   assert.match(output, /FAIL csp-unsafe src\/middleware\.ts:2 script-src grants 'unsafe-eval'/);
+});
+
+test("PostHog runtime loading is judged per init, through options by reference, wrappers, and Nuxt config", () => {
+  const repoDirectory = createRepo({
+    "package.json": JSON.stringify({ dependencies: { "posthog-js": "1.450.0", "@posthog/nuxt": "1.0.0" } }),
+    "src/two-inits.ts": `posthog.init("phc_a", { disable_external_dependency_loading: true });\nposthog.init("phc_b", { api_host: "x" });`,
+    "src/commented.ts": `// TODO set disable_external_dependency_loading: true\nposthog.init("phc_c", { api_host: "x" });`,
+    "src/options.ts": `export const posthogOptions = { disable_external_dependency_loading: true };`,
+    "src/by-reference.ts": `import { posthogOptions } from "./options";\nposthog.init(KEY, posthogOptions);`,
+    "src/renamed.ts": `import ph from "posthog-js";\nph.init("phc_d", { api_host: "x" });`,
+    "src/provider.tsx": `<PostHogProvider options={{ before_send: (event) => event }} apiKey={key}>`,
+    "src/sample.ts": `posthog.init(\n  "<ph_project_api_key>",\n  { api_host: "x" },\n);`,
+    "nuxt.config.ts": `export default defineNuxtConfig({ posthogConfig: { publicKey: "phc_x", clientConfig: {} } });`,
+  });
+  const { output } = runCheck(repoDirectory);
+  const runtimeFailures = output.split("\n").filter((line) => line.startsWith("FAIL runtime-loading")).map((line) => line.split(" ")[2]);
+  assert.deepEqual(runtimeFailures.sort(), ["nuxt.config.ts:1", "src/commented.ts:2", "src/provider.tsx:1", "src/renamed.ts:2", "src/two-inits.ts:2"]);
+});
+
+test("a committed personal key fails even in a repo with no browser code", () => {
+  const repoDirectory = createRepo({
+    "package.json": JSON.stringify({ dependencies: { "posthog-node": "5.0.0" } }),
+    "scripts/sync.ts": `const personalKey = "phx_${"a1B2".repeat(10)}";`,
+  });
+  const { exitCode, output } = runCheck(repoDirectory);
+  assert.equal(exitCode, 1, output);
+  assert.match(output, /FAIL secret-literal scripts\/sync\.ts:1 a posthog secret/);
 });

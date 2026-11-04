@@ -19,6 +19,8 @@ Fix each failure in the target repo as ordinary work under that repo's review ga
 - `script-integrity`: a cross-origin `<script src>` carries `integrity` and `crossorigin`, or the code is bundled. A PostHog snippet install (`/static/array.js` or `loader.js`) uses the snippet from posthog-js 1.445.0 or later with the pinned hashes from its `integrity.json`; an npm install needs neither.
 - `csp-missing`: each package shipping browser code is covered by an enforced `Content-Security-Policy`, declared inside that package or in a root `netlify.toml`, `vercel.json`, or `_headers`. A `Content-Security-Policy-Report-Only` alone fails, since it blocks nothing.
 - `csp-unsafe`: `script-src` (or `default-src` without one) grants neither `'unsafe-eval'` nor a bare `'unsafe-inline'`. Inline scripts get a per-response nonce or a sha256 hash; `'unsafe-inline'` beside one is ignored by browsers and passes.
+- `runtime-loading` (posthog): `posthog.init` or a `<PostHogProvider apiKey>` passes `disable_external_dependency_loading: true`, and the app imports the extensions it uses (`posthog-js/dist/recorder`, surveys, ...) so they ship in the bundle instead of loading from the CDN.
+- `secret-literal`: no SDK secret (a PostHog `phx_` personal key, ...) is committed outside tests and `.example` files. Revoke a committed one first, since it stays in git history, then read its replacement from a server-side environment variable.
 - `waiver-reason`: a waiver needs a reason a reviewer can judge.
 
 ## Waivers

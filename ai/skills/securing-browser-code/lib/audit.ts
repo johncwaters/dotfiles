@@ -6,6 +6,7 @@ import {
   findCspProblems,
   findLockfileProblems,
   findMissingIntegrity,
+  findSecretLiterals,
   findUnfrozenInstalls,
   findUnpinnedDependencies,
   hasPosthogSnippet,
@@ -51,8 +52,9 @@ export function auditBrowserCode(repoRoot: string): AuditReport {
   const usedModules = SDK_MODULES.filter((sdkModule) => sdkModule.packages.some((packageName) => usesPackage(dependencyNames, packageName)));
   const usedPackageNames = usedModules.flatMap((sdkModule) => sdkModule.packages);
   const pageFilesLoadingThirdPartyScripts = files.filter((file) => crossOriginScriptTags(file).length > 0 || hasPosthogSnippet(file));
+  const secretFailures = findSecretLiterals(files, SDK_MODULES);
   if (usedModules.length === 0 && pageFilesLoadingThirdPartyScripts.length === 0) {
-    return { applies: false, sdks: [], failures: [], waived: [] };
+    return { applies: secretFailures.length > 0, sdks: [], ...applyWaivers(secretFailures, files) };
   }
   const failures = [
     ...findUnpinnedDependencies(manifests),
@@ -60,12 +62,17 @@ export function auditBrowserCode(repoRoot: string): AuditReport {
     ...findUnfrozenInstalls(files),
     ...findMissingIntegrity(files),
     ...findCspProblems(files, browserCodeDirectories(manifests, usedPackageNames, pageFilesLoadingThirdPartyScripts)),
+    ...secretFailures,
     ...usedModules.flatMap((sdkModule) => sdkModule.check?.(files) ?? []),
   ];
+  return { applies: true, sdks: usedModules.map((sdkModule) => sdkModule.name), ...applyWaivers(failures, files) };
+}
+
+function applyWaivers(failures: CheckFailure[], files: TrackedFile[]): { failures: CheckFailure[]; waived: CheckFailure[] } {
   const { waivers, waiverFailures } = readWaivers(files);
   const waived = failures.filter((failure) => waivers.some((waiver) => waiverCovers(waiver, failure)));
   const unwaived = failures.filter((failure) => !waived.includes(failure));
-  return { applies: true, sdks: usedModules.map((sdkModule) => sdkModule.name), failures: [...unwaived, ...waiverFailures], waived };
+  return { failures: [...unwaived, ...waiverFailures], waived };
 }
 
 function browserCodeDirectories(manifests: PackageManifest[], usedPackageNames: string[], pageFiles: TrackedFile[]): string[] {

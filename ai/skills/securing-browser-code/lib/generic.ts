@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { CheckFailure, PackageManifest, TrackedFile } from "./audit.ts";
+import type { CheckFailure, PackageManifest, SdkModule, TrackedFile } from "./audit.ts";
 
 const LOCKFILE_NAMES = ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"];
 const EXACT_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -175,7 +175,7 @@ const NONCE_OR_HASH_PATTERN = /'(?:nonce-|sha(?:256|384|512)-)/i;
 type ScriptTag = { text: string; offset: number };
 type PolicyDeclaration = { path: string; line: number; isReportOnly: boolean; policyText: string; fileText: string };
 
-function isTestOrFixture(filePath: string): boolean {
+export function isTestOrFixture(filePath: string): boolean {
   return TEST_FILE_PATTERN.test(filePath) || filePath.split("/").slice(0, -1).some((directoryName) => TEST_DIRECTORY_NAMES.has(directoryName));
 }
 
@@ -213,7 +213,7 @@ function scriptTagsIn(markup: string): ScriptTag[] {
   return tags;
 }
 
-function lineAt(text: string, offset: number): number {
+export function lineAt(text: string, offset: number): number {
   let lineNumber = 1;
   for (let index = text.indexOf("\n"); index !== -1 && index < offset; index = text.indexOf("\n", index + 1)) lineNumber += 1;
   return lineNumber;
@@ -313,4 +313,25 @@ function directiveSources(declaration: PolicyDeclaration, directiveNames: string
     }
   }
   return null;
+}
+
+const SECRET_SCAN_EXCLUDED_PATTERN = /(?:^|\/)\.env\.example$|\.example(?:\.[^/]+)?$|\.(?:md|mdx|lock)$|(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
+
+export function findSecretLiterals(files: TrackedFile[], sdkModules: SdkModule[]): CheckFailure[] {
+  const scannedFiles = files.filter((file) => !isTestOrFixture(file.path) && !SECRET_SCAN_EXCLUDED_PATTERN.test(file.path));
+  return sdkModules.flatMap((sdkModule) =>
+    sdkModule.secretLiterals.flatMap((secretPattern) =>
+      scannedFiles.flatMap((file) => {
+        const match = new RegExp(secretPattern.source, secretPattern.flags.replace("g", "")).exec(file.text);
+        if (match === null) return [];
+        return [{
+          check: "secret-literal" as const,
+          path: file.path,
+          line: lineAt(file.text, match.index),
+          problem: `a ${sdkModule.name} secret (${match[0].slice(0, 8)}...) is committed`,
+          fix: "revoke it now, since it is in git history, then read the replacement from a server-side environment variable",
+        }];
+      }),
+    ),
+  );
 }
