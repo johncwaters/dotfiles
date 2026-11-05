@@ -157,13 +157,8 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     if (Object.hasOwn(value, "isConstraint") && typeof value.isConstraint !== "boolean") {
       addError(errors, 1, subject, "set isConstraint to a boolean or omit it");
     }
-    if (value.source === "read") {
-      if (typeof value.evidence !== "string" || !/^\S(?:.*\S)?:[1-9]\d*$/.test(value.evidence)) {
-        addError(errors, 1, subject, "supply evidence as file:line for a read decision");
-      }
-      return;
-    }
-    if (Object.hasOwn(value, "evidence")) addError(errors, 1, subject, "omit evidence unless source is read");
+    const hasLineEvidence = typeof value.evidence === "string" && /^\S(?:.*\S)?:[1-9]\d*$/.test(value.evidence);
+    if (value.source === "read" && !hasLineEvidence) addError(errors, 1, subject, "supply evidence as file:line for a read decision");
     return;
   }
   if (nodeKind === "design") {
