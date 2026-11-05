@@ -3,9 +3,12 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import v8 from "node:v8";
 import { allow, COMMAND_START, COMMAND_WRAPPERS, denyPreToolUse, isAttendedMainLoopCall, nearestExistingDirectory, readPayload } from "./hook-io.mjs";
 import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
 import { specsDirectory } from "../skills/specifying/lib/spec-store.ts";
+
+v8.setFlagsFromString("--enable-experimental-regexp-engine");
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const SPEC_GATE_MARKER = "[spec-gate]";
@@ -20,10 +23,46 @@ const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+
 const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
 const SHELL_WORD_ON_LINE = /(?:^|[;&|(\s])(?:\S*\/)?(?:(?:ba|z|da|k)?sh|eval)(?=$|[\s;&|)])/;
 const HEREDOC = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1([^\n]*\n)([\s\S]*?\n)?([ \t]*\2[ \t]*(?=\n|$))/g;
-const PKILL_CALL = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(?:\S*/)?pkill\s+([^;&|\n]*)`, "gm");
+const PATTERN_KILL_CALL = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(?:\S*/)?(pkill|pgrep)((?:\s+(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s;&|)\x60'"\\])+)*)`, "gm");
+const KILL_COMMAND_WORD = /(?:^|[\s;&|({\x60])(?:\S*\/)?kill(?=$|[\s;&|)\x60])/m;
 const PKILL_FULL_FLAG = /^(?:--full|-[A-Za-z]*f[A-Za-z]*)$/;
+const CASE_INSENSITIVE_OPTION = /^(?:--ignore-case|-[A-Za-z]*i[A-Za-z]*)$/;
+const SIGNAL_OPTION = /^-(?:\d+|[A-Z][A-Z0-9+-]+)$/;
+const VALUE_TAKING_SHORT_OPTIONS = new Set("dgGPstuUFr");
+const VALUE_TAKING_LONG_OPTION = /^--(?:delimiter|signal|group|pgroup|parent|session|terminal|euid|uid|pidfile|runstates|ns|nslist|cgroup|env)$/;
 const QUOTE_AWARE_WORD = /(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"])+/g;
+const SHELL_WORD_PART = /'([^']*)'|"((?:\\.|[^"\\])*)"|\\(.)|([^'"\\]+)/gs;
+const SINGLE_QUOTED_LITERAL = /(?<![$\\])'[^']*'/g;
+const REDIRECTION_OPERATOR_WORD = /^(?:\d*|&)[<>][<>&|]*$/;
+const REDIRECTION_WORD = /^(?:\d*|&)[<>]/;
+const SHELL_EXPANSION = /\$[\w{('"]|\x60/;
 const BRACKET_CLASS = /\[[^\]]+\]/;
+const POSIX_CHARACTER_CLASS = /\[:([a-z]+):\]/y;
+const JAVASCRIPT_RANGE_BY_POSIX_CLASS = new Map([
+  ["alpha", "a-zA-Z"],
+  ["digit", "0-9"],
+  ["alnum", "a-zA-Z0-9"],
+  ["upper", "A-Z"],
+  ["lower", "a-z"],
+  ["space", "\\s"],
+  ["blank", " \\t"],
+  ["xdigit", "0-9A-Fa-f"],
+  ["punct", "!-\\/:-@\\[-`{-~"],
+  ["cntrl", "\\x00-\\x1f\\x7f"],
+  ["print", "\\x20-\\x7e"],
+  ["graph", "\\x21-\\x7e"],
+]);
+const JAVASCRIPT_ESCAPE_BY_ERE_ESCAPE = new Map([
+  ["<", "\\b"],
+  [">", "\\b"],
+  ["w", "\\w"],
+  ["W", "\\W"],
+  ["s", "\\s"],
+  ["S", "\\S"],
+  ["b", "\\b"],
+  ["B", "\\B"],
+]);
+const ERE_LITERAL_ESCAPES = new Set(".[]{}()*+?^$|\\/");
 const OUTPUT_REDIRECT = /(?:^|[^<>&\d=-])(?:\d|&)?>>?(?![&>(=])[ \t]*([^\s;&|()<>]*)/g;
 const FILE_WRITING_COMMAND = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(?:\S*/)?(tee|sed|perl|ruby|patch|git${GIT_GLOBAL_OPTIONS}\s+apply)(?=\s|$)([^;&|\n]*)`, "gm");
 const FIND_EXEC_EDIT = /-(?:exec|execdir|ok|okdir)\s+(?:\S*\/)?(sed|perl|ruby)(?=\s)([^;&|\n]*)/g;
@@ -47,9 +86,9 @@ const RAW_COMMIT_REASON =
   "Commits already made (a mainline sync's merge) push through /landing's land.ts with no message, which withholds any commit no review recorded. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
-const PKILL_SELF_MATCH_REASON =
-  "pkill -f matches full command lines, and this Bash call's own shell carries the same pattern, so it kills itself. " +
-  "Run pgrep -f '<pattern>' and kill the PIDs it prints, or bracket one character ('[n]ode server') so the pattern no longer matches its own text.";
+const KILL_SELF_MATCH_REASON =
+  "A kill by pattern (pkill -f, or pgrep -f feeding kill) matches full command lines, and this pattern matches text in this same Bash call, which its own shell carries, so the call kills itself. " +
+  "Run the kill in its own Bash call with one character of the pattern bracketed ('[n]ode server'), so the pattern no longer matches its own text.";
 
 const SPEC_GATE_REASON =
   `${SPEC_GATE_MARKER} This is the first repo edit in a session that never ran /specifying. ` +
@@ -132,17 +171,131 @@ function maskSingleQuotedText(command) {
   return maskedCommand;
 }
 
-function isSelfMatchingPkill(pkillArguments) {
-  const words = pkillArguments.match(QUOTE_AWARE_WORD) ?? [];
-  if (!words.some((word) => PKILL_FULL_FLAG.test(word))) return false;
-  const patternText = words.filter((word) => !word.startsWith("-")).join(" ");
-  return patternText !== "" && !BRACKET_CLASS.test(patternText);
+function optionTakesNextWord(optionWord) {
+  if (SIGNAL_OPTION.test(optionWord)) return false;
+  if (optionWord.startsWith("--")) return VALUE_TAKING_LONG_OPTION.test(optionWord);
+  const optionLetters = [...optionWord.slice(1)];
+  return optionLetters.findIndex((letter) => VALUE_TAKING_SHORT_OPTIONS.has(letter)) === optionLetters.length - 1;
 }
 
-function guardPkillSelfMatch(command) {
-  for (const pkillCall of command.matchAll(PKILL_CALL)) {
-    if (isSelfMatchingPkill(pkillCall[1])) denyPreToolUse(PKILL_SELF_MATCH_REASON);
+function patternKillArguments(argumentText) {
+  const words = argumentText.match(QUOTE_AWARE_WORD) ?? [];
+  const optionWords = [];
+  const operandWords = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    if (REDIRECTION_OPERATOR_WORD.test(word)) {
+      index += 1;
+      continue;
+    }
+    if (REDIRECTION_WORD.test(word)) continue;
+    if (!word.startsWith("-") || word === "-") {
+      operandWords.push(word);
+      continue;
+    }
+    optionWords.push(word);
+    if (optionTakesNextWord(word)) index += 1;
   }
+  return { optionWords, patternWord: operandWords[0] ?? "" };
+}
+
+function unquotedShellWord(word) {
+  return [...word.matchAll(SHELL_WORD_PART)]
+    .map(([, singleQuoted, doubleQuoted, escapedCharacter, bareText]) => singleQuoted ?? doubleQuoted?.replace(/\\([$`"\\\n])/g, "$1") ?? escapedCharacter ?? bareText)
+    .join("");
+}
+
+function javascriptBracketExpression(erePattern, openingIndex, foldCase) {
+  let index = openingIndex + 1;
+  let javascriptClass = "[";
+  if (erePattern[index] === "^") {
+    javascriptClass += "^";
+    index += 1;
+  }
+  if (erePattern[index] === "]") {
+    javascriptClass += "\\]";
+    index += 1;
+  }
+  while (index < erePattern.length && erePattern[index] !== "]") {
+    POSIX_CHARACTER_CLASS.lastIndex = index;
+    const posixClass = POSIX_CHARACTER_CLASS.exec(erePattern);
+    if (posixClass !== null) {
+      const javascriptRange = JAVASCRIPT_RANGE_BY_POSIX_CLASS.get(posixClass[1]);
+      if (javascriptRange === undefined) return null;
+      javascriptClass += foldCase(javascriptRange);
+      index += posixClass[0].length;
+      continue;
+    }
+    if (erePattern[index] === "[" && "=.".includes(erePattern[index + 1] ?? "]")) return null;
+    javascriptClass += "\\[]^".includes(erePattern[index]) ? `\\${erePattern[index]}` : foldCase(erePattern[index]);
+    index += 1;
+  }
+  if (index >= erePattern.length) return null;
+  return { javascriptClass: `${javascriptClass}]`, nextIndex: index + 1 };
+}
+
+function javascriptPatternFromEre(erePattern, foldCase) {
+  let javascriptPattern = "";
+  let index = 0;
+  while (index < erePattern.length) {
+    const character = erePattern[index];
+    if (character === "[") {
+      const bracketExpression = javascriptBracketExpression(erePattern, index, foldCase);
+      if (bracketExpression === null) return null;
+      javascriptPattern += bracketExpression.javascriptClass;
+      index = bracketExpression.nextIndex;
+      continue;
+    }
+    if (character !== "\\") {
+      javascriptPattern += foldCase(character);
+      index += 1;
+      continue;
+    }
+    const escapedCharacter = erePattern[index + 1] ?? "";
+    const javascriptEscape = JAVASCRIPT_ESCAPE_BY_ERE_ESCAPE.get(escapedCharacter) ?? (ERE_LITERAL_ESCAPES.has(escapedCharacter) ? `\\${escapedCharacter}` : null);
+    if (javascriptEscape === null) return null;
+    javascriptPattern += javascriptEscape;
+    index += 2;
+  }
+  return javascriptPattern;
+}
+
+function linearTimeRegexOrNull(patternWord, foldCase) {
+  if (SHELL_EXPANSION.test(patternWord.replace(SINGLE_QUOTED_LITERAL, ""))) return null;
+  const javascriptPattern = javascriptPatternFromEre(unquotedShellWord(patternWord), foldCase);
+  if (javascriptPattern === null) return null;
+  try {
+    return new RegExp(javascriptPattern, "ls");
+  } catch {
+    return null;
+  }
+}
+
+function processCommandLinesOf(command) {
+  const snapshotPath = path.join(os.homedir(), ".claude", "shell-snapshots", "snapshot-bash-0-0.sh");
+  const workingDirectoryFilePath = path.join(process.env.CLAUDE_CODE_TMPDIR || os.tmpdir(), "claude-0000-cwd");
+  const evalQuotedCommand = command.replaceAll("'", `'"'"'`);
+  const claudeCodeBashToolShell = `/bin/bash -c source ${snapshotPath} 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'which'; \\builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && eval '${evalQuotedCommand}' && pwd -P >| ${workingDirectoryFilePath}`;
+  return [command, claudeCodeBashToolShell];
+}
+
+function isSelfMatchingKill(argumentText, command) {
+  const { optionWords, patternWord } = patternKillArguments(argumentText);
+  if (patternWord === "" || !optionWords.some((word) => PKILL_FULL_FLAG.test(word))) return false;
+  const isCaseInsensitive = optionWords.some((word) => CASE_INSENSITIVE_OPTION.test(word));
+  const foldCase = isCaseInsensitive ? (text) => text.toLowerCase() : (text) => text;
+  const pattern = linearTimeRegexOrNull(patternWord, foldCase);
+  if (pattern === null) return !BRACKET_CLASS.test(patternWord);
+  return processCommandLinesOf(command).some((commandLine) => pattern.test(foldCase(commandLine)));
+}
+
+function guardKillSelfMatch(command) {
+  const isKillInCall = KILL_COMMAND_WORD.test(command);
+  const killArgumentTexts = new Set();
+  for (const [, toolName, argumentText] of command.matchAll(PATTERN_KILL_CALL)) {
+    if (toolName === "pkill" || isKillInCall) killArgumentTexts.add(argumentText);
+  }
+  if ([...killArgumentTexts].some((argumentText) => isSelfMatchingKill(argumentText, command))) denyPreToolUse(KILL_SELF_MATCH_REASON);
 }
 
 async function guardRawCommit(command, transcriptPath) {
@@ -333,7 +486,7 @@ async function main() {
   if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
   if (!isAttendedMainLoopCall(payload) || !fs.existsSync(payload.transcript_path)) allow();
   const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
-  if (payload.tool_name === "Bash") guardPkillSelfMatch(String(toolInput.command || ""));
+  if (payload.tool_name === "Bash") guardKillSelfMatch(String(toolInput.command || ""));
   if (payload.tool_name === "Bash") await guardSpecFirstForBash(String(toolInput.command || ""), sessionDirectory, payload.transcript_path);
   if (EDIT_TOOLS.has(payload.tool_name)) await guardSpecFirst(String(toolInput.file_path || ""), payload.transcript_path);
   allow();

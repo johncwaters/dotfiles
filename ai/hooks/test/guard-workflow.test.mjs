@@ -102,14 +102,47 @@ test("git commit or push inside quoted search text or a literal heredoc body is 
   }
 });
 
-test("pkill -f with a pattern that matches its own shell is denied", () => {
+test("a kill by a pattern that matches its own Bash call is denied", () => {
   const transcriptPath = writeTranscript([prompt("stop the server")]);
-  for (const command of ['pkill -f "node server.js"', "pkill -9 -f vite", "sleep 1; pkill -fx vite"]) {
+  for (const command of [
+    'pkill -f "node server.js"',
+    "pkill -9 -f vite",
+    "sleep 1; pkill -fx vite",
+    "kill $(pgrep -f vite)",
+    "kill -9 `pgrep -f vite`",
+    "pgrep -f vite | xargs -r kill",
+    "npm run dev & sleep 1; pkill -f '[n]pm run dev'",
+    "node bin/glimmervoid.ts packs preview & sleep 2; kill $(pgrep -f 'glimmervoid.ts [p]acks preview')",
+    "pkill -f 'vite('",
+    "pgrep -f 'vite|esbuild' | xargs kill",
+    "pgrep -f vite | grep -v grep | xargs kill",
+    "for pid in $(pgrep -f vite); do kill $pid; done",
+    "pkill -f '\\<vite\\>'",
+    'node server.js & sleep 1; pkill -f "node\\s+server"',
+    "true zzqvite & sleep 1; pkill -fi '[Z]ZQVITE'",
+    "true zzqvite\nsleep 1\npkill -f '[z]zqvite.*[s]leep'",
+    "pkill -f $'vite'",
+    "pkill -f '[s]hell-snapshots'",
+  ]) {
     const { decision, reason } = decisionFor(bashCall(command, transcriptPath));
     assert.equal(decision, "deny", command);
-    assert.match(reason, /pgrep/);
+    assert.match(reason, /its own Bash call/);
   }
-  for (const command of ["pkill -f '[v]ite'", "pkill -f '[n]ode server'", 'pkill -f "[n]ode server"', "pkill vite", "pgrep -f vite"]) {
+  for (const command of [
+    "pkill -f '[v]ite'",
+    "pkill -f '[n]ode server'",
+    'pkill -f "[n]ode server"',
+    "pkill -f '[v]ite' 2>/dev/null",
+    "pkill -f '[v]ite' > /dev/null 2>&1",
+    "pkill -f '[v]ite' -u john",
+    "pkill -HUP -f '[v]ite'",
+    "kill $(pgrep -f '[v]ite')",
+    "pgrep -f '[v]ite' | xargs kill",
+    "pkill -f '[v]ite('",
+    `pkill -f '(a+)+[b]'; echo ${"a".repeat(40)}`,
+    "pkill vite",
+    "pgrep -f vite",
+  ]) {
     assert.equal(decisionFor(bashCall(command, transcriptPath)).decision, "allow", command);
   }
 });
