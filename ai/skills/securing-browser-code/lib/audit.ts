@@ -11,7 +11,9 @@ import {
   findUnfrozenInstalls,
   findUnpinnedDependencies,
   hasPosthogSnippet,
+  parseJson,
 } from "./generic.ts";
+import { probeLiveCsp } from "./live.ts";
 import { clerkModule } from "./sdk/clerk.ts";
 import { convexModule } from "./sdk/convex.ts";
 import { posthogModule } from "./sdk/posthog.ts";
@@ -41,7 +43,7 @@ export type SdkModule = {
   check?(files: TrackedFile[]): CheckFailure[];
 };
 type RepoListing = { trackedPaths: Set<string>; files: TrackedFile[] };
-export type AuditReport = { applies: boolean; sdks: string[]; failures: CheckFailure[]; waived: CheckFailure[] };
+export type AuditReport = { applies: boolean; sdks: string[]; failures: CheckFailure[]; waived: CheckFailure[]; liveNotes: string[] };
 type Waiver = { check: string; paths: string; reason: string };
 
 const SDK_MODULES: SdkModule[] = [posthogModule, stripeModule, clerkModule, supabaseModule, convexModule];
@@ -51,7 +53,7 @@ const REPOSITORY_OVERRIDE_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FI
 const DEPENDENCY_FIELDS = ["devDependencies", "optionalDependencies", "dependencies"];
 const NPM_ALIAS_TARGET_PATTERN = /^npm:((?:@[^/@]+\/)?[^@]+)@/;
 
-export function auditBrowserCode(repoRoot: string): AuditReport {
+export function auditBrowserCode(repoRoot: string, mayProbeLiveSites: () => boolean = () => true): AuditReport {
   const { trackedPaths, files } = readTrackedFiles(repoRoot);
   const manifests = readPackageManifests(files);
   const dependencyNames = new Set(manifests.flatMap((manifest) => Object.entries(manifest.dependencies).flatMap(installedPackageNames)));
@@ -60,18 +62,19 @@ export function auditBrowserCode(repoRoot: string): AuditReport {
   const pageFilesLoadingThirdPartyScripts = files.filter((file) => crossOriginScriptTags(file).length > 0 || hasPosthogSnippet(file));
   const secretFailures = [...findSecretLiterals(files, SDK_MODULES), ...findPublicSecrets(files, SDK_MODULES)];
   if (usedModules.length === 0 && pageFilesLoadingThirdPartyScripts.length === 0) {
-    return { applies: secretFailures.length > 0, sdks: [], ...applyWaivers(secretFailures, files) };
+    return { applies: secretFailures.length > 0, sdks: [], ...applyWaivers(secretFailures, files), liveNotes: [] };
   }
+  const directoriesShippingBrowserCode = browserCodeDirectories(manifests, usedPackageNames, pageFilesLoadingThirdPartyScripts);
   const failures = [
     ...findUnpinnedDependencies(manifests),
     ...findLockfileProblems(manifests, trackedPaths),
     ...findUnfrozenInstalls(files),
     ...findMissingIntegrity(files),
-    ...findCspProblems(files, browserCodeDirectories(manifests, usedPackageNames, pageFilesLoadingThirdPartyScripts)),
+    ...findCspProblems(files, directoriesShippingBrowserCode),
     ...secretFailures,
     ...usedModules.flatMap((sdkModule) => sdkModule.check?.(files) ?? []),
   ];
-  return { applies: true, sdks: usedModules.map((sdkModule) => sdkModule.name), ...applyWaivers(failures, files) };
+  return { applies: true, sdks: usedModules.map((sdkModule) => sdkModule.name), ...applyWaivers(failures, files), liveNotes: probeLiveCsp(files, directoriesShippingBrowserCode, mayProbeLiveSites) };
 }
 
 function applyWaivers(failures: CheckFailure[], files: TrackedFile[]): { failures: CheckFailure[]; waived: CheckFailure[] } {
@@ -143,14 +146,6 @@ function readPackageManifests(files: TrackedFile[]): PackageManifest[] {
       const dependencies: Record<string, string> = Object.assign({}, ...DEPENDENCY_FIELDS.map((field) => stringRecord(manifestFields[field])));
       return [{ path: file.path, dependencies }];
     });
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 function stringRecord(value: unknown): Record<string, string> {

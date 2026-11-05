@@ -287,7 +287,7 @@ function policyDeclarations(file: TrackedFile): PolicyDeclaration[] {
   });
 }
 
-function unsafeScriptSourceFailure(declaration: PolicyDeclaration): CheckFailure[] {
+export function unsafeScriptSourceFailure(declaration: PolicyDeclaration): CheckFailure[] {
   const scriptSources = directiveSources(declaration, ["script-src", "scriptSrc"]) ?? directiveSources(declaration, ["default-src", "defaultSrc"]);
   const location = { check: "csp-unsafe" as const, path: declaration.path, line: declaration.line };
   if (scriptSources === null) {
@@ -358,4 +358,12 @@ export function findPublicSecrets(files: TrackedFile[], sdkModules: SdkModule[])
       }];
     });
   });
+}
+
+export function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }

@@ -31,6 +31,7 @@ if (!report.applies) {
 for (const failure of report.failures) process.stdout.write(`${formatFailure(failure)}\n`);
 const sdkSummary = report.sdks.length > 0 ? report.sdks.join(", ") : "none";
 process.stdout.write(`${report.failures.length} failing, ${report.waived.length} waived; SDK modules: ${sdkSummary}\n`);
+for (const liveNote of report.liveNotes) process.stdout.write(`${liveNote}\n`);
 process.exit(report.failures.length > 0 ? 1 : 0);
 
 function auditOrExit(repoRoot: string): AuditReport {

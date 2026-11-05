@@ -933,7 +933,7 @@ function restoreGatesDirectory(previousGatesDirectory: string | undefined): void
   process.env.REVIEW_GATES_DIR = previousGatesDirectory;
 }
 
-test("a review gate refuses to stamp an untracked browser-code failure in an owned repo or when gh cannot tell, and records it for another org's repo", (context) => {
+test("a review gate refuses to stamp an untracked browser-code failure in an owned repo or when gh cannot tell, records it for another org's repo, and only notes a live CSP miss", (context) => {
   const repo = makeRepo();
   const ghStubDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "commit-skill-gh-"));
   const previousPath = process.env.PATH;
@@ -943,6 +943,7 @@ test("a review gate refuses to stamp an untracked browser-code failure in an own
   });
   commitFile(repo, "base.txt", "base\n", "init");
   writeFile(repo, "package.json", JSON.stringify({ dependencies: { "posthog-js": "^1.400.0" } }));
+  writeFile(repo, ".browser-sdk-sites.json", JSON.stringify(["http://127.0.0.1:9/"]));
 
   const ownedRefusal = stamp(repo, ["package.json"]);
   assert.equal(ownedRefusal.code, 30, ownedRefusal.stderr);
@@ -958,4 +959,13 @@ test("a review gate refuses to stamp an untracked browser-code failure in an own
   const orgStamp = stamp(repo, ["package.json"]);
   assert.equal(orgStamp.code, 0, orgStamp.stderr);
   assert.match((orgStamp.result.preexistingFailures as string[]).join("\n"), /^browser-code: FAIL exact-pin package\.json/m);
+  assert.doesNotMatch((orgStamp.result.preexistingFailures as string[]).join("\n"), /live-csp/);
+
+  runGit(repo, ["remote", "remove", "origin"]);
+  writeFile(repo, "package.json", JSON.stringify({ dependencies: { "posthog-js": "1.400.0" } }));
+  writeFile(repo, "package-lock.json", "{}");
+  writeFile(repo, "netlify.toml", `[build]\n  command = "npm ci"\n[[headers]]\n  for = "/*"\n  [headers.values]\n    Content-Security-Policy = "script-src 'self'"\n`);
+  const ownedLiveNoteStamp = stamp(repo, ["package.json", "package-lock.json", "netlify.toml", ".browser-sdk-sites.json"]);
+  assert.equal(ownedLiveNoteStamp.code, 0, ownedLiveNoteStamp.stderr);
+  assert.match((ownedLiveNoteStamp.result.preexistingFailures as string[]).join("\n"), /^browser-code: NOTE live-csp http:\/\/127\.0\.0\.1:9\/ could not be reached \(refused the private address 127\.0\.0\.1\)/m);
 });

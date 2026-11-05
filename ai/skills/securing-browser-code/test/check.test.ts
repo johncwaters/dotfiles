@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,8 +20,8 @@ function createRepo(filesByPath: Record<string, string>): string {
   return repoDirectory;
 }
 
-function runCheck(repoDirectory: string): { exitCode: number | null; output: string } {
-  const run = spawnSync(process.execPath, [CHECK_SCRIPT, repoDirectory], { encoding: "utf8" });
+function runCheck(repoDirectory: string, extraEnvironment: Record<string, string> = {}): { exitCode: number | null; output: string } {
+  const run = spawnSync(process.execPath, [CHECK_SCRIPT, repoDirectory], { encoding: "utf8", env: { ...process.env, ...extraEnvironment } });
   return { exitCode: run.status, output: run.stdout + run.stderr };
 }
 
@@ -155,4 +156,24 @@ test("Stripe, Clerk, Supabase, and Convex secrets fail when committed or given a
   assert.match(output, /FAIL public-secret src\/vue\.ts:1 VUE_APP_STRIPE_SECRET_KEY/);
   assert.match(output, /FAIL secret-literal src\/supabase\.ts:1 a supabase secret/);
   assert.doesNotMatch(output, /supabase-anon|server\/billing/);
+});
+
+test("a site that serves no CSP header gets a live note even when the repo declares an enforced policy, without changing the exit code", async (context) => {
+  const site = spawn(process.execPath, ["-e", `require("node:http").createServer((request, response) => response.end("<p>hi</p>")).listen(0, "127.0.0.1", function () { console.log(this.address().port); });`]);
+  context.after(() => site.kill());
+  const [portLine] = await once(site.stdout, "data");
+  const repoDirectory = createRepo({
+    "package.json": JSON.stringify({ dependencies: { "posthog-js": "1.400.0" } }),
+    "package-lock.json": "{}",
+    "netlify.toml": [
+      `[build]\n  base = "site"\n  command = "npm ci && npm run build"`,
+      `[[headers]]\n  for = "/*"\n  [headers.values]\n    Content-Security-Policy = "default-src 'self'; script-src 'self'"`,
+    ].join("\n"),
+    "src/analytics.ts": `posthog.init("phc_public", { disable_external_dependency_loading: true });`,
+    ".browser-sdk-sites.json": JSON.stringify([`http://127.0.0.1:${String(portLine).trim()}/docs`]),
+  });
+  const { exitCode, output } = runCheck(repoDirectory, { SECURING_BROWSER_CODE_ALLOWS_LOOPBACK: "1" });
+  assert.equal(exitCode, 0, output);
+  assert.match(output, /^0 failing/m);
+  assert.match(output, /^NOTE live-csp http:\/\/127\.0\.0\.1:\d+\/ serves no Content-Security-Policy header/m);
 });

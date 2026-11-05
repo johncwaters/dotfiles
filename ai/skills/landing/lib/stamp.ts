@@ -102,16 +102,22 @@ function isReviewGate(gate: string): boolean {
   return (REVIEW_GATES as readonly string[]).includes(gate);
 }
 
-function browserCodeFailureLines(git: Git): string[] {
+type Ownership = { isOwned: boolean; lookupFailed: boolean };
+
+function browserCodeAudit(git: Git, ownership: () => Ownership): { failureLines: string[]; liveNotes: string[] } {
   const repoRoot = git.run(["rev-parse", "--show-toplevel"]).stdout.trim();
-  return auditBrowserCode(repoRoot).failures.map(formatFailure);
+  const report = auditBrowserCode(repoRoot, () => ownership().isOwned);
+  return { failureLines: report.failures.map(formatFailure), liveNotes: report.liveNotes };
 }
 
-function blocksBrowserCodeFailures(git: Git): boolean {
+function resolveOwnership(git: Git): Ownership {
   const origin = readGithubRemote(git);
   const resolution = resolveAfterCommit(origin);
-  const ownershipLookupFailed = origin.repositoryName !== null && resolution.warning !== undefined;
-  return resolution.mode === "promote" || ownershipLookupFailed;
+  return { isOwned: resolution.mode === "promote", lookupFailed: origin.repositoryName !== null && resolution.warning !== undefined };
+}
+
+function blocksBrowserCodeFailures({ isOwned, lookupFailed }: Ownership): boolean {
+  return isOwned || lookupFailed;
 }
 
 function browserCodeNotes(failureLines: string[]): string[] {
@@ -244,11 +250,13 @@ export function writeStamp(git: Git, gate: StampGate, paths: string[], findings:
   if (tree === null) {
     throw new Error(`could not pin the tree over ${paths.join(", ")}`);
   }
-  const browserCodeFailures = isReviewGate(gate) ? browserCodeFailureLines(git) : [];
-  if (browserCodeFailures.length > 0 && blocksBrowserCodeFailures(git)) {
-    throw new BrowserCodeFailed(browserCodeFailures);
+  let resolvedOwnership: Ownership | undefined;
+  const ownership = () => (resolvedOwnership ??= resolveOwnership(git));
+  const { failureLines, liveNotes } = isReviewGate(gate) ? browserCodeAudit(git, ownership) : { failureLines: [], liveNotes: [] };
+  if (failureLines.length > 0 && blocksBrowserCodeFailures(ownership())) {
+    throw new BrowserCodeFailed(failureLines);
   }
-  const preexistingFailures = [...findings.preexistingFailures, ...browserCodeNotes(browserCodeFailures)];
+  const preexistingFailures = [...findings.preexistingFailures, ...browserCodeNotes([...failureLines, ...liveNotes])];
   const prefix = git.run(["rev-parse", "--show-prefix"]).stdout.trim();
   const row: StampRow = { v: 1, at: new Date().toISOString(), gate, head: git.revParseHead(), tree, paths, prefix, ...findings, preexistingFailures };
   const ledgerFile = stampLedgerPath(git);

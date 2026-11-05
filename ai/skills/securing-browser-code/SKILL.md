@@ -24,6 +24,10 @@ Fix each failure in the target repo as ordinary work under that repo's review ga
 - `public-secret`: no server-only SDK secret's env name (`STRIPE_SECRET_KEY`, `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CONVEX_DEPLOY_KEY`, `POSTHOG_PERSONAL_API_KEY`, ...) carries a client prefix (`NEXT_PUBLIC_`, `VITE_`, `PUBLIC_`, `EXPO_PUBLIC_`, ...), which inlines it into the browser bundle. Rename it, read it only in server code, and rotate it if a build shipped it.
 - `waiver-reason`: a waiver needs a reason a reviewer can judge.
 
+## Live check
+
+A declared policy counts only once the host reads the file declaring it, so the audit also fetches each deployed site's root and prints `NOTE live-csp <url> ...` when it serves no enforced policy or one `csp-unsafe` would fail. The exit code and gate blocking follow failures alone, since a fix cannot be served before it lands; gates probe only repos the carbon unit owns, since any checkout can name the URL, and record notes on the stamp. The probe refuses loopback, private, and link-local addresses on every redirect hop. Sites come from a tracked `.browser-sdk-sites.json` (a JSON array of URLs; `[]` turns the probe off), else from an `astro.config` `site`, the `homepage` of a `package.json` shipping browser code, or a `CNAME`.
+
 ## Waivers
 
 A deliberate exception goes in a tracked `.browser-sdk-waivers.json` at the repo root, reviewed like code:
@@ -39,4 +43,5 @@ A deliberate exception goes in a tracked `.browser-sdk-waivers.json` at the repo
 - `check.ts`: the audit CLI the gates and the carbon unit run.
 - `lib/audit.ts`: lists tracked files once, picks the SDK modules a repo uses, runs every check, applies waivers.
 - `lib/generic.ts`: the checks every repo with third-party browser code gets.
+- `lib/live.ts`: finds the deployed sites and judges the policy each one serves.
 - `lib/sdk/`: one module per SDK: its packages, secret env names, secret literal patterns, and any SDK-specific check.
