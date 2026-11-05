@@ -73,7 +73,7 @@ you cannot attribute.
 
 A repo skill for syncing or stacking (one running `gh stack sync`, say), cleared by the
 `opening-prs` Trust rule, owns the sync and its push. A rebase whose conflicts you resolved by
-hand runs the `/gating-reviews` `commits` path over that layer before the skill's tool pushes it. Otherwise a pushed pull request branch
+hand goes through the `/gating-reviews` `commits` path over that layer before the skill's tool pushes it. Otherwise a pushed pull request branch
 takes mainline by merge, so it needs no force push.
 `git merge origin/<base>`, where base is the mainline, or in a stack the branch below once it
 pushed; sync a stack bottom-up, one landing per branch. On conflict, preflight's
