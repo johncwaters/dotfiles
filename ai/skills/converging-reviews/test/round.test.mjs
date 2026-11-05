@@ -9,9 +9,15 @@ import { cleanup, commitFile, makeRepo } from "../../landing/test/helpers.ts";
 
 const ROUND_SCRIPT = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "round.mjs");
 
+function writtenReviewFile(ledgerRoot, reviewText) {
+  const reviewFile = path.join(ledgerRoot, "review.txt");
+  fs.writeFileSync(reviewFile, reviewText);
+  return reviewFile;
+}
+
 function runRound(repository, ledgerRoot, argumentList, reviewText = "") {
-  const processResult = spawnSync("node", [ROUND_SCRIPT, ...argumentList, "--repo", repository], {
-    input: reviewText,
+  const reviewFileArguments = argumentList[0] === "classify" ? ["--review-file", writtenReviewFile(ledgerRoot, reviewText)] : [];
+  const processResult = spawnSync("node", [ROUND_SCRIPT, ...argumentList, ...reviewFileArguments, "--repo", repository], {
     encoding: "utf8",
     env: { ...process.env, CONVERGING_REVIEWS_DIR: ledgerRoot, REVIEW_GATES_DIR: path.join(ledgerRoot, "review-gates") },
   });
@@ -134,4 +140,27 @@ test("a failing pre-push gate keeps a clean review from ending the round and its
   runRound(repository, ledgerRoot, ["next"]);
   const passingRound = runRound(repository, ledgerRoot, ["classify", "--round", "2"], reviewWith([]));
   assert.deepEqual([passingRound.report.outcome, passingRound.report.gate.exitCode], ["SWEEP", 0]);
+});
+
+test("findings that leave no room for a clean delta and a clean sweep before the cap stop the loop at once", (context) => {
+  const repository = makeRepo();
+  const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
+  context.after(() => cleanup(repository, ledgerRoot));
+  commitFile(repository, "a.txt", linesWithChange([]));
+  const changedLineNumbers = [1];
+  fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
+  runRound(repository, ledgerRoot, ["start"]);
+
+  const outcomes = [];
+  for (let round = 1; outcomes.at(-1) !== "CAPPED"; round += 1) {
+    const changedLine = changedLineNumbers.at(-1);
+    const classified = runRound(repository, ledgerRoot, ["classify", "--round", String(round)], reviewWith([findingRow(changedLine, "LOW", `Round ${round} fix misses a case. Proof: a.txt:${changedLine}.`)]));
+    outcomes.push(classified.report.outcome);
+    if (classified.report.outcome !== "CONTINUE") break;
+    runRound(repository, ledgerRoot, ["record", "--fingerprint", classified.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", String(round)]);
+    changedLineNumbers.push(changedLine + 1);
+    fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
+    runRound(repository, ledgerRoot, ["next"]);
+  }
+  assert.deepEqual([outcomes.length, outcomes.at(-1)], [10, "CAPPED"]);
 });

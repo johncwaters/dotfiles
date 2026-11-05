@@ -1,6 +1,6 @@
 ---
 name: converging-reviews
-description: Runs review and fix rounds over local work until a round finds nothing left to fix, then stamps the tree for /landing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a cap of 8 rounds or a question. Starts only by name. Use for /converging-reviews.
+description: Runs review and fix rounds over local work until a round finds nothing left to fix, then stamps the tree for /landing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a cap of 11 rounds or a question. Starts only by name. Use for /converging-reviews.
 ---
 
 # Converging Reviews
@@ -31,10 +31,10 @@ No cleaning pass runs: on a whole uncommitted pull request it deletes values a s
 
 Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. A delta round's `fixed` lists each defect the previous round's fixes claim to remove; put it in the context and ask whether each fix removed its defect everywhere in the diff, siblings and the test that pins it included, since a partial fix otherwise surfaces only in a later sweep. This session triages the return, then fixes in Step 4.
 
-Note the output file the qa-swarm Workflow notification names, and pipe the whole `/reviewing-code` return into:
+Note the output file the qa-swarm Workflow notification names and the `REVIEW_FILE` the `/reviewing-code` return names, then run:
 
 ```
-node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --swarm-output <qa-swarm output file>
+node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --review-file <REVIEW_FILE> --swarm-output <qa-swarm output file>
 ```
 
 `classify` takes each finding's body verbatim from the swarm output, drops findings the ledger already settled and findings anchored away from the round's hunks (`droppedOffHunk`), then prints the outcome, the kept `actionable` (every severity, recounted, unlike `/reviewing-code`'s `ACTIONABLE` header), `asked`, and below-HIGH `ambiguous` findings. `unmatchedBodies` counts findings whose body it could not match. It also runs the repo's push gate in the working tree: the first `package.json` script its pre-push hook invokes (husky's `.husky/pre-push` included), else the hook itself, else `check:fast`, else `test`. A failure becomes a HIGH `ACTIONABLE` `gate/<name>` finding that no ruling settles while the gate still fails, so a round cannot end clean on a tree the push would reject; `gate` in its output names what ran, or `null` when the repo has none, which the report says.
@@ -48,7 +48,7 @@ node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --sw
 | `RETRY` | 11 | Repeat Step 2 for the same round once |
 | `SWEEP` | 12 | `round.mjs next`, then Step 2; no fix lands between |
 | `ASKED` | 20 | Put each `asked` finding to the carbon unit with both readings, record the ruling, then rerun from Step 1 |
-| `CAPPED` | 22 | Stop and report, writing no stamp; inside a build this stops the build |
+| `CAPPED` | 22 | Stop and report, writing no stamp; inside a build this stops the build. Findings at a round with no room left for a clean delta and a clean sweep cap at once, since no further round could stamp |
 | `FAILED` | 23 | Stop and report, writing no stamp; inside a build this stops the build. A truncated lane fails too, since nothing would sweep its overflow |
 
 State both readings of an `asked` finding from the code alone. A pull request's review threads or the author's replies are not a reading: the question is what this review would have the code do.
@@ -69,4 +69,4 @@ Fix a `gate/<name>` finding at its root cause like any other; with `gate: null`,
 
 ## Scripts
 
-- `round.mjs`: `start`, `next`, `classify` (`--swarm-output` reads the qa-swarm task output file), `record`, and `stamp`; keeps the ledger at `~/.claude/converging-reviews/<repo>/<branch>.jsonl` (`CONVERGING_REVIEWS_DIR` overrides) and owns every stop rule.
+- `round.mjs`: `start`, `next`, `classify` (`--review-file` reads the `/reviewing-code` return, since review text in a Bash command trips Safety Net when a finding names a secret path; `--swarm-output` reads the qa-swarm task output file), `record`, and `stamp`; keeps the ledger at `~/.claude/converging-reviews/<repo>/<branch>.jsonl` (`CONVERGING_REVIEWS_DIR` overrides) and owns every stop rule.

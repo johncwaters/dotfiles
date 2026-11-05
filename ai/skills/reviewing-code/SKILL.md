@@ -1,6 +1,6 @@
 ---
 name: reviewing-code
-description: Reviews diffs as the internal engine. Pins an immutable object, calls swarming-reviews, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only with no edits, git history changes, posts, or repeat passes. Use when /gating-reviews, /converging-reviews, or /reviewing-prs invokes the engine; direct requests route through those entry points.
+description: Reviews diffs as the internal engine. Pins an immutable object, calls swarming-reviews, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only apart from saving its return to REVIEW_FILE, with no git history changes, posts, or repeat passes. Use when /gating-reviews, /converging-reviews, or /reviewing-prs invokes the engine; direct requests route through those entry points.
 ---
 
 # Code Review
@@ -13,9 +13,9 @@ One pass. Pin, find, triage, judge, return. A change gets this pass once, so it 
 
 ## Output
 
-**Guaranteed output.** A `VERDICT` line, an `ACTIONABLE` line, a `TRUNCATED` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
+**Guaranteed output.** A `VERDICT` line, an `ACTIONABLE` line, a `TRUNCATED` line, a `REVIEW_FILE` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
 
-**Boundaries.** No file edits. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/reviewing-prs`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up fresh MEDIUM findings every time. Only `/converging-reviews` does, reviewing just the last round's delta.
+**Boundaries.** No file edits beyond the `REVIEW_FILE`. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/reviewing-prs`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up fresh MEDIUM findings every time. Only `/converging-reviews` does, reviewing just the last round's delta.
 
 **Not a direct entry point.** Asked to review something conversationally, route it: local work goes through `/gating-reviews`, a pull request goes through `/reviewing-prs`. Both call this skill with a proper target.
 
@@ -94,6 +94,7 @@ State the verdict and the count of surviving `ACTIONABLE` findings at HIGH or hi
 VERDICT: <APPROVE|APPROVE WITH NITS|REQUEST CHANGES|BLOCKED|FAILED>
 ACTIONABLE: <count>
 TRUNCATED: <lane list or "none">
+REVIEW_FILE: <path>
 
 STRUCTURED_FINDINGS:
 - file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM|LOW> | reviewer: <tag> | disposition: <ACTIONABLE|NIT|AMBIGUOUS> | body: <the review comment text>
@@ -108,6 +109,7 @@ Nothing found:
 VERDICT: APPROVE
 ACTIONABLE: 0
 TRUNCATED: none
+REVIEW_FILE: <path>
 
 STRUCTURED_FINDINGS:
 (none)
@@ -115,6 +117,8 @@ STRUCTURED_FINDINGS:
 OVERALL_SUMMARY:
 <one paragraph>
 ```
+
+Save the whole return with the Write tool to `review-<first 12 characters of the pinned id>.txt` in the session scratchpad, else `$TMPDIR`, and name that path in `REVIEW_FILE`. Callers hand a script this path, since review text in a Bash command trips Safety Net when a finding names a secret path.
 
 `VERDICT` and `ACTIONABLE` come first so a caller can gate on two lines without parsing the block. A looping caller gates on `ACTIONABLE`; a landing caller gates on `VERDICT`; both are needed because they can disagree. `TRUNCATED` names every lane whose findings a cap dropped, its own or the lane's, or `none`, and it is machine-readable rather than a summary sentence because the caller reports it: nothing afterwards sweeps for the overflow a cap dropped.
 

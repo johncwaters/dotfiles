@@ -34,7 +34,7 @@ const EXIT_CODE_BY_OUTCOME = {
   BROWSER_CODE_FAILED: 30,
   USAGE: 2,
 };
-const ROUND_CAP = 8;
+const ROUND_CAP = 11;
 const HUNK_SLACK_LINES = 3;
 const SEVERITY_RANK = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
 const FIX_OUTCOMES = new Set(["FIXED", "UNVERIFIED", "DECLINED"]);
@@ -364,7 +364,7 @@ function decideOutcome({ review, round, plan, ledger, actionableFindings, keptFi
   if (keptFindings.some((finding) => finding.disposition === "AMBIGUOUS" && atLeast(finding.severity, "HIGH"))) return "ASKED";
   if (review.truncatedLanes.length > 0) return "FAILED";
   if (actionableFindings.length === 0 && plan.kind !== "delta") return "CLEAN";
-  if (round >= ROUND_CAP) return "CAPPED";
+  if (actionableFindings.length > 0 && round + 2 > ROUND_CAP) return "CAPPED";
   if (actionableFindings.length === 0) return "SWEEP";
   return "CONTINUE";
 }
@@ -469,6 +469,7 @@ function main() {
       repo: { type: "string", default: process.cwd() },
       round: { type: "string" },
       "swarm-output": { type: "string" },
+      "review-file": { type: "string" },
       fingerprint: { type: "string" },
       fix: { type: "string" },
       ruling: { type: "string" },
@@ -482,8 +483,8 @@ function main() {
     stampCleanTree(repoPath, positionals);
   }
   if (command === "classify") {
-    if (!values.round) failUsage("classify needs --round, with the review on stdin");
-    classifyRound(repoPath, Number(values.round), fs.readFileSync(0, "utf8"), values["swarm-output"]);
+    if (!values.round || !values["review-file"]) failUsage("classify needs --round and --review-file, the REVIEW_FILE /reviewing-code printed");
+    classifyRound(repoPath, Number(values.round), fs.readFileSync(values["review-file"], "utf8"), values["swarm-output"]);
   }
   if (command === "record") {
     if (!values.fingerprint) failUsage("record needs --fingerprint");
