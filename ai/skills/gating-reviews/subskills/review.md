@@ -44,12 +44,12 @@ and you re-run that proof in place of a confirming review.
      asking the carbon unit: name it in the stamp's `preexistingFailures`.
 
 **Stamp the tree** last, after every fix and the suite, skipped review included:
-`node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings -`
+`node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings <file>`
 with `{liveFindings, unverifiedFindings, preexistingFailures, truncatedLanes, droppedUnproven}`
-on stdin, each finding `{severity, file, summary}`. A live or `UNVERIFIED` MEDIUM+ on any branch
+in a file saved with Write, each finding `{severity, file, summary}`. A live or `UNVERIFIED` MEDIUM+ on any branch
 stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 (`BROWSER_CODE_FAILED`) means the
 repo ships third-party browser code that fails `/securing-browser-code`: fix each printed `FAIL` line as new
-work, then review again. In a repo `gh` names another owner for, at most 20 of the same lines land in `preexistingFailures`.
+work, then review again.
 
 A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
 overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review

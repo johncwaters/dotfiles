@@ -59,10 +59,9 @@ For a draft PR, say it is a draft and ask before posting.
 
 Post every finding with a real file and line as one batched review, not one API call per finding. Batching is not cosmetic: one review sends one notification, N individual comments send N.
 
-`gh api -f` only sets flat string fields, so the comment array must arrive as a real JSON body through `--input`:
+`gh api -f` only sets flat string fields, so the comment array must arrive as a real JSON body through `--input`, a `<body.json>` of this shape:
 
 ```
-cat > <body.json> <<'JSON'
 {
   "event": "COMMENT",
   "body": "<review body>",
@@ -71,13 +70,15 @@ cat > <body.json> <<'JSON'
     { "path": "<file>", "line": <line>, "side": "<RIGHT or LEFT, from the finding>", "body": "<comment body>" }
   ]
 }
-JSON
+```
+
+```
 gh api repos/{owner}/{repo}/pulls/{number}/reviews --method POST --input <body.json>
 ```
 
 `side` is copied only from the finding's own `side` field: by the time a finding reaches this step the diff is no longer in hand, and guessing puts a comment about deleted code onto whatever unrelated line now occupies that number. A finding with no `side` is `RIGHT`. A finding whose `line` is `general` has no anchor at all and goes in the review `body`.
 
-Build that JSON only with a script (`jq`, or `json.dumps` over the finding list), keeping finding text out of hand-spliced templates. Bodies contain quotes, backticks, and newlines, and a hand-built body produces invalid JSON or a mangled comment.
+Build that JSON only with a script (`jq`, or `json.dumps`) that reads the findings from the `REVIEW_FILE` `/reviewing-code` returned, keeping finding text out of hand-spliced templates and out of the Bash command, where Safety Net blocks a finding that names a secret path. Bodies contain quotes, backticks, and newlines, and a hand-built body produces invalid JSON or a mangled comment.
 
 `event` stays `COMMENT`, reserving `APPROVE` and `REQUEST_CHANGES` for the carbon unit under their own name; an automated pass leaves their review approval unspent.
 

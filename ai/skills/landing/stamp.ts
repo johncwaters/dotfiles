@@ -13,11 +13,11 @@ import {
   verifyStamp,
   writeStamp,
 } from "./lib/stamp.ts";
-import { readStdin } from "./lib/stdio.ts";
+import fs from "node:fs";
 import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const BROWSER_CODE_FAILED_EXIT_CODE = 30;
-const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings -] | verify | clear`;
+const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] | verify | clear`;
 
 function releaseBaseRef(git: Git): string | null {
   const { mainline } = readResolvedPolicy(git);
@@ -32,8 +32,8 @@ function fail(reason: string): never {
   process.exit(2);
 }
 
-function parseWriteArguments(argv: string[]): { gate: string; paths: string[]; readsFindings: boolean; refusesOtherChanges: boolean } {
-  const parsed = { gate: "", paths: [] as string[], readsFindings: false, refusesOtherChanges: false };
+function parseWriteArguments(argv: string[]): { gate: string; paths: string[]; findingsFile: string | null; refusesOtherChanges: boolean } {
+  const parsed = { gate: "", paths: [] as string[], findingsFile: null as string | null, refusesOtherChanges: false };
   let collectingPaths = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] ?? "";
@@ -44,10 +44,11 @@ function parseWriteArguments(argv: string[]): { gate: string; paths: string[]; r
       continue;
     }
     if (argument === "--findings") {
-      if (argv[index + 1] !== "-") {
-        fail("--findings takes - to read the findings JSON from stdin");
+      const findingsFile = argv[index + 1] ?? "";
+      if (findingsFile === "" || findingsFile === "-") {
+        fail("--findings takes the path of a findings JSON file written with the Write tool");
       }
-      parsed.readsFindings = true;
+      parsed.findingsFile = findingsFile;
       index += 1;
       collectingPaths = false;
       continue;
@@ -65,8 +66,8 @@ function parseWriteArguments(argv: string[]): { gate: string; paths: string[]; r
   return parsed;
 }
 
-async function writeCommand(git: Git, argv: string[]): Promise<void> {
-  const { gate, paths, readsFindings, refusesOtherChanges } = parseWriteArguments(argv);
+function writeCommand(git: Git, argv: string[]): void {
+  const { gate, paths, findingsFile, refusesOtherChanges } = parseWriteArguments(argv);
   if (!isStampGate(gate)) {
     fail(`--gate must be one of ${STAMP_GATES.join(", ")}`);
   }
@@ -82,7 +83,7 @@ async function writeCommand(git: Git, argv: string[]): Promise<void> {
       fail(`--only refuses a tree that also changes ${outsidePaths.join(", ")}`);
     }
   }
-  const findings: StampFindings = readsFindings ? parseStampFindings(JSON.parse(await readStdin())) : EMPTY_FINDINGS;
+  const findings: StampFindings = findingsFile === null ? EMPTY_FINDINGS : parseStampFindings(JSON.parse(fs.readFileSync(findingsFile, "utf8")));
   process.stdout.write(`${JSON.stringify(writeStampOrExit(git, gate, paths, findings))}\n`);
 }
 
@@ -99,7 +100,7 @@ function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: 
 const git = new Git(process.cwd());
 const [command, ...rest] = process.argv.slice(2);
 if (command === "write") {
-  await writeCommand(git, rest);
+  writeCommand(git, rest);
   process.exit(0);
 }
 if (command === "verify") {

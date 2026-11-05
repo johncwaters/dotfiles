@@ -1,6 +1,6 @@
 ---
 name: reviewing-code
-description: Reviews diffs as the internal engine. Pins an immutable object, calls swarming-reviews, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only apart from saving its return to REVIEW_FILE, with no git history changes, posts, or repeat passes. Use when /gating-reviews, /converging-reviews, or /reviewing-prs invokes the engine; direct requests route through those entry points.
+description: Reviews diffs as the internal engine. Pins an immutable object, calls swarming-reviews, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only except its REVIEW_FILE, with no git history changes, posts, or repeat passes. Use when /gating-reviews, /converging-reviews, or /reviewing-prs invokes the engine; direct requests route through those entry points.
 ---
 
 # Code Review
@@ -13,7 +13,7 @@ One pass. Pin, find, triage, judge, return. A change gets this pass once, so it 
 
 ## Output
 
-**Guaranteed output.** A `VERDICT` line, an `ACTIONABLE` line, a `TRUNCATED` line, a `REVIEW_FILE` line, one `STRUCTURED_FINDINGS` block carrying a `disposition` field per finding, and one `OVERALL_SUMMARY`. Nothing after them.
+**Guaranteed output.** The [Step 5](#step-5-return) return, with a `disposition` field per finding. Nothing after it.
 
 **Boundaries.** No file edits beyond the `REVIEW_FILE`. No `git add`, `commit`, `push`, or branch operations. No PR comments (that is `/reviewing-prs`). No second round: no caller carries findings from one pass into another, because a second sweep of the same diff turns up fresh MEDIUM findings every time. Only `/converging-reviews` does, reviewing just the last round's delta.
 
@@ -39,8 +39,6 @@ REVIEW_CMD="git diff HEAD $TREE"
 `mktemp` and not `mktemp -u`: the `-u` form only reserves a name, so another local process can land a symlink there first and have the `cp` overwrite its target. A file, not a directory, because the Safety Net denies `rm -rf` on a variable.
 
 - **branch or pull request**: resolve `BASE_SHA` and `HEAD_SHA`, then `REVIEW_CMD="git diff <BASE_SHA>..<HEAD_SHA>"`. Both are already immutable
-
-Record the changed-file set, file count, changed-line count, and touched subsystems. Report the pin and changed-file set in the summary so the caller can prove which tree and files were judged.
 
 ## Step 2: Call `swarming-reviews`
 
@@ -103,22 +101,9 @@ OVERALL_SUMMARY:
 <one paragraph>
 ```
 
-Nothing found:
+Nothing found: `VERDICT: APPROVE`, `ACTIONABLE: 0`, and `(none)` as the `STRUCTURED_FINDINGS` block.
 
-```
-VERDICT: APPROVE
-ACTIONABLE: 0
-TRUNCATED: none
-REVIEW_FILE: <path>
-
-STRUCTURED_FINDINGS:
-(none)
-
-OVERALL_SUMMARY:
-<one paragraph>
-```
-
-Save the whole return with the Write tool to `review-<first 12 characters of the pinned id>.txt` in the session scratchpad, else `$TMPDIR`, and name that path in `REVIEW_FILE`. Callers hand a script this path, since review text in a Bash command trips Safety Net when a finding names a secret path.
+Write the return to `review-<pinned id>.txt` in the scratchpad and name it in `REVIEW_FILE`: callers pass the path, since Safety Net blocks review text in a Bash command.
 
 `VERDICT` and `ACTIONABLE` come first so a caller can gate on two lines without parsing the block. A looping caller gates on `ACTIONABLE`; a landing caller gates on `VERDICT`; both are needed because they can disagree. `TRUNCATED` names every lane whose findings a cap dropped, its own or the lane's, or `none`, and it is machine-readable rather than a summary sentence because the caller reports it: nothing afterwards sweeps for the overflow a cap dropped.
 
