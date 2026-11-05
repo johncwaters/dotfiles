@@ -166,9 +166,12 @@ export function runSkillScript(
   if (!("CLAUDE_COMMIT_LEDGER" in env)) {
     childEnv.CLAUDE_COMMIT_LEDGER = ledgerPath;
   }
-  const proc = spawnSync("node", [path.join(SKILL_DIR, script), ...args], {
+  const messageFlag = script === "land.ts" ? "--message-file" : "--check-message";
+  const messageFile = path.join(ledgerDirectory, "message.txt");
+  fs.writeFileSync(messageFile, message, "utf8");
+  const messageArguments = message === "" ? [] : [messageFlag, messageFile];
+  const proc = spawnSync("node", [path.join(SKILL_DIR, script), ...args, ...messageArguments], {
     cwd: repo,
-    input: message,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
     env: childEnv,

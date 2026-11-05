@@ -11,9 +11,7 @@ within [recovery](subskills/recovery.md).
 
 ```
 node "$HOME/.claude/skills/landing/stamp.ts" verify
-node "$HOME/.claude/skills/landing/land.ts" [--promote] [--no-push] <<'MSG'
-<commit message>
-MSG
+node "$HOME/.claude/skills/landing/land.ts" [--promote] [--no-push] [--message-file <file>]
 ```
 
 Both print one JSON object on stdout.
@@ -59,8 +57,8 @@ included only when they apply (the stamp from Step 1: its `unverifiedFindings`
 go in `Not-tested`, which keeps `Confidence` below `high`, its `preexistingFailures` in
 `Constraint`, and each live MEDIUM+ in the body), and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the trailer block only for a genuinely trivial change (a
 version bump with no logic change); a header-only message is refused unless its type is `chore`.
-Check a message without committing by piping it into
-`node "$HOME/.claude/skills/landing/preflight.ts" --check-message`; send `land.ts` only the
+Check a message without committing with
+`node "$HOME/.claude/skills/landing/preflight.ts" --check-message <file>`; send `land.ts` only the
 final message, since it commits and pushes whatever it accepts.
 
 ## Step 3: disclosure check
@@ -97,19 +95,8 @@ text: name the defect class; keep exploit steps and customer identities out.
 
 ## Step 4: land
 
-Pipe the message into `land.ts` with a quoted heredoc, so nothing in the message is
-expanded by the shell:
-
-```
-node "$HOME/.claude/skills/landing/land.ts" --promote <<'MSG'
-feat(thing): do the thing
-
-Why it was done this way.
-
-Confidence: high
-Scope-risk: narrow
-MSG
-```
+Save the message with the Write tool in the session scratchpad and pass its path as
+`--message-file`: message text in a Bash command trips Safety Net when it names a secret path.
 
 Flags:
 

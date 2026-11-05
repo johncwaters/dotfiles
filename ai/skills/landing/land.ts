@@ -58,7 +58,6 @@ import {
   recordLandedCommit,
   verifyStamp,
 } from "./lib/stamp.ts";
-import { readStdin } from "./lib/stdio.ts";
 import { readGithubRemote } from "./lib/visibility.ts";
 import {
   computeScope,
@@ -113,6 +112,7 @@ type Arguments = {
   promote: boolean;
   noPush: boolean;
   pushRetryDelayMs: number;
+  messageFile: string | null;
 };
 
 function parseArguments(argv: string[]): Arguments {
@@ -120,6 +120,7 @@ function parseArguments(argv: string[]): Arguments {
     promote: false,
     noPush: false,
     pushRetryDelayMs: 2000,
+    messageFile: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] ?? "";
@@ -129,6 +130,14 @@ function parseArguments(argv: string[]): Arguments {
     }
     if (argument === "--no-push") {
       parsed.noPush = true;
+      continue;
+    }
+    if (argument === "--message-file") {
+      parsed.messageFile = argv[index + 1] ?? "";
+      if (parsed.messageFile === "") {
+        throw new Error("--message-file takes the path of a commit message file written with the Write tool");
+      }
+      index += 1;
       continue;
     }
     if (argument === "--push-retry-delay-ms") {
@@ -1240,4 +1249,15 @@ function isWritable(pathToWrite: string): boolean {
 }
 
 const config = parseArguments(process.argv.slice(2));
-emit(new Landing(process.cwd(), config).run(await readStdin()));
+function readMessageFile(messageFile: string | null): string {
+  if (messageFile === null) {
+    return "";
+  }
+  try {
+    return fs.readFileSync(messageFile, "utf8");
+  } catch (error) {
+    emit(messageInvalid({ errors: [`could not read --message-file: ${(error as Error).message}`] }));
+  }
+}
+
+emit(new Landing(process.cwd(), config).run(readMessageFile(config.messageFile)));

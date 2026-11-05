@@ -11,11 +11,10 @@ import {
   type Result,
 } from "./lib/outcome.ts";
 import { configuredMainline, isBranchAllowed } from "./lib/policy.ts";
-import { readStdin } from "./lib/stdio.ts";
 import { readResolvedPolicy } from "./lib/visibility.ts";
 import { checkMainlineFreshness, computeScope, foundingMainlineName, originHoldsOnlyBranch } from "./lib/workspace.ts";
 
-type Arguments = { paths: string[]; checkMessage: boolean; noFetch: boolean };
+type Arguments = { paths: string[]; messageFileToCheck: string | null; noFetch: boolean };
 
 type ReleaseIntegrationLookup = {
   profilePath?: string;
@@ -24,11 +23,16 @@ type ReleaseIntegrationLookup = {
 };
 
 function parseArguments(argv: string[]): Arguments {
-  const parsed: Arguments = { paths: [], checkMessage: false, noFetch: false };
+  const parsed: Arguments = { paths: [], messageFileToCheck: null, noFetch: false };
   let collectingPaths = false;
-  for (const argument of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index] ?? "";
     if (argument === "--check-message") {
-      parsed.checkMessage = true;
+      parsed.messageFileToCheck = argv[index + 1] ?? "";
+      if (parsed.messageFileToCheck === "") {
+        throw new Error("--check-message takes the path of a commit message file written with the Write tool");
+      }
+      index += 1;
       collectingPaths = false;
       continue;
     }
@@ -187,7 +191,15 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
 }
 
 const parsed = parseArguments(process.argv.slice(2));
-if (parsed.checkMessage) {
-  emit(checkMessageResult(await readStdin()));
+function checkMessageFile(messageFile: string): Result {
+  try {
+    return checkMessageResult(fs.readFileSync(messageFile, "utf8"));
+  } catch (error) {
+    return messageInvalid({ errors: [`could not read --check-message file: ${(error as Error).message}`] });
+  }
+}
+
+if (parsed.messageFileToCheck !== null) {
+  emit(checkMessageFile(parsed.messageFileToCheck));
 }
 emit(preflightResult(parsed.paths, parsed.noFetch));

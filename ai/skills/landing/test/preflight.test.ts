@@ -523,11 +523,11 @@ test("a machine with no applied profile still guards mainline", () => {
 test("--check-message accepts a valid message and rejects an invalid one", () => {
   const repo = makeRepo();
   try {
-    const good = runSkillScript("preflight.ts", repo, ["--check-message"], VALID_MESSAGE);
+    const good = runSkillScript("preflight.ts", repo, [], VALID_MESSAGE);
     assert.equal(good.result.outcome, "READY");
     assert.equal(good.code, 0);
 
-    const bad = runSkillScript("preflight.ts", repo, ["--check-message"], "not a conventional header");
+    const bad = runSkillScript("preflight.ts", repo, [], "not a conventional header");
     assert.equal(bad.result.outcome, "MESSAGE_INVALID");
     assert.equal(bad.code, 20);
     assert.ok((bad.result.errors as string[]).length > 0);
@@ -545,7 +545,7 @@ test("--check-message does not fetch origin", () => {
     runGit(repo, ["remote", "add", "origin", "https://127.0.0.1:1/unreachable.git"]);
     writeExecutable(path.join(wrapperDirectory, "git"), markFetchesGitWrapper());
 
-    const good = runSkillScript("preflight.ts", repo, ["--check-message"], VALID_MESSAGE, {
+    const good = runSkillScript("preflight.ts", repo, [], VALID_MESSAGE, {
       PATH: `${wrapperDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
       FETCH_MARKER: fetchMarkerPath,
     });

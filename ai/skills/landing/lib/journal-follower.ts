@@ -12,6 +12,7 @@ const PID_FILE_NAME = "coherence-journal-follower.pid";
 const FOLLOW_LIMIT_MS = 30 * 60 * 1000;
 const WRITER_SETTLE_MS = 2000;
 const JOURNAL_COMMIT_MESSAGE = "chore(coherence): record run journal\n";
+const JOURNAL_MESSAGE_FILE_NAME = "coherence-journal-message";
 
 export function isCoherenceOnly(paths: string[]): boolean {
   return paths.length > 0 && paths.every((scopePath) => isUnderCoherence(scopePath));
@@ -55,10 +56,11 @@ function landJournal(worktree: string, landedHead: string, promote: boolean): vo
     return;
   }
   writeStamp(git, "coherence-journal", [COHERENCE_DIR], EMPTY_FINDINGS);
-  spawnSync(process.execPath, [LAND_SCRIPT, ...(promote ? ["--promote"] : [])], {
+  const messageFile = git.gitPath(JOURNAL_MESSAGE_FILE_NAME);
+  fs.writeFileSync(messageFile, JOURNAL_COMMIT_MESSAGE, "utf8");
+  spawnSync(process.execPath, [LAND_SCRIPT, "--message-file", messageFile, ...(promote ? ["--promote"] : [])], {
     cwd: worktree,
-    input: JOURNAL_COMMIT_MESSAGE,
-    stdio: ["pipe", "ignore", "ignore"],
+    stdio: ["ignore", "ignore", "ignore"],
   });
 }
 

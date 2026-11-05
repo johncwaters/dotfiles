@@ -57,7 +57,7 @@ function writeFailingHook(repo: string, name: string): void {
   fs.chmodSync(hookPath, 0o755);
 }
 
-test("a real commit is created from the message on stdin", () => {
+test("a real commit is created from the message in --message-file", () => {
   const repo = makeRepo("feature");
   try {
     commitFile(repo, "a.txt", "one\n");
