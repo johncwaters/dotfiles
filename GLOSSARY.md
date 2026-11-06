@@ -32,7 +32,7 @@ here.
 - **design node**: A settled piece of a feature's design written as code rather than prose,
   in one of three layers: behavior (a walkthrough or ASCII mockup), architecture
   (components, contracts, data model), or program (types, signatures, call graph,
-  pseudocode). The carbon unit approves it before slicing, because review is cheapest
+  pseudocode). It is settled before slicing, because a design is cheapest to change
   before code exists; every design spec at medium risk or above carries one, and each
   ticket carries the design nodes its unit builds.
 - **open question**: A branch deliberately left open, recorded with what would settle it.

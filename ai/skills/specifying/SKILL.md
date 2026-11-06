@@ -23,7 +23,7 @@ Read each file under `subskills/` as you reach it.
 |-------|----------|----------------|----------------------|
 | 1 | `sketch.md` | `sketch` | one goal, and a branch per guess |
 | 2 | `grill.md` | `grilled` at risk `low`, else none (stays `sketch`) | zero branches |
-| 3 | `design.md` | `grilled` | design nodes the carbon unit approved |
+| 3 | `design.md` | `grilled` | design nodes with every branch closed |
 | 4 | `slice.md` | `sliced` | vertical units with full contracts, every decision and design node implemented or a constraint |
 | 5 | `challenge.md` | `challenged` | the challenge stamp |
 
@@ -75,7 +75,7 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 
 ## Hand off
 
-Show the `tree` rendering, then reply with the path, the goal's criteria, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision and each changed design node, keep or restore, with a question round through `ask.md`; a restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once none is left, unless the carbon unit asked for the design spec alone, ask one more round through `ask.md`: which review gate lands these tickets, offering every entry of `REVIEW_GATES` in `lib/graph.ts` with `gating-reviews` recommended. Write the answer as the spec's `reviewGate`, then cut and build without asking.
+Show the `tree` rendering, then reply with the path, the goal's criteria, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision and each changed design node, keep or restore, with a question round through `ask.md`; a restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once none is left, unless the carbon unit asked for the design spec alone, cut and build without asking.
 
 ## Scripts
 
