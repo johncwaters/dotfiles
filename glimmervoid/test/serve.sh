@@ -149,9 +149,9 @@ check "a symlinked ~/.glimmervoid is refused" \
 check "a symlinked ~/.glimmervoid makes the topic exit non-zero" test "$symlinkedDirectoryStatus" -eq 1
 check "a symlinked ~/.glimmervoid is left where it was" test -L "$symlinkedHome/.glimmervoid"
 check "nothing is chmodded through a symlinked ~/.glimmervoid" \
-  test "$(stat -c '%a' "$outsideConfigDirectory")" = "755"
+  test "$(fileModeOf "$outsideConfigDirectory")" = "755"
 check "no config outside the home has its mode narrowed" \
-  test "$(stat -c '%a' "$outsideConfigDirectory/config.json")" = "644"
+  test "$(fileModeOf "$outsideConfigDirectory/config.json")" = "644"
 check "no config outside the home is rewritten" \
   grep -qx 'a config file this topic never chose' "$outsideConfigDirectory/config.json"
 check "a refused config directory stops before systemd work" logLacks "systemctl "
@@ -336,7 +336,7 @@ check "the missing timeout names the command to run by hand" \
   outputMatches "$noTimeoutOutput" '\[warn\].*timeout not on PATH'
 check "a publication nothing can bound records no ownership" \
   test ! -e "$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
-linkCoreUtilities timeout
+provideTimeout
 
 refusedOwnershipRecord="$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
 refusedOwnershipPending="$badStatusHome/.local/state/dotfiles/glimmervoid-serve-withdrawal-pending"

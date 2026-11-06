@@ -42,7 +42,9 @@ commitShortcutsFile() {
   local stagedPath="$1"
   local customShortcutsPath="$2"
   if [[ -e "$customShortcutsPath" ]]; then
-    chmod --reference="$customShortcutsPath" "$stagedPath"
+    local existingMode
+    existingMode="$(stat -c %a -- "$customShortcutsPath" 2>/dev/null || stat -f %Lp -- "$customShortcutsPath")"
+    chmod "$existingMode" "$stagedPath"
     mv -f -- "$stagedPath" "$customShortcutsPath"
     return 0
   fi

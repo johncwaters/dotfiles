@@ -8,7 +8,6 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "vscodium"
-stageTopicWithLinuxAccountLookup
 if [[ "$repoRoot" != "$sandbox/"* ]]; then
   mkdir -p "$sandbox/repo"
   cp -R "$repoRoot/script" "$repoRoot/packages" "$repoRoot/profiles" "$repoRoot/README.md" "$topicDir" "$sandbox/repo/"
@@ -542,7 +541,7 @@ provideCommand dscl
 withdrawCommand codium
 : > "$commandLog"
 darwinStatus=0
-darwinOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
+darwinOutput="$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
   DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_PROFILE=work GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
   NO_COLOR=1 bash "$topicDir/install.sh")" || darwinStatus=$?
@@ -561,20 +560,20 @@ check "darwin links the command-based keybindings" \
     = "$sandbox/.dotfiles/vscodium/keybindings.darwin.json"
 check "darwin reports no missing codium CLI" outputLacks "$darwinOutput" 'not on PATH'
 checkRerunIsQuiet "a darwin rerun reports no config changes" \
-  "$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
+  "$(runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
     DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
     DOTFILES_PROFILE=work GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
     NO_COLOR=1 bash "$topicDir/install.sh")"
 
 installedExtensionManifest "strayextension.with-no-profile-resolved-1.0.0" false
 
-check "personal editor convergence succeeds" runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
+check "personal editor convergence succeeds" runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
   DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_PROFILE=personal GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
   NO_COLOR=1 bash "$topicDir/install.sh"
 check "personal retires the work MCP link" test ! -L "$darwinUserDirectory/mcp.json"
 printf '{"servers":{"foreign":{}}}\n' > "$darwinUserDirectory/mcp.json"
-check "personal editor convergence succeeds" runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin DOTFILES_TEST_HOMEBREW_PREFIX="$sandbox/homebrew" \
+check "personal editor convergence succeeds" runInStubbedSandbox "$sandbox" TMPDIR="$sandboxTemp" DOTFILES_PLATFORM=darwin \
   DOTFILES_TEST_APPLICATIONS_DIRECTORY="$darwinApplicationsDirectory" \
   DOTFILES_PROFILE=personal GITHUB_TOKEN="$probeGitHubToken" DOTFILES_TEST_REAL_NODE="$realNodePath" \
   NO_COLOR=1 bash "$topicDir/install.sh"

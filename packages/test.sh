@@ -10,7 +10,6 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox "packages"
 
-stageTopicWithLinuxAccountLookup
 
 realHome="$HOME"
 realHomePathsNoStubMayName=(

@@ -31,9 +31,15 @@ sandboxMarkerIsThisAccountsOwn() {
   [[ -O "$HOME" ]]
 }
 
-# /usr/bin/dscl is SIP protected, so a machine lacking it is not a mac and the stub cannot answer for one.
+# /usr/bin/dscl is SIP protected, so on a mac only it may answer the home lookup the stub seam's trust rests on.
 darwinDirectoryServiceCommand() {
+  local attributeName="${1:-}"
   local stubDirectoryService="${DOTFILES_TEST_STUB_BIN:-}/dscl"
+  if [[ -x /usr/bin/dscl && "$attributeName" != NFSHomeDirectory && -x "$stubDirectoryService" ]] &&
+    trustedPlatformTestPath "${DOTFILES_TEST_STUB_BIN:-}" >/dev/null; then
+    printf '%s\n' "$stubDirectoryService"
+    return 0
+  fi
   if [[ -x /usr/bin/dscl ]]; then
     printf '/usr/bin/dscl\n'
     return 0
@@ -54,18 +60,16 @@ withoutLeadingSpace() {
 # dscl wraps a value holding a space onto an indented line of its own, so the attribute line alone is not the answer.
 darwinAccountRecord() {
   local attributeName="$1"
-  local accountName="${USER:-}"
+  local accountName
   local directoryServiceCommand
   local recordLine
   local recordValue=""
   local valueIsOnTheNextLine=0
-  if [[ -z "$accountName" ]]; then
-    accountName="$(/usr/bin/id -un 2>/dev/null || true)"
-  fi
+  accountName="$(/usr/bin/id -un 2>/dev/null || true)"
   if [[ -z "$accountName" ]]; then
     return 1
   fi
-  directoryServiceCommand="$(darwinDirectoryServiceCommand)" || return 1
+  directoryServiceCommand="$(darwinDirectoryServiceCommand "$attributeName")" || return 1
   while IFS= read -r recordLine; do
     if ((valueIsOnTheNextLine == 1)); then
       recordValue="$(withoutLeadingSpace "$recordLine")"
@@ -89,7 +93,7 @@ darwinAccountRecord() {
 accountPasswdHome() {
   local passwdFields=()
   local darwinHome
-  if isDarwin; then
+  if isDarwin || [[ ! -x /usr/bin/getent && -x /usr/bin/dscl ]]; then
     darwinHome="$(darwinAccountRecord NFSHomeDirectory)" || return 1
     printf '%s\n' "$darwinHome"
     return 0

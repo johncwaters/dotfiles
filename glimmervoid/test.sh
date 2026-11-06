@@ -59,7 +59,18 @@ mkdir -p "$sandboxTemp"
 
 linkCoreUtilities bash sh env cat sed awk grep tail head cut tr find sort uniq wc mktemp rm \
   mkdir rmdir cp mv ln readlink basename dirname chmod cksum cmp id date stat touch true false \
-  xargs od tee expr sleep printf test timeout uname
+  xargs od tee expr sleep printf test uname
+
+# macOS ships no timeout, and serve.sh only runs on a Linux server, so a host without one gets a pass-through.
+provideTimeout() {
+  linkCoreUtilities timeout
+  if [[ -e "$coreBin/timeout" ]]; then
+    return 0
+  fi
+  printf '#!/usr/bin/env bash\nshift\nexec "$@"\n' > "$coreBin/timeout"
+  chmod +x "$coreBin/timeout"
+}
+provideTimeout
 
 writeStub systemctl <<'STUB'
 #!/usr/bin/env bash

@@ -16,7 +16,7 @@ runInstall() {
 }
 
 interactiveShellIn() {
-  env -i HOME="$1" PATH="/usr/bin:/bin" TERM=dumb bash -i -c "$2" 2>/dev/null
+  env -i HOME="$1" PATH="/usr/bin:/bin" TERM=dumb DOTFILES_PLATFORM=linux "$BASH" -i -c "$2" 2>/dev/null
 }
 
 interactiveShell() {
@@ -86,7 +86,7 @@ pathStartsWithDotfilesBin() {
 check "bin is on PATH" pathStartsWithDotfilesBin
 check "dot resolves on PATH" test "$(interactiveShell 'command -v dot')" = "$sandbox/.dotfiles/bin/dot"
 check "a second load leaves one copy of bin on PATH" \
-  test "$(interactiveShell 'source "$HOME/.bashrc"; printf %s "$PATH"' | grep -o -F "$sandbox/.dotfiles/bin" | wc -l)" = "1"
+  test "$(interactiveShell 'source "$HOME/.bashrc"; printf %s "$PATH"' | grep -o -F "$sandbox/.dotfiles/bin" | wc -l)" -eq 1
 check "PROJECTS defaults under HOME" test "$(interactiveShell 'printf %s "$PROJECTS"')" = "$sandbox/Projects"
 check "c is a function" test "$(interactiveShell 'type -t c')" = "function"
 check "a nested login shell still loads the topics" \

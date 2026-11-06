@@ -19,11 +19,11 @@ check "no placeholder survives the seed" \
 check "the personal seed carries no remote block" \
   test "$(configValue "$personalHome" 'require(process.argv[1]).remote === undefined')" = "true"
 check "the config directory is owner only" \
-  test "$(stat -c '%a' "$personalHome/.glimmervoid")" = "700"
+  test "$(fileModeOf "$personalHome/.glimmervoid")" = "700"
 check "the config file is owner only" \
-  test "$(stat -c '%a' "$personalHome/.glimmervoid/config.json")" = "600"
+  test "$(fileModeOf "$personalHome/.glimmervoid/config.json")" = "600"
 check "the secrets file is owner only" \
-  test "$(stat -c '%a' "$personalHome/.glimmervoid/secrets.env")" = "600"
+  test "$(fileModeOf "$personalHome/.glimmervoid/secrets.env")" = "600"
 check "a secrets file carrying every variable draws no warning" \
   outputLacks "$personalOutput" "write GLIMMERVOID_"
 check "a personal machine installs the unit" test -f "$personalHome/.config/systemd/user/glimmervoid.service"
@@ -113,10 +113,10 @@ for bundledSoundName in coins.ogg tears-of-guthix.ogg; do
     cmp -s "$repoRoot/glimmervoid/sounds/$bundledSoundName" "$workSoundsDirectory/$bundledSoundName"
 done
 printf 'operator sound\n' > "$workSoundsDirectory/operator-added.mp3"
-coinsInodeBeforeRerun="$(stat -c '%i' "$workSoundsDirectory/coins.ogg")"
+coinsInodeBeforeRerun="$(ls -i "$workSoundsDirectory/coins.ogg")"
 soundsRerunOutput="$(runInstall "$workHome" work)" || true
 check "a second run leaves the copied sounds untouched" \
-  test "$(stat -c '%i' "$workSoundsDirectory/coins.ogg")" = "$coinsInodeBeforeRerun"
+  test "$(ls -i "$workSoundsDirectory/coins.ogg")" = "$coinsInodeBeforeRerun"
 check "a second run reports every sound up to date" \
   outputLacks "$soundsRerunOutput" "copied"
 check "a second run keeps a sound the operator added" test -f "$workSoundsDirectory/operator-added.mp3"

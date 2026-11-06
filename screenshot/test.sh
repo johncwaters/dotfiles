@@ -13,7 +13,7 @@ temporaryDirectory="$sandbox/tmp"
 mkdir -p "$temporaryDirectory"
 
 linkCoreUtilities awk basename bash cat chmod cp dirname env grep head ln mkdir mktemp mv \
-  readlink rm sed true
+  readlink rm sed stat true
 
 runInstall() {
   runInStubbedSandbox "$sandbox" \
@@ -88,7 +88,7 @@ check "the desktop backup keeps its foreign content" \
   grep -qx 'foreign desktop' "$foreignDesktopPath.pre-dotfiles.bak"
 check "the existing COSMIC shortcut remains" grep -qF 'keep this shortcut' "$customShortcutsPath"
 check "the existing COSMIC shortcut mode remains owner only" \
-  test "$(stat -c '%a' "$customShortcutsPath")" = "600"
+  test "$(fileModeOf "$customShortcutsPath")" = "600"
 check "the clipboard shortcut is added once" \
   test "$(countShortcutLines '(modifiers: [], key: "Print")')" -eq 1
 check "the save-path shortcut is added once" \
