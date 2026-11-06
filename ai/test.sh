@@ -44,6 +44,14 @@ mkdir -p "$skillDependencyStubBin"
 cat > "$skillDependencyStubBin/npm" <<'STUB'
 #!/usr/bin/env bash
 printf 'npm %s in %s\n' "$*" "$PWD" >> "$SKILL_DEPENDENCY_LOG"
+if [[ "$1 $2" == "ls -g" ]]; then
+  printf '%s\n' "$HOME/npm-global/lib" "$HOME/npm-global/lib/node_modules/@biomejs/biome"
+  exit 0
+fi
+if [[ "$1 $2" == "install -g" ]]; then
+  rm -f "$HOME/.syntax-engine-cannot-start"
+  exit 0
+fi
 skillDirectory="$PWD"
 mkdir -p "$skillDirectory/node_modules/.bin"
 printf '{}\n' > "$skillDirectory/node_modules/.package-lock.json"
@@ -54,6 +62,9 @@ PLAYWRIGHT
 chmod +x "$skillDirectory/node_modules/.bin/playwright-core"
 STUB
 chmod +x "$skillDependencyStubBin/npm"
+printf '#!/usr/bin/env bash\n[[ ! -e "$HOME/.syntax-engine-cannot-start" ]]\n' > "$skillDependencyStubBin/biome"
+chmod +x "$skillDependencyStubBin/biome"
+export BIOME_BIN="$skillDependencyStubBin/biome"
 pathWithoutNpmStub="$PATH"
 export PATH="$skillDependencyStubBin:$PATH"
 export SKILL_DEPENDENCY_LOG="$skillDependencyLog"
@@ -195,6 +206,12 @@ check "install exits clean" test "$installStatus" -eq 0
 check "personal converge removes installer-owned backchannels artifacts" backchannelsArtifactsAreAbsent
 check "personal cleanup preserves foreign hooks, MCP config, skills, and hook trust" foreignBackchannelsNeighboursArePreserved
 check "install says what it did" test -n "$firstRunOutput"
+mkdir -p "$sandbox/npm-global/lib/node_modules/@biomejs/biome"
+printf '{"version":"2.6.5"}\n' > "$sandbox/npm-global/lib/node_modules/@biomejs/biome/package.json"
+: > "$sandbox/.syntax-engine-cannot-start"
+engineRepairOutput="$(runTopicInstall "$stagedTopicDir")" || true
+check "the converge reinstalls a syntax engine that cannot start, at its installed version, until it starts" \
+  outputHas "$engineRepairOutput" "reinstalled @biomejs/biome@2.6.5"
 for skillName in "${workSkillNames[@]}"; do
   check "personal profile leaves work skill $skillName absent" \
     bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$sandbox/.claude/skills/$skillName"

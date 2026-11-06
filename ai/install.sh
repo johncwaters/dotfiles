@@ -591,6 +591,30 @@ retireCodexServer() {
 }
 
 # Codex servers were only ever added by the retired confinement path, so every recorded name is retired.
+syntaxEngineProbeStatus() {
+  local probeStatus=0
+  node "$dotfilesRepo/ai/hooks/validate-file.mjs" --probe-engine > /dev/null 2>&1 || probeStatus=$?
+  printf '%s\n' "$probeStatus"
+}
+
+repairSyntaxEngine() {
+  [[ "$(syntaxEngineProbeStatus)" == 1 ]] || return 0
+  declare -F installGlobalNpmPackage > /dev/null || source "$dotfilesRepo/script/lib/packages.sh"
+  local packageSource
+  packageSource="$(listGlobalNpmPackages | awk -F '\t' '$1 == "@biomejs/biome" { print $1 ($2 == "" ? "" : "@" $2) }')" || true
+  if [[ -z "$packageSource" ]]; then
+    noteWarned "syntax engine" "biome cannot start and npm does not list it; the format guard checks JSON only"
+    return 0
+  fi
+  noteStarting "syntax engine" "cannot start; npm install -g $packageSource"
+  installGlobalNpmPackage "$packageSource" > /dev/null 2>&1 || true
+  if [[ "$(syntaxEngineProbeStatus)" == 0 ]]; then
+    noteInstalled "syntax engine" "reinstalled $packageSource"
+    return 0
+  fi
+  noteWarned "syntax engine" "biome cannot start; the format guard checks JSON only"
+}
+
 retireCodexServers() {
   local serverName
   local codexManagedNames
@@ -626,6 +650,7 @@ renderJsonTemplate "settings.json" \
   "$claudeHome/settings.json"
 removeRetiredSkills
 renderCodexHooks
+repairSyntaxEngine
 retireCodexServers
 convergeMcpServers
 if command -v kimi > /dev/null 2>&1; then
