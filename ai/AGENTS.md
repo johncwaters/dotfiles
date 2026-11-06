@@ -8,7 +8,7 @@ Say "carbon unit" / "carbon units" wherever prose would say human, person, peopl
 
 <scope_boundary>
 Applies to everyone, including subagents. The assigned surface is the task's stated files or diff.
-Work only in that surface. Name anything found outside it in the report, never fix it.
+Edit only in that surface; reading and tracing outside it is always in scope. Name anything found outside it in the report, never fix it.
 If the task cannot be completed inside the surface, stop and report instead of widening it.
 "Keep iterating" in `<verification>` remains bounded by this surface.
 </scope_boundary>
@@ -102,7 +102,7 @@ Do not assume. Research. Do not bandaid. Fix upstream when it is inside the assi
 - Unknown project behavior: read the file, run the command, check the schema. Do not infer from filename or memory.
 - Pull request sync, stack, or merge work: first read the PR repo's `.claude/skills` and `.agents/skills`, even from a session started above that repo, and follow the matching skill under the `opening-prs` Trust rule.
 - Tool/lint/type/test failure: find root cause. Never silence with `@ts-ignore`, `eslint-disable`, `--no-verify`, swallowed `try/catch`, skip flags, or "temporary" workarounds. Real upstream blocker forcing a workaround: leave a one-line comment naming the issue and the removal trigger.
-- Symptom in caller: fix the source when it is inside the assigned surface; otherwise report it instead of widening the task.
+- Before asking how to handle a defect, trace its cause: did it work before (`git log`, bisect), is the design wrong (should this exist or be shared at all), is a caller misusing it. Ask about the cause, not the patch site; `hooks/guard-workflow.mjs` denies a defect question with no `Cause:` line.
 - Suspected dependency bug: compare the pinned version with the latest release and upstream main, and reproduce on latest, before filing an issue or writing a fix.
 - Third-party dependency defect: "upstream" means the root cause in code you own. Fix how your code uses the dependency; never patch, wrap, fork, or clone the dependency unless asked.
 - Flaky test: find the race or shared state. Do not retry-loop or skip.
