@@ -9,7 +9,7 @@ Third-party code in a page runs with the page's full access, so the repo has to 
 
 Run `node ~/.claude/skills/securing-browser-code/check.ts [--json] [repo]`. It exits 0 when every practice holds or the repo has no third-party browser code, 1 with one `FAIL <check> <path>[:line] <problem>. Fix: <how>` line per failure, 2 on bad usage, and 3 when the audit itself crashed. `writeStamp` runs the same audit for `/gating-reviews` and `/converging-reviews`.
 
-Fix each failure in the target repo as ordinary work under that repo's review gate; the script only reports.
+Fix each failure in the target repo as ordinary work under that repo's review gate; the script only reports. Before calling a failure a false flag, trace the failing file upstream (why the repo tracks it, whether anything serves or references it): a file nothing ships is deleted or stripped in the target repo, and `check.ts` changes only when it misjudges a file the repo really ships.
 
 ## Fixes by check
 
