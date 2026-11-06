@@ -233,6 +233,25 @@ test("a large file the unit only changes counts at the changed-only cap", () => 
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*list the splits path in both reads and changes/);
 });
 
+test("a branch is refused until its upstream line is none with a reason or cites what was read", () => {
+  const sketchWithBranchUpstream = (upstream) => ({
+    status: "sketch",
+    request: "Clear the card once its question is answered",
+    repoRoot,
+    nodes: [
+      { id: "G1", kind: "goal", text: "The card clears once answered" },
+      { id: "B1", kind: "branch", question: "Which hook reports the answer?", leaning: "PostToolUse", ...(upstream === undefined ? {} : { upstream }) },
+    ],
+    edges: [],
+  });
+  for (const unevidencedUpstream of [undefined, "", "a guess with no evidence", "none", "none:  ", "unknown `?`", "defaced guess", "(<path:line>, <commit sha>, or the `command` that showed it)", "`no idea`", "`TBD later`", "a guess, see ticket 1234567", "guess at 10.30:00", "none: ?"]) {
+    assert.match(denialReason(writeSpec(sketchWithBranchUpstream(unevidencedUpstream))), /Rule 1: node B1\.upstream: say what one level up/, unevidencedUpstream);
+  }
+  for (const acceptedUpstream of ["none: the name is new", "Report from the title watcher instead, ruled out by server/cards.ts:212", "It worked until 4ecdd12 dropped the answer hook", "`git log -S answerHook` shows the hook was removed on purpose"]) {
+    assertAllowed(writeSpec(sketchWithBranchUpstream(acceptedUpstream)));
+  }
+});
+
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {
   assertAllowed(writeSpec({}, path.join(temporaryHome, "outside.json")));
   const unreadableSpecPath = path.join(temporaryHome, ".agents", "specs", "unreadable.json");

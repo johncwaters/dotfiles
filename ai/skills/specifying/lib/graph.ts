@@ -9,7 +9,7 @@ export type Goal = {
   criteria?: string[];
 };
 export type NonGoal = { id: `N${number}`; kind: "nonGoal"; text: string };
-export type Branch = { id: `B${number}`; kind: "branch"; question: string; leaning: string };
+export type Branch = { id: `B${number}`; kind: "branch"; question: string; leaning: string; upstream: string };
 export type Decision = {
   id: `D${number}`;
   kind: "decision";
@@ -60,6 +60,8 @@ export const READING_BUDGET_BYTES = 200000;
 const CHANGED_ONLY_PATH_CAP_BYTES = 20000;
 const REPO_GATE_COMMAND = /^(npm|pnpm|yarn)\s+(run\s+)?(typecheck|lint|test)$/;
 const UNIT_TITLE_LIMIT = 120;
+const NO_UPSTREAM = /^none:\s*\S*[A-Za-z]\S*\s+\S*[A-Za-z]/;
+const UPSTREAM_EVIDENCE = /[\w./-]+\.[A-Za-z]\w*:\d+|(?<![\w-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![\w-])|`[^`\s]+\s[^`]*[-/.=]\w[^`]*`/;
 
 export function oneLine(text: string): string {
   return text.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim();
@@ -75,7 +77,7 @@ export function unitTicketCriteria(unit: Unit, goalCriteria: string[]): string[]
 const NODE_FIELDS = {
   goal: ["id", "kind", "text", "risk", "criteria"],
   nonGoal: ["id", "kind", "text"],
-  branch: ["id", "kind", "question", "leaning"],
+  branch: ["id", "kind", "question", "leaning", "upstream"],
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint"],
   openQuestion: ["id", "kind", "question", "settledBy"],
   unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver", "splits"],
@@ -135,7 +137,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -159,6 +161,12 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
     }
     const hasLineEvidence = typeof value.evidence === "string" && /^\S(?:.*\S)?:[1-9]\d*$/.test(value.evidence);
     if (value.source === "read" && !hasLineEvidence) addError(errors, 1, subject, "supply evidence as file:line for a read decision");
+    return;
+  }
+  if (nodeKind === "branch") {
+    const upstream = typeof value.upstream === "string" ? value.upstream : "";
+    if (NO_UPSTREAM.test(upstream) || UPSTREAM_EVIDENCE.test(upstream)) return;
+    addError(errors, 1, `${subject}.upstream`, "say what one level up would make this question unnecessary and cite what you read (path:line, a commit sha, or a backticked command with its arguments), or write 'none: <why nothing sits above this choice>'");
     return;
   }
   if (nodeKind === "design") {
