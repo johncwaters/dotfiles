@@ -1,17 +1,18 @@
 ---
 name: cleaning-ai-slop
-description: Cleans AI-generated code slop with a regression-safe, deletion-first workflow. Use when the carbon unit says deslop, anti-slop, or AI slop, or asks to clean up code that feels bloated, repetitive, over-abstracted, or weakly tested. Bounded cleanup, not feature work.
+description: Cleans AI-generated code slop with a regression-safe, deletion-first workflow. Use when the carbon unit says deslop, anti-slop, or AI slop, or asks to clean up code that feels bloated, repetitive, over-abstracted, weakly tested, or bolted on. Bounded cleanup, not feature work.
 ---
 
 # AI Slop Cleaner
 
-Clean AI-generated code slop without drifting scope or changing intended behavior. This is the bounded cleanup workflow for code that works but feels bloated, repetitive, weakly tested, or over-abstracted.
+Clean AI-generated code slop without drifting scope or changing its observable output. This is the bounded cleanup workflow for code that works but feels bloated, repetitive, weakly tested, or over-abstracted.
 
 ## When to Use
 
 - The carbon unit explicitly says `deslop`, `anti-slop`, or `AI slop`
 - The request is to clean up or refactor code that feels noisy, repetitive, or overly abstract
 - Follow-up implementation left duplicate logic, dead code, wrapper layers, boundary leaks, or weak regression coverage
+- A finished feature was layered on with special cases, flags, or variant copies instead of reshaping the code around it
 - The goal is simplification and cleanup, not new feature delivery
 
 ## When Not to Use
@@ -23,7 +24,8 @@ Clean AI-generated code slop without drifting scope or changing intended behavio
 
 ## Execution Posture
 
-- Preserve behavior unless the carbon unit explicitly asks for behavior changes.
+- Behavior is observable output: what callers, carbon units, and stored data see. Internals such as types, branches, files, and helpers are free to reshape.
+- Change output only when the carbon unit asks, or to fix a wrong output the cleanup exposes at its source inside the bounded scope, named in the report; a source outside that scope goes in the report unedited.
 - Lock behavior by running the existing tests and the code path; write a new test only as a regression test for a bug actually fixed or for an uncovered contract whose break would be silent.
 - Prefer deletion over addition.
 - Reuse existing utilities and patterns before introducing new ones.
@@ -41,7 +43,7 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
 ## Workflow
 
 1. **Protect current behavior first**
-   - Identify what must stay the same.
+   - Identify the observable output that must stay the same.
    - Run the existing tests that cover it before editing; add one only for a fixed bug or an uncovered contract whose break would be silent.
    - If tests cannot come first, record the verification plan explicitly before touching code.
 
@@ -54,13 +56,14 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
    - **Dead code**: unused code, unreachable branches, stale flags, debug leftovers
    - **Needless abstraction**: pass-through wrappers, speculative indirection, single-use helper layers
    - **Boundary violations**: hidden coupling, misplaced responsibilities, wrong-layer imports or side effects
+   - **Bolted-on shape**: a feature layered onto code built before it, such as an `if (newKind)` branch in code that already dispatches on kind, a near-copy file or component for one variant, a flag repeating what a type already says, an optional parameter only one caller passes, or a second system beside one that already owns the concern. This class covers feature code; a bug fix stays the smallest change that fixes it.
    - **Low-value tests**: assertions mirroring the implementation, mocks of the unit under test, coverage-padding per-function cases, tests of constants or config shape; excluding regression tests for fixed bugs and tests of contracts whose break would be silent
 
 4. **Run one smell-focused pass at a time**
-   - **Pass 1: Dead code deletion**
-   - **Pass 2: Duplicate removal**
+   - **Pass 1: Dead code deletion**. Before deleting a path that production could still reach, check the repo's telemetry read-only when a tool for it is connected (PostHog, logs, error tracking), and keep that data out of the diff and commit message.
+   - **Pass 2: Duplicate and bolted-on shape removal**. For bolted-on shape, ask how the code would look had the feature been in the original design, reshape the existing types, dispatch, and systems to that, delete the workaround, and grep its removed symbols for leftovers.
    - **Pass 3: Naming and error-handling cleanup**
-   - **Pass 4: Low-value test removal**, keeping regression tests for fixed bugs and tests of silent-break contracts
+   - **Pass 4: Low-value test removal**, including tests that only prove a removed workaround survived, keeping regression tests for fixed bugs and tests of silent-break contracts
    - Re-run targeted verification after each pass.
    - Keep each edit set limited to related refactors.
 
@@ -75,4 +78,5 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
    - **Changed files**
    - **Simplifications**
    - **Behavior lock / verification run**
+   - **Output changes**: each wrong output fixed or left for a source outside scope, and that source
    - **Remaining risks**
