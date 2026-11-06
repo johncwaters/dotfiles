@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -61,7 +62,10 @@ const CHANGED_ONLY_PATH_CAP_BYTES = 20000;
 const REPO_GATE_COMMAND = /^(npm|pnpm|yarn)\s+(run\s+)?(typecheck|lint|test)$/;
 const UNIT_TITLE_LIMIT = 120;
 const NO_UPSTREAM = /^none:\s*\S*[A-Za-z]\S*\s+\S*[A-Za-z]/;
-const UPSTREAM_EVIDENCE = /[\w./-]+\.[A-Za-z]\w*:\d+|(?<![\w-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![\w-])|`[^`\s]+\s[^`]*[-/.=]\w[^`]*`/;
+const UPSTREAM_PATH_OR_COMMAND = /[\w./-]+\.[A-Za-z]\w*:\d+|`[^`\s]+\s[^`]*[-/.=]\w[^`]*`/;
+const HEX_RUN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
+const SHA_SHAPE = /^(?=.*\d)(?=.*[a-f])/;
+const COMMIT_LOOKUP_TIMEOUT_MS = 2000;
 
 export function oneLine(text: string): string {
   return text.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim();
@@ -120,7 +124,36 @@ function requireString(value: unknown, subject: string, errors: string[]): void 
   addError(errors, 1, subject, "supply a non-empty string");
 }
 
-function validateNodeShape(value: unknown, index: number, errors: string[]): void {
+function listHexRuns(text: string): string[] {
+  return text.match(HEX_RUN) ?? [];
+}
+
+function readBranchUpstream(node: unknown): string {
+  return isRecord(node) && node.kind === "branch" && typeof node.upstream === "string" ? node.upstream : "";
+}
+
+function readCommitsCited(nodes: unknown[], repoRoot: unknown): Set<string> | undefined {
+  const upstreamsNeedingACommit = nodes.map(readBranchUpstream).filter((upstream) => !NO_UPSTREAM.test(upstream) && !UPSTREAM_PATH_OR_COMMAND.test(upstream));
+  const hexRuns = [...new Set(upstreamsNeedingACommit.flatMap(listHexRuns))];
+  if (hexRuns.length === 0) return new Set();
+  if (typeof repoRoot !== "string" || !path.isAbsolute(repoRoot)) return undefined;
+  const gitProcess = spawnSync("git", ["--no-lazy-fetch", "-C", repoRoot, "cat-file", "--batch-check"], {
+    input: hexRuns.map((hexRun) => `${hexRun}^{commit}\n`).join(""),
+    encoding: "utf8",
+    timeout: COMMIT_LOOKUP_TIMEOUT_MS,
+  });
+  if (gitProcess.error || gitProcess.status !== 0) return undefined;
+  const answers = gitProcess.stdout.split("\n");
+  return new Set(hexRuns.filter((_, hexRunIndex) => / commit \d+$/.test(answers[hexRunIndex] ?? "")));
+}
+
+function citesCommit(upstream: string, commitsCited: Set<string> | undefined): boolean {
+  const hexRuns = listHexRuns(upstream);
+  if (commitsCited === undefined) return hexRuns.some((hexRun) => SHA_SHAPE.test(hexRun));
+  return hexRuns.some((hexRun) => commitsCited.has(hexRun));
+}
+
+function validateNodeShape(value: unknown, index: number, errors: string[], commitsCited: Set<string> | undefined): void {
   const subject = isRecord(value) && typeof value.id === "string" ? `node ${value.id}` : `node[${index}]`;
   if (!isRecord(value)) {
     addError(errors, 1, subject, "supply a node object");
@@ -165,8 +198,8 @@ function validateNodeShape(value: unknown, index: number, errors: string[]): voi
   }
   if (nodeKind === "branch") {
     const upstream = typeof value.upstream === "string" ? value.upstream : "";
-    if (NO_UPSTREAM.test(upstream) || UPSTREAM_EVIDENCE.test(upstream)) return;
-    addError(errors, 1, `${subject}.upstream`, "say what one level up would make this question unnecessary and cite what you read (path:line, a commit sha, or a backticked command with its arguments), or write 'none: <why nothing sits above this choice>'");
+    if (NO_UPSTREAM.test(upstream) || UPSTREAM_PATH_OR_COMMAND.test(upstream) || citesCommit(upstream, commitsCited)) return;
+    addError(errors, 1, `${subject}.upstream`, "say what one level up would make this question unnecessary and cite what you read (path:line, the sha of a commit in repoRoot, or a backticked command with its arguments), or write 'none: <why nothing sits above this choice>'");
     return;
   }
   if (nodeKind === "design") {
@@ -230,7 +263,10 @@ function validateShape(value: unknown): string[] {
     value.challengedUnitIds.forEach((unitId: unknown, index: number) => requireString(unitId, `spec.challengedUnitIds[${index}]`, errors));
   }
   if (!Array.isArray(value.nodes)) addError(errors, 1, "spec.nodes", "supply an array of nodes");
-  if (Array.isArray(value.nodes)) value.nodes.forEach((node: unknown, index: number) => validateNodeShape(node, index, errors));
+  if (Array.isArray(value.nodes)) {
+    const commitsCited = readCommitsCited(value.nodes, value.repoRoot);
+    value.nodes.forEach((node: unknown, index: number) => validateNodeShape(node, index, errors, commitsCited));
+  }
   if (!Array.isArray(value.edges)) addError(errors, 1, "spec.edges", "supply an array of edges");
   if (!Array.isArray(value.edges)) return errors;
   value.edges.forEach((edge: unknown, index: number) => {

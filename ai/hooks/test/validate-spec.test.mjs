@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { runHook } from "./harness.mjs";
+import { spawnSync } from "node:child_process";
+import { commitFile, makeRepo } from "../../skills/landing/test/helpers.ts";
+import { removeAll, runHook } from "./harness.mjs";
 
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "validate-spec-"));
 const repoRoot = path.join(temporaryHome, "repo");
@@ -233,11 +235,11 @@ test("a large file the unit only changes counts at the changed-only cap", () => 
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*list the splits path in both reads and changes/);
 });
 
-test("a branch is refused until its upstream line is none with a reason or cites what was read", () => {
-  const sketchWithBranchUpstream = (upstream) => ({
+test("a branch is refused until its upstream line is none with a reason or cites what was read", (testContext) => {
+  const sketchWithBranchUpstream = (upstream, specRepoRoot = repoRoot) => ({
     status: "sketch",
     request: "Clear the card once its question is answered",
-    repoRoot,
+    repoRoot: specRepoRoot,
     nodes: [
       { id: "G1", kind: "goal", text: "The card clears once answered" },
       { id: "B1", kind: "branch", question: "Which hook reports the answer?", leaning: "PostToolUse", ...(upstream === undefined ? {} : { upstream }) },
@@ -250,6 +252,23 @@ test("a branch is refused until its upstream line is none with a reason or cites
   for (const acceptedUpstream of ["none: the name is new", "Report from the title watcher instead, ruled out by server/cards.ts:212", "It worked until 4ecdd12 dropped the answer hook", "`git log -S answerHook` shows the hook was removed on purpose"]) {
     assertAllowed(writeSpec(sketchWithBranchUpstream(acceptedUpstream)));
   }
+  const citedRepository = makeRepo();
+  testContext.after(() => removeAll(citedRepository));
+  commitFile(citedRepository, "a.txt", "one\n");
+  let allDigitCommit;
+  for (let attempt = 0; allDigitCommit === undefined && attempt < 5000; attempt += 1) {
+    const commitProcess = spawnSync("git", ["-C", citedRepository, "commit-tree", "HEAD^{tree}", "-m", `attempt ${attempt}`], { encoding: "utf8" });
+    const abbreviatedCommit = commitProcess.stdout.slice(0, 7);
+    if (/^\d{7}$/.test(abbreviatedCommit)) allDigitCommit = abbreviatedCommit;
+  }
+  assertAllowed(writeSpec(sketchWithBranchUpstream(`It worked until ${allDigitCommit} dropped the answer hook`, citedRepository)));
+  assert.match(denialReason(writeSpec(sketchWithBranchUpstream("It worked until abc1234 dropped the answer hook", citedRepository))), /Rule 1: node B1\.upstream: say what one level up/);
+  const fetchMarkerPath = path.join(citedRepository, "fetched");
+  for (const [configKey, configValue] of [["extensions.partialClone", "origin"], ["remote.origin.promisor", "true"], ["remote.origin.url", path.join(citedRepository, "nowhere")], ["remote.origin.uploadpack", `touch ${fetchMarkerPath}; false`]]) {
+    spawnSync("git", ["-C", citedRepository, "config", configKey, configValue]);
+  }
+  assert.match(denialReason(writeSpec(sketchWithBranchUpstream("It worked until 1234567890abcdef1234567890abcdef12345678 dropped the answer hook", citedRepository))), /Rule 1: node B1\.upstream: say what one level up/);
+  assert.equal(fs.existsSync(fetchMarkerPath), false, "the commit lookup fetched from the spec's repository");
 });
 
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {
