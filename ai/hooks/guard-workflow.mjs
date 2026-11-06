@@ -86,6 +86,13 @@ const RAW_COMMIT_REASON =
   "Commits already made (a mainline sync's merge) push through /landing's land.ts with no message, which withholds any commit no review recorded. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
+const DEFECT_WORDS = /\b(?:bugs?|broken|broke|break\w*|fail\w*|findings?|regress\w*|stuck|fix\w*|workarounds?|crash\w*)\b/i;
+const CAUSE_LINE = /^\s*Cause:\s*(.+)$/im;
+const CAUSE_EVIDENCE = /[\w./-]+\.\w+:\d+|(?<![\w-])(?=[0-9a-f]*\d)[0-9a-f]{7,40}(?![\w-])|`(?!command`)[^`\s]+\s+[^`]+`/;
+const traceUpstreamReason = (questionNumbers) =>
+  `Trace upstream before asking. Question ${questionNumbers.join(", ")} names a defect but no traced cause. ` +
+  "Find why it happens: did it work before (`git log -S`, a bisect)? Is the design itself wrong (should this exist, or be shared at all)? Is a caller misusing it? " +
+  "Then add a line 'Cause: <what you found> (<path:line>, <commit sha>, or the `command` that showed it)' to the question, and offer the fix at that cause first.";
 const KILL_SELF_MATCH_REASON =
   "A kill by pattern (pkill -f, or pgrep -f feeding kill) matches full command lines, and this pattern matches text in this same Bash call, which its own shell carries, so the call kills itself. " +
   "Run the kill in its own Bash call with one character of the pattern bracketed ('[n]ode server'), so the pattern no longer matches its own text.";
@@ -298,6 +305,25 @@ function guardKillSelfMatch(command) {
   if ([...killArgumentTexts].some((argumentText) => isSelfMatchingKill(argumentText, command))) denyPreToolUse(KILL_SELF_MATCH_REASON);
 }
 
+function untracedDefectQuestionNumbers(toolInput) {
+  const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
+  const untracedNumbers = [];
+  questions.forEach((question, index) => {
+    const questionText = typeof question?.question === "string" ? question.question : "";
+    if (!DEFECT_WORDS.test(questionText)) return;
+    const causeText = questionText.match(CAUSE_LINE)?.[1] ?? "";
+    if (CAUSE_EVIDENCE.test(causeText)) return;
+    untracedNumbers.push(index + 1);
+  });
+  return untracedNumbers;
+}
+
+function guardTracedQuestion(toolInput) {
+  const untracedNumbers = untracedDefectQuestionNumbers(toolInput);
+  if (untracedNumbers.length === 0) return;
+  denyPreToolUse(traceUpstreamReason(untracedNumbers));
+}
+
 async function guardRawCommit(command, transcriptPath) {
   if (!GIT_COMMIT_OR_PUSH.test(maskSingleQuotedText(maskLiteralHeredocBodies(command)))) return;
   if (fs.existsSync(transcriptPath) && (await hasLandingSkillRunSinceLastPrompt(transcriptPath))) return;
@@ -483,6 +509,7 @@ async function main() {
   if (!payload || typeof payload !== "object" || payload.agent_id) allow();
   if (typeof payload.transcript_path !== "string") allow();
   const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
+  if (payload.tool_name === "AskUserQuestion") guardTracedQuestion(toolInput);
   if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
   if (!isAttendedMainLoopCall(payload) || !fs.existsSync(payload.transcript_path)) allow();
   const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();

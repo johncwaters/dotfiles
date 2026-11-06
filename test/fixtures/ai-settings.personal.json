@@ -111,7 +111,7 @@
         ]
       },
       {
-        "matcher": "^(Bash|Write|Edit|MultiEdit)$",
+        "matcher": "^(Bash|Write|Edit|MultiEdit|AskUserQuestion)$",
         "hooks": [
           {
             "type": "command",
