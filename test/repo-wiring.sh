@@ -259,6 +259,27 @@ check "shared AI runtime and installers contain no profile-specific tool names o
 const fs = require('node:fs');
 const path = require('node:path');
 const root = process.argv[2];
+const profilesDirectory = path.join(root, 'profiles');
+const profileNames = fs.readdirSync(profilesDirectory).filter((name) => fs.statSync(path.join(profilesDirectory, name)).isDirectory());
+const sharedSkillNames = new Set(fs.readdirSync(path.join(root, 'ai/skills')));
+const profileOnlySkillNames = profileNames.flatMap((profileName) => {
+  const skillsDirectory = path.join(profilesDirectory, profileName, 'skills');
+  return fs.existsSync(skillsDirectory) ? fs.readdirSync(skillsDirectory) : [];
+}).filter((skillName) => !sharedSkillNames.has(skillName));
+const mcpServerNamesByProfile = profileNames
+  .map((profileName) => path.join(profilesDirectory, profileName, 'mcp-servers.json'))
+  .filter((serversPath) => fs.existsSync(serversPath))
+  .map((serversPath) => Object.keys(JSON.parse(fs.readFileSync(serversPath, 'utf8'))));
+const profileOnlyMcpToolPrefixes = [...new Set(mcpServerNamesByProfile.flat())]
+  .filter((serverName) => !mcpServerNamesByProfile.every((serverNames) => serverNames.includes(serverName)))
+  .map((serverName) => `mcp__${serverName}`);
+const escapeForRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const profileOnlyNames = [...new Set([...profileOnlySkillNames, ...profileOnlyMcpToolPrefixes])].map(escapeForRegex);
+const profileSpecificContent = new RegExp(
+  `profiles/(?:${profileNames.map(escapeForRegex).join('|')})\\b|profileName[^\\n]*(?:==|!=)\\s*["']?(?:${profileNames.map(escapeForRegex).join('|')})\\b`
+    + (profileOnlyNames.length ? `|(?<![\\w-])(?:${profileOnlyNames.join('|')})(?![A-Za-z0-9-])` : ''),
+  'i',
+);
 const scan = (relativePath) => {
   const absolutePath = path.join(root, relativePath);
   if (fs.statSync(absolutePath).isDirectory()) {
@@ -268,10 +289,7 @@ const scan = (relativePath) => {
     }
     return;
   }
-  const text = fs.readFileSync(absolutePath, 'utf8');
-  const boundaryText = relativePath === 'ai/skills/applying-house-style/SKILL.md'
-    ? text.replace("Not for PostHog product UI, which follows PostHog's own design system.", '') : text;
-  if (/posthog|profiles\/(work|personal|server)\b|profileName[^\n]*(?:==|!=)\s*["']?(?:work|personal|server)\b/i.test(boundaryText)) {
+  if (profileSpecificContent.test(fs.readFileSync(absolutePath, 'utf8'))) {
     throw new Error(`profile-specific shared content: ${relativePath}`);
   }
 };

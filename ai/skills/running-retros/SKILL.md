@@ -1,6 +1,6 @@
 ---
 name: running-retros
-description: Reviews finished coding sessions for agent-setup friction and proposes at most five enforceable AI-config fixes, with carbon-unit picks handed to /specifying. Use for /running-retros, "retro this session", "what went wrong this session", "review my last sessions", or a SessionStart unreviewed-session reminder. Code-diff reviews belong to /gating-reviews or /reviewing-prs; sprint retro posts belong to posting-sprint-updates.
+description: Reviews finished coding sessions for agent-setup friction and proposes at most five enforceable AI-config fixes, with carbon-unit picks handed to /specifying. Use for /running-retros, "retro this session", "what went wrong this session", "review my last sessions", or a SessionStart unreviewed-session reminder. Code-diff reviews belong to /gating-reviews or /reviewing-prs.
 ---
 
 # Retro
