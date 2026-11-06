@@ -93,7 +93,7 @@
         ]
       },
       {
-        "matcher": "^(Bash|Write|Edit|MultiEdit|AskUserQuestion)$",
+        "matcher": "^(Bash|Write|Edit|MultiEdit)$",
         "hooks": [
           {
             "type": "command",

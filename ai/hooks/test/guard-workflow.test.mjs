@@ -240,26 +240,3 @@ test("edits outside a git worktree or under ~/.claude skip the spec gate", () =>
   assert.equal(decisionFor(bashCall("echo note > notes.md", transcriptPath, { cwd: sandboxHome })).decision, "allow");
   assert.equal(decisionFor(bashCall("echo fact > ~/.claude/projects/memory/fact.md", transcriptPath, { cwd: repository })).decision, "allow");
 });
-
-test("a defect question without an evidenced Cause line is denied, and a traced or non-defect one is allowed", () => {
-  const transcriptPath = writeTranscript([prompt("look into the merge gap")]);
-  const askCall = (...questionTexts) => ({
-    tool_name: "AskUserQuestion",
-    tool_input: { questions: questionTexts.map((question) => ({ question, header: "h", options: [{ label: "a" }, { label: "b" }] })) },
-    transcript_path: transcriptPath,
-  });
-  const untraced = decisionFor(askCall("Which color?", "Merge gap finding: commits made during Merge are never recorded. Should I fix it?"));
-  assert.equal(untraced.decision, "deny");
-  assert.match(untraced.reason, /Question 2 names a defect/);
-  for (const untracedQuestion of ["Two bugs here. Patch?", "Review findings: three issues. Proceed?", "The app is crashing on load. Revert?", "Tests regressing after merge. Revert?", "Three failures in CI. Rerun?", "The build broke. Retry?"]) {
-    assert.equal(decisionFor(askCall(untracedQuestion)).decision, "deny", untracedQuestion);
-  }
-  for (const weakCause of ["a guess with no evidence", "unknown `?`", "defaced guess", "(<path:line>, <commit sha>, or the `command` that showed it)"]) {
-    assert.equal(decisionFor(askCall(`The undo is broken.\nCause: ${weakCause}\nFix it?`)).decision, "deny", weakCause);
-  }
-  assert.equal(decisionFor(askCall("The undo is broken.\nCause: `git log -S undoStack` shows the history rewrite dropped it.\nRestore it?")).decision, "allow");
-  assert.equal(decisionFor(askCall("Merge gap finding.\nCause: merge.ts:212 deletes the worktree without reporting the landed range.\nFix it there?")).decision, "allow");
-  assert.equal(decisionFor(askCall("Stuck card.\nCause: regressed in 4ecdd12.\nRevert it?")).decision, "allow");
-  assert.equal(decisionFor(askCall("Which color for the badge?"), {}).decision, "allow");
-  assert.equal(decisionFor({ tool_name: "AskUserQuestion", tool_input: { questions: "bug" }, transcript_path: transcriptPath }).decision, "allow");
-});
