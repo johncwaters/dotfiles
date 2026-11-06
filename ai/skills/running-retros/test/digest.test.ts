@@ -58,20 +58,22 @@ test("CLI reduces a synthetic session to ordered incidents without counting meta
   equal(digestProcess.status, 0, digestProcess.stderr);
   const digest = JSON.parse(digestProcess.stdout) as SessionDigest;
   deepEqual(digest.counts, {
-    correction: 2, interrupt: 1, "permission-denial": 1, "hook-denial": 1,
+    correction: 4, interrupt: 1, "permission-denial": 1, "hook-denial": 1,
     "tool-error": 4, "repeated-failure": 1, "review-rework": 1, compaction: 1,
     "costly-subagent": 1, "oversized-result": 2, revert: 0,
   });
   deepEqual(digest.incidents.filter((incident) => incident.kind === "correction")
     .map((incident) => ({ line: incident.line, explicit: incident.explicit })), [
-    { line: 4, explicit: true }, { line: 6, explicit: true },
+    { line: 4, explicit: true }, { line: 6, explicit: true }, { line: 29, explicit: true }, { line: 30, explicit: true },
   ]);
   equal(digest.malformedLineCount, 1);
-  equal(digest.promptCount, 5);
-  equal(digest.lineCount, 27);
+  equal(digest.promptCount, 7);
+  equal(digest.lineCount, 30);
   deepEqual(digest.prompts, [
     { line: 4, excerpt: "Actually, keep it deterministic" }, { line: 6, excerpt: "Continue with streaming" },
     { line: 26, excerpt: "Finish the digest" }, { line: 27, excerpt: "I see the diagram tho" },
+    { line: 29, excerpt: "look upstream, this used to work until recently" },
+    { line: 30, excerpt: "no, look upstream instead" },
   ]);
   equal(digest.sessionId, "synthetic-session");
   equal(digest.startedAt, "2026-10-01T10:00:00Z");
@@ -109,7 +111,7 @@ test("CLI since selection uses file mtime, excludes subagents, and sorts session
     deepEqual(digests.map((digest) => digest.transcriptPath), [
       join(projectDir, "earlier.jsonl"), join(projectDir, "later.jsonl"),
     ]);
-    ok(digests.every((digest) => digest.promptCount === 5));
+    ok(digests.every((digest) => digest.promptCount === 7));
   } finally {
     rmSync(projectsDir, { recursive: true, force: true });
   }

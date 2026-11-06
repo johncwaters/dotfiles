@@ -234,13 +234,35 @@ export async function digestTranscript(
     }
     if (isSyntheticPrompt(trimmed, entry)) return;
     const ownWords = trimmed.replace(/<pasted_content\b[\s\S]*?<\/pasted_content>/g, " ").trim();
-    const isRedirect = /^(no|nope|stop|wait|wrong|actually|instead|undo|revert)\b|don't|do not|not what i|why did you|that's wrong|you should have|i said|i told you/.test(ownWords.toLowerCase());
+    const isRedirect = /^(no|nope|stop|wait|wrong|actually|instead|undo|revert)\b|don't|do not|not what i|why did you|that's wrong|you should have|i said|i told you|\bupstream\b|root cause|in the first place|used to work/.test(ownWords.toLowerCase());
     if (hasPendingInterrupt || (digest.promptCount > 0 && isRedirect)) {
       addIncident("correction", text, { explicit: true });
     }
     if (digest.promptCount > 0) digest.prompts.push({ line: digest.lineCount, excerpt: excerpt(ownWords) });
     digest.promptCount += 1;
     hasPendingInterrupt = false;
+  }
+
+  function recordQuestionAnswers(toolUseResult: JsonObject | null, entry: JsonObject): void {
+    if (!Array.isArray(toolUseResult?.questions)) return;
+    const answersByQuestion = asObject(toolUseResult.answers);
+    if (!answersByQuestion) return;
+    const optionLabels = new Set(toolUseResult.questions.flatMap((question: unknown) => {
+      const options = asObject(question)?.options;
+      return Array.isArray(options) ? options.map((option: unknown) => asText(asObject(option)?.label)) : [];
+    }));
+    const annotationsByQuestion = asObject(toolUseResult.annotations);
+    for (const [question, answer] of Object.entries(answersByQuestion)) {
+      const typedAnswer = typeof answer === "string" && answer !== "(notes only)" && !isOptionPick(answer, optionLabels) ? answer : "";
+      const notes = asText(asObject(annotationsByQuestion?.[question])?.notes);
+      const ownWords = [typedAnswer, notes].filter(Boolean).join(" ");
+      if (ownWords) recordPrompt(ownWords, entry);
+    }
+  }
+
+  function isOptionPick(answer: string, optionLabels: Set<string>): boolean {
+    if (optionLabels.has(answer)) return true;
+    return [...optionLabels].some((label) => label !== "" && answer.startsWith(`${label}, `) && isOptionPick(answer.slice(label.length + 2), optionLabels));
   }
 
   function recordSpecPath(filePath: string): void {
@@ -325,6 +347,7 @@ export async function digestTranscript(
         for (const block of blocks) {
           if (block.type === "tool_result") recordToolResult(block, asObject(entry.toolUseResult));
         }
+        recordQuestionAnswers(asObject(entry.toolUseResult), entry);
         continue;
       }
       for (const block of blocks) {
