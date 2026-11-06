@@ -340,23 +340,38 @@ function harvestBiomeDiagnostic(content, filePath, cmd, wrapperLineCount = 0) {
   }
 }
 
+const BIOME_PARSE_HEADER = /^(.*):\d+:\d+ parse\b/;
+const BIOME_CONFIGURATION_FAILURE = /^configuration\b/m;
+
+function reportsParseErrorIn(formatOutput, stdinFileName) {
+  if (BIOME_CONFIGURATION_FAILURE.test(formatOutput)) return false;
+  return formatOutput.split("\n").some((outputLine) => {
+    const headerPath = BIOME_PARSE_HEADER.exec(outputLine)?.[1];
+    return headerPath !== undefined && path.basename(headerPath) === stdinFileName;
+  });
+}
+
+function judgeWithBiome(content, filePath, engineCommand) {
+  if (!engineCommand) return "absent";
+  const [executable, ...leadingArguments] = engineCommand;
+  const stdinFileName = path.basename(filePath);
+  const formatProcess = runStdin(executable, [...leadingArguments, "format", `--stdin-file-path=${stdinFileName}`], content);
+  if (formatProcess.error) return "cannotJudge";
+  if (formatProcess.status === 0) return "valid";
+  const formatOutput = [formatProcess.stderr || "", formatProcess.stdout || ""].join("\n");
+  return reportsParseErrorIn(formatOutput, stdinFileName) ? "parseError" : "cannotJudge";
+}
+
 function validateWithBiome(content, ext, filePath) {
-  const cmd = biomeCmd();
-  const jsonFallback = () => (ext === ".json" ? validateJson(content) : null);
-  if (!cmd) return jsonFallback();
-  const [bin, ...pre] = cmd;
-  const formatArguments = [...pre, "format", `--stdin-file-path=${path.basename(filePath)}`];
-  const r = runStdin(bin, formatArguments, content);
-  if (r.error) return jsonFallback();
-  if (r.status === 0) return null;
-  // Biome exits 1 without parsing when formatter.enabled=false, so it cannot justify denial.
-  const out = [r.stderr || "", r.stdout || ""].join(" ");
-  if (out.includes("formatter is currently disabled")) return jsonFallback();
+  const engineCommand = biomeCmd();
+  const verdict = judgeWithBiome(content, filePath, engineCommand);
+  if (verdict === "valid") return null;
+  if (verdict !== "parseError") return ext === ".json" ? validateJson(content) : null;
   const isWorkflow = isWorkflowScript(filePath, content);
   const workflowBody = isWorkflow ? blankWorkflowExport(content) : null;
   if (isWorkflow && !hasWorkflowBodySyntaxError(workflowBody)) return null;
   const parsedContent = isWorkflow ? wrapWorkflowBodyAsFunction(workflowBody) : content;
-  const harvested = harvestBiomeDiagnostic(parsedContent, filePath, cmd, isWorkflow ? 1 : 0);
+  const harvested = harvestBiomeDiagnostic(parsedContent, filePath, engineCommand, isWorkflow ? 1 : 0);
   if (harvested) return harvested;
   const label = ext === ".json" || ext === ".jsonc" ? "JSON" : ext.slice(1).toUpperCase();
   return {
@@ -446,6 +461,12 @@ function validate(filePath, content) {
   if (ext === ".dart") return validateDart(content);
   if (BIOME_EXTS.has(ext)) return validateWithBiome(content, ext, filePath);
   return null;
+}
+
+const ENGINE_PROBE_EXIT_CODES = { valid: 0, parseError: 1, cannotJudge: 1, absent: 2 };
+if (process.argv[2] === "--probe-engine") {
+  process.chdir(path.sep);
+  process.exit(ENGINE_PROBE_EXIT_CODES[judgeWithBiome('{"probe":true}\n', "probe.json", biomeCmd())]);
 }
 
 try {

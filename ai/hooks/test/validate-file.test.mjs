@@ -272,9 +272,38 @@ test("untracked review-ladder files fall back to the on-disk size", () => {
   assert.ok(denialReason.includes("Where: 5 bytes, prior 4"));
 });
 
+test("an engine that exits non-zero without a parse diagnostic for the written file allows the write and leaves JSON to the native parser", () => {
+  const enginePath = path.join(validatorHome, "unjudging-biome");
+  const engineEnvironment = { ...validatorEnvironment, BIOME_BIN: enginePath };
+  const validWrites = [
+    { file_path: "a.ts", content: "const count = 1;\n" },
+    { file_path: "a.json", content: '{"valid":true}' },
+    { file_path: "biome.json", content: '{"formatter":{"enabled":true}}' },
+  ];
+  const engineFailureOutputs = [
+    "Error: Cannot find module '@biomejs/cli-darwin-arm64/biome'",
+    "/project/biome.json:1:34 parse\nconfiguration\n  Biome exited because the configuration resulted in errors.",
+  ];
+  for (const engineFailureOutput of engineFailureOutputs) {
+    writeExecutable(enginePath, `#!${process.execPath}
+console.error(${JSON.stringify(engineFailureOutput)});
+process.exit(1);
+`);
+    for (const validWrite of validWrites) {
+      const hookProcess = validateWrite(validWrite, engineEnvironment);
+      assert.equal(hookProcess.status, 0, hookProcess.stderr);
+      assert.equal(hookProcess.stdout, "", `${validWrite.file_path} after ${engineFailureOutput}`);
+    }
+    assert.match(readDenialReason(validateWrite({ file_path: "a.json", content: "{bad}" }, engineEnvironment)), /invalid JSON/);
+  }
+});
+
 test("a failed diagnostic harvest cannot turn a syntax denial into an allow", () => {
   const enginePath = path.join(validatorHome, "biome");
-  writeExecutable(enginePath, `#!${process.execPath}\nprocess.exit(1);\n`);
+  writeExecutable(enginePath, `#!${process.execPath}
+if (process.argv.includes("format")) console.error("a.ts:1:15 parse");
+process.exit(1);
+`);
   const denialReason = readDenialReason(validateWrite(
     { file_path: "a.ts", content: "const count = ;" },
     { ...validatorEnvironment, BIOME_BIN: enginePath },
@@ -287,7 +316,9 @@ test("a workflow script parses as the async function body the runtime runs it as
   writeExecutable(enginePath, `#!${process.execPath}
 const { spawnSync } = require("node:child_process");
 const source = require("node:fs").readFileSync(0, "utf8");
-process.exit(spawnSync(process.execPath, ["--input-type=module", "--check"], { input: source }).status);
+const checkStatus = spawnSync(process.execPath, ["--input-type=module", "--check"], { input: source }).status;
+if (checkStatus !== 0) console.error("review.js:1:1 parse");
+process.exit(checkStatus);
 `);
   const engineEnvironment = { ...validatorEnvironment, BIOME_BIN: enginePath };
   const workflowScript = "export const meta = { name: 'review' }\nconst verdict = await agent('review')\nreturn verdict\n";
