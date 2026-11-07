@@ -11,6 +11,7 @@ Close every branch.
    - Behavior: the desired flow step by step, with an ASCII mockup in a preview for a UI.
    - Scope: the nearest thing left out.
    - Input: empty, huge, malformed, duplicate.
+   - Numbers: each cap, page size, budget, or threshold closes as a tunable a bench unit measures, never a guessed option; on an upgrade request, today's limits and code are inputs, not constraints.
    - Failure: a dependency failing, a halfway stop, a rerun.
    - Existing state: data, config, and machines that predate the feature.
    - Reach: other callers, profiles, and platforms.
