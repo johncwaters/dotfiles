@@ -730,6 +730,10 @@ class Landing {
       this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
       return;
     }
+    if (this.wasLocalTipOf(featureBranch, remoteFeatureTip) && this.isEveryCommitCarriedOnto(mainlineRef, remoteFeatureTip)) {
+      this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
+      return;
+    }
 
     const preRebaseTip = this.preRebaseFeatureTip;
     if (preRebaseTip === null || !this.git.isAncestor(remoteFeatureTip, preRebaseTip)) {
@@ -755,6 +759,40 @@ class Landing {
       return;
     }
     this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
+  }
+
+  private wasLocalTipOf(featureBranch: string, remoteFeatureTip: string): boolean {
+    const pastLocalTips = this.git.run(["rev-list", "--walk-reflogs", "--ignore-missing", `refs/heads/${featureBranch}`]);
+    return pastLocalTips.code === 0 && pastLocalTips.stdout.split("\n").includes(remoteFeatureTip);
+  }
+
+  private isEveryCommitCarriedOnto(mainlineRef: string, remoteFeatureTip: string): boolean {
+    const authorshipsIn = (range: string) => {
+      const listing = this.git.run(["-c", "core.quotePath=false", "log", "--date=raw", "--no-renames", "--name-only", "--format=%x1e%H%x1f%an%x1f%ae%x1f%ad%x1f%s", range]);
+      if (listing.code !== 0) {
+        return null;
+      }
+      const records = listing.stdout.split("\x1e").map((record) => record.trim()).filter(Boolean);
+      return records.map((record): [string, string] => {
+        const [header = "", ...changedPaths] = record.split("\n").filter(Boolean);
+        const [commit = "", ...authorship] = header.split("\x1f");
+        return [[...authorship, ...changedPaths.sort()].join("\x1f"), commit];
+      });
+    };
+    const unmergedCommitsByAuthorship = authorshipsIn(`${mainlineRef}..${remoteFeatureTip}`);
+    const mainlineCommitsByAuthorship = authorshipsIn(`${remoteFeatureTip}..${mainlineRef}`);
+    const mainlineTreeOid = this.git.treeOid(mainlineRef);
+    if (unmergedCommitsByAuthorship === null || mainlineCommitsByAuthorship === null || mainlineTreeOid === null || unmergedCommitsByAuthorship.length === 0) {
+      return false;
+    }
+    return unmergedCommitsByAuthorship.every(([authorship], unmergedIndex) => {
+      const carriedCommit = mainlineCommitsByAuthorship.filter(([mainlineAuthorship]) => mainlineAuthorship === authorship)[unmergedCommitsByAuthorship.slice(0, unmergedIndex).filter(([earlierAuthorship]) => earlierAuthorship === authorship).length]?.[1];
+      if (carriedCommit === undefined) {
+        return false;
+      }
+      const revertedOntoMainline = this.git.mergeTree(mainlineRef, `${carriedCommit}^`, carriedCommit);
+      return revertedOntoMainline.code === 0 && !isTreeContained(revertedOntoMainline.stdout, mainlineTreeOid);
+    });
   }
 
   private pruneMergedRemoteBranch(

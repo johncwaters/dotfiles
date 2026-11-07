@@ -9,6 +9,7 @@ import {
   commitFile,
   gitOutput,
   land,
+  makeLedgerPath,
   makePolicyRoot,
   REAL_GIT_PATH,
   runGit,
@@ -438,5 +439,95 @@ test("mainline is never deleted as a feature branch", () => {
     assert.equal(gitOutput(origin, ["rev-parse", "release"]), result.commit);
   } finally {
     cleanup(origin, seed, local, policyRoot);
+  }
+});
+
+test("a rerun after a promotion conflict resolved by hand deletes the remote branch the conflict left behind", () => {
+  const featureBranch = "glimmervoid/session/hand-resolved-conflict";
+  const { origin, seed, local } = seedOrigin(featureBranch);
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  const ledgerEnv = { CLAUDE_COMMIT_LEDGER: ledgerPath };
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nmain change\n", "main change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+    const conflicted = land(local, ["--promote"], VALID_MESSAGE, ledgerEnv);
+    assert.equal(conflicted.result.outcome, "PROMOTE_CONFLICT");
+    assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), conflicted.result.commit);
+
+    runGit(local, ["fetch", "-q", "origin"]);
+    assert.notEqual(tryGit(local, ["rebase", "origin/main"]), 0);
+    writeFile(local, "base.txt", "base\nmain change\nfeature change\n");
+    runGit(local, ["add", "base.txt"]);
+    runGit(local, ["-c", "core.editor=true", "rebase", "--continue"]);
+    const rerun = land(local, ["--promote"], "", ledgerEnv);
+
+    assert.deepEqual(rerun.result.promoted, ["main"]);
+    assert.deepEqual(rerun.result.deletedRemoteBranches, [featureBranch]);
+    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", featureBranch]), 0);
+  } finally {
+    cleanup(origin, seed, local, ledgerDirectory);
+  }
+});
+
+test("a rerun after a promotion conflict keeps the remote branch when the conflicted commit was dropped instead of carried", () => {
+  const featureBranch = "glimmervoid/session/dropped-conflict";
+  const { origin, seed, local } = seedOrigin(featureBranch);
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  const ledgerEnv = { CLAUDE_COMMIT_LEDGER: ledgerPath };
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nmain change\n", "main change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+    const conflicted = land(local, ["--promote"], VALID_MESSAGE, ledgerEnv);
+    assert.equal(conflicted.result.outcome, "PROMOTE_CONFLICT");
+
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["reset", "-q", "--hard", "origin/main"]);
+    writeFile(local, "other.txt", "unrelated\n");
+    const rerun = land(local, ["--promote"], VALID_MESSAGE, ledgerEnv);
+
+    assert.deepEqual(rerun.result.promoted, ["main"]);
+    assert.equal(rerun.result.deletedRemoteBranches, undefined);
+    assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), conflicted.result.commit);
+  } finally {
+    cleanup(origin, seed, local, ledgerDirectory);
+  }
+});
+
+test("a rerun after a promotion conflict keeps a remote branch amended elsewhere after the safety push", () => {
+  const featureBranch = "glimmervoid/session/amended-elsewhere";
+  const { origin, seed, local } = seedOrigin(featureBranch);
+  const otherCheckout = cloneRepo(origin);
+  const { ledgerDirectory, ledgerPath } = makeLedgerPath();
+  const ledgerEnv = { CLAUDE_COMMIT_LEDGER: ledgerPath };
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "base.txt", "base\nmain change\n", "main change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "base.txt", "base\nfeature change\n");
+    assert.equal(land(local, ["--promote"], VALID_MESSAGE, ledgerEnv).result.outcome, "PROMOTE_CONFLICT");
+
+    runGit(otherCheckout, ["fetch", "-q", "origin"]);
+    runGit(otherCheckout, ["checkout", "-q", "-b", featureBranch, `origin/${featureBranch}`]);
+    writeFile(otherCheckout, "base.txt", "base\nfeature change\nwork only on the remote\n");
+    runGit(otherCheckout, ["commit", "-q", "-a", "--amend", "--no-edit"]);
+    runGit(otherCheckout, ["push", "-q", "-f", "origin", featureBranch]);
+    const amendedTip = gitOutput(otherCheckout, ["rev-parse", "HEAD"]);
+
+    runGit(local, ["fetch", "-q", "origin"]);
+    assert.notEqual(tryGit(local, ["rebase", "origin/main"]), 0);
+    writeFile(local, "base.txt", "base\nmain change\nfeature change\n");
+    runGit(local, ["add", "base.txt"]);
+    runGit(local, ["-c", "core.editor=true", "rebase", "--continue"]);
+    const rerun = land(local, ["--promote"], "", ledgerEnv);
+
+    assert.deepEqual(rerun.result.promoted, ["main"]);
+    assert.equal(rerun.result.deletedRemoteBranches, undefined);
+    assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), amendedTip);
+  } finally {
+    cleanup(origin, seed, local, otherCheckout, ledgerDirectory);
   }
 });

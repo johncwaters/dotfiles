@@ -631,7 +631,7 @@ export class Git {
     return [...new Set(listed.map((safeDirectory) => safeDirectory.trim()).filter(Boolean))];
   }
 
-  mergeTree(base: string, head: string): GitResult {
+  mergeTree(base: string, head: string, mergeBase: string | null = null): GitResult {
     const hardenedEnv = envWithoutAnyInheritedGitConfig();
     const safeDirectoryEntries = this.inheritedSafeDirectories().map(
       (safeDirectory) => ["safe.directory", safeDirectory] as [string, string],
@@ -646,7 +646,8 @@ export class Git {
       driverKey,
       "false",
     ]);
-    return this.run(["merge-tree", "--write-tree", base, head], {
+    const mergeBaseArgs = mergeBase === null ? [] : [`--merge-base=${mergeBase}`];
+    return this.run(["merge-tree", "--write-tree", ...mergeBaseArgs, base, head], {
       env: withConfigEntries(hardenedEnv, [
         ["merge.default", "text"],
         ["merge.renormalize", "false"],
