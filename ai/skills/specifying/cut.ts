@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { listPathWithAncestors, oneLine, unitTicketCriteria } from "./lib/graph.ts";
+import { listPathWithAncestors, machineText, oneLine, unitTicketCriteria } from "./lib/graph.ts";
 import type { DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
 import { unitsInDependencyOrder } from "./lib/unit-order.ts";
@@ -32,7 +32,7 @@ function renderIntent(spec: DesignSpec, specPath: string) {
       const design = edge.kind === "implements" ? nodesById.get(edge.to) : undefined;
       return design?.kind === "design" ? [design] : [];
     });
-    const designBlock = designs.map((design) => `${oneLine(design.title)}${design.at ? ` (${oneLine(design.at)})` : ""}:\n${design.code}`).join("\n\n");
+    const designBlock = designs.map((design) => `${oneLine(design.title)}${design.at ? ` (${oneLine(design.at)})` : ""}:\n${design.layer === "machine" ? machineText(design) : design.code}`).join("\n\n");
     const decisions = outgoingEdges.flatMap((edge) => {
       if (edge.kind !== "implements") return [];
       const decision = nodesById.get(edge.to);

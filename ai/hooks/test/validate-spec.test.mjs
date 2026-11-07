@@ -89,6 +89,24 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   assertAllowed(writeSpec(spec));
 });
 
+test("a sliced spec above low risk is refused until it settles each lifecycle as a valid owned machine or says it has none", () => {
+  const uploadMachine = { id: "I1", kind: "design", layer: "machine", title: "Upload lifecycle", at: "graph.ts", states: ["sending", "paused", "done"], transitions: [["sending", "pause", "paused"], ["paused", "resume", "sending"], ["sending", "finish", "done"]] };
+  const mediumRiskSpec = (designNodes, decisionFields = {}) => {
+    const spec = slicedSpec();
+    spec.nodes[0].risk = "medium";
+    Object.assign(spec.nodes[1], decisionFields);
+    spec.nodes.push({ id: "I2", kind: "design", layer: "behavior", title: "Flow", code: "send, pause, resume" }, ...designNodes);
+    spec.edges.push({ from: "U1", kind: "implements", to: "I2" }, ...designNodes.map((design) => ({ from: "U1", kind: "implements", to: design.id })));
+    return spec;
+  };
+  assert.match(denialReason(writeSpec(mediumRiskSpec([]))), /Rule 18: spec\.nodes: add a design node with layer machine .* or a decision with lifecycle: none/);
+  assertAllowed(writeSpec(mediumRiskSpec([], { lifecycle: "none" })));
+  assertAllowed(writeSpec(mediumRiskSpec([uploadMachine])));
+  assert.match(denialReason(writeSpec(mediumRiskSpec([{ ...uploadMachine, transitions: [...uploadMachine.transitions, ["paused", "cancel", "cancelled"]] }]))), /node I1\.transitions: declare cancelled in states/);
+  assert.match(denialReason(writeSpec(mediumRiskSpec([{ ...uploadMachine, states: [...uploadMachine.states, "failed"] }]))), /node I1\.transitions: add a transition reaching failed from sending/);
+  assert.match(denialReason(writeSpec(mediumRiskSpec([{ ...uploadMachine, at: "upload.ts" }]))), /Rule 12: node I1: list upload\.ts in the changes of a unit implementing this machine/);
+});
+
 test("checks repeating the repo gate are denied by id, capped with the count the next write shows", () => {
   const spec = slicedSpec();
   spec.nodes.find((node) => node.id === "U1").checks = [];

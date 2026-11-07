@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { machineText } from "./lib/graph.ts";
 import type { Design, DesignSpec } from "./lib/graph.ts";
 import { readSpec } from "./lib/read-spec.ts";
 import { specArchiveDirectory } from "./lib/spec-store.ts";
@@ -59,13 +60,13 @@ function renderDesign(spec: DesignSpec): string {
   }
   const designs = spec.nodes.filter((node): node is Design => node.kind === "design");
   const lines: string[] = [];
-  for (const layer of ["behavior", "architecture", "program"] as const) {
+  for (const layer of ["behavior", "architecture", "program", "machine"] as const) {
     const designsInLayer = designs.filter((design) => design.layer === layer);
     if (designsInLayer.length === 0) continue;
     lines.push(layer);
     for (const design of designsInLayer) {
       lines.push(`  ${design.id} ${oneLine(design.title)}${design.at ? ` (${oneLine(design.at)})` : ""}`);
-      lines.push(...design.code.split("\n").map((codeLine) => `    ${codeLine}`));
+      lines.push(...(design.layer === "machine" ? machineText(design) : design.code ?? "").split("\n").map((codeLine) => `    ${codeLine}`));
       lines.push(`    built by ${(unitIdsByDesignId.get(design.id) ?? []).join(", ") || "no unit yet"}`);
     }
   }

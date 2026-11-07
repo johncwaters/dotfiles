@@ -20,6 +20,7 @@ export type Decision = {
   source: "decided" | "read" | "assumed";
   evidence?: string;
   isConstraint?: boolean;
+  lifecycle?: "none";
 };
 export type OpenQuestion = { id: `Q${number}`; kind: "openQuestion"; question: string; settledBy: string };
 export type Unit = {
@@ -36,10 +37,12 @@ export type Unit = {
 export type Design = {
   id: `I${number}`;
   kind: "design";
-  layer: "behavior" | "architecture" | "program";
+  layer: "behavior" | "architecture" | "program" | "machine";
   title: string;
-  code: string;
+  code?: string;
   at?: string;
+  states?: string[];
+  transitions?: [string, string, string][];
 };
 export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit | Design;
 export type EdgeKind = "blocks" | "implements" | "dependsOn" | "deferredBy";
@@ -82,10 +85,10 @@ const NODE_FIELDS = {
   goal: ["id", "kind", "text", "risk", "criteria"],
   nonGoal: ["id", "kind", "text"],
   branch: ["id", "kind", "question", "leaning", "upstream"],
-  decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint"],
+  decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint", "lifecycle"],
   openQuestion: ["id", "kind", "question", "settledBy"],
   unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver", "splits"],
-  design: ["id", "kind", "layer", "title", "code", "at"],
+  design: ["id", "kind", "layer", "title", "code", "at", "states", "transitions"],
 } satisfies Record<Node["kind"], string[]>;
 const NODE_ID_PATTERNS = {
   goal: /^G1$/,
@@ -153,6 +156,54 @@ function citesCommit(upstream: string, commitsCited: Set<string> | undefined): b
   return hexRuns.some((hexRun) => commitsCited.has(hexRun));
 }
 
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string" && entry.trim() !== "");
+}
+
+function listUnreachableStates(states: string[], transitions: [string, string, string][]): string[] {
+  const reachedStates = new Set([states[0]]);
+  const pendingStates = [states[0]];
+  for (let index = 0; index < pendingStates.length; index += 1) {
+    for (const [fromState, , toState] of transitions) {
+      if (fromState !== pendingStates[index] || reachedStates.has(toState)) continue;
+      reachedStates.add(toState);
+      pendingStates.push(toState);
+    }
+  }
+  return states.filter((state) => !reachedStates.has(state));
+}
+
+function validateMachineShape(value: Record<string, unknown>, subject: string, errors: string[]): void {
+  if (!Object.hasOwn(value, "at")) addError(errors, 1, `${subject}.at`, "supply at, the one module that owns writes to this machine");
+  if (Object.hasOwn(value, "code")) requireString(value.code, `${subject}.code`, errors);
+  const states = value.states;
+  if (!isStringList(states) || states.length < 2 || new Set(states).size !== states.length) {
+    addError(errors, 1, `${subject}.states`, "supply 2 or more distinct state names, the initial state first");
+    return;
+  }
+  const transitions = value.transitions;
+  const isTransitionList = Array.isArray(transitions) && transitions.length > 0 && transitions.every((transition) => isStringList(transition) && transition.length === 3);
+  if (!isTransitionList) {
+    addError(errors, 1, `${subject}.transitions`, "supply 1 or more [from, event, to] triples of non-empty strings");
+    return;
+  }
+  const declaredStates = new Set(states);
+  const undeclaredStates = [...new Set(transitions.flatMap(([fromState, , toState]) => [fromState, toState]).filter((state) => !declaredStates.has(state)))];
+  if (undeclaredStates.length > 0) {
+    addError(errors, 1, `${subject}.transitions`, `declare ${undeclaredStates.join(", ")} in states or fix the transitions naming them`);
+    return;
+  }
+  const unreachableStates = listUnreachableStates(states, transitions as [string, string, string][]);
+  if (unreachableStates.length > 0) {
+    addError(errors, 1, `${subject}.transitions`, `add a transition reaching ${unreachableStates.join(", ")} from ${states[0]}, or drop the state`);
+  }
+}
+
+export function machineText(design: Design): string {
+  const transitionLines = (design.transitions ?? []).map(([fromState, event, toState]) => `${fromState} --${event}--> ${toState}`);
+  return [`owner: ${design.at ?? ""}`, `states: ${(design.states ?? []).join(", ")}`, ...transitionLines, ...(design.code ? [design.code] : [])].join("\n");
+}
+
 function validateNodeShape(value: unknown, index: number, errors: string[], commitsCited: Set<string> | undefined): void {
   const subject = isRecord(value) && typeof value.id === "string" ? `node ${value.id}` : `node[${index}]`;
   if (!isRecord(value)) {
@@ -170,7 +221,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream", "lifecycle", "code", "states", "transitions"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -192,6 +243,9 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     if (Object.hasOwn(value, "isConstraint") && typeof value.isConstraint !== "boolean") {
       addError(errors, 1, subject, "set isConstraint to a boolean or omit it");
     }
+    if (Object.hasOwn(value, "lifecycle") && value.lifecycle !== "none") {
+      addError(errors, 1, `${subject}.lifecycle`, "set lifecycle to none, on a decision saying why the feature adds or changes no lifecycle, or omit it");
+    }
     const hasLineEvidence = typeof value.evidence === "string" && /^\S(?:.*\S)?:[1-9]\d*$/.test(value.evidence);
     if (value.source === "read" && !hasLineEvidence) addError(errors, 1, subject, "supply evidence as file:line for a read decision");
     return;
@@ -203,11 +257,19 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     return;
   }
   if (nodeKind === "design") {
-    if (!["behavior", "architecture", "program"].includes(value.layer as string)) {
-      addError(errors, 1, `${subject}.layer`, "set layer to behavior, architecture, or program");
+    if (!["behavior", "architecture", "program", "machine"].includes(value.layer as string)) {
+      addError(errors, 1, `${subject}.layer`, "set layer to behavior, architecture, program, or machine");
     }
     if (Object.hasOwn(value, "at")) requireString(value.at, `${subject}.at`, errors);
     if (value.layer === "program" && !Object.hasOwn(value, "at")) addError(errors, 1, `${subject}.at`, "supply at, the path a program design lands in");
+    if (value.layer === "machine") {
+      validateMachineShape(value, subject, errors);
+      return;
+    }
+    requireString(value.code, `${subject}.code`, errors);
+    for (const machineField of ["states", "transitions"]) {
+      if (Object.hasOwn(value, machineField)) addError(errors, 1, `${subject}.${machineField}`, `remove ${machineField}, which only a machine layer design carries`);
+    }
     return;
   }
   if (nodeKind !== "unit") return;
@@ -594,6 +656,18 @@ export function validateGraph(value: unknown): string[] {
   const needsDesign = goalRisk !== "low";
   if (isSliced && needsDesign && !spec.nodes.some((node) => node.kind === "design")) {
     addError(errors, 18, "spec.nodes", `add design nodes from subskills/design.md; a spec settles its design before slicing unless its risk is low (risk is ${goalRisk ?? "unset"})`);
+  }
+  const hasMachine = spec.nodes.some((node) => node.kind === "design" && node.layer === "machine");
+  const hasNoLifecycleDecision = spec.nodes.some((node) => node.kind === "decision" && node.lifecycle === "none");
+  if (spec.status === "sliced" && needsDesign && !hasMachine && !hasNoLifecycleDecision) {
+    addError(errors, 18, "spec.nodes", "add a design node with layer machine (states, transitions, at) for each lifecycle the feature adds or changes, or a decision with lifecycle: none saying why it adds or changes none");
+  }
+  for (const machine of spec.nodes) {
+    if (!isSliced || machine.kind !== "design" || machine.layer !== "machine" || machine.at === undefined) continue;
+    const ownerPath = path.posix.normalize(machine.at.trim().replace(/\\/g, "/"));
+    const builderIds = spec.edges.filter((edge) => edge.kind === "implements" && edge.to === machine.id).map((edge) => edge.from);
+    const isOwnerChanged = units.some((unit) => builderIds.includes(unit.id) && unit.changes.some((changedPath) => path.posix.normalize(changedPath.trim().replace(/\\/g, "/")) === ownerPath));
+    if (!isOwnerChanged) addError(errors, 12, `node ${machine.id}`, `list ${machine.at} in the changes of a unit implementing this machine; the owner is the one module that writes it`);
   }
   if (resolvedRoot === undefined || errors.some((error) => error.startsWith("Rule 6:"))) return errors;
   if (isSliced) {
