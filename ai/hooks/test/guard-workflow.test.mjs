@@ -266,10 +266,13 @@ test("a /specifying question round is denied until every question weighs a chang
   assert.equal(ask(describedOnly).decision, "deny");
 });
 
-test("a question round is not gated once a prompt or a later skill run follows /specifying", () => {
+test("a /specifying question round stays gated through its own challenge, utility commands and the carbon unit's replies, until a review, landing or pull request skill runs", () => {
   const bare = question("Which store?", ["Redis", "Postgres"]);
   const roundAfter = (entries) => decisionFor({ ...questionRound(bare), transcript_path: writeTranscript(entries) }).decision;
-  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), prompt("now something else")]), "allow");
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), ...skillRun("challenging-plans")]), "deny");
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), prompt("the answer to Q1 is yes")]), "deny");
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), ...skillRun("caveman"), prompt("go on")]), "deny");
+  assert.equal(decisionFor({ ...questionRound(question("Which store?", ["Fix the cache (change at the source) (Recommended)", "Redis"])), transcript_path: writeTranscript([prompt("spec this"), ...skillRun("specifying")]) }).decision, "allow");
   assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), ...skillRun("opening-prs")]), "allow");
   assert.equal(roundAfter([prompt("ship it"), ...skillRun("landing")]), "allow");
 });

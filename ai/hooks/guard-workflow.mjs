@@ -21,7 +21,8 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
 );
 const LANDING_SKILLS = ["landing", "opening-prs"];
 const UPSTREAM_LINE = /^\s*Upstream:[ \t]*(.*)$/gm;
-const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)\s*$/i;
+const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)/i;
+const SKILLS_ENDING_SPECIFYING = [...LANDING_SKILLS, "gating-reviews", "converging-reviews", "reviewing-prs"];
 const RULED_OUT_BY = /\S.*,\s*ruled out by\s+\S/i;
 const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
 const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
@@ -93,7 +94,7 @@ const RAW_COMMIT_REASON =
 function upstreamQuestionReason(unweighedHeaders) {
   return (
     `A /specifying question round must weigh a change at the source, and these questions do not: ${unweighedHeaders.join(", ")}. ` +
-    "Give each one an option whose label ends `(change at the source)` when one is workable, else an `Upstream: <alternative>, ruled out by <evidence>` line in the question, else an `Upstream: none: <reason>` line when nothing sits above the choice (ai/skills/specifying/subskills/ask.md step 1)."
+    "Give each one an option whose label carries `(change at the source)` when one is workable, else an `Upstream: <alternative>, ruled out by <evidence>` line in the question, else an `Upstream: none: <reason>` line when nothing sits above the choice (ai/skills/specifying/subskills/ask.md step 1)."
   );
 }
 
@@ -115,13 +116,13 @@ async function hasLandingSkillRunSinceLastPrompt(transcriptPath) {
   return hasLandingSkillRun;
 }
 
-async function latestSkillSinceLastPrompt(transcriptPath) {
-  let latestSkillName = null;
+async function isSpecifyingUnfinished(transcriptPath) {
+  let isUnfinished = false;
   for await (const event of sessionEvents(transcriptPath)) {
-    if (event.kind === "prompt") latestSkillName = null;
-    if (event.kind === "skillRun" || event.kind === "slashCommand") latestSkillName = event.name;
+    if (isSkillRun(event, "specifying")) isUnfinished = true;
+    if (SKILLS_ENDING_SPECIFYING.some((skillName) => isSkillRun(event, skillName))) isUnfinished = false;
   }
-  return latestSkillName;
+  return isUnfinished;
 }
 
 function isWeighedUpstream(upstreamText) {
@@ -142,7 +143,7 @@ async function guardUpstreamQuestions(toolInput, transcriptPath) {
   const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
   const unweighedHeaders = questions.filter((question) => !questionWeighsUpstream(question)).map((question) => String(question?.header || question?.question || "a question"));
   if (unweighedHeaders.length === 0) return;
-  if ((await latestSkillSinceLastPrompt(transcriptPath)) !== "specifying") return;
+  if (!(await isSpecifyingUnfinished(transcriptPath))) return;
   denyPreToolUse(upstreamQuestionReason(unweighedHeaders));
 }
 
