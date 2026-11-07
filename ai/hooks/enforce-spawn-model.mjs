@@ -32,8 +32,9 @@ function main() {
   const missingMarkers = REQUIRED_PROMPT_MARKERS.filter(
     ({ pattern }) => !pattern.test(prompt)
   ).map(({ label }) => label);
+  const denialReasons = [];
   if (missingMarkers.length > 0)
-    denyPreToolUse(
+    denialReasons.push(
       `Subagent spawn prompt is missing required scope markers: ${missingMarkers.join(", ")}\n` +
         `Use this template:\n${SCOPE_TEMPLATE}`
     );
@@ -41,13 +42,14 @@ function main() {
   const model =
     typeof input.model === "string" ? input.model.trim().toLowerCase() : "";
   if (model === "")
-    denyPreToolUse(
+    denialReasons.push(
       "Subagent spawn without an explicit model pin: omitting `model` " +
         "inherits the session model, so the tier becomes an accident " +
         "rather than a choice. " +
         PIN_HINT
     );
 
+  if (denialReasons.length > 0) denyPreToolUse(denialReasons.join("\n\n"));
   allow();
 }
 

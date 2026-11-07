@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runHook } from "./harness.mjs";
 
-test("spawn prompt missing scope markers is denied", () => {
+test("spawn prompt missing scope markers and a model is denied once for both", () => {
   const processResult = runHook("enforce-spawn-model.mjs", {
     tool_name: "Agent",
-    tool_input: { model: "opus", prompt: "Scope:\nai/hooks" },
+    tool_input: { prompt: "Scope:\nai/hooks" },
   });
 
   assert.equal(processResult.status, 0);
@@ -17,6 +17,7 @@ test("spawn prompt missing scope markers is denied", () => {
     output.hookSpecificOutput.permissionDecisionReason,
     /Scope:\nOut of scope:\nDefinition of done:/,
   );
+  assert.match(output.hookSpecificOutput.permissionDecisionReason, /explicit model pin/);
 });
 
 test("fork spawn without scope markers is allowed", () => {
