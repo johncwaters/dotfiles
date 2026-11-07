@@ -659,7 +659,7 @@ export function validateGraph(value: unknown): string[] {
   }
   const hasMachine = spec.nodes.some((node) => node.kind === "design" && node.layer === "machine");
   const hasNoLifecycleDecision = spec.nodes.some((node) => node.kind === "decision" && node.lifecycle === "none");
-  if (spec.status === "sliced" && needsDesign && !hasMachine && !hasNoLifecycleDecision) {
+  if (isSliced && needsDesign && !hasMachine && !hasNoLifecycleDecision) {
     addError(errors, 18, "spec.nodes", "add a design node with layer machine (states, transitions, at) for each lifecycle the feature adds or changes, or a decision with lifecycle: none saying why it adds or changes none");
   }
   for (const machine of spec.nodes) {
