@@ -64,7 +64,7 @@ export const READING_BUDGET_BYTES = 200000;
 const CHANGED_ONLY_PATH_CAP_BYTES = 20000;
 const REPO_GATE_COMMAND = /^(npm|pnpm|yarn)\s+(run\s+)?(typecheck|lint|test)$/;
 const UNIT_TITLE_LIMIT = 120;
-const NO_UPSTREAM = /^none:\s*\S*[A-Za-z]\S*\s+\S*[A-Za-z]/;
+export const NO_UPSTREAM = /^none:\s*\S*[A-Za-z]\S*\s+\S*[A-Za-z]/;
 const UPSTREAM_PATH_OR_COMMAND = /[\w./-]+\.[A-Za-z]\w*:\d+|`[^`\s]+\s[^`]*[-/.=]\w[^`]*`/;
 const HEX_RUN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
 const SHA_SHAPE = /^(?=.*\d)(?=.*[a-f])/;

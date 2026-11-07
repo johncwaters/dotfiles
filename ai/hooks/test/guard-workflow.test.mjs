@@ -240,3 +240,36 @@ test("edits outside a git worktree or under ~/.claude skip the spec gate", () =>
   assert.equal(decisionFor(bashCall("echo note > notes.md", transcriptPath, { cwd: sandboxHome })).decision, "allow");
   assert.equal(decisionFor(bashCall("echo fact > ~/.claude/projects/memory/fact.md", transcriptPath, { cwd: repository })).decision, "allow");
 });
+
+function questionRound(...questions) {
+  return { tool_name: "AskUserQuestion", tool_input: { questions } };
+}
+
+function question(text, optionLabels) {
+  return { question: text, header: text.slice(0, 12), multiSelect: false, options: optionLabels.map((label) => ({ label, description: `pick ${label}` })) };
+}
+
+test("a /specifying question round is denied until every question weighs a change at the source", () => {
+  const specifyingRun = writeTranscript([prompt("spec this"), ...skillRun("specifying")]);
+  const ask = (...questions) => decisionFor({ ...questionRound(...questions), transcript_path: specifyingRun });
+  const bare = question("Which store?", ["Redis", "Postgres"]);
+  const denial = ask(bare, question("Which risk?\nUpstream: none: risk is the carbon unit's call", ["Medium", "High"]));
+  assert.equal(denial.decision, "deny");
+  assert.match(denial.reason, /Which store\?/);
+  assert.doesNotMatch(denial.reason, /Which risk/);
+  assert.equal(ask(question("Which store?\nUpstream: share the existing cache, ruled out by cache.ts:12", ["Redis", "Postgres"])).decision, "allow");
+  assert.equal(ask(question("Which store?", ["Fix the cache (change at the source)", "Redis"])).decision, "allow");
+  for (const evasiveUpstream of ["none", "n/a", "-", "nothing"]) {
+    assert.equal(ask(question(`Which store?\nUpstream: ${evasiveUpstream}`, ["Redis", "Postgres"])).decision, "deny", evasiveUpstream);
+  }
+  const describedOnly = { ...bare, options: [{ label: "Redis", description: "does not change at the source" }, { label: "Postgres", description: "fast" }] };
+  assert.equal(ask(describedOnly).decision, "deny");
+});
+
+test("a question round is not gated once a prompt or a later skill run follows /specifying", () => {
+  const bare = question("Which store?", ["Redis", "Postgres"]);
+  const roundAfter = (entries) => decisionFor({ ...questionRound(bare), transcript_path: writeTranscript(entries) }).decision;
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), prompt("now something else")]), "allow");
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), ...skillRun("opening-prs")]), "allow");
+  assert.equal(roundAfter([prompt("ship it"), ...skillRun("landing")]), "allow");
+});

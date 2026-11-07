@@ -6,6 +6,7 @@ import path from "node:path";
 import v8 from "node:v8";
 import { allow, COMMAND_START, COMMAND_WRAPPERS, denyPreToolUse, isAttendedMainLoopCall, nearestExistingDirectory, readPayload } from "./hook-io.mjs";
 import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
+import { NO_UPSTREAM } from "../skills/specifying/lib/graph.ts";
 import { specsDirectory } from "../skills/specifying/lib/spec-store.ts";
 
 v8.setFlagsFromString("--enable-experimental-regexp-engine");
@@ -19,6 +20,9 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
   "m",
 );
 const LANDING_SKILLS = ["landing", "opening-prs"];
+const UPSTREAM_LINE = /^\s*Upstream:[ \t]*(.*)$/gm;
+const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)\s*$/i;
+const RULED_OUT_BY = /\S.*,\s*ruled out by\s+\S/i;
 const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
 const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
 const SHELL_WORD_ON_LINE = /(?:^|[;&|(\s])(?:\S*\/)?(?:(?:ba|z|da|k)?sh|eval)(?=$|[\s;&|)])/;
@@ -86,6 +90,13 @@ const RAW_COMMIT_REASON =
   "Commits already made (a mainline sync's merge) push through /landing's land.ts with no message, which withholds any commit no review recorded. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
+function upstreamQuestionReason(unweighedHeaders) {
+  return (
+    `A /specifying question round must weigh a change at the source, and these questions do not: ${unweighedHeaders.join(", ")}. ` +
+    "Give each one an option whose label ends `(change at the source)` when one is workable, else an `Upstream: <alternative>, ruled out by <evidence>` line in the question, else an `Upstream: none: <reason>` line when nothing sits above the choice (ai/skills/specifying/subskills/ask.md step 1)."
+  );
+}
+
 const KILL_SELF_MATCH_REASON =
   "A kill by pattern (pkill -f, or pgrep -f feeding kill) matches full command lines, and this pattern matches text in this same Bash call, which its own shell carries, so the call kills itself. " +
   "Run the kill in its own Bash call with one character of the pattern bracketed ('[n]ode server'), so the pattern no longer matches its own text.";
@@ -102,6 +113,37 @@ async function hasLandingSkillRunSinceLastPrompt(transcriptPath) {
     if (LANDING_SKILLS.some((skillName) => isSkillRun(event, skillName))) hasLandingSkillRun = true;
   }
   return hasLandingSkillRun;
+}
+
+async function latestSkillSinceLastPrompt(transcriptPath) {
+  let latestSkillName = null;
+  for await (const event of sessionEvents(transcriptPath)) {
+    if (event.kind === "prompt") latestSkillName = null;
+    if (event.kind === "skillRun" || event.kind === "slashCommand") latestSkillName = event.name;
+  }
+  return latestSkillName;
+}
+
+function isWeighedUpstream(upstreamText) {
+  const upstream = upstreamText.trim();
+  if (/^none\b/i.test(upstream)) return NO_UPSTREAM.test(upstream);
+  return RULED_OUT_BY.test(upstream);
+}
+
+function questionWeighsUpstream(question) {
+  if (!question || typeof question !== "object") return false;
+  const questionText = String(question.question || "");
+  if ([...questionText.matchAll(UPSTREAM_LINE)].some((match) => isWeighedUpstream(match[1]))) return true;
+  const options = Array.isArray(question.options) ? question.options : [];
+  return options.some((option) => CHANGE_AT_SOURCE_LABEL.test(String(option?.label || "")));
+}
+
+async function guardUpstreamQuestions(toolInput, transcriptPath) {
+  const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
+  const unweighedHeaders = questions.filter((question) => !questionWeighsUpstream(question)).map((question) => String(question?.header || question?.question || "a question"));
+  if (unweighedHeaders.length === 0) return;
+  if ((await latestSkillSinceLastPrompt(transcriptPath)) !== "specifying") return;
+  denyPreToolUse(upstreamQuestionReason(unweighedHeaders));
 }
 
 function isInsideDirectory(filePath, directory) {
@@ -489,6 +531,7 @@ async function main() {
   if (payload.tool_name === "Bash") guardKillSelfMatch(String(toolInput.command || ""));
   if (payload.tool_name === "Bash") await guardSpecFirstForBash(String(toolInput.command || ""), sessionDirectory, payload.transcript_path);
   if (EDIT_TOOLS.has(payload.tool_name)) await guardSpecFirst(String(toolInput.file_path || ""), payload.transcript_path);
+  if (payload.tool_name === "AskUserQuestion") await guardUpstreamQuestions(toolInput, payload.transcript_path);
   allow();
 }
 
