@@ -501,7 +501,7 @@ test("a later landing deletes a remote branch whose only commits main lacks are 
   }
 });
 
-test("a later landing keeps a remote branch whose commit main reverted and then edited nearby", () => {
+test("a later landing keeps a remote branch whose commit main reverted and then edited on the same and nearby lines", () => {
   const featureBranch = "glimmervoid/session/reverted-then-edited";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
@@ -523,7 +523,7 @@ test("a later landing keeps a remote branch whose commit main reverted and then 
     runGit(seed, ["fetch", "-q", "origin"]);
     runGit(seed, ["reset", "-q", "--hard", "origin/main"]);
     runGit(seed, ["revert", "--no-edit", "HEAD"]);
-    commitFile(seed, "shared.txt", "l1\nl2\nA\nl4 edited\nl5\n", "edit a nearby line");
+    commitFile(seed, "shared.txt", "l1\nl2\nC\nl4 edited\nl5\n", "edit the reverted line and a nearby one");
     runGit(seed, ["push", "-q", "origin", "main"]);
     runGit(local, ["fetch", "-q", "origin"]);
     runGit(local, ["reset", "-q", "--hard", "origin/main"]);
