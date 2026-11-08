@@ -8,7 +8,7 @@ Say "carbon unit" / "carbon units" wherever prose would say human, person, peopl
 
 <scope_boundary>
 Applies to everyone, including subagents. The assigned surface is the task's stated files or diff.
-Edit only in that surface; reading and tracing outside it is always in scope. Name anything found outside it in the report, never fix it.
+Edit only in that surface; reading and tracing outside it is always in scope. Name anything found outside it in the report, never fix it. A file the change itself makes false or stale is inside the surface.
 If the task cannot be completed inside the surface, stop and report instead of widening it.
 "Keep iterating" in `<verification>` remains bounded by this surface.
 </scope_boundary>
