@@ -800,6 +800,7 @@ class Landing {
     if (mainlineCommits === null) {
       return false;
     }
+    const mainlinePatchIds = new Set(this.git.patchIdsByCommit([mainlineRef, "--not", commonBase.stdout.trim()]).values());
     const unclaimedMainlineCommitsByAuthorship = new Map<string, string[]>();
     for (const { authorship, commit } of mainlineCommits) {
       const sameAuthorshipCommits = unclaimedMainlineCommitsByAuthorship.get(authorship) ?? [];
@@ -814,6 +815,10 @@ class Landing {
       }
       const appliedOntoCarried = this.git.mergeTree(carriedCommit, commit, `${commit}^`);
       if (appliedOntoCarried.code !== 0 || !isTreeContained(appliedOntoCarried.stdout, carriedTreeOid)) {
+        return false;
+      }
+      const inversePatchId = this.git.inversePatchId(carriedCommit);
+      if (inversePatchId !== null && mainlinePatchIds.has(inversePatchId)) {
         return false;
       }
       const revertedOntoMainline = this.git.mergeTree(mainlineRef, `${carriedCommit}^`, carriedCommit);

@@ -501,6 +501,43 @@ test("a later landing deletes a remote branch whose only commits main lacks are 
   }
 });
 
+test("a later landing keeps a remote branch whose commit main reverted and then edited nearby", () => {
+  const featureBranch = "glimmervoid/session/reverted-then-edited";
+  const { origin, seed, local } = seedOrigin(featureBranch);
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "shared.txt", "l1\nl2\nA\nl4\nl5\n", "shared file");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["reset", "-q", "--hard", "origin/main"]);
+    commitFile(local, "shared.txt", "l1\nl2\nB\nl4\nl5\n", "feature work");
+    const preRebaseCommit = gitOutput(local, ["rev-parse", "HEAD"]);
+    runGit(local, ["push", "-q", "origin", `HEAD:${featureBranch}`]);
+    commitFile(seed, "main.txt", "main\n", "main change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["rebase", "-q", "origin/main"]);
+    runGit(local, ["merge", "-q", "-s", "ours", "-m", "record the pre-rebase tip as merged", preRebaseCommit]);
+    runGit(local, ["push", "-q", "origin", `HEAD:${featureBranch}`, "HEAD^:main"]);
+    const markerTip = gitOutput(local, ["rev-parse", "HEAD"]);
+    runGit(seed, ["fetch", "-q", "origin"]);
+    runGit(seed, ["reset", "-q", "--hard", "origin/main"]);
+    runGit(seed, ["revert", "--no-edit", "HEAD"]);
+    commitFile(seed, "shared.txt", "l1\nl2\nA\nl4 edited\nl5\n", "edit a nearby line");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["reset", "-q", "--hard", "origin/main"]);
+    writeFile(local, "other.txt", "later work\n");
+    const later = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.deepEqual(later.result.promoted, ["main"]);
+    assert.equal(later.result.deletedRemoteBranches, undefined);
+    assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), markerTip);
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
 test("a later landing keeps a remote branch whose amended commit main lacks behind an ours-merge marker", () => {
   const featureBranch = "glimmervoid/session/amended-behind-marker";
   const { origin, seed, local } = seedOrigin(featureBranch);

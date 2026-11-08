@@ -199,6 +199,16 @@ export class Git {
     }));
   }
 
+  inversePatchId(commit: string): string | null {
+    const inverseDiff = this.run(["diff", "-U0", commit, `${commit}^`]);
+    if (inverseDiff.code !== 0 || inverseDiff.stdout === "") {
+      return null;
+    }
+    const patchIds = this.run(["patch-id", "--stable"], { input: inverseDiff.stdout });
+    const [inversePatchId = ""] = patchIds.stdout.split(" ");
+    return inversePatchId === "" ? null : inversePatchId;
+  }
+
   mergesWithRemergeFiles(revisionArgs: string[]): { commit: string; parents: string[]; remergeFiles: string[] | null }[] {
     const mergeLog = this.run(["-c", "core.quotePath=false", "log", "--merges", "--remerge-diff", "--name-only", "--format=%x00%H %P", ...revisionArgs]);
     if (mergeLog.code !== 0) {
