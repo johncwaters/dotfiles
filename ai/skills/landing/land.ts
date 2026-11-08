@@ -767,27 +767,50 @@ class Landing {
   }
 
   private isEveryCommitCarriedOnto(mainlineRef: string, remoteFeatureTip: string): boolean {
-    const authorshipsIn = (range: string) => {
-      const listing = this.git.run(["-c", "core.quotePath=false", "log", "--date=raw", "--no-renames", "--name-only", "--format=%x1e%H%x1f%an%x1f%ae%x1f%ad%x1f%s", range]);
+    const commitsIn = (revisionArgs: string[]) => {
+      const listing = this.git.run(["-c", "core.quotePath=false", "log", "--date=raw", "--no-renames", "--diff-merges=first-parent", "--name-only", "--format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s", ...revisionArgs]);
       if (listing.code !== 0) {
         return null;
       }
       const records = listing.stdout.split("\x1e").map((record) => record.trim()).filter(Boolean);
-      return records.map((record): [string, string] => {
+      return records.map((record) => {
         const [header = "", ...changedPaths] = record.split("\n").filter(Boolean);
-        const [commit = "", ...authorship] = header.split("\x1f");
-        return [[...authorship, ...changedPaths.sort()].join("\x1f"), commit];
+        const [commit = "", parentList = "", ...authorship] = header.split("\x1f");
+        const parents = parentList.split(" ").filter(Boolean);
+        const isEmptyMergeMarker = parents.length > 1 && changedPaths.length === 0;
+        return { commit, parents, isEmptyMergeMarker, authorship: [...authorship, ...changedPaths.sort()].join("\x1f") };
       });
     };
-    const unmergedCommitsByAuthorship = authorshipsIn(`${mainlineRef}..${remoteFeatureTip}`);
-    const mainlineCommitsByAuthorship = authorshipsIn(`${remoteFeatureTip}..${mainlineRef}`);
+    const unmergedCommits = commitsIn([`${mainlineRef}..${remoteFeatureTip}`]);
     const mainlineTreeOid = this.git.treeOid(mainlineRef);
-    if (unmergedCommitsByAuthorship === null || mainlineCommitsByAuthorship === null || mainlineTreeOid === null || unmergedCommitsByAuthorship.length === 0) {
+    if (unmergedCommits === null || mainlineTreeOid === null) {
       return false;
     }
-    return unmergedCommitsByAuthorship.every(([authorship], unmergedIndex) => {
-      const carriedCommit = mainlineCommitsByAuthorship.filter(([mainlineAuthorship]) => mainlineAuthorship === authorship)[unmergedCommitsByAuthorship.slice(0, unmergedIndex).filter(([earlierAuthorship]) => earlierAuthorship === authorship).length]?.[1];
-      if (carriedCommit === undefined) {
+    const unmergedCommitIds = new Set(unmergedCommits.map((unmerged) => unmerged.commit));
+    const commitsToMatch = unmergedCommits.filter((unmerged) => !unmerged.isEmptyMergeMarker);
+    const basesOfCommitsToMatch = [...new Set(commitsToMatch.flatMap((toMatch) => toMatch.parents).filter((parent) => !unmergedCommitIds.has(parent)))];
+    if (commitsToMatch.length === 0 || basesOfCommitsToMatch.length === 0) {
+      return false;
+    }
+    const commonBase = this.git.run(["merge-base", "--octopus", ...basesOfCommitsToMatch]);
+    const mainlineCommits = commonBase.code === 0 ? commitsIn([mainlineRef, "--not", commonBase.stdout.trim()]) : null;
+    if (mainlineCommits === null) {
+      return false;
+    }
+    const unclaimedMainlineCommitsByAuthorship = new Map<string, string[]>();
+    for (const { authorship, commit } of mainlineCommits) {
+      const sameAuthorshipCommits = unclaimedMainlineCommitsByAuthorship.get(authorship) ?? [];
+      sameAuthorshipCommits.push(commit);
+      unclaimedMainlineCommitsByAuthorship.set(authorship, sameAuthorshipCommits);
+    }
+    return commitsToMatch.every(({ authorship, commit }) => {
+      const carriedCommit = unclaimedMainlineCommitsByAuthorship.get(authorship)?.shift();
+      const carriedTreeOid = carriedCommit === undefined ? null : this.git.treeOid(carriedCommit);
+      if (carriedCommit === undefined || carriedTreeOid === null) {
+        return false;
+      }
+      const appliedOntoCarried = this.git.mergeTree(carriedCommit, commit, `${commit}^`);
+      if (appliedOntoCarried.code !== 0 || !isTreeContained(appliedOntoCarried.stdout, carriedTreeOid)) {
         return false;
       }
       const revertedOntoMainline = this.git.mergeTree(mainlineRef, `${carriedCommit}^`, carriedCommit);

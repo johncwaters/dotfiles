@@ -442,7 +442,7 @@ test("mainline is never deleted as a feature branch", () => {
   }
 });
 
-test("a rerun after a promotion conflict resolved by hand deletes the remote branch the conflict left behind", () => {
+test("a rerun after a promotion conflict resolved by hand keeps the remote branch whose pre-resolution commit main lacks", () => {
   const featureBranch = "glimmervoid/session/hand-resolved-conflict";
   const { origin, seed, local } = seedOrigin(featureBranch);
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();
@@ -464,10 +464,61 @@ test("a rerun after a promotion conflict resolved by hand deletes the remote bra
     const rerun = land(local, ["--promote"], "", ledgerEnv);
 
     assert.deepEqual(rerun.result.promoted, ["main"]);
-    assert.deepEqual(rerun.result.deletedRemoteBranches, [featureBranch]);
-    assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", featureBranch]), 0);
+    assert.equal(rerun.result.deletedRemoteBranches, undefined);
+    assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), conflicted.result.commit);
   } finally {
     cleanup(origin, seed, local, ledgerDirectory);
+  }
+});
+
+test("a later landing deletes a remote branch whose only commits main lacks are empty ours-merge markers", () => {
+  const featureBranch = "glimmervoid/session/empty-merge-marker";
+  const { origin, seed, local } = seedOrigin(featureBranch);
+  try {
+    commitFile(local, "feature.txt", "feature\n", "feature work");
+    const preRebaseCommit = gitOutput(local, ["rev-parse", "HEAD"]);
+    runGit(local, ["push", "-q", "origin", `HEAD:${featureBranch}`]);
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "main.txt", "main\n", "main change");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["rebase", "-q", "origin/main"]);
+    runGit(local, ["merge", "-q", "-s", "ours", "-m", "record the pre-rebase tip as merged", preRebaseCommit]);
+    runGit(local, ["push", "-q", "origin", `HEAD:${featureBranch}`, "HEAD^:main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["reset", "-q", "--hard", "origin/main"]);
+    writeFile(local, "other.txt", "later work\n");
+    const later = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.deepEqual(later.result.promoted, ["main"]);
+    assert.deepEqual(later.result.deletedRemoteBranches, [featureBranch], JSON.stringify(later.result.warnings));
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
+test("a later landing keeps a remote branch whose amended commit main lacks behind an ours-merge marker", () => {
+  const featureBranch = "glimmervoid/session/amended-behind-marker";
+  const { origin, seed, local } = seedOrigin(featureBranch);
+  try {
+    commitFile(local, "feature.txt", "feature\n", "feature work");
+    const landedCommit = gitOutput(local, ["rev-parse", "HEAD"]);
+    runGit(local, ["push", "-q", "origin", `HEAD:${featureBranch}`, "HEAD:main"]);
+    writeFile(local, "feature.txt", "feature\nuncarried work\n");
+    runGit(local, ["commit", "-q", "-a", "--amend", "--no-edit"]);
+    runGit(local, ["merge", "-q", "-s", "ours", "-m", "record the landed commit as merged", landedCommit]);
+    runGit(local, ["push", "-q", "origin", `HEAD:${featureBranch}`]);
+    const uncarriedTip = gitOutput(local, ["rev-parse", "HEAD"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["reset", "-q", "--hard", "origin/main"]);
+    writeFile(local, "other.txt", "later work\n");
+    const later = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.deepEqual(later.result.promoted, ["main"]);
+    assert.equal(later.result.deletedRemoteBranches, undefined);
+    assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), uncarriedTip);
+  } finally {
+    cleanup(origin, seed, local);
   }
 });
 
