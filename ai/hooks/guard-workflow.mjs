@@ -98,6 +98,13 @@ function upstreamQuestionReason(unweighedHeaders) {
   );
 }
 
+function misorderedSourceQuestionReason(misorderedHeaders) {
+  return (
+    `A /specifying question lists its \`(change at the source)\` option below another option: ${misorderedHeaders.join(", ")}. ` +
+    "Move that option to first in each one; `(Recommended)` still goes to the option with the best design (ai/skills/specifying/subskills/ask.md step 1)."
+  );
+}
+
 const KILL_SELF_MATCH_REASON =
   "A kill by pattern (pkill -f, or pgrep -f feeding kill) matches full command lines, and this pattern matches text in this same Bash call, which its own shell carries, so the call kills itself. " +
   "Run the kill in its own Bash call with one character of the pattern bracketed ('[n]ode server'), so the pattern no longer matches its own text.";
@@ -131,20 +138,32 @@ function isWeighedUpstream(upstreamText) {
   return RULED_OUT_BY.test(upstream);
 }
 
+function changeAtSourceOptionIndex(question) {
+  const options = Array.isArray(question?.options) ? question.options : [];
+  return options.findIndex((option) => CHANGE_AT_SOURCE_LABEL.test(String(option?.label || "")));
+}
+
 function questionWeighsUpstream(question) {
   if (!question || typeof question !== "object") return false;
   const questionText = String(question.question || "");
   if ([...questionText.matchAll(UPSTREAM_LINE)].some((match) => isWeighedUpstream(match[1]))) return true;
-  const options = Array.isArray(question.options) ? question.options : [];
-  return options.some((option) => CHANGE_AT_SOURCE_LABEL.test(String(option?.label || "")));
+  return changeAtSourceOptionIndex(question) !== -1;
+}
+
+function questionHeader(question) {
+  return String(question?.header || question?.question || "a question");
 }
 
 async function guardUpstreamQuestions(toolInput, transcriptPath) {
   const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-  const unweighedHeaders = questions.filter((question) => !questionWeighsUpstream(question)).map((question) => String(question?.header || question?.question || "a question"));
-  if (unweighedHeaders.length === 0) return;
+  const unweighedHeaders = questions.filter((question) => !questionWeighsUpstream(question)).map(questionHeader);
+  const misorderedHeaders = questions.filter((question) => changeAtSourceOptionIndex(question) > 0).map(questionHeader);
+  if (unweighedHeaders.length === 0 && misorderedHeaders.length === 0) return;
   if (!(await isSpecifyingUnfinished(transcriptPath))) return;
-  denyPreToolUse(upstreamQuestionReason(unweighedHeaders));
+  const reasons = [];
+  if (unweighedHeaders.length > 0) reasons.push(upstreamQuestionReason(unweighedHeaders));
+  if (misorderedHeaders.length > 0) reasons.push(misorderedSourceQuestionReason(misorderedHeaders));
+  denyPreToolUse(reasons.join(" "));
 }
 
 function isInsideDirectory(filePath, directory) {

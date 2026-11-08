@@ -266,6 +266,18 @@ test("a /specifying question round is denied until every question weighs a chang
   assert.equal(ask(describedOnly).decision, "deny");
 });
 
+test("a /specifying question round is denied when a change-at-the-source option is not the first option", () => {
+  const misordered = question("Pin how?\nUpstream: none: placement behavior is new", ["Pin on drag (Recommended)", "Make near a placing hint (change at the source)"]);
+  const specifyingRun = writeTranscript([prompt("spec this"), ...skillRun("specifying")]);
+  const denial = decisionFor({ ...questionRound(misordered), transcript_path: specifyingRun });
+  assert.equal(denial.decision, "deny");
+  assert.match(denial.reason, /Pin how\?/);
+  assert.match(denial.reason, /first/);
+  const sourceFirst = question("Pin how?", ["Make near a placing hint (change at the source)", "Pin on drag (Recommended)"]);
+  assert.equal(decisionFor({ ...questionRound(sourceFirst), transcript_path: specifyingRun }).decision, "allow");
+  assert.equal(decisionFor({ ...questionRound(misordered), transcript_path: writeTranscript([prompt("pick one")]) }).decision, "allow");
+});
+
 test("a /specifying question round stays gated through its own challenge, utility commands and the carbon unit's replies, until a review, landing or pull request skill runs", () => {
   const bare = question("Which store?", ["Redis", "Postgres"]);
   const roundAfter = (entries) => decisionFor({ ...questionRound(bare), transcript_path: writeTranscript(entries) }).decision;
