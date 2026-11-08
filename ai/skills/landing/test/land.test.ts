@@ -969,3 +969,47 @@ test("a review gate refuses to stamp an untracked browser-code failure in an own
   assert.equal(ownedLiveNoteStamp.code, 0, ownedLiveNoteStamp.stderr);
   assert.match((ownedLiveNoteStamp.result.preexistingFailures as string[]).join("\n"), /^browser-code: NOTE live-csp http:\/\/127\.0\.0\.1:9\/ could not be reached \(refused the private address 127\.0\.0\.1\)/m);
 });
+
+test("a review gate refuses to stamp a changed or deleted stylesheet, however its path is spelled, until a screenshot newer than the edit or a waiver reason is named", (context) => {
+  const repo = makeRepo();
+  context.after(() => cleanup(repo));
+  commitFile(repo, "old.css", "p { margin: 0; }\n", "init");
+  const screenshotDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "stamp-ui-evidence-"));
+  context.after(() => fs.rmSync(screenshotDirectory, { recursive: true, force: true }));
+  const screenshot = path.join(screenshotDirectory, "after.png");
+  fs.writeFileSync(screenshot, "png");
+  fs.utimesSync(screenshot, new Date(0), new Date(0));
+  writeFile(repo, "app.css", "body { color: red; }\n");
+
+  const missing = stamp(repo, ["app.css"]);
+  assert.equal(missing.code, 31, missing.stderr);
+  assert.match(missing.stderr, /^UI_EVIDENCE_MISSING/m);
+  assert.match(missing.stderr, /app\.css/);
+  assert.equal(fs.existsSync(stampLedgerPath(new Git(repo))), false);
+  assert.equal(stamp(repo, [path.join(repo, "app.css")]).code, 31);
+  assert.equal(stamp(repo, ["*.css"]).code, 31);
+  assert.equal(stamp(repo, [":/"]).code, 31);
+  runGit(repo, ["mv", "old.css", "old.txt"]);
+  assert.equal(stamp(repo, ["old.css", "old.txt"]).code, 31);
+  runGit(repo, ["rm", "-q", "-f", "old.txt"]);
+  assert.equal(stamp(repo, ["old.css"]).code, 31);
+
+  const stale = stamp(repo, ["app.css"], {}, ["--ui-evidence", screenshot]);
+  assert.equal(stale.code, 31, stale.stderr);
+  assert.match(stale.stderr, /older than the last edit/);
+
+  fs.utimesSync(screenshot, new Date(), new Date(Date.now() + 60_000));
+  const inCheckoutScreenshot = path.join(repo, "after.png");
+  fs.writeFileSync(inCheckoutScreenshot, "png");
+  const inCheckout = stamp(repo, ["app.css"], {}, ["--ui-evidence", inCheckoutScreenshot]);
+  assert.equal(inCheckout.code, 31, inCheckout.stderr);
+  assert.match(inCheckout.stderr, /inside the checkout/);
+  fs.rmSync(inCheckoutScreenshot);
+  const evidenced = stamp(repo, ["app.css"], {}, ["--ui-evidence", screenshot]);
+  assert.equal(evidenced.code, 0, evidenced.stderr);
+  assert.equal(evidenced.result.uiEvidence, screenshot);
+
+  const waived = stamp(repo, ["app.css"], {}, ["--no-ui-evidence", "token rename only, no rendered change"]);
+  assert.equal(waived.code, 0, waived.stderr);
+  assert.deepEqual(waived.result.unverifiedFindings, [{ severity: "LOW", file: "app.css", summary: "UI change not rendered: token rename only, no rendered change" }]);
+});

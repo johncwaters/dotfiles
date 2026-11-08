@@ -15,7 +15,7 @@ import {
   runGit,
 } from "../../hooks/check-finding-scope.mjs";
 import { Git } from "../landing/lib/git.ts";
-import { BrowserCodeFailed, EMPTY_FINDINGS, pinScopedTree, writeStamp } from "../landing/lib/stamp.ts";
+import { BrowserCodeFailed, EMPTY_FINDINGS, pinScopedTree, UiEvidenceMissing, uiEvidenceFromFlags, writeStamp } from "../landing/lib/stamp.ts";
 
 const EXIT_CODE_BY_OUTCOME = {
   FRESH: 0,
@@ -32,6 +32,7 @@ const EXIT_CODE_BY_OUTCOME = {
   STAMPED: 0,
   UNSTAMPED: 24,
   BROWSER_CODE_FAILED: 30,
+  UI_EVIDENCE_MISSING: 31,
   USAGE: 2,
 };
 const ROUND_CAP = 11;
@@ -170,7 +171,7 @@ function nextRound(repoPath) {
   finish("REVIEW", reviewReport(pendingRound, ledgerFile, ledger));
 }
 
-function stampCleanTree(repoPath, paths) {
+function stampCleanTree(repoPath, paths, uiEvidence) {
   const git = new Git(repoPath);
   const workingTree = workingTreeOf(repoPath);
   const ledger = readLedger(ledgerPath(repoPath));
@@ -183,9 +184,10 @@ function stampCleanTree(repoPath, paths) {
     .filter((row) => row.type === "finding" && unverifiedFingerprints.has(row.fingerprint))
     .map((row) => ({ severity: row.severity, file: row.file, summary: `${row.reviewer} finding ${row.fingerprint}, fix unverified` }));
   try {
-    const stamp = writeStamp(git, "converging-reviews", paths, { ...EMPTY_FINDINGS, unverifiedFindings });
+    const stamp = writeStamp(git, "converging-reviews", paths, { ...EMPTY_FINDINGS, unverifiedFindings }, uiEvidence);
     finish("STAMPED", { tree: workingTree, stamp });
   } catch (error) {
+    if (error instanceof UiEvidenceMissing) finish("UI_EVIDENCE_MISSING", { tree: workingTree, reason: error.message, uiFiles: error.uiFiles });
     if (!(error instanceof BrowserCodeFailed)) throw error;
     finish("BROWSER_CODE_FAILED", { tree: workingTree, failures: error.failureLines });
   }
@@ -473,6 +475,8 @@ function main() {
       fingerprint: { type: "string" },
       fix: { type: "string" },
       ruling: { type: "string" },
+      "ui-evidence": { type: "string" },
+      "no-ui-evidence": { type: "string" },
     },
   });
   const repoPath = path.resolve(values.repo);
@@ -480,7 +484,9 @@ function main() {
   if (command === "next") nextRound(repoPath);
   if (command === "stamp") {
     if (positionals.length === 0) failUsage("stamp needs the changed-file paths after --");
-    stampCleanTree(repoPath, positionals);
+    const uiEvidence = uiEvidenceFromFlags(values["ui-evidence"], values["no-ui-evidence"]);
+    if (typeof uiEvidence === "string") failUsage(uiEvidence);
+    stampCleanTree(repoPath, positionals, uiEvidence);
   }
   if (command === "classify") {
     if (!values.round || !values["review-file"]) failUsage("classify needs --round and --review-file, the REVIEW_FILE /reviewing-code printed");

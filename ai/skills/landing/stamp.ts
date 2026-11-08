@@ -8,6 +8,9 @@ import {
   releaseBranch,
   STAMP_GATES,
   type StampFindings,
+  UiEvidenceMissing,
+  uiEvidenceFromFlags,
+  type UiEvidence,
   type StampGate,
   type StampRow,
   verifyStamp,
@@ -17,7 +20,8 @@ import fs from "node:fs";
 import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const BROWSER_CODE_FAILED_EXIT_CODE = 30;
-const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] | verify | clear`;
+const UI_EVIDENCE_MISSING_EXIT_CODE = 31;
+const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--ui-evidence <screenshot> | --no-ui-evidence <reason>] | verify | clear`;
 
 function releaseBaseRef(git: Git): string | null {
   const { mainline } = readResolvedPolicy(git);
@@ -32,11 +36,23 @@ function fail(reason: string): never {
   process.exit(2);
 }
 
-function parseWriteArguments(argv: string[]): { gate: string; paths: string[]; findingsFile: string | null; refusesOtherChanges: boolean } {
+type WriteArguments = { gate: string; paths: string[]; findingsFile: string | null; refusesOtherChanges: boolean; uiEvidence: UiEvidence };
+
+function parseWriteArguments(argv: string[]): WriteArguments {
   const parsed = { gate: "", paths: [] as string[], findingsFile: null as string | null, refusesOtherChanges: false };
+  let screenshotFile: string | undefined;
+  let waiverReason: string | undefined;
   let collectingPaths = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] ?? "";
+    if (argument === "--ui-evidence" || argument === "--no-ui-evidence") {
+      const value = argv[index + 1] ?? "";
+      if (argument === "--ui-evidence") screenshotFile = value;
+      if (argument === "--no-ui-evidence") waiverReason = value;
+      index += 1;
+      collectingPaths = false;
+      continue;
+    }
     if (argument === "--gate") {
       parsed.gate = argv[index + 1] ?? "";
       index += 1;
@@ -63,11 +79,15 @@ function parseWriteArguments(argv: string[]): { gate: string; paths: string[]; f
     }
     parsed.paths.push(argument);
   }
-  return parsed;
+  const uiEvidence = uiEvidenceFromFlags(screenshotFile, waiverReason);
+  if (typeof uiEvidence === "string") {
+    fail(uiEvidence);
+  }
+  return { ...parsed, uiEvidence };
 }
 
 function writeCommand(git: Git, argv: string[]): void {
-  const { gate, paths, findingsFile, refusesOtherChanges } = parseWriteArguments(argv);
+  const { gate, paths, findingsFile, refusesOtherChanges, uiEvidence } = parseWriteArguments(argv);
   if (!isStampGate(gate)) {
     fail(`--gate must be one of ${STAMP_GATES.join(", ")}`);
   }
@@ -84,13 +104,17 @@ function writeCommand(git: Git, argv: string[]): void {
     }
   }
   const findings: StampFindings = findingsFile === null ? EMPTY_FINDINGS : parseStampFindings(JSON.parse(fs.readFileSync(findingsFile, "utf8")));
-  process.stdout.write(`${JSON.stringify(writeStampOrExit(git, gate, paths, findings))}\n`);
+  process.stdout.write(`${JSON.stringify(writeStampOrExit(git, gate, paths, findings, uiEvidence))}\n`);
 }
 
-function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: StampFindings): StampRow {
+function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: StampFindings, uiEvidence: UiEvidence): StampRow {
   try {
-    return writeStamp(git, gate, paths, findings);
+    return writeStamp(git, gate, paths, findings, uiEvidence);
   } catch (error) {
+    if (error instanceof UiEvidenceMissing) {
+      process.stderr.write(`UI_EVIDENCE_MISSING: render the changed UI, then pass --ui-evidence <screenshot> taken after the last edit, or --no-ui-evidence <reason>\n${error.message}\n`);
+      process.exit(UI_EVIDENCE_MISSING_EXIT_CODE);
+    }
     if (!(error instanceof BrowserCodeFailed)) throw error;
     process.stderr.write(`BROWSER_CODE_FAILED: fix each failure as new work, then review again\n${error.failureLines.join("\n")}\n`);
     process.exit(BROWSER_CODE_FAILED_EXIT_CODE);

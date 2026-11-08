@@ -32,11 +32,17 @@ export type StampRow = StampFindings & {
   tree: string;
   paths: string[];
   prefix?: string;
+  uiEvidence?: string;
 };
+
+export type UiEvidence = { kind: "screenshot"; file: string } | { kind: "waived"; reason: string } | { kind: "none" };
 
 export type StampVerification =
   | { matches: true; stamp: StampRow }
   | { matches: false; stamp: StampRow | null; tree: string | null };
+
+const UI_FILE_EXTENSIONS = new Set([".css", ".scss", ".sass", ".less", ".html", ".tsx", ".jsx", ".vue", ".svelte", ".astro"]);
+const UI_EVIDENCE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"]);
 
 const BLOCKING_SEVERITIES = new Set(["MEDIUM", "HIGH", "CRITICAL"]);
 const KNOWN_SEVERITIES = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
@@ -166,6 +172,49 @@ export function changedPathsOutside(git: Git, allowedPaths: string[]): string[] 
   return changedPaths.filter((changedPath) => !isAllowed(changedPath));
 }
 
+export function uiEvidenceFromFlags(screenshotFile: string | undefined, waiverReason: string | undefined): UiEvidence | string {
+  if (screenshotFile !== undefined && waiverReason !== undefined) return "pass --ui-evidence or --no-ui-evidence, not both";
+  if (waiverReason !== undefined) return waiverReason.trim() === "" ? "--no-ui-evidence needs a reason" : { kind: "waived", reason: waiverReason.trim() };
+  if (screenshotFile !== undefined) return screenshotFile === "" ? "--ui-evidence needs the screenshot path" : { kind: "screenshot", file: path.resolve(screenshotFile) };
+  return { kind: "none" };
+}
+
+function changedPathsMatching(git: Git, pathspecs: string[]): string[] {
+  const status = git.run(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--", ...pathspecs]);
+  if (status.code !== 0) throw new Error(`could not list the changed files under ${pathspecs.join(", ")}`);
+  return status.stdout.split("\0").filter(Boolean).map((entry) => entry.slice(3));
+}
+
+function changedUiFiles(git: Git, paths: string[]): string[] {
+  const repoRoot = git.run(["rev-parse", "--show-toplevel"]).stdout.trim();
+  return changedPathsMatching(git, paths)
+    .filter((changedPath) => UI_FILE_EXTENSIONS.has(path.posix.extname(changedPath).toLowerCase()))
+    .map((changedPath) => path.join(repoRoot, changedPath));
+}
+
+function screenshotRefusal(repoRoot: string, screenshotFile: string, uiFiles: string[]): string | null {
+  if (!path.relative(repoRoot, screenshotFile).startsWith("..")) return `${screenshotFile} is inside the checkout, which moves the reviewed tree; save it outside, under mktemp -d`;
+  if (!UI_EVIDENCE_EXTENSIONS.has(path.extname(screenshotFile).toLowerCase())) return `${screenshotFile} is not a ${[...UI_EVIDENCE_EXTENSIONS].join(" ")} file`;
+  if (!fs.existsSync(screenshotFile)) return `${screenshotFile} does not exist`;
+  const remainingUiFiles = uiFiles.filter((uiFile) => fs.existsSync(uiFile));
+  if (remainingUiFiles.length === 0) return null;
+  const newestUiEditMs = Math.max(...remainingUiFiles.map((uiFile) => fs.statSync(uiFile).mtimeMs));
+  if (fs.statSync(screenshotFile).mtimeMs <= newestUiEditMs) return `${screenshotFile} is older than the last edit to the changed UI files`;
+  return null;
+}
+
+function uiEvidenceOutcome(git: Git, paths: string[], uiEvidence: UiEvidence): { recordedEvidence?: string; waiverFindings: StampFinding[] } {
+  const uiFiles = changedUiFiles(git, paths);
+  if (uiFiles.length === 0) return { waiverFindings: [] };
+  if (uiEvidence.kind === "waived") {
+    return { waiverFindings: [{ severity: "LOW", file: path.relative(git.run(["rev-parse", "--show-toplevel"]).stdout.trim(), uiFiles[0] ?? ""), summary: `UI change not rendered: ${uiEvidence.reason}` }] };
+  }
+  if (uiEvidence.kind === "none") throw new UiEvidenceMissing("no --ui-evidence screenshot of the changed UI was named", uiFiles);
+  const refusal = screenshotRefusal(git.run(["rev-parse", "--show-toplevel"]).stdout.trim(), uiEvidence.file, uiFiles);
+  if (refusal !== null) throw new UiEvidenceMissing(refusal, uiFiles);
+  return { recordedEvidence: uiEvidence.file, waiverFindings: [] };
+}
+
 function readStampRows(git: Git): StampRow[] {
   const ledgerFile = stampLedgerPath(git);
   if (!fs.existsSync(ledgerFile)) {
@@ -245,11 +294,22 @@ export class BrowserCodeFailed extends Error {
   }
 }
 
-export function writeStamp(git: Git, gate: StampGate, paths: string[], findings: StampFindings): StampRow {
+export class UiEvidenceMissing extends Error {
+  readonly uiFiles: string[];
+
+  constructor(reason: string, uiFiles: string[]) {
+    super(`${reason}; changed UI files:\n${uiFiles.join("\n")}`);
+    this.name = "UiEvidenceMissing";
+    this.uiFiles = uiFiles;
+  }
+}
+
+export function writeStamp(git: Git, gate: StampGate, paths: string[], findings: StampFindings, uiEvidence: UiEvidence = { kind: "none" }): StampRow {
   const tree = pinScopedTree(git, paths);
   if (tree === null) {
     throw new Error(`could not pin the tree over ${paths.join(", ")}`);
   }
+  const { recordedEvidence, waiverFindings } = isReviewGate(gate) ? uiEvidenceOutcome(git, paths, uiEvidence) : { waiverFindings: [] };
   let resolvedOwnership: Ownership | undefined;
   const ownership = () => (resolvedOwnership ??= resolveOwnership(git));
   const { failureLines, liveNotes } = isReviewGate(gate) ? browserCodeAudit(git, ownership) : { failureLines: [], liveNotes: [] };
@@ -258,7 +318,20 @@ export function writeStamp(git: Git, gate: StampGate, paths: string[], findings:
   }
   const preexistingFailures = [...findings.preexistingFailures, ...browserCodeNotes([...failureLines, ...liveNotes])];
   const prefix = git.run(["rev-parse", "--show-prefix"]).stdout.trim();
-  const row: StampRow = { v: 1, at: new Date().toISOString(), gate, head: git.revParseHead(), tree, paths, prefix, ...findings, preexistingFailures };
+  const unverifiedFindings = [...findings.unverifiedFindings, ...waiverFindings];
+  const row: StampRow = {
+    v: 1,
+    at: new Date().toISOString(),
+    gate,
+    head: git.revParseHead(),
+    tree,
+    paths,
+    prefix,
+    ...findings,
+    unverifiedFindings,
+    preexistingFailures,
+    ...(recordedEvidence === undefined ? {} : { uiEvidence: recordedEvidence }),
+  };
   const ledgerFile = stampLedgerPath(git);
   fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
   fs.appendFileSync(ledgerFile, `${JSON.stringify(row)}\n`);

@@ -50,6 +50,9 @@ in a file saved with Write, each finding `{severity, file, summary}`. A live or 
 stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 (`BROWSER_CODE_FAILED`) means the
 repo ships third-party browser code that fails `/securing-browser-code`: fix each printed `FAIL` line as new
 work, then review again.
+Exit 31 (`UI_EVIDENCE_MISSING`) means the paths change a style or markup file and no screenshot names the
+result: render the changed UI (`/capturing-ui`), then stamp again with `--ui-evidence <file>` saved outside the
+checkout after the last edit, or `--no-ui-evidence "<reason>"` when nothing visible changed, which records a LOW unverified finding.
 
 A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
 overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review

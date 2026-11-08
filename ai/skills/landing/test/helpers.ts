@@ -197,13 +197,13 @@ function changedPaths(repo: string): string[] {
     .map((entry) => entry.slice(3));
 }
 
-export function stamp(repo: string, paths: string[], findings: Record<string, unknown> = {}): RunResult {
+export function stamp(repo: string, paths: string[], findings: Record<string, unknown> = {}, evidenceArgs: string[] = []): RunResult {
   const stampPaths = paths.length > 0 ? paths : changedPaths(repo);
   const findingsFile = path.join(gitOutput(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"]), "stamp-findings.json");
   fs.writeFileSync(findingsFile, JSON.stringify(findings));
   const proc = spawnSync(
     "node",
-    [path.join(SKILL_DIR, "stamp.ts"), "write", "--gate", "gating-reviews", "--paths", ...stampPaths, "--findings", findingsFile],
+    [path.join(SKILL_DIR, "stamp.ts"), "write", "--gate", "gating-reviews", "--paths", ...stampPaths, "--findings", findingsFile, ...evidenceArgs],
     { cwd: repo, encoding: "utf8", env: { ...process.env, REVIEW_GATES_DIR: reviewGatesDirectory(repo) } },
   );
   return { code: proc.status ?? 1, result: proc.stdout ? (JSON.parse(proc.stdout) as Record<string, unknown>) : {}, stderr: proc.stderr ?? "" };
