@@ -87,6 +87,9 @@ type FailureOutcome =
   | "PROMOTE_WITHHELD"
   | "PUSH_WITHHELD";
 
+const MERGE_TREE_CONFLICT_EXIT_CODE = 1;
+const WRITTEN_TREE_LINE = /^[0-9a-f]{40,64}$/;
+
 type DetachedRebase =
   | { rebasedTip: string; failure: null }
   | { rebasedTip: null; failure: FailureOutcome };
@@ -814,7 +817,8 @@ class Landing {
         return false;
       }
       const revertedOntoMainline = this.git.mergeTree(mainlineRef, `${carriedCommit}^`, carriedCommit);
-      return revertedOntoMainline.code === 0 && !isTreeContained(revertedOntoMainline.stdout, mainlineTreeOid);
+      const hasLaterEditsOnMainline = revertedOntoMainline.code === MERGE_TREE_CONFLICT_EXIT_CODE && WRITTEN_TREE_LINE.test(revertedOntoMainline.stdout.split("\n")[0] ?? "");
+      return hasLaterEditsOnMainline || (revertedOntoMainline.code === 0 && !isTreeContained(revertedOntoMainline.stdout, mainlineTreeOid));
     });
   }
 

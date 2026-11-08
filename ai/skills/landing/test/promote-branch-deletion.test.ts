@@ -471,7 +471,7 @@ test("a rerun after a promotion conflict resolved by hand keeps the remote branc
   }
 });
 
-test("a later landing deletes a remote branch whose only commits main lacks are empty ours-merge markers", () => {
+test("a later landing deletes a remote branch whose only commits main lacks are empty ours-merge markers, after main edits the same lines", () => {
   const featureBranch = "glimmervoid/session/empty-merge-marker";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
@@ -485,6 +485,10 @@ test("a later landing deletes a remote branch whose only commits main lacks are 
     runGit(local, ["rebase", "-q", "origin/main"]);
     runGit(local, ["merge", "-q", "-s", "ours", "-m", "record the pre-rebase tip as merged", preRebaseCommit]);
     runGit(local, ["push", "-q", "origin", `HEAD:${featureBranch}`, "HEAD^:main"]);
+    runGit(seed, ["fetch", "-q", "origin"]);
+    runGit(seed, ["reset", "-q", "--hard", "origin/main"]);
+    commitFile(seed, "feature.txt", "feature edited on main\n", "later edit of the same line");
+    runGit(seed, ["push", "-q", "origin", "main"]);
     runGit(local, ["fetch", "-q", "origin"]);
     runGit(local, ["reset", "-q", "--hard", "origin/main"]);
     writeFile(local, "other.txt", "later work\n");
