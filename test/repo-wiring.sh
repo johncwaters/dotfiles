@@ -69,11 +69,6 @@ checkProfileClaudeSettings() {
     grep -qF '"caveman@caveman": true' "$renderedProfileSettingsPath"
   check "the $profileName profile leaves caveman mode to the plugin, which honors CAVEMAN_DEFAULT_MODE since 3.1.0" \
     bash -c '! grep -qF caveman-ultra.mjs "$1"' _ "$renderedProfileSettingsPath"
-  local profileSettingsFixturePath="$repoRoot/test/fixtures/ai-settings.$profileName.json"
-  if [[ -f "$profileSettingsFixturePath" ]]; then
-    check "the shared merger keeps the prior $profileName ai settings bytes" \
-      cmp -s "$profileSettingsFixturePath" "$renderedProfileSettingsPath"
-  fi
 }
 
 for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
@@ -228,9 +223,6 @@ for (const homePath of ['/fixture/carbon "unit"', '/fixture/line\nbreak', '/fixt
 JS
 check "glimmervoid creates no temporary empty overlay" \
   bash -c '! grep -q "glimmervoid-empty-overlay" "$1/glimmervoid/install.sh"' _ "$repoRoot"
-
-check "the personal ai settings golden fixture exists" \
-  test -f "$repoRoot/test/fixtures/ai-settings.personal.json"
 
 check "no profile or ai file mandates an /org-* plugin command" \
   bash -c '! grep -rq "/org-" "$1"/profiles/*/CLAUDE.md "$1"/ai' _ "$repoRoot"

@@ -192,10 +192,21 @@ function changedUiFiles(git: Git, paths: string[]): string[] {
     .map((changedPath) => path.join(repoRoot, changedPath));
 }
 
+function isResolvedPathInside(resolvedDirectory: string, resolvedPath: string): boolean {
+  const relativeToDirectory = path.relative(resolvedDirectory, resolvedPath);
+  return relativeToDirectory !== ".." && !relativeToDirectory.startsWith(`..${path.sep}`) && !path.isAbsolute(relativeToDirectory);
+}
+
+function isInsideDirectory(directory: string, existingFile: string): boolean {
+  const resolvedDirectory = fs.realpathSync(directory);
+  const entryLocation = path.join(fs.realpathSync(path.dirname(existingFile)), path.basename(existingFile));
+  return isResolvedPathInside(resolvedDirectory, entryLocation) || isResolvedPathInside(resolvedDirectory, fs.realpathSync(existingFile));
+}
+
 function screenshotRefusal(repoRoot: string, screenshotFile: string, uiFiles: string[]): string | null {
-  if (!path.relative(repoRoot, screenshotFile).startsWith("..")) return `${screenshotFile} is inside the checkout, which moves the reviewed tree; save it outside, under mktemp -d`;
-  if (!UI_EVIDENCE_EXTENSIONS.has(path.extname(screenshotFile).toLowerCase())) return `${screenshotFile} is not a ${[...UI_EVIDENCE_EXTENSIONS].join(" ")} file`;
   if (!fs.existsSync(screenshotFile)) return `${screenshotFile} does not exist`;
+  if (isInsideDirectory(repoRoot, screenshotFile)) return `${screenshotFile} is inside the checkout, which moves the reviewed tree; save it outside, under mktemp -d`;
+  if (!UI_EVIDENCE_EXTENSIONS.has(path.extname(screenshotFile).toLowerCase())) return `${screenshotFile} is not a ${[...UI_EVIDENCE_EXTENSIONS].join(" ")} file`;
   const remainingUiFiles = uiFiles.filter((uiFile) => fs.existsSync(uiFile));
   if (remainingUiFiles.length === 0) return null;
   const newestUiEditMs = Math.max(...remainingUiFiles.map((uiFile) => fs.statSync(uiFile).mtimeMs));

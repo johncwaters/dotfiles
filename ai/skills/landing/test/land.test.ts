@@ -1005,6 +1005,11 @@ test("a review gate refuses to stamp a changed or deleted stylesheet, however it
   assert.equal(inCheckout.code, 31, inCheckout.stderr);
   assert.match(inCheckout.stderr, /inside the checkout/);
   fs.rmSync(inCheckoutScreenshot);
+  fs.symlinkSync(screenshot, inCheckoutScreenshot);
+  const inCheckoutLink = stamp(repo, ["app.css"], {}, ["--ui-evidence", inCheckoutScreenshot]);
+  assert.equal(inCheckoutLink.code, 31, inCheckoutLink.stderr);
+  assert.match(inCheckoutLink.stderr, /inside the checkout/);
+  fs.rmSync(inCheckoutScreenshot);
   const evidenced = stamp(repo, ["app.css"], {}, ["--ui-evidence", screenshot]);
   assert.equal(evidenced.code, 0, evidenced.stderr);
   assert.equal(evidenced.result.uiEvidence, screenshot);
