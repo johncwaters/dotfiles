@@ -121,8 +121,10 @@ Read the situation:
 
 When the situation is ambiguous, default to casual and short. The carbon unit overwrites only exceptionally — they undershoot length and let the reader fill in context.
 
+Rewriting a draft the carbon unit supplied? Their facts, nouns, and claims are fixed. Reorder and cut, but add no detail they did not write, and ask when a sentence needs one.
+
 Sharing something (a demo, a doc, a PR)? Settle first whether the audience already saw it. If they did, skip the intro and recap of what it is, and lead with the new part.
 
 ## Scripts
 
-- `scripts/lint-draft.mjs`: run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs <draft-file>` (or pipe the draft on stdin) on every draft meant for someone else, including text about to go to Slack, email, GitHub, or a forum, before showing or sending it. Exit 1 lists each flagged sentence and its rule (comma splices, teaser lines like "here's why", filler words, em dashes, machine-written tells, corporate openers and closers); delete or rewrite those sentences and rerun until it exits 0. Delete a comma-spliced sentence outright rather than repairing it, since it is usually a fluff acknowledgement ("Ty for all the detail, the screenshots help a lot."). Long-form skills add `--longform`. Chat replies to the carbon unit are not drafts.
+- `scripts/lint-draft.mjs`: run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs <draft-file>` (or pipe the draft on stdin) on every draft meant for someone else, including text about to go to Slack, email, GitHub, or a forum, before showing or sending it. Exit 1 lists each flagged sentence and its rule (comma splices, teaser lines like "here's why", filler words, em dashes, kicker clauses, machine-written tells, corporate openers and closers); delete or rewrite those sentences and rerun until it exits 0. Delete a comma-spliced sentence outright rather than repairing it, since it is usually a fluff acknowledgement ("Ty for all the detail, the screenshots help a lot."). Long-form skills add `--longform`. Chat replies to the carbon unit are not drafts.

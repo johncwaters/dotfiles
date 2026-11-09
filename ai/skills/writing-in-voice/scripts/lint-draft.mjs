@@ -16,6 +16,7 @@ const SHARED_PATTERN_RULES = [
   { rule: "machine-tell", pattern: /\b(?:delv(?:e|es|ed|ing)|tapestry|landscape|game-changer|unlock(?:s|ed|ing)?|navigate the complexities|in today['’]s world|have you ever wondered|here are (?:\d+|two|three|four|five|six|seven|eight|nine|ten) )|^\s*(?:in conclusion|ultimately)\b/i },
   { rule: "corporate-opener", pattern: /\bhope this (?:email|message|note) finds you well\b|\bfriendly reminder\b/i },
   { rule: "teaser", pattern: /\b(?:(?:shows|explains) why|here['’]s (?:why|how|the thing))\s*[.!?:]*\s*$/i },
+  { rule: "kicker", pattern: /,\s+and\s+(?:(?:nobody|no one|nothing|none|never|not a single|not one)\b|[^,;:.!?]*?\bkept\s+[a-z]+ing\b)[^,;:]*(?:,[^,;:]{0,20})?$/i },
   { rule: "corporate-closer", pattern: /^\s*(?:best|cheers|regards|best regards|kind regards|warm regards|warmly|sincerely|all the best)\s*[,.!]?\s*$/i },
 ];
 
@@ -122,6 +123,7 @@ function runCommandLine(argumentList) {
   for (const flag of flags) console.log(`${draftPaths.length > 1 ? `${flag.source}:` : ""}${flag.line}: ${flag.rule}: ${flag.text}`);
   if (flags.some((flag) => flag.rule === "comma-splice")) console.log("comma-splice: delete the whole sentence. A spliced line is usually a fluff acknowledgement, and splitting it with a period or joining it with 'and' keeps the fluff. Rewrite it only when it carries a fact the reader needs.");
   if (flags.some((flag) => flag.rule === "teaser")) console.log("teaser: delete the whole sentence. It announces a reason without giving one, so open the next sentence with the reason itself.");
+  if (flags.some((flag) => flag.rule === "kicker")) console.log("kicker: end the sentence at the fact. Delete the clause after ', and' or state its fact plainly in a sentence of its own.");
   console.log(`${flags.length} flag(s). Delete or rewrite each flagged sentence and rerun until 0.`);
   process.exitCode = flags.length > 0 ? 1 : 0;
 }

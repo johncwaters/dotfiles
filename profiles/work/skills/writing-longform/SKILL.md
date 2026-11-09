@@ -11,7 +11,7 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 
 ## Workflow
 
-1. **Pitch before prose.** Get a one-sentence pitch containing "but", "except", or "and then". No turn in the sentence means no tension and no piece yet. If the carbon unit hasn't supplied the substance (the claim, the numbers, what happened), ask for it rather than inventing it: "having something interesting to say matters more than the title."
+1. **Pitch before prose.** Get a one-sentence pitch containing "but", "except", or "and then". No turn in the sentence means no tension and no piece yet. If the carbon unit hasn't supplied the substance (the claim, the numbers, what happened), ask for it rather than inventing it: "having something interesting to say matters more than the title." When they supplied a draft, its facts, nouns, and claims are fixed: reorder and cut, but add no detail they did not write.
 2. **Title first.** Specific beats clever: a number, a concrete claim, a real dollar figure. Generic test: if a bland B2B SaaS blog would publish this title, rewrite it.
 3. **Draft with the template** that fits under [Templates](#templates).
 4. **Revise** against the checklist. Rewriting is easier than writing because now there is a problem to solve.
@@ -40,12 +40,11 @@ Read the template that fits the piece:
 
 ## Tells that mark prose as machine-written
 
-Readers can tell, and PostHog asks for rewrites when it's obvious. Strip on sight: "delve", "tapestry", "landscape", "game-changer", "unlock", "navigate the complexities"; reflexive triplets; "It's not X, it's Y" more than once per piece; stacked rhetorical questions; a closing "In conclusion" or "Ultimately"; an ending that recaps; uniform sentence length; emoji bullets.
+Readers can tell, and PostHog asks for rewrites when it's obvious. Strip on sight: "delve", "tapestry", "landscape", "game-changer", "unlock", "navigate the complexities"; reflexive triplets; "It's not X, it's Y" more than once per piece; stacked rhetorical questions; a closing "In conclusion" or "Ultimately"; an ending that recaps; uniform sentence length; emoji bullets; a kicker clause tacked onto a plain claim ("you flip the flag off, and nobody waits on a revert"), where the sentence ends on the fact instead ("without needing a revert").
 
 In teaching guides, reviewers flag these as "Claudish", from a PostHog docs review that marked each example below:
 
 - An aphorism standing in for the fact: "A flag at 0% is live code that nobody runs", "A rollout is only as safe as what you watch between steps", `"A kill switch you've never flipped is a kill switch you hope works"`. State the fact or the instruction itself.
-- A flourish tail on a plain claim: "you flip the flag off, and nobody waits on a revert". End on the fact: "without needing a revert".
 - A balanced contrast pair the reader must decode: "A flag decides whether someone gets a feature, and a payload lets it decide how". Say what the thing is: "A feature flag can carry a payload, which …".
 - A dramatized cost: "A rollback is a revert, a build, and a deploy, and your users see the bug for as long as all three take". Name the concrete steps plainly.
 - A setup line narrating the story's progress: "It's a pretty average conversation, nothing really out of the norm", "Now Twig's engineers have a pretty good understanding of …". Start at the event: "Another visitor reports a bug: …".

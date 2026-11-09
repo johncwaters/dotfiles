@@ -35,6 +35,17 @@ test("comma splices from real support drafts fail and their joined rewrite passe
 test("shared voice rules flag on every draft and long-form rules only with --longform", () => {
   const sharedDraft = "I just fixed it — basically.\nI hope this email finds you well.\nLet's delve into it.\n\nCheers,";
   assert.deepEqual(lintDraft(sharedDraft).rules, ["filler-word", "em-dash", "corporate-opener", "machine-tell", "corporate-closer"]);
+  const recordedKickers = [
+    "The whole clip is rendered from one SVG page, and nobody drew a single frame by hand.",
+    "When I changed the board, the agent didn't hear about it, and my coding agent kept building the old one.",
+    "We checked the logs, and nothing was wrong.",
+    "You flip the flag off, and nobody waits on a revert, ever.",
+  ];
+  for (const kicker of recordedKickers) {
+    assert.deepEqual(lintDraft(kicker).rules, ["kicker"], kicker);
+    assert.deepEqual(lintDraft(kicker, "--longform").rules, ["kicker"], kicker);
+  }
+  assert.match(lintDraft(recordedKickers[0]).stdout, /kicker: end the sentence at the fact/);
   const longformDraft = "# Setup\n\nInstall it.\n\n## Why\n\nIt is not slow. It is careful and coming soon.\n\n- \u{1F680} Fast\n";
   assert.equal(lintDraft(longformDraft).exitCode, 0);
   assert.deepEqual(lintDraft(longformDraft, "--longform").rules, ["one-sentence-heading", "vague-quantity", "emoji-bullet"]);
