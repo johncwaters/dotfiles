@@ -1,11 +1,11 @@
 ---
 name: converging-reviews
-description: Runs review and fix rounds over local work until a round finds nothing left to fix, then stamps the tree for /landing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, a later round reviews the previous round's fixes, a clean fix round triggers a whole-diff sweep, and round.mjs classifies every round against a ledger so the loop stops on a cap of 11 rounds or a question. Starts only by name. Use for /converging-reviews.
+description: Runs review and fix rounds over local work until a round finds nothing at HIGH or above, fixes what that round found, then stamps the tree for /landing. Every round runs every lane, uncapped; round 1 reviews the whole working diff, round 2 sweeps it again with round 1's fixes in, a later round reviews the fixes of a round that held a HIGH finding, and round.mjs classifies every round against a ledger. Starts only by name. Use for /converging-reviews.
 ---
 
 # Converging Reviews
 
-An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. A fix round reviews only the delta its fixes made; once one is clean, a sweep re-reviews the whole diff. Every `ACTIONABLE` finding counts at any severity, since a floor ships a proven defect unfixed; only the cap bounds the loop, since without a floor a flat count at the tail is a converging loop, not a stuck one. A finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/gating-reviews` stays the default gate.
+An experiment: the review ladder with the loop it otherwise forbids, made safe by rules `round.mjs` enforces. Every `ACTIONABLE` finding is fixed at any severity, since a floor ships a proven defect unfixed, but only a HIGH or CRITICAL one earns its fix another review: 104 ledgers showed a pass finds something about half the time at any round, mostly MEDIUM and mostly on the last fix, so a loop that waits for a clean pass ends only on a cap. The whole diff gets one second look, the round 2 sweep, and no third. A round with nothing at HIGH ends the review; its fixes are checked by their own proofs and the push gate, as `/gating-reviews` checks every fix. No cap bounds a chain of HIGH findings: ten rounds of them is a fault in the change, not in the loop. A finding a carbon unit ruled NIT or the writer declined stays dropped. Starting only by name keeps it an experiment: `/gating-reviews` stays the default gate.
 
 ## Input
 
@@ -13,7 +13,7 @@ Uncommitted local work on a feature branch, and one or two sentences of what cha
 
 ## Output
 
-A review stamp over the changed-file set on `CLEAN`, which the caller lands through `/landing`, or a stop report on `CAPPED` or `FAILED` naming the round, the ledger path, and every live `ACTIONABLE` finding. The ledger stays for the next run either way.
+A review stamp over the changed-file set on `CLEAN` or after `FINISH`, which the caller lands through `/landing`, or a stop report on `FAILED` naming the round, the ledger path, and every live `ACTIONABLE` finding. The ledger stays for the next run either way.
 
 ## Step 1: Preflight and start
 
@@ -29,7 +29,7 @@ No cleaning pass runs: on a whole uncommitted pull request it deletes values a s
 
 ## Step 2: Review and classify
 
-Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. A delta round's `fixed` lists each defect the previous round's fixes claim to remove; put it in the context and ask whether each fix removed its defect everywhere in the diff, siblings and the test that pins it included, since a partial fix otherwise surfaces only in a later sweep. This session triages the return, then fixes in Step 4.
+Invoke `/reviewing-code` with `uncapped`, `allLanes`, the context, the round's `base` and `head` from `start` or `next` as its base-and-head form, and `git diff --name-only <base> <head>` as the changed-file set. After a compaction, `round.mjs next` prints the round in flight again. Every round keeps every lane so a fix round cannot narrow which concerns get checked. A sweep or delta round's `fixed` lists each defect the previous round's fixes claim to remove; put it in the context and ask whether each fix removed its defect everywhere in the diff, siblings and the test that pins it included, since no later round looks for a partial fix. This session triages the return, then fixes in Step 4.
 
 Note the output file the qa-swarm Workflow notification names and the `REVIEW_FILE` the `/reviewing-code` return names, then run:
 
@@ -43,12 +43,11 @@ node "$HOME/.claude/skills/converging-reviews/round.mjs" classify --round N --re
 
 | Outcome | Exit | Action |
 |---|---|---|
-| `CLEAN` | 0 | Before any further edit, run `round.mjs stamp <preflight paths>`. It stamps only a tree equal to this CLEAN head, carrying every `UNVERIFIED` fix; `UNSTAMPED` (exit 24) means the tree moved, so rerun from Step 1. `BROWSER_CODE_FAILED` (exit 30) lists the `/securing-browser-code` failures blocking an owned repo: fix them as new work, then rerun from Step 1. `UI_EVIDENCE_MISSING` (exit 31) means a style or markup file changed with no screenshot: render it, then rerun `round.mjs stamp` with `--ui-evidence <file>` saved outside the checkout after the last edit, or `--no-ui-evidence "<reason>"`. An edit after the stamp makes `land.ts` return `NOT_REVIEWED` |
+| `CLEAN` | 0 | Before any further edit, run `round.mjs stamp <preflight paths>`. It stamps only a tree equal to this CLEAN head, carrying every `UNVERIFIED` fix; `UNSTAMPED` (exit 24) means the tree moved, so rerun from Step 1, or after `FINISH` names what blocks the stamp. `BROWSER_CODE_FAILED` (exit 30) lists the `/securing-browser-code` failures blocking an owned repo: fix them as new work, then rerun from Step 1. `UI_EVIDENCE_MISSING` (exit 31) means a style or markup file changed with no screenshot: render it, then rerun `round.mjs stamp` with `--ui-evidence <file>` saved outside the checkout after the last edit, or `--no-ui-evidence "<reason>"`. An edit after the stamp makes `land.ts` return `NOT_REVIEWED` |
 | `CONTINUE` | 10 | Step 4, then `round.mjs next` and Step 2 |
 | `RETRY` | 11 | Repeat Step 2 for the same round once |
-| `SWEEP` | 12 | `round.mjs next`, then Step 2; no fix lands between |
+| `FINISH` | 13 | Step 4 with no round after it, then `round.mjs stamp <preflight paths>` as `CLEAN` does. `UNSTAMPED` names the blocker: `unrecorded` findings still owe a `record`, `strayFiles` were edited outside the reviewed diff and the files this round's findings name or cite, so move each out of the tree or rerun from Step 1, and a failing `gate` is fixed at its root cause before stamping again |
 | `ASKED` | 20 | Put each `asked` finding to the carbon unit with both readings, record the ruling, then rerun from Step 1 |
-| `CAPPED` | 22 | Stop and report, writing no stamp; inside a build this stops the build. Findings at a round with no room left for a clean delta and a clean sweep cap at once, since no further round could stamp |
 | `FAILED` | 23 | Stop and report, writing no stamp; inside a build this stops the build. A truncated lane fails too, since nothing would sweep its overflow |
 
 State both readings of an `asked` finding from the code alone. A pull request's review threads or the author's replies are not a reading: the question is what this review would have the code do.
@@ -65,7 +64,7 @@ Hand every `actionable` finding to `~/.claude/skills/gating-reviews/subskills/fi
 node "$HOME/.claude/skills/converging-reviews/round.mjs" record --fingerprint <fp> --fix FIXED|UNVERIFIED|DECLINED --round N
 ```
 
-Fix a `gate/<name>` finding at its root cause like any other; with `gate: null`, run the suite covering the changed files instead, and a suite that cannot run here goes in the report by name, with what ran instead. Then run `round.mjs next`, which pins the fixed tree as the next round's head over this round's head as base.
+Fix a `gate/<name>` finding at its root cause like any other; with `gate: null`, run the suite covering the changed files instead, and a suite that cannot run here goes in the report by name, with what ran instead. After `CONTINUE`, run `round.mjs next`, which pins the fixed tree as the next round's head: over round 1's base for the round 2 sweep, over this round's head for a delta.
 
 ## Scripts
 

@@ -25,9 +25,8 @@ const EXIT_CODE_BY_OUTCOME = {
   CLEAN: 0,
   CONTINUE: 10,
   RETRY: 11,
-  SWEEP: 12,
+  FINISH: 13,
   ASKED: 20,
-  CAPPED: 22,
   FAILED: 23,
   STAMPED: 0,
   UNSTAMPED: 24,
@@ -35,7 +34,6 @@ const EXIT_CODE_BY_OUTCOME = {
   UI_EVIDENCE_MISSING: 31,
   USAGE: 2,
 };
-const ROUND_CAP = 11;
 const HUNK_SLACK_LINES = 3;
 const SEVERITY_RANK = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
 const FIX_OUTCOMES = new Set(["FIXED", "UNVERIFIED", "DECLINED"]);
@@ -116,7 +114,7 @@ function fixesClaimedBy(ledger, round) {
 function reviewReport(pendingRound, ledgerFile, ledger) {
   const { round, kind, base, head } = pendingRound;
   const report = { round, kind, base, head, reviewCmd: `git diff ${base} ${head}`, ledger: ledgerFile };
-  if (kind !== "delta") return report;
+  if (kind === "full") return report;
   return { ...report, fixed: fixesClaimedBy(ledger, round - 1) };
 }
 
@@ -152,23 +150,64 @@ function nextRound(repoPath) {
   const lastConcluded = concludedRounds.at(-1);
   const isPendingUnreviewed = !concludedRounds.some((row) => row.round === latestPending.round);
   if (isPendingUnreviewed) {
-    if (latestPending.kind !== "delta") finish("REVIEW", reviewReport(latestPending, ledgerFile, ledger));
+    if (latestPending.kind === "full") finish("REVIEW", reviewReport(latestPending, ledgerFile, ledger));
     const workingTree = workingTreeOf(repoPath);
     if (latestPending.head === workingTree) finish("REVIEW", reviewReport(latestPending, ledgerFile, ledger));
     const refreshedRound = { ...latestPending, head: workingTree };
     appendRows(ledgerFile, [refreshedRound]);
     finish("REVIEW", reviewReport(refreshedRound, ledgerFile, ledger));
   }
-  if (!["CONTINUE", "SWEEP"].includes(lastConcluded.outcome)) {
-    failUsage(`round ${lastConcluded.round} ended ${lastConcluded.outcome}; only CONTINUE or SWEEP leads to a next round`);
+  if (lastConcluded.outcome !== "CONTINUE") {
+    failUsage(`round ${lastConcluded.round} ended ${lastConcluded.outcome}; only CONTINUE leads to a next round`);
+  }
+  const unrecorded = unrecordedFingerprints(ledger, lastConcluded);
+  if (unrecorded.length > 0) {
+    failUsage(`round ${lastConcluded.round} has findings with no fix record: ${unrecorded.join(", ")}; record each before the next round`);
   }
   const round = lastConcluded.round + 1;
-  const plan = roundPlan(ledger, round);
-  const head = plan.kind === "sweep" ? lastConcluded.head : workingTreeOf(repoPath);
-  const base = plan.kind === "sweep" ? plan.sweepBase : lastConcluded.head;
-  const pendingRound = { type: "pending", round, kind: plan.kind, base, head };
+  const kind = roundKind(round);
+  const base = kind === "sweep" ? concludedRounds[0].base : lastConcluded.head;
+  const pendingRound = { type: "pending", round, kind, base, head: workingTreeOf(repoPath) };
   appendRows(ledgerFile, [pendingRound]);
   finish("REVIEW", reviewReport(pendingRound, ledgerFile, ledger));
+}
+
+function actionableFindingsOf(ledger, roundRow) {
+  const roundRowIndex = ledger.lastIndexOf(roundRow);
+  const precedingRowIndex = ledger.findLastIndex((row, rowIndex) => rowIndex < roundRowIndex && row.type !== "finding");
+  return ledger.slice(precedingRowIndex + 1, roundRowIndex).filter((row) => row.disposition === "ACTIONABLE");
+}
+
+function unrecordedFingerprints(ledger, roundRow) {
+  const laterRows = ledger.slice(ledger.lastIndexOf(roundRow));
+  const recordedFingerprints = new Set(laterRows.filter((row) => row.type === "fix" && row.round === roundRow.round).map((row) => row.fingerprint));
+  const findingFingerprints = new Set(actionableFindingsOf(ledger, roundRow).map((finding) => finding.fingerprint));
+  return [...findingFingerprints].filter((fingerprint) => !recordedFingerprints.has(fingerprint));
+}
+
+function repoRelativePath(repoRoot, filePath) {
+  const absolutePath = path.resolve(repoRoot, filePath);
+  const physicalPath = fs.existsSync(absolutePath) ? fs.realpathSync(absolutePath) : absolutePath;
+  return path.relative(fs.realpathSync(repoRoot), physicalPath);
+}
+
+function finishBlockers(repoPath, git, ledger, finishRound, workingTree) {
+  const unrecorded = unrecordedFingerprints(ledger, finishRound);
+  if (unrecorded.length > 0) return { unrecorded };
+  const actionableFindings = actionableFindingsOf(ledger, finishRound);
+  const firstRoundBase = pendingRoundFor(ledger, 1).base;
+  const reviewedFiles = git.changedPathsBetween(firstRoundBase, finishRound.head);
+  const editedFiles = git.changedPathsBetween(finishRound.head, workingTree);
+  if (reviewedFiles === null || editedFiles === null) return { unreadableTrees: [firstRoundBase, finishRound.head, workingTree] };
+  const citedFiles = actionableFindings.flatMap((finding) => [...finding.body.matchAll(CITED_FILE_LINE)].map(([, citedFile]) => citedFile));
+  const repoRoot = runGit(repoPath, ["rev-parse", "--show-toplevel"]).trim();
+  const namedFiles = [...actionableFindings.map((finding) => finding.file), ...citedFiles].map((namedFile) => repoRelativePath(repoRoot, namedFile));
+  const fixScopeFiles = new Set([...reviewedFiles, ...namedFiles]);
+  const strayFiles = editedFiles.filter((editedFile) => !fixScopeFiles.has(editedFile));
+  if (strayFiles.length > 0) return { strayFiles };
+  const { gate } = runGate(repoPath);
+  if (gate !== null && gate.exitCode !== 0) return { gate };
+  return null;
 }
 
 function stampCleanTree(repoPath, paths, uiEvidence) {
@@ -176,9 +215,12 @@ function stampCleanTree(repoPath, paths, uiEvidence) {
   const workingTree = workingTreeOf(repoPath);
   const ledger = readLedger(ledgerPath(repoPath));
   const lastRound = roundRows(ledger).at(-1);
-  if (lastRound?.outcome !== "CLEAN" || lastRound.head !== workingTree) {
+  const isCleanHead = lastRound?.outcome === "CLEAN" && lastRound.head === workingTree;
+  if (!isCleanHead && lastRound?.outcome !== "FINISH") {
     finish("UNSTAMPED", { tree: workingTree, lastRound: lastRound ?? null });
   }
+  const blockers = isCleanHead ? null : finishBlockers(repoPath, git, ledger, lastRound, workingTree);
+  if (blockers !== null) finish("UNSTAMPED", { tree: workingTree, lastRound, ...blockers });
   const unverifiedFingerprints = new Set(ledger.filter((row) => row.type === "fix" && row.outcome === "UNVERIFIED").map((row) => row.fingerprint));
   const unverifiedFindings = ledger
     .filter((row) => row.type === "finding" && unverifiedFingerprints.has(row.fingerprint))
@@ -227,7 +269,7 @@ function parseReview(reviewText) {
     const reviewer = fieldValue(fields, "reviewer") ?? "unknown";
     return [{
       ...anchor,
-      severity: (fieldValue(fields, "severity") ?? "LOW").toUpperCase(),
+      severity: (fieldValue(fields, "severity") ?? "").toUpperCase(),
       reviewer,
       disposition: (fieldValue(fields, "disposition") ?? "").toUpperCase(),
       body,
@@ -235,7 +277,7 @@ function parseReview(reviewText) {
     }];
   });
   const verdict = headerValue("VERDICT").toUpperCase();
-  const isWellFormed = VERDICTS.has(verdict) && findings.every((finding) => DISPOSITIONS.has(finding.disposition));
+  const isWellFormed = VERDICTS.has(verdict) && findings.every((finding) => DISPOSITIONS.has(finding.disposition) && Object.hasOwn(SEVERITY_RANK, finding.severity));
   return { verdict: isWellFormed ? verdict : "FAILED", truncatedLanes, findings };
 }
 
@@ -349,25 +391,22 @@ function lastConcludedRounds(ledger) {
   return [...latestRowByRound.values()].filter((row) => row.outcome !== "RETRY");
 }
 
-function roundPlan(ledger, round) {
-  const earlierRounds = lastConcludedRounds(ledger).filter((row) => row.round < round);
-  const previousRound = earlierRounds.at(-1);
-  if (!previousRound) return { kind: "full", sweepBase: null };
-  const sweepBase = earlierRounds[0].base;
-  if (previousRound.outcome === "SWEEP") return { kind: "sweep", sweepBase };
-  return { kind: "delta", sweepBase };
+function roundKind(round) {
+  if (round === 1) return "full";
+  if (round === 2) return "sweep";
+  return "delta";
 }
 
-function decideOutcome({ review, round, plan, ledger, actionableFindings, keptFindings }) {
+function decideOutcome({ review, round, kind, ledger, actionableFindings, keptFindings }) {
   if (review.verdict === "FAILED") {
     const hasFailedThisRound = roundRows(ledger).some((row) => row.round === round && row.verdict === "FAILED");
     return hasFailedThisRound ? "FAILED" : "RETRY";
   }
   if (keptFindings.some((finding) => finding.disposition === "AMBIGUOUS" && atLeast(finding.severity, "HIGH"))) return "ASKED";
   if (review.truncatedLanes.length > 0) return "FAILED";
-  if (actionableFindings.length === 0 && plan.kind !== "delta") return "CLEAN";
-  if (actionableFindings.length > 0 && round + 2 > ROUND_CAP) return "CAPPED";
-  if (actionableFindings.length === 0) return "SWEEP";
+  if (actionableFindings.length === 0) return "CLEAN";
+  if (kind === "full") return "CONTINUE";
+  if (!actionableFindings.some((finding) => atLeast(finding.severity, "HIGH"))) return "FINISH";
   return "CONTINUE";
 }
 
@@ -376,8 +415,7 @@ function classifyRound(repoPath, round, reviewText, swarmOutputPath) {
   const ledger = readLedger(ledgerFile);
   const pendingRound = pendingRoundFor(ledger, round);
   if (!pendingRound) failUsage(`round ${round} has no pending row; run start or next first`);
-  const { base, head } = pendingRound;
-  const plan = { kind: pendingRound.kind };
+  const { base, head, kind } = pendingRound;
   const parsedReview = parseReview(reviewText);
   const { findings: reviewFindings, unmatchedBodies } = withSwarmBodies(parsedReview.findings, swarmOutputPath);
   const review = { ...parsedReview, findings: reviewFindings };
@@ -405,7 +443,7 @@ function classifyRound(repoPath, round, reviewText, swarmOutputPath) {
   const { gate, gateFinding } = runGate(repoPath);
   if (gateFinding) keptFindings.push(gateFinding);
   const actionableFindings = keptFindings.filter((finding) => finding.disposition === "ACTIONABLE");
-  const outcome = decideOutcome({ review, round, plan, ledger, actionableFindings, keptFindings });
+  const outcome = decideOutcome({ review, round, kind, ledger, actionableFindings, keptFindings });
   const findingRows = keptFindings.map((finding) => ({
     type: "finding",
     round,
@@ -420,7 +458,7 @@ function classifyRound(repoPath, round, reviewText, swarmOutputPath) {
   const roundRow = {
     type: "round",
     round,
-    kind: plan.kind,
+    kind,
     base,
     head,
     verdict: review.verdict,
@@ -436,7 +474,7 @@ function classifyRound(repoPath, round, reviewText, swarmOutputPath) {
   const ambiguousBelowHighFindings = keptFindings.filter((finding) => finding.disposition === "AMBIGUOUS" && !atLeast(finding.severity, "HIGH"));
   finish(outcome, {
     round,
-    kind: plan.kind,
+    kind,
     actionable: actionableFindings.map(reportedFinding),
     asked: askedFindings.map(reportedFinding),
     ambiguous: ambiguousBelowHighFindings.map(reportedFinding),

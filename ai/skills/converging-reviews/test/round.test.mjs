@@ -36,7 +36,7 @@ function linesWithChange(changedLineNumbers) {
   return Array.from({ length: 30 }, (_, index) => (changedLineNumbers.includes(index + 1) ? `changed ${index + 1}` : `line ${index + 1}`)).join("\n") + "\n";
 }
 
-test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findings, and keeps going when a fixed finding returns or a delta round finds as many as the last", (context) => {
+test("a round takes swarm bodies verbatim and drops off-hunk and settled findings, a row with no severity fails the review, and a sweep with nothing at HIGH ends FINISH, which no stamp accepts until its findings are recorded", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
@@ -68,58 +68,63 @@ test("a loop round takes swarm bodies verbatim, drops off-hunk and settled findi
   runRound(repository, ledgerRoot, ["record", "--fingerprint", upstreamFinding.fingerprint, "--fix", "DECLINED", "--round", "1"]);
 
   fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5, 6]));
-  assert.equal(runRound(repository, ledgerRoot, ["next"]).report.base, started.report.head);
+  assert.equal(runRound(repository, ledgerRoot, ["next"]).report.base, started.report.base);
+  const severityLessRow = findingRow(6, "HIGH", upstreamBody).replace(" | severity: HIGH", "");
+  assert.equal(runRound(repository, ledgerRoot, ["classify", "--round", "2"], reviewWith([severityLessRow])).report.outcome, "RETRY");
   const secondRound = runRound(repository, ledgerRoot, ["classify", "--round", "2"], reviewWith([
     findingRow(6, "MEDIUM", inLaneBody, "convergent: code/logic + redteam/silent-failure"),
     findingRow(6, "HIGH", upstreamBody),
   ]));
-  assert.deepEqual([secondRound.exitCode, secondRound.report.outcome, secondRound.report.actionable.length], [10, "CONTINUE", 1]);
+  assert.deepEqual([secondRound.exitCode, secondRound.report.outcome, secondRound.report.actionable.length], [13, "FINISH", 1]);
   assert.equal(secondRound.report.droppedSettled, 1);
-  runRound(repository, ledgerRoot, ["record", "--fingerprint", secondRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "2"]);
-
-  fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange([5, 6, 7]));
-  runRound(repository, ledgerRoot, ["next"]);
-  const thirdRound = runRound(repository, ledgerRoot, ["classify", "--round", "3"], reviewWith([findingRow(7, "LOW", "The new guard skips the last row. Proof: a.txt:7.")]));
-  assert.deepEqual([thirdRound.exitCode, thirdRound.report.kind, thirdRound.report.outcome], [10, "delta", "CONTINUE"]);
-  assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).report.outcome, "UNSTAMPED");
+  assert.equal(runRound(repository, ledgerRoot, ["next"]).exitCode, 2);
+  const unrecordedStamp = runRound(repository, ledgerRoot, ["stamp", "a.txt"]).report;
+  assert.deepEqual([unrecordedStamp.outcome, unrecordedStamp.unrecorded], ["UNSTAMPED", [secondRound.report.actionable[0].fingerprint]]);
 });
 
-test("every actionable finding counts whatever its severity, next resumes an unreviewed round with the fixes it checks, and a clean delta round sweeps the whole diff from the original base", (context) => {
+test("round 2 sweeps the whole diff with the fixes it checks, a recorded HIGH finding leads to a delta round, and a FINISH round stamps once no edit strays from the files its findings name or cite", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
   commitFile(repository, "a.txt", linesWithChange([]));
   const changeLines = (changedLineNumbers) => fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
   const classify = (round, rows) => runRound(repository, ledgerRoot, ["classify", "--round", String(round)], reviewWith(rows));
+  const recordFixed = (round, classified) => runRound(repository, ledgerRoot, ["record", "--fingerprint", classified.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", String(round)]);
 
   changeLines([5, 20]);
   const firstRoundPlan = runRound(repository, ledgerRoot, ["start"]).report;
   const firstRound = classify(1, [findingRow(5, "MEDIUM", "Bound is off by one. Proof: a.txt:5.")]);
   assert.equal(firstRound.report.outcome, "CONTINUE");
-  runRound(repository, ledgerRoot, ["record", "--fingerprint", firstRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "1"]);
+  recordFixed(1, firstRound);
 
   changeLines([5, 6, 20]);
-  const deltaRoundPlan = runRound(repository, ledgerRoot, ["next"]).report;
-  assert.deepEqual(runRound(repository, ledgerRoot, ["next"]).report, deltaRoundPlan);
-  assert.deepEqual([deltaRoundPlan.outcome, deltaRoundPlan.round, deltaRoundPlan.kind, deltaRoundPlan.base], ["REVIEW", 2, "delta", firstRoundPlan.head]);
-  assert.deepEqual(deltaRoundPlan.fixed, [{ fingerprint: firstRound.report.actionable[0].fingerprint, file: "a.txt", line: 5, defect: "Bound is off by one." }]);
-  const deltaRound = classify(2, [findingRow(6, "LOW", "Fix introduced an unchecked null. Proof: a.txt:6.")]);
-  assert.deepEqual([deltaRound.report.outcome, deltaRound.report.actionable.length, Object.hasOwn(deltaRound.report, "severityFloor")], ["CONTINUE", 1, false]);
-  runRound(repository, ledgerRoot, ["record", "--fingerprint", deltaRound.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", "2"]);
+  const sweepPlan = runRound(repository, ledgerRoot, ["next"]).report;
+  assert.deepEqual(runRound(repository, ledgerRoot, ["next"]).report, sweepPlan);
+  assert.deepEqual([sweepPlan.outcome, sweepPlan.round, sweepPlan.kind, sweepPlan.base], ["REVIEW", 2, "sweep", firstRoundPlan.base]);
+  assert.deepEqual(sweepPlan.fixed, [{ fingerprint: firstRound.report.actionable[0].fingerprint, file: "a.txt", line: 5, defect: "Bound is off by one." }]);
+  const sweepRound = classify(2, [findingRow(6, "HIGH", "Fix introduced an unchecked null. Proof: a.txt:6.")]);
+  assert.deepEqual([sweepRound.exitCode, sweepRound.report.outcome], [10, "CONTINUE"]);
+  assert.equal(runRound(repository, ledgerRoot, ["next"]).exitCode, 2);
+  recordFixed(2, sweepRound);
 
   changeLines([5, 6, 7, 20]);
-  runRound(repository, ledgerRoot, ["next"]);
-  assert.equal(classify(3, []).exitCode, 12);
-  const sweepPlan = runRound(repository, ledgerRoot, ["next"]).report;
-  assert.deepEqual([sweepPlan.round, sweepPlan.kind, sweepPlan.base], [4, "sweep", firstRoundPlan.base]);
-  assert.equal(classify(4, []).report.outcome, "CLEAN");
-  const cleanStamp = runRound(repository, ledgerRoot, ["stamp", "a.txt"]);
-  assert.deepEqual([cleanStamp.exitCode, cleanStamp.report.outcome, cleanStamp.report.stamp.gate], [0, "STAMPED", "converging-reviews"]);
-  changeLines([5, 6, 7, 20, 22]);
-  assert.equal(runRound(repository, ledgerRoot, ["stamp", "a.txt"]).exitCode, 24);
+  const deltaPlan = runRound(repository, ledgerRoot, ["next"]).report;
+  assert.deepEqual([deltaPlan.round, deltaPlan.kind, deltaPlan.base], [3, "delta", sweepPlan.head]);
+  const deltaRound = classify(3, [findingRow(7, "LOW", `The null guard skips the last row. Proof: a.txt:7 and ${path.join(repository, "cited.txt")}:1.`)]);
+  assert.deepEqual([deltaRound.exitCode, deltaRound.report.outcome, deltaRound.report.actionable.length], [13, "FINISH", 1]);
+  recordFixed(3, deltaRound);
+
+  changeLines([5, 6, 7, 8, 20]);
+  fs.writeFileSync(path.join(repository, "cited.txt"), "fixed at the cited source\n");
+  fs.writeFileSync(path.join(repository, "stray.txt"), "unreviewed\n");
+  const strayStamp = runRound(repository, ledgerRoot, ["stamp", "a.txt"]);
+  assert.deepEqual([strayStamp.exitCode, strayStamp.report.strayFiles], [24, ["stray.txt"]]);
+  fs.rmSync(path.join(repository, "stray.txt"));
+  const finishStamp = runRound(repository, ledgerRoot, ["stamp", "a.txt"]);
+  assert.deepEqual([finishStamp.exitCode, finishStamp.report.outcome, finishStamp.report.stamp.gate], [0, "STAMPED", "converging-reviews"]);
 });
 
-test("a failing pre-push gate keeps a clean review from ending the round and its fix lets the loop move on", (context) => {
+test("a failing pre-push gate keeps a clean review from ending the round, its fix lets the sweep end clean and stamp, and a later edit leaves the tree unstamped", (context) => {
   const repository = makeRepo();
   const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
   context.after(() => cleanup(repository, ledgerRoot));
@@ -139,28 +144,8 @@ test("a failing pre-push gate keeps a clean review from ending the round and its
   fs.rmSync(path.join(repository, "broken"));
   runRound(repository, ledgerRoot, ["next"]);
   const passingRound = runRound(repository, ledgerRoot, ["classify", "--round", "2"], reviewWith([]));
-  assert.deepEqual([passingRound.report.outcome, passingRound.report.gate.exitCode], ["SWEEP", 0]);
-});
-
-test("findings that leave no room for a clean delta and a clean sweep before the cap stop the loop at once", (context) => {
-  const repository = makeRepo();
-  const ledgerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "round-ledger-"));
-  context.after(() => cleanup(repository, ledgerRoot));
-  commitFile(repository, "a.txt", linesWithChange([]));
-  const changedLineNumbers = [1];
-  fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
-  runRound(repository, ledgerRoot, ["start"]);
-
-  const outcomes = [];
-  for (let round = 1; outcomes.at(-1) !== "CAPPED"; round += 1) {
-    const changedLine = changedLineNumbers.at(-1);
-    const classified = runRound(repository, ledgerRoot, ["classify", "--round", String(round)], reviewWith([findingRow(changedLine, "LOW", `Round ${round} fix misses a case. Proof: a.txt:${changedLine}.`)]));
-    outcomes.push(classified.report.outcome);
-    if (classified.report.outcome !== "CONTINUE") break;
-    runRound(repository, ledgerRoot, ["record", "--fingerprint", classified.report.actionable[0].fingerprint, "--fix", "FIXED", "--round", String(round)]);
-    changedLineNumbers.push(changedLine + 1);
-    fs.writeFileSync(path.join(repository, "a.txt"), linesWithChange(changedLineNumbers));
-    runRound(repository, ledgerRoot, ["next"]);
-  }
-  assert.deepEqual([outcomes.length, outcomes.at(-1)], [10, "CAPPED"]);
+  assert.deepEqual([passingRound.report.outcome, passingRound.report.gate.exitCode], ["CLEAN", 0]);
+  assert.equal(runRound(repository, ledgerRoot, ["stamp", "package.json"]).report.outcome, "STAMPED");
+  fs.writeFileSync(path.join(repository, "edited-after-the-stamp"), "");
+  assert.equal(runRound(repository, ledgerRoot, ["stamp", "package.json"]).exitCode, 24);
 });
