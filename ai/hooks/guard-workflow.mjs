@@ -83,6 +83,10 @@ const ATTACHED_SCRIPT_FLAG = /^(?:--(?:expression|file)=|-e.)/;
 const INLINE_SCRIPT_FLAG = /^-[A-Za-z0-9]*e$/;
 const UNRESOLVABLE_PATH_CHARACTERS = /[$`*?[{]/;
 const UNRESOLVED_TARGET_NAME = "unresolved-write-target";
+const LITERAL_WORD = /^[\w.:/@+=-]+$/;
+const INERT_WORD = /^(?:[\w.:/@+=-]+|'[^']*'|"[^"$`\\]*")$/;
+const ABSOLUTE_LITERAL_PATH = /^\/[\w.:/@+=-]*$/;
+const DRY_RUN_PUSH_OPTIONS = new Set(["--dry-run", "-n", "--verbose", "-v", "--quiet", "-q", "--porcelain", "--set-upstream", "-u", "--force", "-f", "--tags"]);
 
 const RAW_COMMIT_REASON =
   "Raw `git commit` and `git push` are denied outside /landing, so every landing commits a tree a review gate stamped. " +
@@ -360,8 +364,44 @@ function guardKillSelfMatch(command) {
   if ([...killArgumentTexts].some((argumentText) => isSelfMatchingKill(argumentText, command))) denyPreToolUse(KILL_SELF_MATCH_REASON);
 }
 
+function isPushDryRun(argumentWords) {
+  return ["--dry-run", "-n"].includes(argumentWords[0]) && argumentWords.every((word) => LITERAL_WORD.test(word) && (!word.startsWith("-") || DRY_RUN_PUSH_OPTIONS.has(word)));
+}
+
+function isThrowawayRepositoryPath(repositoryDirectory) {
+  if (!fs.existsSync(os.tmpdir()) || !fs.existsSync(repositoryDirectory)) return false;
+  const temporaryRoot = fs.realpathSync(os.tmpdir());
+  const resolvedDirectory = fs.realpathSync(repositoryDirectory);
+  const dotGitPath = path.join(resolvedDirectory, ".git");
+  if (resolvedDirectory === temporaryRoot || !isInsideDirectory(resolvedDirectory, temporaryRoot) || !fs.existsSync(dotGitPath)) return false;
+  return fs.lstatSync(dotGitPath).isDirectory() && !fs.existsSync(path.join(dotGitPath, "commondir"));
+}
+
+function isThrowawayGitCall(words) {
+  const directoryPaths = [];
+  let wordIndex = 1;
+  for (; ["-C", "-c"].includes(words[wordIndex]); wordIndex += 2) {
+    const optionValue = words[wordIndex + 1] ?? "";
+    if (words[wordIndex] === "-C" && ABSOLUTE_LITERAL_PATH.test(optionValue)) {
+      directoryPaths.push(optionValue);
+      continue;
+    }
+    if (words[wordIndex] === "-c" && LITERAL_WORD.test(optionValue) && !/^alias\./i.test(optionValue)) continue;
+    return false;
+  }
+  const [subcommand, ...argumentWords] = words.slice(wordIndex);
+  if (subcommand === "push") return wordIndex === 1 && isPushDryRun(argumentWords);
+  return subcommand === "commit" && directoryPaths.length > 0 && isThrowawayRepositoryPath(path.resolve(...directoryPaths));
+}
+
+function isEveryCommitOrPushThrowaway(command) {
+  const wordsOfEachStatement = topLevelStatements(command).map((statement) => statement.text.match(QUOTE_AWARE_WORD) ?? []);
+  return wordsOfEachStatement.every((words) => words[0] === "git" && words.every((word) => INERT_WORD.test(word)) && isThrowawayGitCall(words));
+}
+
 async function guardRawCommit(command, transcriptPath) {
   if (!GIT_COMMIT_OR_PUSH.test(maskSingleQuotedText(maskLiteralHeredocBodies(command)))) return;
+  if (isEveryCommitOrPushThrowaway(command)) return;
   if (fs.existsSync(transcriptPath) && (await hasLandingSkillRunSinceLastPrompt(transcriptPath))) return;
   denyPreToolUse(RAW_COMMIT_REASON);
 }

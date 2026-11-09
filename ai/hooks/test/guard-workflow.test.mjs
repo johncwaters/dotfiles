@@ -84,6 +84,101 @@ test("raw git commit and push outside /landing are denied in every command posit
   }
 });
 
+test("outside /landing a commit into a throwaway temp repository and a dry-run push are allowed while a commit that may reach a real repository stays denied", () => {
+  const transcriptPath = writeTranscript([prompt("try and break it")]);
+  const hookTemporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "guard-workflow-tmpdir-"));
+  const hookEnvironment = { ...ATTENDED, TMPDIR: hookTemporaryRoot };
+  const temporaryRepository = fs.mkdtempSync(path.join(hookTemporaryRoot, "probe-"));
+  fs.mkdirSync(path.join(temporaryRepository, ".git"));
+  fs.mkdirSync(path.join(temporaryRepository, "empty"));
+  const temporaryRepositoryWithCommonDirectory = fs.mkdtempSync(path.join(hookTemporaryRoot, "common-"));
+  fs.mkdirSync(path.join(temporaryRepositoryWithCommonDirectory, ".git"));
+  fs.writeFileSync(path.join(temporaryRepositoryWithCommonDirectory, ".git", "commondir"), `${repository}/.git\n`);
+  const temporaryWorktree = fs.mkdtempSync(path.join(hookTemporaryRoot, "worktree-"));
+  fs.writeFileSync(path.join(temporaryWorktree, ".git"), `gitdir: ${repository}/.git/worktrees/x\n`);
+  const temporaryLinkToRepository = path.join(hookTemporaryRoot, "repo-link");
+  fs.symlinkSync(repository, temporaryLinkToRepository);
+  after(() => removeAll(hookTemporaryRoot));
+  for (const command of [
+    `git -C ${temporaryRepository} commit --allow-empty -m x`,
+    `git -C ${temporaryRepository} -c user.name=a commit -q --allow-empty -m 'a b'`,
+    "git push --dry-run origin HEAD",
+    "git push -n origin main",
+    "git push -n -u -v origin HEAD:main",
+  ]) {
+    assert.equal(decisionFor(bashCall(command, transcriptPath), hookEnvironment).decision, "allow", command);
+  }
+  for (const command of [
+    `git -C ${repository} commit -m x`,
+    "T=$(mktemp -d); git init -q $T/Repo; git -C $T/Repo commit -q --allow-empty -m x",
+    'T=$(mktemp -d); git -C "${T}/Repo" commit -m x',
+    `X=$(mktemp -d); printf -v $'\\x58' '%s' '/ -C ${repository}'; git -C $X commit -am y`,
+    `DIRSTACK=$(mktemp -d); cd ${repository}; git -C $DIRSTACK commit --allow-empty -m x`,
+    `cd ${repository}; git -C ${temporaryRepository} commit -m x`,
+    `git -C ${repository} worktree add ${hookTemporaryRoot}/w && git -C ${hookTemporaryRoot}/w commit -m x`,
+    `git init -q ${hookTemporaryRoot}/fresh && git -C ${hookTemporaryRoot}/fresh commit --allow-empty -m x`,
+    `git -C ${hookTemporaryRoot} commit -m x`,
+    `git -C ${repository} worktree add ${temporaryRepository}/empty && git -C ${temporaryRepository}/empty commit -m x`,
+    `git -C ${temporaryRepository}/empty init --separate-git-dir ${repository}/.git && git -C ${temporaryRepository}/empty commit -m x`,
+    `git -C ${temporaryRepository}/empty commit -m x`,
+    `git -C ${temporaryRepositoryWithCommonDirectory} commit -m x`,
+    `git -C ${repository} status && git -C ${temporaryRepository} commit -m x`,
+    `git -C ${temporaryRepository} commit -m '<<EOF\n'; git push origin main; echo '\nEOF\n'`,
+    `git -C ${temporaryRepository} commit -m "<<EOF\n"; git -C ${repository} commit -am y; echo "\nEOF\n"`,
+    `git -C ${temporaryWorktree} commit -m x`,
+    `git -C ${temporaryLinkToRepository} commit -m x`,
+    `git -C ${temporaryRepository} -C ${repository} commit -m x`,
+    "T=$(mktemp -d); cd $T && git commit -m x",
+    "T=$(mktemp -d); git -C $T/Repo commit -m x && git commit -m y",
+    "T=$(mktemp -d ./probe.XXXX); git -C $T commit -m x",
+    "T=$(mktemp -d); T=.; git -C $T commit -m x",
+    "T=$(mktemp -d); git -C $T --git-dir .git commit -m x",
+    "T=$(mktemp -d); GIT_DIR=.git git -C $T commit -m x",
+    "export TMPDIR=.; T=$(mktemp -d); git -C $T commit -m x",
+    `T=$(mktemp -d); ln -s ${repository} $T/r; git -C $T/r commit -m x`,
+    "T=$(mktemp -d); bash <<'EOF'\ngit -C $T commit -m x\nEOF",
+    "git push --dry-run origin main && git push origin main",
+    "git push --dry-run --no-dry-run origin main",
+    `T=$(mktemp -d); git clone -q ${repository} $T/r; git -C $T/r push origin HEAD:main`,
+    `git -C ${temporaryRepository} push origin HEAD:main`,
+    'git push --dry-run origin "$(git push origin main)"',
+    `git -C ${temporaryRepository} commit -m "$(git -C ${repository} commit -am y)"`,
+    "T=$(mktemp -d); cd /; git -C ./$T commit -m x",
+    `git -C ${path.relative(process.cwd(), temporaryRepository)} commit -m x`,
+    "git push -o -n origin HEAD:main",
+    "git push -n --no-dry origin HEAD:main",
+    'git push --dry-run "--no-dry-run" origin HEAD:main',
+    "git push --dry-run '--no-dry-run' origin HEAD:main",
+    "git push --dry-run origin ${ git push origin main; }",
+    "git push --dry-run origin ${| git push origin main; }",
+    "FLAG=--no-dry-run; git push -n $FLAG origin HEAD:main",
+    "git push -n -{n,-no-dry-run} origin HEAD:main",
+    "git push -n {--no-dry-run,origin} HEAD:main",
+    "git push -n --receive-pack=git push",
+    "git push --dry-run --receiv=git push",
+    "git push --dry-run --exec=git push",
+    "git push -n --repo=origin",
+    "git -C {.,commit,--allow-empty,-m} push -n",
+    "git -c {a.b=c,commit,--allow-empty,-m} push -n",
+    'T=". commit --allow-empty -m"; git -C $T push -n',
+    `T="${temporaryRepository} -C ${repository}"; git -C $T commit -m x`,
+    `T=$(mktemp -d); git init -q $T; X='$(git push origin main)'; git -C $T commit --allow-empty -m "\${X@P}"`,
+    `git -C ${temporaryRepository} commit -m \${ git -C ${repository} commit -am y; }`,
+    `git -C ${temporaryRepository} commit -m \${| git -C ${repository} commit -am y; }`,
+    `git -C ${temporaryRepository} -c Alias.ci=commit commit -m x`,
+    `T=$(mktemp -d); IFS=:; U=$T:-C:${repository}; git -C $U commit -am y`,
+    `IFS=@; D=$(mktemp -d); git init -q $D; X=$D@-C@${repository}; git -C $X commit --allow-empty -m y`,
+    `PWD=$(mktemp -d); cd ${repository}; git -C $PWD commit --allow-empty -m x`,
+    `_=$(mktemp -d); true ${repository}; git -C $_ commit --allow-empty -m x`,
+    `OLDPWD=$(mktemp -d); cd ${repository}; cd /; git -C "\${OLDPWD}" commit --allow-empty -m x`,
+    "T=$(mktemp -d -t probe); git -C \"$T\" commit -m x",
+  ]) {
+    assert.equal(decisionFor(bashCall(command, transcriptPath), hookEnvironment).decision, "deny", command);
+  }
+  const missingTemporaryRoot = { ...ATTENDED, TMPDIR: path.join(hookTemporaryRoot, "gone") };
+  assert.equal(decisionFor(bashCall(`git -C ${repository} commit -m x`, transcriptPath), missingTemporaryRoot).decision, "deny");
+});
+
 test("git commands that neither commit nor push are allowed", () => {
   const transcriptPath = writeTranscript([prompt("look around")]);
   for (const command of ["git status", "git log --grep commit", "git commit-tree HEAD^{tree}", "echo git commit", "git push-not-a-command"]) {
