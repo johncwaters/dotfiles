@@ -10,6 +10,7 @@ import {
   type ParkedEntry,
 } from "./lib/ledger.ts";
 import { isCoherenceOnly, startJournalFollower, tracksCoherence } from "./lib/journal-follower.ts";
+import { isChangelogPath, keepBothUnreleasedBullets } from "./lib/changelog-merge.ts";
 import { isTreeContained } from "./lib/merge-proof.ts";
 import { normalizeMessage, validateMessage } from "./lib/message.ts";
 import {
@@ -983,7 +984,10 @@ class Landing {
       );
       return { rebasedTip: null, failure: "PROMOTE_FAILED" };
     }
-    const rebase = this.git.rebaseIn(worktreePath, destination);
+    let rebase = this.git.rebaseIn(worktreePath, destination);
+    while (rebase.code !== 0 && this.keepBothChangelogSides(worktreePath)) {
+      rebase = this.git.run(["rebase", "--continue"], { cwd: worktreePath, env: { GIT_EDITOR: "true" } });
+    }
     if (rebase.code !== 0) {
       const conflicts = this.git.conflictingFilesIn(worktreePath);
       this.git.rebaseAbortIn(worktreePath);
@@ -1007,6 +1011,36 @@ class Landing {
       return { rebasedTip: null, failure: "PROMOTE_FAILED" };
     }
     return { rebasedTip, failure: null };
+  }
+
+  private keepBothChangelogSides(worktreePath: string): boolean {
+    const conflicts = this.git.conflictingFilesIn(worktreePath);
+    if (conflicts.length === 0 || !conflicts.every(isChangelogPath)) {
+      return false;
+    }
+    const resolvedTextByPath = new Map<string, string>();
+    for (const conflictPath of conflicts) {
+      const zdiff3 = this.git.run(["checkout", "--conflict=zdiff3", "--", conflictPath], { cwd: worktreePath });
+      if (zdiff3.code !== 0) {
+        return false;
+      }
+      const resolvedText = keepBothUnreleasedBullets(fs.readFileSync(path.join(worktreePath, conflictPath), "utf8"));
+      if (resolvedText === null) {
+        return false;
+      }
+      resolvedTextByPath.set(conflictPath, resolvedText);
+    }
+    for (const [conflictPath, resolvedText] of resolvedTextByPath) {
+      fs.writeFileSync(path.join(worktreePath, conflictPath), resolvedText);
+    }
+    if (this.git.run(["add", "--", ...conflicts], { cwd: worktreePath }).code !== 0) {
+      return false;
+    }
+    const replayedCommit = this.git.run(["rev-parse", "--short", "REBASE_HEAD"], { cwd: worktreePath }).stdout.trim();
+    this.warnings.push(
+      `kept both sides' Unreleased bullets in ${conflicts.join(", ")} while replaying ${replayedCommit}, mainline's first`,
+    );
+    return true;
   }
 
   private discardTemporaryWorktree(temporaryDirectory: string, temporaryWorktree: string): void {

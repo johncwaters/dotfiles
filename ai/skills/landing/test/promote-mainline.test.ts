@@ -484,6 +484,33 @@ test("a feature rebase conflict aborts and restores a clean feature branch", () 
   }
 });
 
+test("a promotion whose only conflict is both sides adding Unreleased changelog bullets keeps both and promotes", () => {
+  const { origin, seed, local } = seedOrigin();
+  const changelog = (bullets: string) => `# Changelog\n\n## [Unreleased]\n\n### Added\n\n${bullets}\n## [1.0.0]\n\n- First\n`;
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "CHANGELOG.md", changelog(""), "changelog");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["rebase", "-q", "origin/main"]);
+    commitFile(seed, "CHANGELOG.md", changelog("- Shared fix\n- Main bullet\n"), "main bullet");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "CHANGELOG.md", changelog("- Shared fix\n- Feature bullet\n  continued\n"));
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.ok(result.warnings.some((warning: string) => warning.includes("kept both sides' Unreleased bullets in CHANGELOG.md")));
+    assert.equal(
+      gitOutput(local, ["show", "origin/main:CHANGELOG.md"]),
+      changelog("- Shared fix\n- Main bullet\n- Feature bullet\n  continued\n").trimEnd(),
+    );
+  } finally {
+    cleanup(origin, seed, local);
+  }
+});
+
 test("a promotion conflict records the parked feature branch", () => {
   const { origin, seed, local } = seedOrigin();
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();
