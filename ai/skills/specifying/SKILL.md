@@ -21,7 +21,7 @@ Read each file under `subskills/` as you reach it.
 
 | Order | Subskill | Status it sets | The graph then holds |
 |-------|----------|----------------|----------------------|
-| 1 | `sketch.md` | `sketch` | one goal, and a branch per guess |
+| 1 | `sketch.md` | `sketch` | one goal with its problem, and a branch per guess |
 | 2 | `grill.md` | `grilled` at risk `low`, else none (stays `sketch`) | zero branches |
 | 3 | `design.md` | `grilled` | design nodes with every branch closed |
 | 4 | `slice.md` | `sliced` | vertical units with full contracts, every decision and design node implemented or a constraint |
@@ -59,7 +59,7 @@ An existing design spec resumes at the subskill after its status. A `challenged`
 }
 ```
 
-Further fields: the goal carries `risk` (low, medium, high, critical), `criteria` (1 to 12 observable results), and at `sketch` an `upstream` written as `sketch.md` step 4 says; a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning", "upstream" }` with `blocks` edges to the branches it precedes, its `upstream` written as `sketch.md` step 4 says; a `read` decision's `evidence` cites a path:line, a commit sha, or a backticked command; a decision that binds every unit carries `"isConstraint": true`; a `design` node holds the settled `code` of one `layer` (behavior, architecture, or program), with `at` naming the path a program design lands in, or of layer `machine`, carrying `states`, `transitions` as `[from, event, to]`, and `at`, its one writer; above low risk a spec carries a machine or a decision with `"lifecycle": "none"`; and each unit `implements` the design nodes it builds; a unit carries `"serves"`, the 1-based numbers of the goal criteria it makes true, at least one each; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a unit that splits one large file into new ones carries `"splits": "<path>"`, so the reading budget counts that file at the changed-only cap; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
+Further fields: the goal carries `risk` (low, medium, high, critical), `criteria` (1 to 12 observable results), and at `sketch` a `problem` and an `upstream` written as `sketch.md` step 4 says; a `branch` node is `{ "id": "B1", "kind": "branch", "question", "leaning", "upstream" }` with `blocks` edges to the branches it precedes, its `upstream` written as `sketch.md` step 4 says; a `read` decision's `evidence` cites a path:line, a commit sha, or a backticked command; a decision that binds every unit carries `"isConstraint": true`; a `design` node holds the settled `code` of one `layer` (behavior, architecture, or program), with `at` naming the path a program design lands in, or of layer `machine`, carrying `states`, `transitions` as `[from, event, to]`, and `at`, its one writer; above low risk a spec carries a machine or a decision with `"lifecycle": "none"`; and each unit `implements` the design nodes it builds; a unit carries `"serves"`, the 1-based numbers of the goal criteria it makes true, at least one each; a unit kept whole above the reading budget carries `"budgetWaiver": "<why>"`; a unit that splits one large file into new ones carries `"splits": "<path>"`, so the reading budget counts that file at the changed-only cap; a `challenged` spec carries `"challengeStamp"` and `"challengedUnitIds"`, the ids of the units the challenge judged.
 
 The `validate-spec.mjs` write hook accepts a graph that passes `lib/graph.ts` for its status. Its denial names each rule and the fix; apply them and write again. Run the same checks, or view the graph, at any time with the scripts below.
 
@@ -75,7 +75,7 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 
 ## Hand off
 
-Show the `tree` rendering, then reply with the path, the goal's criteria, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision and each changed design node, keep or restore, with a question round through `ask.md`; a restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once none is left, unless the carbon unit asked for the design spec alone, cut and build without asking.
+Show the `tree` rendering, then reply with the path, the goal's problem and criteria, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Settle each `assumed` decision and each changed design node, keep or restore, with a question round through `ask.md`; a restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A confirmed or accepted answer sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once none is left, unless the carbon unit asked for the design spec alone, cut and build without asking.
 
 ## Scripts
 

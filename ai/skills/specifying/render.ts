@@ -10,19 +10,23 @@ function oneLine(text: string): string {
   return text.replace(/[\r\n]+/g, " ");
 }
 
+function problemLines(spec: DesignSpec): string[] {
+  return spec.nodes.flatMap((node) => node.kind === "goal" && node.problem ? [oneLine(`Problem: ${node.problem}`)] : []);
+}
+
 function render(spec: DesignSpec, mode: string): string {
   if (mode === "goal") {
-    return spec.nodes.flatMap((node) => {
+    return problemLines(spec).concat(spec.nodes.flatMap((node) => {
       if (node.kind === "goal") return [`Goal: ${node.text}`];
       return [];
-    }).concat(
+    })).concat(
       spec.nodes.flatMap((node) => node.kind === "nonGoal" ? [`Non-goal: ${node.text}`] : []),
       spec.nodes.flatMap((node) => node.kind === "decision" ? [`${node.id}: ${node.question} -> ${node.answer} (${node.source})`] : []),
     ).map(oneLine).join("\n");
   }
   if (mode === "design") return renderDesign(spec);
   const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
-  const lines: string[] = [];
+  const lines: string[] = mode === "tree" ? problemLines(spec) : [];
   let stepNumber = 0;
   for (const unit of unitsInDependencyOrder(spec)) {
     const outgoingEdges = spec.edges.filter((edge) => edge.from === unit.id);

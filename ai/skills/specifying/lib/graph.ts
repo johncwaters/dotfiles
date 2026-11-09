@@ -9,6 +9,7 @@ export type Goal = {
   risk?: "low" | "medium" | "high" | "critical";
   criteria?: string[];
   upstream?: string;
+  problem?: string;
 };
 export type NonGoal = { id: `N${number}`; kind: "nonGoal"; text: string };
 export type Branch = { id: `B${number}`; kind: "branch"; question: string; leaning: string; upstream: string };
@@ -84,7 +85,7 @@ export function unitTicketCriteria(unit: Unit, goalCriteria: string[]): string[]
 }
 
 const NODE_FIELDS = {
-  goal: ["id", "kind", "text", "risk", "criteria", "upstream"],
+  goal: ["id", "kind", "text", "risk", "criteria", "upstream", "problem"],
   nonGoal: ["id", "kind", "text"],
   branch: ["id", "kind", "question", "leaning", "upstream"],
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint", "lifecycle"],
@@ -230,7 +231,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream", "lifecycle", "code", "states", "transitions"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream", "problem", "lifecycle", "code", "states", "transitions"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -239,6 +240,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     }
     const isGoalUpstreamCited = typeof value.upstream === "string" && citesSource(value.upstream, commitsCited, true);
     if (Object.hasOwn(value, "upstream") && !isGoalUpstreamCited) addError(errors, 1, `${subject}.upstream`, `say what simplest trigger and source one level up would remove the most branches and cite what you read (${CITATION_FORMS}), or write 'none: <why nothing sits above this feature>'`);
+    if (Object.hasOwn(value, "problem")) requireString(value.problem, `${subject}.problem`, errors);
     if (!Object.hasOwn(value, "criteria")) return;
     if (!Array.isArray(value.criteria) || value.criteria.length < 1 || value.criteria.length > 12) {
       addError(errors, 1, `${subject}.criteria`, "supply an array of 1 to 12 non-empty strings or omit it");
@@ -627,6 +629,7 @@ export function validateGraph(value: unknown): string[] {
   const goal = spec.nodes.find((node): node is Goal => node.kind === "goal");
   const goalCriteria = goal?.criteria ?? [];
   if (spec.status === "sketch" && goal !== undefined && goal.upstream === undefined) addError(errors, 1, "node G1.upstream", "write the goal's upstream at sketch, as sketch.md step 4 says");
+  if (spec.status === "sketch" && goal !== undefined && goal.problem === undefined) addError(errors, 1, "node G1.problem", "write the problem the goal answers at sketch, as sketch.md step 4 says");
   const isGoalMissingCriteria = isSliced && goal !== undefined && goalCriteria.length === 0;
   if (isGoalMissingCriteria) addError(errors, 17, "node G1", "add criteria, 1 to 12 observable results; every unit serves one at sliced status");
   for (const unit of units) {

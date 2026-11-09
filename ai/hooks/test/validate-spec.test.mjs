@@ -265,7 +265,7 @@ test("a goal or branch upstream and a read decision's evidence are refused until
       request: "Clear the card once its question is answered",
       repoRoot: specRepoRoot,
       nodes: [
-        { id: "G1", kind: "goal", text: "The card clears once answered", ...citation("G1", "none: the card is new") },
+        { id: "G1", kind: "goal", text: "The card clears once answered", problem: "An answered card stays on the board", ...citation("G1", "none: the card is new") },
         { id: "B1", kind: "branch", question: "Which hook reports the answer?", leaning: "PostToolUse", ...citation("B1", "none: the hook name is new") },
         { id: "D1", kind: "decision", question: "Where is the card drawn?", answer: "In the card view.", why: "It owns the card.", source: "read", ...citation("D1", "server/cards.ts:212") },
       ],
@@ -288,6 +288,12 @@ test("a goal or branch upstream and a read decision's evidence are refused until
   grilledWithoutGoalUpstream.status = "grilled";
   grilledWithoutGoalUpstream.nodes = grilledWithoutGoalUpstream.nodes.filter((node) => node.kind !== "branch");
   assertAllowed(writeSpec(grilledWithoutGoalUpstream));
+  const sketchWithoutGoalProblem = sketchCiting("none: the name is new", "G1");
+  delete sketchWithoutGoalProblem.nodes[0].problem;
+  assert.match(denialReason(writeSpec(sketchWithoutGoalProblem)), /Rule 1: node G1\.problem: write the problem the goal answers at sketch, as sketch\.md step 4 says/);
+  sketchWithoutGoalProblem.status = "grilled";
+  sketchWithoutGoalProblem.nodes = sketchWithoutGoalProblem.nodes.filter((node) => node.kind !== "branch");
+  assertAllowed(writeSpec(sketchWithoutGoalProblem));
   const citedRepository = makeRepo();
   testContext.after(() => removeAll(citedRepository));
   commitFile(citedRepository, "a.txt", "one\n");
