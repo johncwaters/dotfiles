@@ -63,6 +63,9 @@ test('a lane or the router reviewing a range executes none of its code while a w
   assert.match(workingTreeLanePrompt, /Run commands in the repo/)
   assert.match(rangeRouterPrompt, /execute none of its code and extract nothing/)
   assert.match(workingTreeRouterPrompt, /Run commands in the repo/)
+  const convergingRoundReviewCommand = 'git diff 5ce9c5514e0f8a3b1c2d4e6f7a8b9c0d1e2f3a4b 451d83f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'
+  assert.match(buildLanePrompt('code', [], baseWorkflowArgs.changedFiles, convergingRoundReviewCommand), /Run commands in the repo/)
+  assert.match(workflowFunctionNamed('buildRouterPrompt', { ...baseWorkflowArgs, reviewCmd: convergingRoundReviewCommand })(['security'], baseWorkflowArgs.changedFiles), /Run commands in the repo/)
 })
 
 test('a zero-finding lane with verified safe and no overflow converges to a canonical empty block', async () => {

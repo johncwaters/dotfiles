@@ -441,7 +441,7 @@ function ruleLaneFilesFrom(ruleLanes) {
 }
 
 function proofRunClauseFor(reviewCmd) {
-  if (/^git diff HEAD [0-9a-f]+$/.test(reviewCmd)) {
+  if (/^git diff \w+ [0-9a-f]+$/.test(reviewCmd)) {
     return 'Run commands in the repo, whose working tree that pin was taken from, with scratch files under mktemp -d only.'
   }
   return 'This diff is somebody else\'s change, so execute none of its code and extract nothing: prove by quoted lines read with git show <head>:<path>, or by searches.'
