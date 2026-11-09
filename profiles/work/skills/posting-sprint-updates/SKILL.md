@@ -34,7 +34,8 @@ Load `writing-in-voice` and write in it.
 
 - Keep the template headings and its `>` prompt lines exactly as written.
 - Stay near 250 words, capped at 300. Aim for 3 to 5 progress bullets, 1 or 2 bets, and 2 to 4 plans.
-- Group PRs by theme. Link only unfinished items.
+- Group PRs by theme, one short line per theme with no counts, before/after numbers, or asides; a progress number that matters goes under Bets. Link only unfinished items.
+- An unfinished item keeps carrying over each sprint, in one section only: unchecked under Progress or under Plans. Write it as a plain item, with no carried-over tag and no joke at the carbon unit about it.
 - Drop anything handed off to someone else.
 - During an offsite or holiday, list it first in Plans, shrink the rest to match, and add a one-line note under Updates.
 - @-mention someone only when the carbon unit asks.
