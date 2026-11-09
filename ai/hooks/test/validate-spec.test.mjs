@@ -253,23 +253,41 @@ test("a large file the unit only changes counts at the changed-only cap", () => 
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*list the splits path in both reads and changes/);
 });
 
-test("a branch is refused until its upstream line is none with a reason or cites what was read", (testContext) => {
-  const sketchWithBranchUpstream = (upstream, specRepoRoot = repoRoot) => ({
-    status: "sketch",
-    request: "Clear the card once its question is answered",
-    repoRoot: specRepoRoot,
-    nodes: [
-      { id: "G1", kind: "goal", text: "The card clears once answered" },
-      { id: "B1", kind: "branch", question: "Which hook reports the answer?", leaning: "PostToolUse", ...(upstream === undefined ? {} : { upstream }) },
-    ],
-    edges: [],
-  });
-  for (const unevidencedUpstream of [undefined, "", "a guess with no evidence", "none", "none:  ", "unknown `?`", "defaced guess", "(<path:line>, <commit sha>, or the `command` that showed it)", "`no idea`", "`TBD later`", "a guess, see ticket 1234567", "guess at 10.30:00", "none: ?"]) {
-    assert.match(denialReason(writeSpec(sketchWithBranchUpstream(unevidencedUpstream))), /Rule 1: node B1\.upstream: say what one level up/, unevidencedUpstream);
+test("a goal or branch upstream and a read decision's evidence are refused until they cite what was read", (testContext) => {
+  const citingFields = { G1: "upstream", B1: "upstream", D1: "evidence" };
+  const sketchCiting = (citedText, citingNodeId = "B1", specRepoRoot = repoRoot) => {
+    const citation = (nodeId, fallback) => {
+      if (nodeId !== citingNodeId) return { [citingFields[nodeId]]: fallback };
+      return citedText === undefined ? {} : { [citingFields[nodeId]]: citedText };
+    };
+    return {
+      status: "sketch",
+      request: "Clear the card once its question is answered",
+      repoRoot: specRepoRoot,
+      nodes: [
+        { id: "G1", kind: "goal", text: "The card clears once answered", ...citation("G1", "none: the card is new") },
+        { id: "B1", kind: "branch", question: "Which hook reports the answer?", leaning: "PostToolUse", ...citation("B1", "none: the hook name is new") },
+        { id: "D1", kind: "decision", question: "Where is the card drawn?", answer: "In the card view.", why: "It owns the card.", source: "read", ...citation("D1", "server/cards.ts:212") },
+      ],
+      edges: [],
+    };
+  };
+  const unevidencedCitations = [undefined, "", "a guess with no evidence", "none", "none:  ", "unknown `?`", "defaced guess", "(<path:line>, <commit sha>, or the `command` that showed it)", "`no idea`", "`TBD later`", "a guess, see ticket 1234567", "guess at 10.30:00", "none: ?"];
+  for (const citingNodeId of Object.keys(citingFields)) {
+    for (const unevidencedCitation of unevidencedCitations) {
+      assert.match(denialReason(writeSpec(sketchCiting(unevidencedCitation, citingNodeId))), new RegExp(`Rule 1: node ${citingNodeId}\\.${citingFields[citingNodeId]}: `), `${citingNodeId} ${unevidencedCitation}`);
+    }
+    for (const acceptedCitation of ["Report from the title watcher instead, ruled out by server/cards.ts:212", "It worked until 4ecdd12 dropped the answer hook", "`git log -S answerHook` shows the hook was removed on purpose"]) {
+      assertAllowed(writeSpec(sketchCiting(acceptedCitation, citingNodeId)));
+    }
   }
-  for (const acceptedUpstream of ["none: the name is new", "Report from the title watcher instead, ruled out by server/cards.ts:212", "It worked until 4ecdd12 dropped the answer hook", "`git log -S answerHook` shows the hook was removed on purpose"]) {
-    assertAllowed(writeSpec(sketchWithBranchUpstream(acceptedUpstream)));
-  }
+  assertAllowed(writeSpec(sketchCiting("none: the name is new", "G1")));
+  assertAllowed(writeSpec(sketchCiting("none: the name is new", "B1")));
+  assert.match(denialReason(writeSpec(sketchCiting("none: the name is new", "D1"))), /Rule 1: node D1\.evidence: cite what you read/);
+  const grilledWithoutGoalUpstream = sketchCiting(undefined, "G1");
+  grilledWithoutGoalUpstream.status = "grilled";
+  grilledWithoutGoalUpstream.nodes = grilledWithoutGoalUpstream.nodes.filter((node) => node.kind !== "branch");
+  assertAllowed(writeSpec(grilledWithoutGoalUpstream));
   const citedRepository = makeRepo();
   testContext.after(() => removeAll(citedRepository));
   commitFile(citedRepository, "a.txt", "one\n");
@@ -279,13 +297,14 @@ test("a branch is refused until its upstream line is none with a reason or cites
     const abbreviatedCommit = commitProcess.stdout.slice(0, 7);
     if (/^\d{7}$/.test(abbreviatedCommit)) allDigitCommit = abbreviatedCommit;
   }
-  assertAllowed(writeSpec(sketchWithBranchUpstream(`It worked until ${allDigitCommit} dropped the answer hook`, citedRepository)));
-  assert.match(denialReason(writeSpec(sketchWithBranchUpstream("It worked until abc1234 dropped the answer hook", citedRepository))), /Rule 1: node B1\.upstream: say what one level up/);
+  assertAllowed(writeSpec(sketchCiting(`It worked until ${allDigitCommit} dropped the answer hook`, "B1", citedRepository)));
+  assertAllowed(writeSpec(sketchCiting(`It worked until ${allDigitCommit} dropped the answer hook`, "D1", citedRepository)));
+  assert.match(denialReason(writeSpec(sketchCiting("It worked until abc1234 dropped the answer hook", "B1", citedRepository))), /Rule 1: node B1\.upstream: say what one level up/);
   const fetchMarkerPath = path.join(citedRepository, "fetched");
   for (const [configKey, configValue] of [["extensions.partialClone", "origin"], ["remote.origin.promisor", "true"], ["remote.origin.url", path.join(citedRepository, "nowhere")], ["remote.origin.uploadpack", `touch ${fetchMarkerPath}; false`]]) {
     spawnSync("git", ["-C", citedRepository, "config", configKey, configValue]);
   }
-  assert.match(denialReason(writeSpec(sketchWithBranchUpstream("It worked until 1234567890abcdef1234567890abcdef12345678 dropped the answer hook", citedRepository))), /Rule 1: node B1\.upstream: say what one level up/);
+  assert.match(denialReason(writeSpec(sketchCiting("It worked until 1234567890abcdef1234567890abcdef12345678 dropped the answer hook", "B1", citedRepository))), /Rule 1: node B1\.upstream: say what one level up/);
   assert.equal(fs.existsSync(fetchMarkerPath), false, "the commit lookup fetched from the spec's repository");
 });
 

@@ -8,6 +8,7 @@ export type Goal = {
   text: string;
   risk?: "low" | "medium" | "high" | "critical";
   criteria?: string[];
+  upstream?: string;
 };
 export type NonGoal = { id: `N${number}`; kind: "nonGoal"; text: string };
 export type Branch = { id: `B${number}`; kind: "branch"; question: string; leaning: string; upstream: string };
@@ -69,6 +70,7 @@ const UPSTREAM_PATH_OR_COMMAND = /[\w./-]+\.[A-Za-z]\w*:\d+|`[^`\s]+\s[^`]*[-/.=
 const HEX_RUN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
 const SHA_SHAPE = /^(?=.*\d)(?=.*[a-f])/;
 const COMMIT_LOOKUP_TIMEOUT_MS = 2000;
+const CITATION_FORMS = "path:line, the sha of a commit in repoRoot, or a backticked command with its arguments";
 
 export function oneLine(text: string): string {
   return text.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim();
@@ -82,7 +84,7 @@ export function unitTicketCriteria(unit: Unit, goalCriteria: string[]): string[]
 }
 
 const NODE_FIELDS = {
-  goal: ["id", "kind", "text", "risk", "criteria"],
+  goal: ["id", "kind", "text", "risk", "criteria", "upstream"],
   nonGoal: ["id", "kind", "text"],
   branch: ["id", "kind", "question", "leaning", "upstream"],
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint", "lifecycle"],
@@ -131,13 +133,15 @@ function listHexRuns(text: string): string[] {
   return text.match(HEX_RUN) ?? [];
 }
 
-function readBranchUpstream(node: unknown): string {
-  return isRecord(node) && node.kind === "branch" && typeof node.upstream === "string" ? node.upstream : "";
+function readCitedText(node: unknown): string {
+  if (!isRecord(node)) return "";
+  const citedText = node.kind === "decision" ? node.evidence : node.upstream;
+  return typeof citedText === "string" ? citedText : "";
 }
 
 function readCommitsCited(nodes: unknown[], repoRoot: unknown): Set<string> | undefined {
-  const upstreamsNeedingACommit = nodes.map(readBranchUpstream).filter((upstream) => !NO_UPSTREAM.test(upstream) && !UPSTREAM_PATH_OR_COMMAND.test(upstream));
-  const hexRuns = [...new Set(upstreamsNeedingACommit.flatMap(listHexRuns))];
+  const citationsNeedingACommit = nodes.map(readCitedText).filter((citedText) => !NO_UPSTREAM.test(citedText) && !UPSTREAM_PATH_OR_COMMAND.test(citedText));
+  const hexRuns = [...new Set(citationsNeedingACommit.flatMap(listHexRuns))];
   if (hexRuns.length === 0) return new Set();
   if (typeof repoRoot !== "string" || !path.isAbsolute(repoRoot)) return undefined;
   const gitProcess = spawnSync("git", ["--no-lazy-fetch", "-C", repoRoot, "cat-file", "--batch-check"], {
@@ -154,6 +158,11 @@ function citesCommit(upstream: string, commitsCited: Set<string> | undefined): b
   const hexRuns = listHexRuns(upstream);
   if (commitsCited === undefined) return hexRuns.some((hexRun) => SHA_SHAPE.test(hexRun));
   return hexRuns.some((hexRun) => commitsCited.has(hexRun));
+}
+
+function citesSource(citedText: string, commitsCited: Set<string> | undefined, allowsNone: boolean): boolean {
+  if (allowsNone && NO_UPSTREAM.test(citedText)) return true;
+  return UPSTREAM_PATH_OR_COMMAND.test(citedText) || citesCommit(citedText, commitsCited);
 }
 
 function isStringList(value: unknown): value is string[] {
@@ -228,6 +237,8 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     if (Object.hasOwn(value, "risk") && !["low", "medium", "high", "critical"].includes(value.risk as string)) {
       addError(errors, 1, `${subject}.risk`, "set risk to low, medium, high, or critical, or omit it");
     }
+    const isGoalUpstreamCited = typeof value.upstream === "string" && citesSource(value.upstream, commitsCited, true);
+    if (Object.hasOwn(value, "upstream") && !isGoalUpstreamCited) addError(errors, 1, `${subject}.upstream`, `say what simplest trigger and source one level up would remove the most branches and cite what you read (${CITATION_FORMS}), or write 'none: <why nothing sits above this feature>'`);
     if (!Object.hasOwn(value, "criteria")) return;
     if (!Array.isArray(value.criteria) || value.criteria.length < 1 || value.criteria.length > 12) {
       addError(errors, 1, `${subject}.criteria`, "supply an array of 1 to 12 non-empty strings or omit it");
@@ -246,14 +257,15 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     if (Object.hasOwn(value, "lifecycle") && value.lifecycle !== "none") {
       addError(errors, 1, `${subject}.lifecycle`, "set lifecycle to none, on a decision saying why the feature adds or changes no lifecycle, or omit it");
     }
-    const hasLineEvidence = typeof value.evidence === "string" && /^\S(?:.*\S)?:[1-9]\d*$/.test(value.evidence);
-    if (value.source === "read" && !hasLineEvidence) addError(errors, 1, subject, "supply evidence as file:line for a read decision");
+    const evidence = typeof value.evidence === "string" ? value.evidence : "";
+    const isEvidenceCited = /^\S(?:.*\S)?:[1-9]\d*$/.test(evidence) || citesSource(evidence, commitsCited, false);
+    if (value.source === "read" && !isEvidenceCited) addError(errors, 1, `${subject}.evidence`, `cite what you read for a read decision: ${CITATION_FORMS}`);
     return;
   }
   if (nodeKind === "branch") {
     const upstream = typeof value.upstream === "string" ? value.upstream : "";
-    if (NO_UPSTREAM.test(upstream) || UPSTREAM_PATH_OR_COMMAND.test(upstream) || citesCommit(upstream, commitsCited)) return;
-    addError(errors, 1, `${subject}.upstream`, "say what one level up would make this question unnecessary and cite what you read (path:line, the sha of a commit in repoRoot, or a backticked command with its arguments), or write 'none: <why nothing sits above this choice>'");
+    if (citesSource(upstream, commitsCited, true)) return;
+    addError(errors, 1, `${subject}.upstream`, `say what one level up would make this question unnecessary and cite what you read (${CITATION_FORMS}), or write 'none: <why nothing sits above this choice>'`);
     return;
   }
   if (nodeKind === "design") {
@@ -614,6 +626,7 @@ export function validateGraph(value: unknown): string[] {
   const implementingIds = new Set(spec.edges.filter((edge) => edge.kind === "implements").map((edge) => edge.from));
   const goal = spec.nodes.find((node): node is Goal => node.kind === "goal");
   const goalCriteria = goal?.criteria ?? [];
+  if (spec.status === "sketch" && goal !== undefined && goal.upstream === undefined) addError(errors, 1, "node G1.upstream", "write the goal's upstream at sketch, as sketch.md step 4 says");
   const isGoalMissingCriteria = isSliced && goal !== undefined && goalCriteria.length === 0;
   if (isGoalMissingCriteria) addError(errors, 17, "node G1", "add criteria, 1 to 12 observable results; every unit serves one at sliced status");
   for (const unit of units) {
