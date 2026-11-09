@@ -10,6 +10,10 @@ needs PostHog to act dead-ends unless someone opens the ticket for them. Support
 route is an outbound email ticket, kept out of the forum. Ticket 75872 is the reference
 shape.
 
+The ticket is Support's to work, not the carbon unit's. Ticket 79965 sat five days because a
+John sign-off and a first-person plan in the note read to Support as John working it, so
+nothing in the drafts may suggest the carbon unit owns it.
+
 ## Step 1: Gather
 
 Get the person's email (their posthog.com forum profile shows it) and the forum post link
@@ -18,13 +22,19 @@ from the carbon unit. Ask for whichever is missing, and use only an address they
 ## Step 2: Draft all three
 
 Write each with `writing-in-voice` and the Customer reply rules in
-`diagnosing-posthog-customers` (sign-off, scope, their own data only):
+`diagnosing-posthog-customers` (scope, their own data only), with the sign-off below in
+place of theirs:
 
 1. **Ticket message**, the email they receive. Open with "We created this ticket for you on
-   behalf of your community post:" linking the post, quote its core question, then "We'll
-   take a look and respond here." Follow with exactly what we need from them and any limit
-   that changes their expectation. Give it a plain subject line.
-2. **Internal note**, team only: plan, source, and what the ask is. Name anyone to tag;
+   behalf of your community post:" linking the post, quote its core question, then "Our
+   support team will follow up here." Follow with exactly what we need from them and any
+   limit that changes their expectation. End with `Thanks!`, then `The PostHog team` on its
+   own line. Give it a plain subject line.
+2. **Internal note**, team only. Open with a friendly handoff in the carbon unit's voice:
+   they opened this on behalf of a forum user for Support to handle, they are not working
+   it, and Support should pick it up. Then give context only, in the third person: the
+   forum post, what the person asks for, and what the message asked them to send. Tag
+   someone only when the carbon unit names them, saying why;
    `conversations-tickets-notes-create` takes plain text, so the carbon unit adds the
    @mention in the app.
 3. **Forum reply**, posted by the carbon unit, saying a ticket went to their email.
@@ -39,4 +49,5 @@ unit says to send in their own words; edits to a draft restart this step.
 1. `call conversations-tickets-compose-create` with `recipient_email`, `email_subject`,
    and the ticket message. It emails them immediately; the PostHog exec hook asks first.
 2. `call conversations-tickets-notes-create` on the returned `ticket_number`.
-3. Report the ticket link, any @mention still owed, and the forum reply to paste.
+3. Report the ticket link, any @mention still owed, and the forum reply to paste, and
+   remind the carbon unit that Support owns the ticket.
