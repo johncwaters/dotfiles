@@ -4,8 +4,11 @@ set -euo pipefail
 glimmervoidVersion="latest"
 devboxAction="${1:-provision}"
 devboxWorkspaceDomain="${2:-}"
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.glimmervoid/bin:$HOME/.local/bin:$PATH"
 glimmervoidDirectory="$HOME/.glimmervoid"
+glimmervoidBinaryPath="$glimmervoidDirectory/bin/glimmervoid"
+glimmervoidReleasesUrl="https://github.com/johncwaters/glimmervoid/releases"
+npmGlimmervoidDirectory="$HOME/.local/lib/node_modules/glimmervoid"
 hasUpdatedApt=0
 hasFailedGlimmervoidInstall=0
 devboxFallbackReleaseStatus=75
@@ -291,9 +294,10 @@ installDevboxNode() {
   reportDevboxItem installed Node "$(node --version)"
 }
 
+# Only the release binary counts, so the retired npm copy at the same version never passes for installed.
 installedDevboxGlimmervoidVersion() {
-  if command -v glimmervoid >/dev/null 2>&1; then
-    glimmervoid --version
+  if [[ -x "$glimmervoidBinaryPath" ]]; then
+    "$glimmervoidBinaryPath" --version
   fi
 }
 
@@ -313,34 +317,84 @@ devboxGlimmervoidMeetsMinimum() {
 
 resolveDevboxLatestGlimmervoid() {
   [[ "$glimmervoidVersion" == latest ]] || return 0
-  local latestVersion
-  latestVersion="$(npm view glimmervoid@latest version 2>> "$glimmervoidDirectory/provision.log")" || latestVersion=""
+  local latestReleaseUrl latestVersion
+  latestReleaseUrl="$(curl -fsSL -o /dev/null -w '%{url_effective}' "$glimmervoidReleasesUrl/latest" 2>> "$glimmervoidDirectory/provision.log")" || latestReleaseUrl=""
+  latestVersion="${latestReleaseUrl##*/tag/v}"
   [[ "$latestVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
   glimmervoidVersion="$latestVersion"
 }
 
+installDevboxGlimmervoidRelease() {
+  local installerPath installerStatus=0
+  installerPath="$(mktemp "$glimmervoidDirectory/.glimmervoid-installer.XXXXXX")"
+  if ! curl -fsSL "$glimmervoidReleasesUrl/download/v$glimmervoidVersion/glimmervoid-installer.sh" -o "$installerPath" \
+    >> "$glimmervoidDirectory/provision.log" 2>&1; then
+    rm -f -- "$installerPath"
+    return 1
+  fi
+  # Overrides cleared so an inherited install dir cannot divert the binary away from the path this script runs.
+  GLIMMERVOID_INSTALL_DIR= CARGO_DIST_FORCE_INSTALL_DIR= GLIMMERVOID_UNMANAGED_INSTALL= GLIMMERVOID_NO_MODIFY_PATH=1 \
+    sh "$installerPath" >> "$glimmervoidDirectory/provision.log" 2>&1 < /dev/null 9>&- || installerStatus=$?
+  rm -f -- "$installerPath"
+  return "$installerStatus"
+}
+
+devboxListenerPid() {
+  ss -ltnp "sport = :$1" | sed -n 's/.*pid=\([0-9]*\).*/\1/p'
+}
+
+devboxProcessExecutable() {
+  readlink -f "/proc/$1/exe"
+}
+
+# The binary relaunches through the PATH glimmervoid whose realpath is itself, so any other executable on 3456 is an npm server.
+devboxListenerRunsReleaseBinary() {
+  local listenerPid
+  listenerPid="$(devboxListenerPid 3456)"
+  [[ "$listenerPid" =~ ^[0-9]+$ ]] || return 1
+  [[ "$(devboxProcessExecutable "$listenerPid")" == "$(readlink -f "$glimmervoidBinaryPath")" ]]
+}
+
+# A live npm server's hook relays resolve into its package directory, so it is only removed once no server runs from it.
+retireDevboxNpmGlimmervoid() {
+  if [[ ! -e "$npmGlimmervoidDirectory" ]] || [[ -z "$(installedDevboxGlimmervoidVersion)" ]]; then
+    return 0
+  fi
+  if devboxPortListens 3456 && ! devboxListenerRunsReleaseBinary; then
+    reportDevboxItem warned "glimmervoid npm package" "still serving; run devbox restart-glimmervoid to retire it"
+    return 0
+  fi
+  if npm uninstall -g --prefix "$HOME/.local" glimmervoid >> "$glimmervoidDirectory/provision.log" 2>&1 < /dev/null 9>&-; then
+    reportDevboxItem installed "glimmervoid npm package" "removed from ~/.local"
+    return 0
+  fi
+  reportDevboxItem warned "glimmervoid npm package" "uninstall failed; see ~/.glimmervoid/provision.log"
+}
+
 installDevboxGlimmervoid() {
-  local installedVersion
+  local installedVersion keptVersion
   installedVersion="$(installedDevboxGlimmervoidVersion)"
   if ! resolveDevboxLatestGlimmervoid; then
-    if [[ -z "$installedVersion" ]]; then
-      reportDevboxItem warned glimmervoid "cannot read the latest release from the npm registry; nothing installed; see ~/.glimmervoid/provision.log"
+    keptVersion="${installedVersion:-$(glimmervoid --version 2>/dev/null || true)}"
+    if [[ -z "$keptVersion" ]]; then
+      reportDevboxItem warned glimmervoid "cannot read the latest release from GitHub; nothing installed; see ~/.glimmervoid/provision.log"
       exit 1
     fi
-    reportDevboxItem warned glimmervoid "cannot read the latest release from the npm registry; keeping $installedVersion"
+    reportDevboxItem warned glimmervoid "cannot read the latest release from GitHub; keeping $keptVersion"
     return 0
   fi
   if devboxGlimmervoidMeetsMinimum "$installedVersion"; then
     reportDevboxItem present glimmervoid "$installedVersion"
+    retireDevboxNpmGlimmervoid
     return 0
   fi
   if [[ -n "$installedVersion" ]] && devboxPortListens 3456; then
     reportDevboxItem warned glimmervoid "$installedVersion running, $glimmervoidVersion pending; run devbox restart-glimmervoid"
     return 0
   fi
-  if npm install -g --prefix "$HOME/.local" "glimmervoid@$glimmervoidVersion" >> "$glimmervoidDirectory/provision.log" 2>&1 \
-    && [[ "$(installedDevboxGlimmervoidVersion)" == "$glimmervoidVersion" ]]; then
+  if installDevboxGlimmervoidRelease && [[ "$(installedDevboxGlimmervoidVersion)" == "$glimmervoidVersion" ]]; then
     reportDevboxItem installed glimmervoid "$glimmervoidVersion"
+    retireDevboxNpmGlimmervoid
     return 0
   fi
   hasFailedGlimmervoidInstall=1
@@ -721,10 +775,8 @@ startDevboxGlimmervoid() {
   fi
   touch "$glimmervoidDirectory/server.log"
   chmod 600 "$glimmervoidDirectory/server.log"
-  local systemNode glimmervoidScript
-  # node-pty is built against system Node, so the flox bin directory is appended after it, never prepended.
-  systemNode="$(command -v node)"
-  glimmervoidScript="$(readlink -f "$(command -v glimmervoid)")"
+  local glimmervoidExecutable
+  glimmervoidExecutable="$(command -v glimmervoid)"
   # Appended without activating: PostHog's on-activate hook runs uv sync, pnpm and builds.
   local launchPath="$PATH" environmentDescription="" floxBinCandidate nixSystem
   local floxBinDirectories=()
@@ -744,7 +796,7 @@ startDevboxGlimmervoid() {
     launchPath="$PATH:${floxBinDirectories[0]}"
     environmentDescription="; flox env posthog"
   fi
-  PATH="$launchPath" setsid nohup "$systemNode" "$glimmervoidScript" --config "$glimmervoidDirectory/config.json" \
+  PATH="$launchPath" setsid nohup "$glimmervoidExecutable" --config "$glimmervoidDirectory/config.json" \
     >> "$glimmervoidDirectory/server.log" 2>&1 < /dev/null 9>&- &
   local attempt
   for attempt in {1..30}; do
@@ -767,7 +819,7 @@ stopDevboxGlimmervoid() {
     return 0
   fi
   local listenerPid
-  listenerPid="$(ss -ltnp 'sport = :3456' | sed -n 's/.*pid=\([0-9]*\).*/\1/p')"
+  listenerPid="$(devboxListenerPid 3456)"
   if [[ ! "$listenerPid" =~ ^[0-9]+$ ]]; then
     reportDevboxItem warned "glimmervoid server" "cannot identify listener PID; left running"
     return 1

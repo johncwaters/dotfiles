@@ -9,7 +9,7 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
 printf 'work\n' > "$DOTFILES_MARKER_PATH"
-linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste sh
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -568,9 +568,10 @@ case "${2:-}" in
 esac
 exec "$DOTFILES_TEST_NODE_PATH" "$@"
 STUB
-glimmervoidScriptPath="$sandbox/.local/lib/node_modules/glimmervoid/dist/cli.js"
-mkdir -p "${glimmervoidScriptPath%/*}"
-cat > "$glimmervoidScriptPath" <<'JS'
+glimmervoidBinaryStubPath="$sandbox/.glimmervoid/bin/glimmervoid"
+npmGlimmervoidPackageDirectory="$sandbox/.local/lib/node_modules/glimmervoid"
+mkdir -p "${glimmervoidBinaryStubPath%/*}" "$npmGlimmervoidPackageDirectory"
+cat > "$glimmervoidBinaryStubPath" <<'JS'
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
@@ -585,9 +586,8 @@ fs.writeFileSync(path.join(stateDirectory, "listening-3456"), "");
 if (fs.existsSync(path.join(stateDirectory, "no-remote-listener"))) process.exit(0);
 fs.writeFileSync(path.join(stateDirectory, "listening-3457"), "");
 JS
-chmod +x "$glimmervoidScriptPath"
-ln -s "$glimmervoidScriptPath" "$stubBin/glimmervoid"
-glimmervoidScriptPath="$(readlink -f "$glimmervoidScriptPath")"
+chmod +x "$glimmervoidBinaryStubPath"
+cp "$glimmervoidBinaryStubPath" "$stubState/glimmervoid-binary"
 writeStub codex <<'STUB'
 #!/usr/bin/env bash
 exit 0
@@ -606,21 +606,28 @@ done
 writeStub npm <<'STUB'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-if [[ "$1" == view ]]; then
-  [[ "$2" != glimmervoid@latest ]] || { printf '0.29.1\n'; exit 0; }
-  printf '%s\n' "${2#glimmervoid@}"
-  exit 0
-fi
 case "$*" in
-  *glimmervoid@*)
-    [[ ! -f "$DOTFILES_TEST_STATE/npm-install-failed" ]] || exit 1
-    printf '%s\n' "${!#}" | sed 's/^glimmervoid@//' > "$DOTFILES_TEST_STATE/glimmervoid-version"
-    ;;
+  "uninstall -g --prefix $HOME/.local glimmervoid") rm -rf "$HOME/.local/lib/node_modules/glimmervoid" ;;
   *@openai/codex*) cp "$DOTFILES_TEST_STATE/available/codex" "$DOTFILES_TEST_STUB_BIN/codex" ;;
   *typescript-language-server*)
     for npmCommand in biome tsc typescript-language-server; do
       cp "$DOTFILES_TEST_STATE/available/$npmCommand" "$DOTFILES_TEST_STUB_BIN/$npmCommand"
     done
+    ;;
+  *) exit 1 ;;
+esac
+STUB
+writeStub curl <<'STUB'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+releasesUrl=https://github.com/johncwaters/glimmervoid/releases
+case "$*" in
+  "-fsSL -o /dev/null -w %{url_effective} $releasesUrl/latest") printf '%s/tag/v0.29.1' "$releasesUrl" ;;
+  "-fsSL $releasesUrl/download/v"*"/glimmervoid-installer.sh -o "*)
+    [[ ! -f "$DOTFILES_TEST_STATE/release-install-failed" ]] || exit 22
+    releaseVersion="${2#"$releasesUrl/download/v"}"
+    printf 'printf "glimmervoid-installer %%s NO_MODIFY_PATH=%%s\\n" %q "$GLIMMERVOID_NO_MODIFY_PATH" >> "$DOTFILES_TEST_LOG"\nprintf "%%s\\n" %q > "$DOTFILES_TEST_STATE/glimmervoid-version"\nmkdir -p "$HOME/.glimmervoid/bin"\ncp "$DOTFILES_TEST_STATE/glimmervoid-binary" "$HOME/.glimmervoid/bin/glimmervoid"\n' \
+      "${releaseVersion%%/*}" "${releaseVersion%%/*}" > "$4"
     ;;
   *) exit 1 ;;
 esac
@@ -659,7 +666,7 @@ writeStub uname <<'STUB'
 #!/usr/bin/env bash
 printf 'x86_64\n'
 STUB
-for stubName in node npm apt-get add-apt-repository setsid uname; do
+for stubName in node npm curl apt-get add-apt-repository setsid uname; do
   provideCommand "$stubName"
 done
 
@@ -670,6 +677,7 @@ awk -v hasProcCommandLines="$hasProcCommandLines" '
   $0 == "case \"$devboxAction\" in" {
     print "devboxPortListens() { [[ -f \"$DOTFILES_TEST_STATE/listening-$1\" ]]; }"
     if (hasProcCommandLines == 0) print "devboxProcessCommandLine() { ps -o args= -p \"$1\"; }"
+    if (hasProcCommandLines == 0) print "devboxProcessExecutable() { realpath \"$(ps -o comm= -p \"$1\")\"; }"
   }
   { print }
 ' "$repoRoot/profiles/work/devbox/provision.sh" > "$instrumentedProvisionPath"
@@ -826,7 +834,8 @@ mkdir -p "$remoteHome/posthog"
 "$testGitPath" -C "$remoteHome/posthog" remote add origin https://github.com/PostHog/posthog
 printf 'template checkout\n' > "$remoteHome/posthog/template-owned"
 touch "$stubState/execute-config"
-mkdir -p "$remoteLocalBin"
+mkdir -p "$remoteLocalBin" "$remoteHome/.glimmervoid/bin"
+cp "$stubState/glimmervoid-binary" "$remoteHome/.glimmervoid/bin/glimmervoid"
 ln -s "$BASH" "$remoteLocalBin/bash"
 cat > "$remoteLocalBin/claude" <<'STUB'
 #!/usr/bin/env bash
@@ -1050,12 +1059,14 @@ printf '0.28.0\n' > "$stubState/glimmervoid-version"
 : > "$commandLog"
 rm -f "$stubState/listening-3456" "$stubState/listening-3457" "$sandbox/.glimmervoid/config.json"
 remoteOutput="$( (umask 022; runRemoteProvision) )"
-check "remote provision installs the requested npm version under the box home" \
-  logHas "npm install -g --prefix $sandbox/.local glimmervoid@0.29.1"
+check "remote provision installs the latest release binary without touching rc files" \
+  logHas "glimmervoid-installer 0.29.1 NO_MODIFY_PATH=1"
+check "remote provision retires the npm package once the binary answers" \
+  logHas "npm uninstall -g --prefix $sandbox/.local glimmervoid"
 check "remote provision installs missing Codex under the box home" logHas "npm install -g --prefix $sandbox/.local @openai/codex"
 check "remote provision installs both sandbox packages" bash -c 'grep -q bubblewrap "$1" && grep -q socat "$1"' _ "$commandLog"
 check "remote provision detaches the CLI with nohup and its explicit config" \
-  logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
+  logHas "setsid nohup $glimmervoidBinaryStubPath --config $sandbox/.glimmervoid/config.json"
 check "remote provision without a flox environment never calls flox" logLacks 'flox activate'
 check "remote provision without a flox environment leaves PATH unchanged" \
   bash -c '! grep -E "^glimmervoid-path .*\.flox" "$1" >/dev/null' _ "$commandLog"
@@ -1080,7 +1091,7 @@ heldLockProvisionOutput="$(runRemoteProvision)" || heldLockProvisionStatus=$?
 check "an overlapping provision fails" test "$heldLockProvisionStatus" -ne 0
 check "an overlapping provision names the run in progress" \
   outputHas "$heldLockProvisionOutput" '[warned] provision: another run is in progress'
-check "an overlapping provision installs nothing" logLacks 'npm install'
+check "an overlapping provision installs nothing" bash -c '! grep -qE "^(npm install|curl )" "$1"' _ "$commandLog"
 check "an overlapping provision installs no system package" logLacks 'apt-get'
 check "an overlapping provision starts no server" logLacks 'setsid'
 touch "$stubState/listening-3456" "$stubState/listening-3457"
@@ -1096,8 +1107,8 @@ mkdir -p "$floxBinDirectory" "$sandbox/posthog/.flox/run/x86_64-linux.posthog-ru
 rm -f "$stubState/listening-3456" "$stubState/listening-3457"
 : > "$commandLog"
 floxRemoteOutput="$(runRemoteProvision)"
-check "remote provision launches the captured node and resolved script directly with the flox env present" \
-  logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
+check "remote provision launches the release binary directly with the flox env present" \
+  logHas "setsid nohup $glimmervoidBinaryStubPath --config $sandbox/.glimmervoid/config.json"
 check "remote provision appends the flox bin directory to the server PATH" \
   bash -c 'grep -E "^glimmervoid-path .*:$1\$" "$2" >/dev/null' _ "$floxBinDirectory" "$commandLog"
 check "remote provision never appends the run link bin directory" \
@@ -1129,7 +1140,7 @@ rm -rf "$sandbox/posthog/.flox"
 cp "$sandbox/.local/bin/gh" "$stubState/original-wrapper"
 : > "$commandLog"
 rerunRemoteOutput="$(runRemoteProvision)"
-check "remote rerun installs no npm package" logLacks 'npm install'
+check "remote rerun installs no npm package" logLacks 'glimmervoid-installer'
 check "remote rerun installs no sandbox package" logLacks 'bubblewrap'
 check "remote rerun preserves the gh wrapper" cmp -s "$sandbox/.local/bin/gh" "$stubState/original-wrapper"
 check "remote rerun leaves the running server untouched" logLacks 'setsid'
@@ -1176,7 +1187,7 @@ cp "$sandbox/.glimmervoid/config.json" "$stubState/live-config"
 backupsBeforePending=("$sandbox/.glimmervoid"/config.json.*.bak)
 : > "$commandLog"
 pendingOutput="$(runRemoteProvision)"
-check "a running server is never reinstalled under itself" logLacks 'npm install -g --prefix'
+check "a running server is never reinstalled under itself" logLacks 'glimmervoid-installer'
 check "a running server names the pending release" \
   outputHas "$pendingOutput" '[warned] glimmervoid: 0.28.0 running, 0.29.1 pending; run devbox restart-glimmervoid'
 check "a running server keeps its config bytes" cmp -s "$stubState/live-config" "$sandbox/.glimmervoid/config.json"
@@ -1225,7 +1236,7 @@ firstLogLineOf() {
   grep -nF -- "$1" "$commandLog" | head -1 | cut -d: -f1
 }
 
-fixtureGlimmervoidScript="$sandbox/.local/lib/node_modules/glimmervoid/dist/fixture-server.js"
+fixtureGlimmervoidScript="$sandbox/.glimmervoid/bin/fixture-server.js"
 cat > "$fixtureGlimmervoidScript" <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
@@ -1252,6 +1263,7 @@ startFixtureGlimmervoidServer() {
 }
 
 startFixtureGlimmervoidServer
+mkdir -p "$npmGlimmervoidPackageDirectory"
 : > "$commandLog"
 glimmervoidRestartStatus=0
 glimmervoidRestartOutput="$(runRemoteProvision restart)" || glimmervoidRestartStatus=$?
@@ -1259,14 +1271,25 @@ check "restart of an identified glimmervoid listener succeeds" test "$glimmervoi
 check "restart reads the listener PID from ss" logHas "ss -ltnp sport = :3456"
 check "restart terminates the identified glimmervoid listener" bash -c '! kill -0 "$1" 2>/dev/null' _ "$glimmervoidListenerPid"
 check "restart reports the old server stopped" outputHas "$glimmervoidRestartOutput" '[installed] glimmervoid server: stopped'
-check "restart starts a fresh detached server" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
+check "restart starts a fresh detached server" logHas "setsid nohup $glimmervoidBinaryStubPath --config $sandbox/.glimmervoid/config.json"
 check "restart installs the latest release after the server stops" \
-  test "$(firstLogLineOf 'fixture server stopped')" -lt "$(firstLogLineOf "npm install -g --prefix $sandbox/.local glimmervoid@0.29.1")"
+  test "$(firstLogLineOf 'fixture server stopped')" -lt "$(firstLogLineOf "glimmervoid-installer 0.29.1")"
 check "restart installs the latest release before the server starts" \
-  test "$(firstLogLineOf "npm install -g --prefix $sandbox/.local glimmervoid@0.29.1")" -lt "$(firstLogLineOf 'setsid nohup')"
+  test "$(firstLogLineOf "glimmervoid-installer 0.29.1")" -lt "$(firstLogLineOf 'setsid nohup')"
+check "restart retires the npm package only after the server stops" \
+  test "$(firstLogLineOf 'fixture server stopped')" -lt "$(firstLogLineOf "npm uninstall -g --prefix $sandbox/.local glimmervoid")"
 check "restart leaves the config unmerged while the server runs" grep -q '"port":3000' "$stubState/config-at-stop"
 check "restart merges the config before the server starts" \
   "$testNodePath" -e 'process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).port === 3456 ? 0 : 1)' "$stubState/config-at-start"
+
+startFixtureGlimmervoidServer
+mkdir -p "$npmGlimmervoidPackageDirectory"
+awk '$0 == "case \"$devboxAction\" in" { exit } { print }' "$instrumentedProvisionPath" > "$stubState/instrumented-functions.sh"
+: > "$commandLog"
+liveNpmRetireOutput="$(runInStubbedSandbox "$sandbox" bash -c 'source "$1" prepare coder.dev.posthog.dev; retireDevboxNpmGlimmervoid' _ "$stubState/instrumented-functions.sh")"
+check "a live server run by node keeps its npm package" test -d "$npmGlimmervoidPackageDirectory"
+check "a live server run by node is named as still serving" outputHas "$liveNpmRetireOutput" '[warned] glimmervoid npm package: still serving'
+kill -TERM "$glimmervoidListenerPid" 2>/dev/null || true
 
 startFixtureGlimmervoidServer
 cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-missing-host-restart"
@@ -1277,7 +1300,7 @@ missingHostRestartOutput="$(runRemoteProvisionWithoutWorkspaceName restart 2>&1)
 check "restart without a Coder workspace variable fails" test "$missingHostRestartStatus" -ne 0
 check "restart without a Coder workspace variable explains the refusal" outputHas "$missingHostRestartOutput" '[warned] devbox host'
 check "restart without a Coder workspace variable kills nothing" kill -0 "$glimmervoidListenerPid"
-check "restart without a Coder workspace variable installs nothing" logLacks 'npm'
+check "restart without a Coder workspace variable installs nothing" logLacks 'glimmervoid-installer'
 check "restart without a Coder workspace variable starts nothing" logLacks 'setsid'
 check "restart without a Coder workspace variable keeps the config bytes" \
   cmp -s "$stubState/config-before-missing-host-restart" "$sandbox/.glimmervoid/config.json"
@@ -1293,7 +1316,7 @@ check "restart waits behind a running ensure or provision" test "$heldLockRestar
 check "restart names the run holding the provision lock" \
   outputHas "$heldLockRestartOutput" '[warned] provision: another run is in progress'
 check "restart behind a held lock kills nothing" kill -0 "$glimmervoidListenerPid"
-check "restart behind a held lock installs nothing" logLacks 'npm'
+check "restart behind a held lock installs nothing" logLacks 'glimmervoid-installer'
 check "restart behind a held lock starts nothing" logLacks 'setsid'
 rm -f "$stubState/provision-lock-held"
 
@@ -1306,13 +1329,13 @@ check "restart with invalid config JSON fails" test "$invalidConfigRestartStatus
 check "restart with invalid config JSON explains the refusal" \
   outputHas "$invalidConfigRestartOutput" '[warned] config: config.json is invalid JSON; left unchanged; left running'
 check "restart with invalid config JSON leaves the server running" kill -0 "$glimmervoidListenerPid"
-check "restart with invalid config JSON installs nothing" logLacks 'npm install'
+check "restart with invalid config JSON installs nothing" logLacks 'glimmervoid-installer'
 check "restart with invalid config JSON starts nothing" logLacks 'setsid'
 check "restart with invalid config JSON keeps the config bytes" \
   cmp -s "$stubState/config-before-invalid-restart" "$sandbox/.glimmervoid/config.json"
 cp "$stubState/config-before-missing-host-restart" "$sandbox/.glimmervoid/config.json"
 
-touch "$stubState/npm-install-failed"
+touch "$stubState/release-install-failed"
 : > "$commandLog"
 failedInstallRestartStatus=0
 failedInstallRestartOutput="$(runRemoteProvision restart)" || failedInstallRestartStatus=$?
@@ -1320,9 +1343,9 @@ check "restart with a failed install fails" test "$failedInstallRestartStatus" -
 check "restart with a failed install names the fallback release" \
   outputHas "$failedInstallRestartOutput" '[warned] glimmervoid: install of 0.29.1 failed; keeping installed 0.28.0 instead'
 check "restart with a failed install still stops the old server first" bash -c '! kill -0 "$1" 2>/dev/null' _ "$glimmervoidListenerPid"
-check "restart with a failed install starts the previous release" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config $sandbox/.glimmervoid/config.json"
+check "restart with a failed install starts the previous release" logHas "setsid nohup $glimmervoidBinaryStubPath --config $sandbox/.glimmervoid/config.json"
 check "restart with a failed install brings both listeners up" outputHas "$failedInstallRestartOutput" 'both listeners ready'
-rm -f "$stubState/npm-install-failed"
+rm -f "$stubState/release-install-failed"
 
 touch "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
@@ -1338,7 +1361,7 @@ check "restart refuses a listener that is not glimmervoid" test "$foreignRestart
 check "restart explains why a foreign listener stays running" outputHas "$foreignRestartOutput" 'listener is not glimmervoid; left running'
 check "restart never signals a foreign listener" kill -0 "$foreignListenerPid"
 check "restart does not start a server over a foreign listener" logLacks 'setsid'
-check "restart installs nothing while a foreign listener holds the port" logLacks 'npm install'
+check "restart installs nothing while a foreign listener holds the port" logLacks 'glimmervoid-installer'
 check "restart leaves the config alone while a foreign listener holds the port" \
   cmp -s "$stubState/config-before-foreign-restart" "$sandbox/.glimmervoid/config.json"
 kill -TERM "$foreignListenerPid" 2>/dev/null || true
@@ -1346,14 +1369,14 @@ rm -f "$stubState/listener-pid"
 
 rm -f "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
-touch "$stubState/npm-install-failed"
+touch "$stubState/release-install-failed"
 : > "$commandLog"
 failedInstallProvisionStatus=0
 failedInstallProvisionOutput="$(runRemoteProvision)" || failedInstallProvisionStatus=$?
 check "provision with a failed install fails" test "$failedInstallProvisionStatus" -ne 0
 check "provision with a failed install names the fallback release" \
   outputHas "$failedInstallProvisionOutput" '[warned] glimmervoid: install of 0.29.1 failed; keeping installed 0.28.0 instead'
-rm -f "$stubState/npm-install-failed"
+rm -f "$stubState/release-install-failed"
 
 rm -rf "$dotfilesOriginRepo"
 mkdir -p "$dotfilesOriginRepo/profiles/work-server" "$dotfilesOriginRepo/fresh-box-probe" "$dotfilesOriginRepo/glimmervoid" "$dotfilesOriginRepo/profiles/work"
@@ -1374,7 +1397,7 @@ freshBoxOutput="$(runDevbox ensure 2>&1)" || freshBoxStatus=$?
 check "a fresh box ensure through the real provision phases succeeds" test "$freshBoxStatus" -eq 0
 check "a fresh box converges its dotfiles between prepare and provision" remoteConvergeSitsBetweenPrepareAndProvision
 check "a fresh box prepares prerequisites once and starts its server once" \
-  bash -c '[[ "$(grep -c "^setsid nohup " "$1")" -eq 1 && "$(grep -c "^npm view glimmervoid@latest version$" "$1")" -eq 1 ]]' _ "$commandLog"
+  bash -c '[[ "$(grep -c "^setsid nohup " "$1")" -eq 1 && "$(grep -c "^curl .*/releases/latest$" "$1")" -eq 1 ]]' _ "$commandLog"
 check "a fresh box reports no pending config" outputLacks "$freshBoxOutput" 'changes pending'
 check "a fresh box starts its server with the imported operator defaults" \
   "$testNodePath" - "$stubState/config-at-start" "$repoRoot/glimmervoid/settings.json" "$remoteHome" <<'JS'
@@ -1395,16 +1418,16 @@ check "the ensure after a fresh box finds the config current" outputHas "$freshB
 check "the ensure after a fresh box leaves its server running" logLacks 'setsid'
 rm -f "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
-touch "$stubState/npm-install-failed"
+touch "$stubState/release-install-failed"
 : > "$commandLog"
 failedInstallEnsureStatus=0
 failedInstallEnsureOutput="$(runDevbox ensure 2>&1)" || failedInstallEnsureStatus=$?
 check "ensure with a failed install fails" test "$failedInstallEnsureStatus" -ne 0
 check "ensure with a failed install still converges and provisions" remoteConvergeSitsBetweenPrepareAndProvision
-check "ensure with a failed install starts the previous release" logHas "setsid nohup $stubBin/node $glimmervoidScriptPath --config"
+check "ensure with a failed install starts the previous release" logHas "setsid nohup $remoteHome/.glimmervoid/bin/glimmervoid --config"
 check "ensure with a failed install still prints the forwarding URL" \
   outputHas "$failedInstallEnsureOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
-rm -f "$stubState/npm-install-failed"
+rm -f "$stubState/release-install-failed"
 rm -f "$stubState/execute-dotfiles" "$stubState/execute-provision"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 
@@ -1434,7 +1457,7 @@ runProvisionFunction() {
 printf '0.31.0\n' > "$stubState/glimmervoid-version"
 newerVersionOutput="$(runProvisionFunction installDevboxGlimmervoid)"
 check "a newer in-app release satisfies the version floor" outputHas "$newerVersionOutput" '[present] glimmervoid: 0.31.0'
-check "a newer in-app release is never downgraded" logLacks 'npm install'
+check "a newer in-app release is never downgraded" logLacks 'glimmervoid-installer'
 rm -f "$stubState/listening-3456" "$stubState/listening-3457"
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 olderVersionOutput="$(runProvisionFunction installDevboxGlimmervoid)"
