@@ -230,6 +230,18 @@ printf 'glimmervoid installer GLIMMERVOID_NO_MODIFY_PATH=%s\n' "${GLIMMERVOID_NO
 mkdir -p "$HOME/.glimmervoid/bin"
 printf '#!/bin/sh\necho 0.54.0\n' > "$HOME/.glimmervoid/bin/glimmervoid"
 chmod +x "$HOME/.glimmervoid/bin/glimmervoid"
+cat > "$HOME/.glimmervoid/bin/glimmervoid-update" <<'UPDATER'
+#!/usr/bin/env bash
+printf 'glimmervoid-update GLIMMERVOID_NO_MODIFY_PATH=%s\n' "${GLIMMERVOID_NO_MODIFY_PATH:-}" >> "$DOTFILES_TEST_LOG"
+stateDir="$DOTFILES_TEST_STATE/$DOTFILES_TEST_MACHINE"
+if [[ -f "$stateDir/update-unreachable" ]]; then
+  printf 'error sending request for url (https://api.github.com/repos/johncwaters/glimmervoid/releases)\n' >&2
+  exit 255
+fi
+[[ -f "$stateDir/latest-release" ]] || { printf 'Already up to date; not upgrading\n'; exit 0; }
+printf '#!/bin/sh\necho %s\n' "$(cat "$stateDir/latest-release")" > "$HOME/.glimmervoid/bin/glimmervoid"
+UPDATER
+chmod +x "$HOME/.glimmervoid/bin/glimmervoid-update"
 INSTALLER
   exit 0
 fi

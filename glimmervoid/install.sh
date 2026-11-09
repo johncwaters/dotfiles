@@ -482,12 +482,38 @@ noteGlimmervoidPairingChecklist() {
 glimmervoidBinaryPath="$HOME/.glimmervoid/bin/glimmervoid"
 glimmervoidInstallerUrl="${DOTFILES_GLIMMERVOID_INSTALLER_URL:-https://github.com/johncwaters/glimmervoid/releases/latest/download/glimmervoid-installer.sh}"
 
-# Once installed, the dashboard Update and glimmervoid-update own the version, so a converge never reinstalls over them.
+glimmervoidUpdaterPath="$HOME/.glimmervoid/bin/glimmervoid-update"
+
+# The installer moves the new binary into place, so the running server keeps its old one until its next restart; the 04:00 converge never restarts it.
+updateGlimmervoidBinary() {
+  local label="glimmervoid binary"
+  local versionBefore versionAfter updaterLog
+  versionBefore="$("$glimmervoidBinaryPath" --version 2>/dev/null || printf 'unknown')"
+  if [[ ! -x "$glimmervoidUpdaterPath" ]]; then
+    noteWarned "$label" "$versionBefore; no ~/.glimmervoid/bin/glimmervoid-update to check for a newer release"
+    return 0
+  fi
+  updaterLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-glimmervoid-update.XXXXXX")"
+  if ! GLIMMERVOID_INSTALL_DIR= CARGO_DIST_FORCE_INSTALL_DIR= GLIMMERVOID_UNMANAGED_INSTALL= GLIMMERVOID_NO_MODIFY_PATH=1 \
+    "$glimmervoidUpdaterPath" >"$updaterLog" 2>&1 </dev/null; then
+    noteWarned "$label" "update check failed, keeping $versionBefore: $(lastLogLine "$updaterLog")"
+    rm -f -- "$updaterLog"
+    return 0
+  fi
+  rm -f -- "$updaterLog"
+  versionAfter="$("$glimmervoidBinaryPath" --version 2>/dev/null || printf 'unknown')"
+  if [[ "$versionAfter" == "$versionBefore" ]]; then
+    notePresent "$label" "$versionAfter"
+    return 0
+  fi
+  noteInstalled "$label" "$versionBefore -> $versionAfter; the running server picks it up on its next restart"
+}
+
 installGlimmervoidBinary() {
   local label="glimmervoid binary"
   local installerLog
   if [[ -x "$glimmervoidBinaryPath" ]]; then
-    notePresent "$label" "$("$glimmervoidBinaryPath" --version 2>/dev/null || printf '~/.glimmervoid/bin/glimmervoid')"
+    updateGlimmervoidBinary
     return 0
   fi
   noteStarting "$label" "running the release installer"

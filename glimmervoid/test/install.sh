@@ -58,6 +58,22 @@ personalRerunOutput="$(runInstall "$personalHome" personal)" || personalRerunSta
 check "a second personal run reports no change" reportsNoChanges "$personalRerunOutput"
 check "a second personal run exits clean" test "$personalRerunStatus" -eq 0
 check "a second personal run downloads no installer" logLacks "glimmervoid installer"
+check "a second personal run asks the release updater" logHas "glimmervoid-update GLIMMERVOID_NO_MODIFY_PATH=1"
+
+personalState="$stubState/$(basename -- "$personalHome")"
+mkdir -p "$personalState"
+printf '0.55.0\n' > "$personalState/latest-release"
+upgradeOutput="$(runInstall "$personalHome" personal)" || true
+check "a newer release upgrades the binary" test "$("$personalHome/.glimmervoid/bin/glimmervoid")" = "0.55.0"
+check "an upgrade names both versions and the next restart" \
+  outputMatches "$upgradeOutput" 'glimmervoid binary.*0\.54\.0 -> 0\.55\.0.*next restart'
+
+touch "$personalState/update-unreachable"
+updateOfflineOutput="$(runInstall "$personalHome" personal)" || true
+check "an unreachable updater is warned about" \
+  outputMatches "$updateOfflineOutput" '\[warn\].*glimmervoid binary.*update check failed, keeping 0\.55\.0'
+check "an unreachable updater keeps the installed binary" test "$("$personalHome/.glimmervoid/bin/glimmervoid")" = "0.55.0"
+rm -f "$personalState/update-unreachable" "$personalState/latest-release"
 
 printf '#!/bin/sh\necho hand-written\n' > "$personalHome/.local/bin/glimmervoid"
 foreignShimOutput="$(runInstall "$personalHome" personal)" || true
