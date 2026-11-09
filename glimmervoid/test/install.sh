@@ -6,6 +6,9 @@ mkdir -p "$personalHome/.glimmervoid"
 printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=placeholder\nGLIMMERVOID_POSTHOG_API_KEY=placeholder\n' \
   > "$personalHome/.glimmervoid/secrets.env"
 chmod 644 "$personalHome/.glimmervoid/secrets.env"
+printf '#!/usr/bin/env bash\nexec %s %s "$@"\n' "$personalHome/.local/bin/node" "$personalHome/Projects/glimmervoid/dist/bin/glimmervoid.js" \
+  > "$personalHome/.local/bin/glimmervoid"
+chmod 755 "$personalHome/.local/bin/glimmervoid"
 : > "$commandLog"
 personalStatus=0
 personalOutput="$(runInstall "$personalHome" personal)" || personalStatus=$?
@@ -26,6 +29,9 @@ check "the secrets file is owner only" \
   test "$(fileModeOf "$personalHome/.glimmervoid/secrets.env")" = "600"
 check "a secrets file carrying every variable draws no warning" \
   outputLacks "$personalOutput" "write GLIMMERVOID_"
+check "a personal machine installs the release binary" test -x "$personalHome/.glimmervoid/bin/glimmervoid"
+check "the release installer runs with shell rc edits turned off" logHas "glimmervoid installer GLIMMERVOID_NO_MODIFY_PATH=1"
+check "the dotfiles node shim is retired once the binary is installed" test ! -e "$personalHome/.local/bin/glimmervoid"
 check "a personal machine installs the unit" test -f "$personalHome/.config/systemd/user/glimmervoid.service"
 check "the unit loads the secrets file without requiring it" \
   grep -qxF 'EnvironmentFile=-%h/.glimmervoid/secrets.env' "$personalHome/.config/systemd/user/glimmervoid.service"
@@ -46,10 +52,20 @@ check "the shared settings resolve the home token to this home" \
 "$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=3000;fs.writeFileSync(process.argv[1], JSON.stringify(config))' \
   "$personalHome/.glimmervoid/config.json"
 runInstall "$personalHome" personal > /dev/null || true
+: > "$commandLog"
 personalRerunStatus=0
 personalRerunOutput="$(runInstall "$personalHome" personal)" || personalRerunStatus=$?
 check "a second personal run reports no change" reportsNoChanges "$personalRerunOutput"
 check "a second personal run exits clean" test "$personalRerunStatus" -eq 0
+check "a second personal run downloads no installer" logLacks "glimmervoid installer"
+
+printf '#!/bin/sh\necho hand-written\n' > "$personalHome/.local/bin/glimmervoid"
+foreignShimOutput="$(runInstall "$personalHome" personal)" || true
+check "a glimmervoid in ~/.local/bin that is not the dotfiles shim is kept" \
+  grep -q hand-written "$personalHome/.local/bin/glimmervoid"
+check "a kept foreign glimmervoid is warned about" \
+  outputMatches "$foreignShimOutput" '\[warn\].*not the dotfiles shim'
+rm -f "$personalHome/.local/bin/glimmervoid"
 
 printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=\nGLIMMERVOID_POSTHOG_API_KEY=placeholder\n' \
   > "$personalHome/.glimmervoid/secrets.env"
@@ -92,6 +108,21 @@ keylessRemoteOutput="$(runInstall "$personalHome" personal)" || true
 check "a remote block with no enabled key reads as disabled" \
   outputHas "$keylessRemoteOutput" 'remote access disabled'
 check "a remote block with no enabled key publishes nothing on the tailnet" logLacks "serve --bg"
+
+startSandboxHome "glimmervoid-offline"
+offlineHome="$sandbox"
+mkdir -p "$offlineHome/.local/bin" "$offlineHome/.glimmervoid" "$stubState/$(basename -- "$offlineHome")"
+ln -sf "$stubBin/node" "$offlineHome/.local/bin/node"
+printf '{"port":%s}\n' "$isolatedWorkPort" > "$offlineHome/.glimmervoid/config.json"
+printf '#!/usr/bin/env bash\nexec %s %s "$@"\n' "$offlineHome/.local/bin/node" "$offlineHome/Projects/glimmervoid/dist/bin/glimmervoid.js" \
+  > "$offlineHome/.local/bin/glimmervoid"
+cp "$offlineHome/.local/bin/glimmervoid" "$sandboxTemp/offline-shim-before-install"
+touch "$stubState/$(basename -- "$offlineHome")/installer-unreachable"
+offlineOutput="$(runInstall "$offlineHome" work)" || true
+check "an unreachable installer is warned about" \
+  outputMatches "$offlineOutput" '\[warn\].*glimmervoid binary.*installer download failed'
+check "an unreachable installer leaves the shim byte-identical" \
+  cmp -s "$sandboxTemp/offline-shim-before-install" "$offlineHome/.local/bin/glimmervoid"
 
 startSandboxHome "glimmervoid-work"
 workHome="$sandbox"
@@ -136,7 +167,7 @@ check "a shared settings sync failure prints no stack trace" outputLacks "$broke
 check "a shared settings sync failure leaves the config bytes alone" \
   cmp -s "$sandboxTemp/broken-config-before-install" "$brokenConfigWorkHome/.glimmervoid/config.json"
 check "a shared settings sync failure still copies the sounds" test -f "$brokenConfigWorkHome/.glimmervoid/sounds/coins.ogg"
-check "a shared settings sync failure still installs the CLI shim" test -x "$brokenConfigWorkHome/.local/bin/glimmervoid"
+check "a shared settings sync failure still installs the binary" test -x "$brokenConfigWorkHome/.glimmervoid/bin/glimmervoid"
 
 startSandboxHome "glimmervoid-homebrew-node"
 homebrewNodeHome="$sandbox"
@@ -154,10 +185,8 @@ DOTFILES_TEST_HOMEBREW_PREFIX="$homebrewNodePrefix" \
 rm -f "$stubBin/dscl" "$stubBin/.dscl-account-home" "$stubBin/.dscl-login-shell"
 check "node reachable only at the homebrew prefix still applies shared settings" \
   test "$(configValue "$homebrewNodeHome" 'require(process.argv[1]).rtk')" = true
-check "node reachable only at the homebrew prefix still installs the CLI shim" \
-  test -x "$homebrewNodeHome/.local/bin/glimmervoid"
-check "the shim execs the node the homebrew prefix holds" \
-  grep -qF "$homebrewNodePrefix/bin/node" "$homebrewNodeHome/.local/bin/glimmervoid"
+check "node reachable only at the homebrew prefix still installs the binary" \
+  test -x "$homebrewNodeHome/.glimmervoid/bin/glimmervoid"
 
 unresolvedProfileStatus=0
 unresolvedProfileOutput="$(runInstall "$unresolvedProfileHome" "")" || unresolvedProfileStatus=$?

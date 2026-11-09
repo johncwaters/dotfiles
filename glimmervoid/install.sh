@@ -497,52 +497,55 @@ noteGlimmervoidPairingChecklist() {
   noteDetail "glimmervoid checklist" "run glimmervoid pair once per device"
 }
 
-# A symlink onto a directory would swallow the staged file.
-glimmervoidCliPathIsUsable() {
-  [[ ! -e "$1" ]] || [[ -f "$1" ]]
+glimmervoidBinaryPath="$HOME/.glimmervoid/bin/glimmervoid"
+glimmervoidInstallerUrl="${DOTFILES_GLIMMERVOID_INSTALLER_URL:-https://github.com/johncwaters/glimmervoid/releases/latest/download/glimmervoid-installer.sh}"
+
+# Once installed, the dashboard Update and glimmervoid-update own the version, so a converge never reinstalls over them.
+installGlimmervoidBinary() {
+  local label="glimmervoid binary"
+  local installerLog
+  if [[ -x "$glimmervoidBinaryPath" ]]; then
+    notePresent "$label" "$("$glimmervoidBinaryPath" --version 2>/dev/null || printf '~/.glimmervoid/bin/glimmervoid')"
+    return 0
+  fi
+  noteStarting "$label" "running the release installer"
+  installerLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-glimmervoid-install.XXXXXX")"
+  # Without it the installer appends to ~/.bashrc and ~/.bash_profile, which are stubs this repo owns.
+  if ! GLIMMERVOID_INSTALL_DIR= CARGO_DIST_FORCE_INSTALL_DIR= GLIMMERVOID_UNMANAGED_INSTALL= GLIMMERVOID_NO_MODIFY_PATH=1 installFromVendorScript "$label" sh "$glimmervoidInstallerUrl" "$installerLog"; then
+    rm -f -- "$installerLog"
+    return 1
+  fi
+  rm -f -- "$installerLog"
+  if [[ ! -x "$glimmervoidBinaryPath" ]]; then
+    noteWarned "$label" "installer ran but left no ~/.glimmervoid/bin/glimmervoid"
+    return 1
+  fi
+  noteInstalled "$label" "$("$glimmervoidBinaryPath" --version 2>/dev/null || printf 'installed')"
 }
 
-# The shim resolves Node so the CLI ignores caller PATH and keeps ~/.local/bin/glimmervoid a replaceable plain file.
-installGlimmervoidCliShim() {
-  local label="glimmervoid cli"
+isDotfilesGlimmervoidShim() {
+  local shimPath="$1"
+  [[ -f "$shimPath" && ! -L "$shimPath" ]] || return 1
+  [[ "$(wc -l < "$shimPath")" -eq 2 ]] || return 1
+  [[ "$(head -n 1 "$shimPath")" == "#!/usr/bin/env bash" ]] || return 1
+  tail -n 1 "$shimPath" | grep -qE '^exec [^ ]+ [^ ]+/dist/bin/glimmervoid\.js "\$@"$'
+}
+
+retireGlimmervoidCliShim() {
+  local label="glimmervoid cli shim"
   local shimPath="$HOME/.local/bin/glimmervoid"
-  local builtCliPath="$glimmervoidAppDirectory/dist/bin/glimmervoid.js"
-  local nodePath
-  local stagedPath
-  if [[ ! -e "$builtCliPath" ]]; then
-    notePresent "$label" "waits on the first build of $glimmervoidAppDisplayPath"
+  if [[ ! -e "$shimPath" && ! -L "$shimPath" ]]; then
     return 0
   fi
-  if ! nodePath="$(resolveGlimmervoidNodePath)"; then
-    noteWarned "$label" "$(describeGlimmervoidNodeSearch)"
+  if ! isDotfilesGlimmervoidShim "$shimPath"; then
+    noteWarned "$label" "~/.local/bin/glimmervoid is not the dotfiles shim, left in place; remove it if it is an old Glimmervoid install"
     return 0
   fi
-  if ! glimmervoidCliPathIsUsable "$shimPath"; then
-    noteWarned "$label" "$shimPath is not a plain file, move it aside first"
+  if ! rm -f -- "$shimPath"; then
+    noteWarned "$label" "cannot remove $shimPath"
     return 0
   fi
-  if ! mkdir -p -- "$HOME/.local/bin"; then
-    noteWarned "$label" "cannot create ~/.local/bin"
-    return 0
-  fi
-  stagedPath="$(mktemp "$HOME/.local/bin/.glimmervoid.XXXXXX")"
-  printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$nodePath" "$builtCliPath" > "$stagedPath"
-  chmod 755 "$stagedPath"
-  if [[ -x "$shimPath" ]] && filesAreIdentical "$stagedPath" "$shimPath"; then
-    rm -f -- "$stagedPath"
-    notePresent "$label" "~/.local/bin/glimmervoid"
-    return 0
-  fi
-  if ! mv -f -- "$stagedPath" "$shimPath"; then
-    rm -f -- "$stagedPath"
-    noteWarned "$label" "cannot write $shimPath"
-    return 0
-  fi
-  if [[ ! -f "$shimPath" || ! -x "$shimPath" ]]; then
-    noteWarned "$label" "$shimPath is not an executable plain file"
-    return 0
-  fi
-  noteApplied "$label" "~/.local/bin/glimmervoid execs node against $glimmervoidAppDisplayPath/dist/bin/glimmervoid.js"
+  noteApplied "$label" "removed, glimmervoid now runs ~/.glimmervoid/bin/glimmervoid"
 }
 
 applyGlimmervoidSharedSettings() {
@@ -589,8 +592,8 @@ copyGlimmervoidSoundsAsRegularFiles
 protectGlimmervoidConfig
 
 # The CLI is how a machine uses Glimmervoid, which is independent of whether that machine serves one.
-if glimmervoidAppIsPresent; then
-  installGlimmervoidCliShim
+if installGlimmervoidBinary; then
+  retireGlimmervoidCliShim
 fi
 
 if ! profileServesGlimmervoid "$profileName"; then

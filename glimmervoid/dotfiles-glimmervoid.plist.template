@@ -16,7 +16,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>{{HOME}}/.glimmervoid/bin:{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>GLIMMERVOID_SUPERVISOR</key>
     <string>launchd</string>
   </dict>

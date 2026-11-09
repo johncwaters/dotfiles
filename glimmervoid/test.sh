@@ -219,6 +219,22 @@ writeStub curl <<'STUB'
 printf 'curl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 probedUrl="${*: -1}"
 stateDir="$DOTFILES_TEST_STATE/$DOTFILES_TEST_MACHINE"
+downloadPath=""
+previousArgument=""
+for argument in "$@"; do
+  [[ "$previousArgument" == -o ]] && downloadPath="$argument"
+  previousArgument="$argument"
+done
+if [[ -n "$downloadPath" && "$*" == *glimmervoid-installer.sh* ]]; then
+  [[ -f "$stateDir/installer-unreachable" ]] && exit 22
+  cat > "$downloadPath" <<'INSTALLER'
+printf 'glimmervoid installer GLIMMERVOID_NO_MODIFY_PATH=%s\n' "${GLIMMERVOID_NO_MODIFY_PATH:-}" >> "$DOTFILES_TEST_LOG"
+mkdir -p "$HOME/.glimmervoid/bin"
+printf '#!/bin/sh\necho 0.54.0\n' > "$HOME/.glimmervoid/bin/glimmervoid"
+chmod +x "$HOME/.glimmervoid/bin/glimmervoid"
+INSTALLER
+  exit 0
+fi
 # A port the config names while a restart is still owed is one the running process has no listener on.
 if [[ -f "$stateDir/ports-with-no-listener" ]] && grep -qxF -- "$probedUrl" "$stateDir/ports-with-no-listener"; then
   printf '000'
@@ -341,6 +357,8 @@ check "darwin serves glimmervoid as a launch agent" \
 darwinGlimmervoidPlist="$darwinWorkHome/Library/LaunchAgents/dev.dotfiles.glimmervoid.plist"
 check "the launch agent tells glimmervoid launchd supervises it" \
   grep -q '<string>launchd</string>' "$darwinGlimmervoidPlist"
+check "the launch agent PATH carries the glimmervoid binary directory" \
+  grep -qF "$darwinWorkHome/.glimmervoid/bin:" "$darwinGlimmervoidPlist"
 check "the launch agent runs the work checkout" \
   grep -q "<string>$darwinWorkHome/Projects/glimmervoid</string>" "$darwinGlimmervoidPlist"
 check "darwin never touches systemd" logLacks "systemctl "

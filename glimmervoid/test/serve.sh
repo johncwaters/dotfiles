@@ -11,7 +11,7 @@ check "the warning names the config to edit" outputHas "$unauthedOutput" 'remote
 check "the serve step names the command to run" \
   outputMatches "$unauthedOutput" '\[warn\].*tailscale up once, then tailscale serve --bg 3001'
 check "an unauthenticated tailnet is never served" logLacks "serve --bg"
-check "a placeholder host is never probed over TLS" logLacks "https://"
+check "a placeholder host is never probed over TLS" logLacks "--max-time 10 https://"
 check "a missing tailnet login exits non-zero" test "$unauthedStatus" -eq 1
 check "the placeholder is left in place for its owner" \
   bash -c 'grep -q "CHANGEME" "$1/.glimmervoid/config.json"' _ "$unauthedHome"
@@ -62,7 +62,7 @@ optOutPendingState="$optOutHome/.local/state/dotfiles/glimmervoid-serve-withdraw
 optOutOwnedRecord="$optOutHome/.local/state/dotfiles/glimmervoid-serve-owned"
 check "a withdrawal of a route this topic never published is never marked pending" \
   test ! -e "$optOutPendingState"
-check "an opt out is never probed over TLS" logLacks "https://"
+check "an opt out is never probed over TLS" logLacks "--max-time 10 https://"
 check "an opt out never probes the remote listener" logLacks "http://127.0.0.1:3001/"
 
 mkdir -p "$(dirname -- "$optOutOwnedRecord")"
