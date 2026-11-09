@@ -117,12 +117,19 @@ printf '{"port":%s}\n' "$isolatedWorkPort" > "$offlineHome/.glimmervoid/config.j
 printf '#!/usr/bin/env bash\nexec %s %s "$@"\n' "$offlineHome/.local/bin/node" "$offlineHome/Projects/glimmervoid/dist/bin/glimmervoid.js" \
   > "$offlineHome/.local/bin/glimmervoid"
 cp "$offlineHome/.local/bin/glimmervoid" "$sandboxTemp/offline-shim-before-install"
+makeGlimmervoidApp "$offlineHome"
+mkdir -p "$offlineHome/.config/systemd/user"
+printf '[Service]\nExecStart=old checkout unit\n' > "$offlineHome/.config/systemd/user/glimmervoid.service"
 touch "$stubState/$(basename -- "$offlineHome")/installer-unreachable"
-offlineOutput="$(runInstall "$offlineHome" work)" || true
+: > "$commandLog"
+offlineOutput="$(runInstall "$offlineHome" server)" || true
 check "an unreachable installer is warned about" \
   outputMatches "$offlineOutput" '\[warn\].*glimmervoid binary.*installer download failed'
 check "an unreachable installer leaves the shim byte-identical" \
   cmp -s "$sandboxTemp/offline-shim-before-install" "$offlineHome/.local/bin/glimmervoid"
+check "an unreachable installer leaves the old unit in place" \
+  grep -qx "ExecStart=old checkout unit" "$offlineHome/.config/systemd/user/glimmervoid.service"
+check "an unreachable installer touches no running service" logLacks "systemctl "
 
 startSandboxHome "glimmervoid-work"
 workHome="$sandbox"
@@ -212,56 +219,26 @@ check "a machine-local seed resolves its home token" \
 check "a machine-local seed is reported from the selected input" \
   outputHas "$localSeedOutput" "seeded from config.json"
 
-makeGlimmervoidApp "$pendingDepsHome"
-mkdir -p "$pendingDepsHome/.claude"
-printf '{}\n' > "$pendingDepsHome/.claude/.credentials.json"
-pendingDepsStateName="$(HOME="$pendingDepsHome" \
-  repoDepsPendingStateNameForPath "$pendingDepsHome/Projects/glimmervoid")"
-pendingDepsMarker="$pendingDepsHome/.local/state/dotfiles/$pendingDepsStateName"
-mkdir -p "$(dirname -- "$pendingDepsMarker")"
-: > "$pendingDepsMarker"
+makeGlimmervoidApp "$firstServeHome"
+mkdir -p "$firstServeHome/.claude"
+printf '{}\n' > "$firstServeHome/.claude/.credentials.json"
 : > "$commandLog"
-pendingDepsStatus=0
-pendingDepsOutput="$(runInstall "$pendingDepsHome" server)" || pendingDepsStatus=$?
-check "pending app dependencies prevent a first service start" \
-  logLacks "systemctl --user enable --now glimmervoid"
-check "a refused start names the pending app dependencies" \
-  outputMatches "$pendingDepsOutput" '\[warn\].*dependencies or build are pending'
-check "a refused start leaves the service input token unrecorded" \
-  test ! -e "$pendingDepsHome/.local/state/dotfiles/glimmervoid-service-inputs-record"
-check "a refused start exits non-zero" test "$pendingDepsStatus" -eq 1
-check "a serving machine with no secrets file names the file to write" \
-  outputMatches "$pendingDepsOutput" '\[warn\].*~/\.glimmervoid/secrets\.env'
-check "the missing secrets warning names every variable the unit loads" \
-  outputHas "$pendingDepsOutput" "GLIMMERVOID_TELEGRAM_BOT_TOKEN and GLIMMERVOID_POSTHOG_API_KEY"
-
-rm -f "$pendingDepsMarker"
-: > "$commandLog"
-runInstall "$pendingDepsHome" server > /dev/null
-check "cleared app dependencies allow the first service start" \
-  logHas "systemctl --user enable --now glimmervoid"
+firstServeOutput="$(runInstall "$firstServeHome" server)" || true
+check "a first serving run starts the service" logHas "systemctl --user enable --now glimmervoid"
 check "a successful start records the service input token" \
-  test -f "$pendingDepsHome/.local/state/dotfiles/glimmervoid-service-inputs-record"
+  test -f "$firstServeHome/.local/state/dotfiles/glimmervoid-service-inputs-record"
+check "the service input token no longer follows the source checkout" \
+  bash -c '! grep -q "^checkout " "$1"' _ "$firstServeHome/.local/state/dotfiles/glimmervoid-service-inputs-record"
+check "a serving machine with no secrets file names the file to write" \
+  outputMatches "$firstServeOutput" '\[warn\].*~/\.glimmervoid/secrets\.env'
+check "the missing secrets warning names every variable the unit loads" \
+  outputHas "$firstServeOutput" "GLIMMERVOID_TELEGRAM_BOT_TOKEN and GLIMMERVOID_POSTHOG_API_KEY"
 
-mkdir -p "$missingAppHome/.claude"
-printf '{}\n' > "$missingAppHome/.claude/.credentials.json"
+mkdir -p "$noCheckoutHome/.claude"
+printf '{}\n' > "$noCheckoutHome/.claude/.credentials.json"
 : > "$commandLog"
-missingAppStatus=0
-missingAppOutput="$(runInstall "$missingAppHome" server)" || missingAppStatus=$?
-check "a missing app checkout exits non-zero" test "$missingAppStatus" -eq 1
-check "a missing app checkout is named" \
-  outputMatches "$missingAppOutput" '\[warn\].*~/Projects/glimmervoid is not a Glimmervoid checkout'
-check "a missing app checkout installs no unit" \
-  test ! -e "$missingAppHome/.config/systemd/user/glimmervoid.service"
-check "a missing app checkout performs no activation" logLacks "systemctl "
-check "a missing app checkout publishes no route" logLacks "tailscale "
-
-mkdir -p "$invalidAppHome/Projects/glimmervoid" "$invalidAppHome/.claude"
-printf '{}\n' > "$invalidAppHome/.claude/.credentials.json"
-: > "$commandLog"
-invalidAppStatus=0
-invalidAppOutput="$(runInstall "$invalidAppHome" server)" || invalidAppStatus=$?
-check "an arbitrary app directory exits non-zero" test "$invalidAppStatus" -eq 1
-check "an arbitrary app directory is rejected as an invalid checkout" \
-  outputHas "$invalidAppOutput" "is not a Glimmervoid checkout"
-check "an arbitrary app directory starts no service" logLacks "systemctl "
+runInstall "$noCheckoutHome" server > /dev/null || true
+check "a serving machine with no source checkout still serves the binary" \
+  logHas "systemctl --user enable --now glimmervoid"
+check "a serving machine with no source checkout installs the unit" \
+  test -f "$noCheckoutHome/.config/systemd/user/glimmervoid.service"

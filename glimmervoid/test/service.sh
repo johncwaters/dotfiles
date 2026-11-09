@@ -23,11 +23,9 @@ check "no CHANGEME survives on a server" \
   bash -c '! grep -q "CHANGEME" "$1/.glimmervoid/config.json"' _ "$serverHome"
 
 check "the user unit is installed" test -f "$serverUnitPath"
-check "the unit runs the node from the fixed candidate list, not the shell's" \
-  grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
-check "the unit rebuilds dist before starting, with the npm beside the resolved node" \
-  grep -q "^ExecStartPre=$serverHome/.local/bin/npm run build\$" "$serverUnitPath"
-check "the unit works out of this home" grep -q "^WorkingDirectory=$serverHome/Projects/glimmervoid\$" "$serverUnitPath"
+check "the unit runs the release binary" grep -qx 'ExecStart=%h/.glimmervoid/bin/glimmervoid' "$serverUnitPath"
+check "the unit builds nothing before starting" bash -c '! grep -q "^ExecStartPre=" "$1"' _ "$serverUnitPath"
+check "the unit works out of the home, not a checkout" grep -qx 'WorkingDirectory=%h' "$serverUnitPath"
 check "an OOM-killed session leaves the dashboard and its other sessions running" \
   grep -q "^OOMPolicy=continue\$" "$serverUnitPath"
 check "the unit caps its memory below the whole machine" \
@@ -55,18 +53,6 @@ check "a checklist item keeps the topic non-zero" test "$serverStatus" -eq 1
 check "the dashboard clone is never cloned here" logLacks "git clone"
 check "the dashboard is never built here" logLacks "npm "
 check "no pairing url is minted" logLacks "glimmervoid pair"
-
-mv "$serverHome/Projects/glimmervoid/dist/server/index.js" "$serverHome/Projects/glimmervoid/dist-index.parked"
-# A freshly installed unit is what makes this run want to activate, so only the guard can stop it.
-rm -f "$serverUnitPath" "$serverUnitPath.pre-dotfiles.rendered"
-: > "$commandLog"
-unbuiltOutput="$(runInstall "$serverHome" server)" || true
-check "a checkout without a built dist warns instead of starting" \
-  outputMatches "$unbuiltOutput" '\[warn\].*no built dist/server/index.js'
-check "a checkout without a built dist enables nothing" logLacks "enable --now"
-check "a checkout without a built dist reloads nothing" logLacks "daemon-reload"
-check "a checkout without a built dist restarts nothing" logLacks "restart glimmervoid"
-mv "$serverHome/Projects/glimmervoid/dist-index.parked" "$serverHome/Projects/glimmervoid/dist/server/index.js"
 
 unitFingerprintAfterFirstRun="$(cksum < "$serverUnitPath")"
 localhostBackendState="$stubState/$(basename -- "$serverHome")/serve-localhost-backend"
@@ -177,7 +163,6 @@ runInstall "$serverHome" server > /dev/null
 check "a settled rotated secret restarts nothing" logLacks "restart glimmervoid"
 
 serverStubState="$stubState/$(basename -- "$serverHome")"
-printf 'b22b22b22b22b22b22b22b22b22b22b22b22b22b\n' > "$serverStubState/app-head"
 insideServiceCgroup="$sandboxTemp/inside-glimmervoid.cgroup"
 printf '0::/user.slice/user-1000.slice/user@1000.service/app.slice/glimmervoid.service\n' > "$insideServiceCgroup"
 serviceRestartPendingMarker="$serverHome/.local/state/dotfiles/systemd-glimmervoid-pending"
@@ -240,32 +225,10 @@ runInstall "$serverHome" server > /dev/null
 check "a paid restart is not owed again on the next run" logLacks "restart glimmervoid"
 
 printf 'a11a11a11a11a11a11a11a11a11a11a11a11a11a\n' > "$stubState/$(basename -- "$serverHome")/app-head"
-serverDepsPendingStateName="$(HOME="$serverHome" \
-  repoDepsPendingStateNameForPath "$serverHome/Projects/glimmervoid")"
-serverDepsPendingMarker="$serverHome/.local/state/dotfiles/$serverDepsPendingStateName"
-: > "$serverDepsPendingMarker"
-: > "$commandLog"
-pendingRestartStatus=0
-pendingRestartOutput="$(runInstall "$serverHome" server)" || pendingRestartStatus=$?
-check "pending app dependencies prevent a checkout restart" logLacks "restart glimmervoid"
-check "a refused restart reports the pending dependency state" \
-  outputMatches "$pendingRestartOutput" '\[warn\].*dependencies or build are pending'
-check "a refused restart exits non-zero" test "$pendingRestartStatus" -eq 1
-check "a refused restart does not advance the service input token" \
-  bash -c '! grep -q "a11a11a11a11" "$1"' _ \
-  "$serverHome/.local/state/dotfiles/glimmervoid-service-inputs-record"
-
-rm -f "$serverDepsPendingMarker"
-: > "$commandLog"
-runInstall "$serverHome" server > /dev/null
-check "cleared app dependencies allow the checkout restart" logHas "systemctl --user restart glimmervoid"
-check "the successful restart advances the service input token" \
-  grep -q 'a11a11a11a11' "$serverHome/.local/state/dotfiles/glimmervoid-service-inputs-record"
-
 : > "$commandLog"
 settledInputsOutput="$(runInstall "$serverHome" server)"
-check "an unchanged config and checkout restart nothing" logLacks "restart glimmervoid"
-check "an unchanged config and checkout report no change" reportsNoChanges "$settledInputsOutput"
+check "a moved source checkout restarts nothing" logLacks "restart glimmervoid"
+check "an unchanged config with a moved source checkout reports no change" reportsNoChanges "$settledInputsOutput"
 check "what the service was started from is recorded under the shared state directory" \
   test -f "$serverHome/.local/state/dotfiles/glimmervoid-service-inputs-record"
 check "nothing is recorded beside the unit systemd reads" \
@@ -280,11 +243,11 @@ fi
 exec "$stubState/available/systemctl" "\$@"
 STUB
 chmod +x "$stubBin/systemctl"
-printf 'b22b22b22b22b22b22b22b22b22b22b22b22b22b\n' > "$stubState/$(basename -- "$serverHome")/app-head"
+printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=rotated-before-race\n' > "$serverHome/.glimmervoid/secrets.env"
 : > "$commandLog"
 runInstall "$serverHome" server > /dev/null
 provideCommand systemctl
-check "a checkout moved under a racing restart is restarted" logHas "systemctl --user restart glimmervoid"
+check "a secret rotated under a racing restart is restarted" logHas "systemctl --user restart glimmervoid"
 : > "$commandLog"
 runInstall "$serverHome" server > /dev/null
 check "a secrets file written during the restart still owes the next run a restart" \
@@ -319,9 +282,7 @@ check "a hand edited unit is backed up" \
 check "the backup keeps what was there" \
   bash -c 'grep -q "hand written" "$1".pre-dotfiles.bak' _ "$serverUnitPath"
 check "the rendered unit replaces the hand edit" \
-  grep -q "^ExecStart=$serverHome/.local/bin/node dist/server/index.js\$" "$serverUnitPath"
-check "the re-rendered unit keeps its build step" \
-  grep -q "^ExecStartPre=$serverHome/.local/bin/npm run build\$" "$serverUnitPath"
+  grep -qx 'ExecStart=%h/.glimmervoid/bin/glimmervoid' "$serverUnitPath"
 check "replacing the unit restarts the service" outputMatches "$handEditOutput" '\[ ok \].*glimmervoid service.*restarted'
 
 : > "$commandLog"

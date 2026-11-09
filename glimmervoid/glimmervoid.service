@@ -4,10 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=__APP_DIR__
-# dist/ is gitignored build output; rebuilding at start heals a stale or wiped dist instead of crash-looping.
-ExecStartPre=__NPM__ run build
-ExecStart=__NODE__ dist/server/index.js
+WorkingDirectory=%h
+ExecStart=%h/.glimmervoid/bin/glimmervoid
 # Credentials live outside the dashboard config; the leading dash keeps a machine without the file bootable.
 EnvironmentFile=-%h/.glimmervoid/secrets.env
 Environment=PATH=__PATH__

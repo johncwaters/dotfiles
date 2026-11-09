@@ -8,11 +8,12 @@
   <array>
     <string>{{BASH}}</string>
     <string>-c</string>
-    <string>set -a; if [[ -f "$0" ]]; then source "$0"; fi; set +a; npm run build &amp;&amp; exec node dist/server/index.js</string>
+    <string>set -a; if [[ -f "$0" ]]; then source "$0"; fi; set +a; exec "$1"</string>
     <string>{{HOME}}/.glimmervoid/secrets.env</string>
+    <string>{{HOME}}/.glimmervoid/bin/glimmervoid</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>{{HOME}}/Projects/glimmervoid</string>
+  <string>{{HOME}}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>

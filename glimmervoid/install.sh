@@ -23,8 +23,6 @@ glimmervoidConfigPath="$glimmervoidConfigDirectory/config.json"
 glimmervoidConfigDisplayPath="~/.glimmervoid/config.json"
 glimmervoidSecretsPath="$glimmervoidConfigDirectory/secrets.env"
 glimmervoidSecretsDisplayPath="~/.glimmervoid/secrets.env"
-glimmervoidAppDirectory="$HOME/Projects/glimmervoid"
-glimmervoidAppDisplayPath="~/Projects/glimmervoid"
 remoteSettingsRewritten=0
 resolvedLocalPort=""
 resolvedRemotePort=""
@@ -211,22 +209,6 @@ reportGlimmervoidSecrets() {
     return 0
   fi
   noteWarned "$label" "write $missingVariableNames into $glimmervoidSecretsDisplayPath"
-}
-
-glimmervoidAppIsPresent() {
-  [[ -f "$glimmervoidAppDirectory/server/main.ts" \
-    && -f "$glimmervoidAppDirectory/package.json" \
-    && ( -d "$glimmervoidAppDirectory/.git" || -f "$glimmervoidAppDirectory/.git" ) ]]
-}
-
-requireGlimmervoidApp() {
-  if glimmervoidAppIsPresent; then
-    notePresent "glimmervoid app" "$glimmervoidAppDisplayPath"
-    return 0
-  fi
-  noteWarned "glimmervoid app" \
-    "$glimmervoidAppDisplayPath is not a Glimmervoid checkout, list it in repos/repos.txt so the repos topic clones it"
-  return 1
 }
 
 readGlimmervoidLocalPort() {
@@ -592,7 +574,9 @@ copyGlimmervoidSoundsAsRegularFiles
 protectGlimmervoidConfig
 
 # The CLI is how a machine uses Glimmervoid, which is independent of whether that machine serves one.
+glimmervoidBinaryIsInstalled=0
 if installGlimmervoidBinary; then
+  glimmervoidBinaryIsInstalled=1
   retireGlimmervoidCliShim
 fi
 
@@ -603,7 +587,9 @@ fi
 
 reportGlimmervoidSecrets
 
-if ! requireGlimmervoidApp; then
+# A failed install leaves the running service and its files as they were, so the next converge can retry the cutover.
+if ((glimmervoidBinaryIsInstalled == 0)); then
+  notePresent "glimmervoid service" "left as it was until ~/.glimmervoid/bin/glimmervoid installs"
   finishTopic
 fi
 

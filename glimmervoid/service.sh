@@ -31,9 +31,6 @@ renderGlimmervoidUnit() {
   nodeDirectory="$(dirname -- "$nodePath")"
   unitPath="$(glimmervoidUnitSearchPath "$nodeDirectory")"
   sed \
-    -e "s/__NODE__/$(sedReplacementFor "$nodePath")/g" \
-    -e "s/__NPM__/$(sedReplacementFor "$nodeDirectory/npm")/g" \
-    -e "s/__APP_DIR__/$(sedReplacementFor "$glimmervoidAppDirectory")/g" \
     -e "s/__PATH__/$(sedReplacementFor "$unitPath")/g" \
     "$templatePath" > "$destinationPath"
 }
@@ -96,13 +93,9 @@ readGlimmervoidSecretsDigest() {
   printf '%s\n' "$digest"
 }
 
-# The server hot-reloads most of config.json and rewrites it on every session event; the app checkout, the keys glimmervoid reads once at boot, and the environment file systemd loads once at boot are what a restart is owed for.
+# The server hot-reloads most of config.json and rewrites it on every session event; the keys glimmervoid reads once at boot and the environment file systemd loads once at boot are what a restart is owed for.
 glimmervoidServiceInputsToken() {
-  local checkoutToken="absent"
-  if command -v git >/dev/null 2>&1; then
-    checkoutToken="$(git -C "$glimmervoidAppDirectory" rev-parse HEAD 2>/dev/null || true)"
-  fi
-  printf 'checkout %s\nboot-only %s\nsecrets %s\n' "$checkoutToken" \
+  printf 'boot-only %s\nsecrets %s\n' \
     "$(readGlimmervoidBootOnlySettings)" "$(readGlimmervoidSecretsDigest)"
 }
 
@@ -119,24 +112,10 @@ recordGlimmervoidServiceInputs() {
   writeDotfilesState "$glimmervoidServiceInputsStateName" "$1"
 }
 
-glimmervoidAppDepsArePending() {
-  dotfilesStateIsPending "$(repoDepsPendingStateNameForPath "$glimmervoidAppDirectory")"
-}
-
 startGlimmervoidService() {
   local unitChanged="$1"
   local label="glimmervoid service"
   local inputsToken
-  if glimmervoidAppDepsArePending; then
-    noteWarned "$label" \
-      "dependencies or build are pending for $glimmervoidAppDisplayPath, run the repos topic before starting it"
-    return 1
-  fi
-  if [[ ! -f "$glimmervoidAppDirectory/dist/server/index.js" ]]; then
-    noteWarned "$label" \
-      "no built dist/server/index.js in $glimmervoidAppDisplayPath, run npm install there before starting it"
-    return 1
-  fi
   if ! userServiceManagerIsReachable; then
     noteWarned "$label" "user service manager not reachable, unit installed but not started"
     return 1

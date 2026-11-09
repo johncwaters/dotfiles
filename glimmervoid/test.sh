@@ -34,12 +34,10 @@ startSandboxHome "glimmervoid-badstatus"
 badStatusHome="$sandbox"
 startSandboxHome "glimmervoid-unresolved"
 unresolvedProfileHome="$sandbox"
-startSandboxHome "glimmervoid-pending-deps"
-pendingDepsHome="$sandbox"
-startSandboxHome "glimmervoid-missing-app"
-missingAppHome="$sandbox"
-startSandboxHome "glimmervoid-invalid-app"
-invalidAppHome="$sandbox"
+startSandboxHome "glimmervoid-first-serve"
+firstServeHome="$sandbox"
+startSandboxHome "glimmervoid-no-checkout"
+noCheckoutHome="$sandbox"
 startSandboxHome "glimmervoid-local-seed"
 localSeedHome="$sandbox"
 startSandboxHome "glimmervoid-work-darwin"
@@ -284,7 +282,7 @@ done
 # The unit's interpreter comes from a fixed candidate list, not from the converging shell.
 for machineHomePath in "$toolingHome" "$personalHome" "$serverHome" "$unauthedHome" \
   "$optOutHome" "$symlinkedHome" "$brokenConfigHome" "$unownedRouteHome" "$badStatusHome" \
-  "$unresolvedProfileHome" "$pendingDepsHome" "$missingAppHome" "$invalidAppHome" \
+  "$unresolvedProfileHome" "$firstServeHome" "$noCheckoutHome" \
   "$localSeedHome" "$darwinWorkHome"; do
   mkdir -p "$machineHomePath/.local/bin"
   ln -sf "$stubBin/node" "$machineHomePath/.local/bin/node"
@@ -341,7 +339,6 @@ mkdir -p "$darwinWorkHome/.glimmervoid"
 printf '{"port":%s}\n' "$isolatedWorkPort" > "$darwinWorkHome/.glimmervoid/config.json"
 printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=placeholder\nGLIMMERVOID_POSTHOG_API_KEY=placeholder\n' \
   > "$darwinWorkHome/.glimmervoid/secrets.env"
-makeGlimmervoidApp "$darwinWorkHome"
 writeStub launchctl <<'STUB'
 #!/usr/bin/env bash
 printf 'launchctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -359,8 +356,11 @@ check "the launch agent tells glimmervoid launchd supervises it" \
   grep -q '<string>launchd</string>' "$darwinGlimmervoidPlist"
 check "the launch agent PATH carries the glimmervoid binary directory" \
   grep -qF "$darwinWorkHome/.glimmervoid/bin:" "$darwinGlimmervoidPlist"
-check "the launch agent runs the work checkout" \
-  grep -q "<string>$darwinWorkHome/Projects/glimmervoid</string>" "$darwinGlimmervoidPlist"
+check "the launch agent runs the release binary" \
+  grep -qF "<string>$darwinWorkHome/.glimmervoid/bin/glimmervoid</string>" "$darwinGlimmervoidPlist"
+check "the launch agent builds nothing" bash -c 'test -f "$1" && ! grep -q "npm run build" "$1"' _ "$darwinGlimmervoidPlist"
+check "the launch agent works out of the home, not a checkout" \
+  grep -qF "<string>$darwinWorkHome</string>" "$darwinGlimmervoidPlist"
 check "darwin never touches systemd" logLacks "systemctl "
 check "darwin never touches tailscale serve" logLacks "tailscale serve"
 
