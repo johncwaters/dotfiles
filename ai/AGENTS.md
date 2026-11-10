@@ -129,3 +129,7 @@ Docs and comments carry only the Why: rationale, tradeoffs, invariants with thei
 - At the cap, make room by RETIRING a rule whose code is gone or whose test now pins it, never by trimming words off live ones. Trimming to fit turns the ceiling into a target and leaves the file permanently full.
 - The docs_must_be_enforceable gate blocks NEW docs; this section governs the content of all docs. "The doc gate blocks a new file" is never a reason to dump prose into an existing one.
 </doc_style_why_only>
+
+<writing_as_me>
+Any prose written as the carbon unit for someone else (messages, GitHub issues, PR descriptions, comments, review replies, docs; not commit messages), even mid-coding-task: load `writing-in-voice` before the first draft, because its description alone misses drafts that arrive inside a code task.
+</writing_as_me>

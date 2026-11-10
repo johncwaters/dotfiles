@@ -15,7 +15,7 @@ Each section applies at the `writing-design-docs` step it names.
 ## Draft
 
 - PostHog's RFC rule: the author alone writes the problem and the options; leave their generation to the author.
-- Load `writing-longform` before the first draft, as the profile's posthog_writing rule requires. It sets the sentences, and the draft step sets the shape.
+- Load `writing-in-voice` before the first draft, as the shared writing_as_me rule requires. Its published path sets the sentences, and the draft step sets the shape.
 
 ## Evidence
 

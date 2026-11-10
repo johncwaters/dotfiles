@@ -21,5 +21,5 @@ Playful posts, from the author's rewrite of a drafted post that carried a clip o
 - A fun post commits to the bit without explaining, justifying, or conceding it, because the apology is what kills the joke. The author's ran exaggerated complaint, petty specifics, mock-ceremonial reveal, absurd escalation; borrow the commitment and not that skeleton, because a second post on the same skeleton reads as a formula.
 - Attached media is the payoff, so the copy omits descriptions of what the clip or image shows; listing the animations spent the reveal before the reader pressed play.
 - No announcement frame ("So I built X", "I added X to Y, my Z for W"), which the author called incredibly generic, and no product name, feature count, or link unless the author supplies one.
-- Here `writing-in-voice`'s banter outranks this skill's restraint: stretched vowels, `!`, mock-grand phrasing, and a deadpan closing parenthetical all stay, while typos, chat abbreviations, and emoticons still go.
+- Here the message path's banter outranks the published path's restraint: stretched vowels, `!`, mock-grand phrasing, and a deadpan closing parenthetical all stay, while typos, chat abbreviations, and emoticons still go.
 - One joke long, in one short paragraph. The author's own posts run under 200 characters, so a fun post that needs a second paragraph is a different post.

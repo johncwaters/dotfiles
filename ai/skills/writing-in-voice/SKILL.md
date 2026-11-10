@@ -1,130 +1,51 @@
 ---
 name: writing-in-voice
-description: Applies the carbon unit's personal voice to all written output on their behalf. Use when asked to write messages, replies, Slack messages, emails, Teams chats, texts, or any communication; to rewrite, rephrase, or adjust tone; or for "write this in my voice", "draft a message", "help me reply", "how should I say this", "what should I say to X", "help me word this", and similar requests. Applies when in doubt to keep the voice consistent.
+description: "Writes as the carbon unit, in their voice, anything someone else reads. Message path: Slack, email, texts, chats, replies. Published path: GitHub issues, PR descriptions, issue and PR comments, review replies, docs, tutorials, RFCs, design docs, blog, launch and social posts, changelogs, post-mortems. Use when asked to write, reply, rewrite, tighten, or critique one, for \"say this in my voice\" or \"make this punchier\", and before any draft posted as them, even mid-code-task."
 ---
 
-# Voice Style
+# Writing in voice
 
-This skill defines the carbon unit's natural communication voice. Apply it to all written output produced on their behalf — messages, replies, Slack posts, emails, texts, etc.
+Everything written on the carbon unit's behalf for someone else to read goes through this skill: one voice, one list of tells, one lint, and a path picked by who reads it. Chat replies to the carbon unit are not drafts.
 
-## Core Principle
+## Core principle
 
-The carbon unit writes like a senior engineer in casual-professional mode: warm but efficient, technically precise while staying relaxed. Think "the teammate everyone likes getting messages from." The voice is human-first — typos are personality, not mistakes.
+The carbon unit writes like a senior engineer in casual-professional mode: warm but efficient, technically precise while staying relaxed. Think "the teammate everyone likes getting messages from." Both paths respect a smart, busy reader; the message path keeps the human quirks, and the published path trades them for structure.
 
-## Message Archetypes
+## Pick the path
 
-Pick the archetype that fits the situation. Blend them only when the message naturally spans two modes (e.g., a directive that ends with banter).
+- **Message**: a turn in a conversation, read now by the carbon units in it (Slack, email, texts, chats, a customer reply). Follow [subskills/message.md](subskills/message.md).
+- **Published**: posted where others read it later (a GitHub issue, PR description, issue or PR comment, review reply, docs page, tutorial, RFC, design doc, blog or social post, changelog, post-mortem). Follow [subskills/published.md](subskills/published.md), which picks its template: `subskills/blog-or-post.md` or `subskills/docs-or-tutorial.md`.
+- A calling skill that names a path wins over this list, even when its text lands on GitHub or a ticket.
+- A profile may name a skill that adds its own conventions on top of either path; load it before drafting.
 
-### 1. Quick Ack
-One word or short phrase, capitalized like a sentence, no period. Optionally trail off with `...`
+## Shared rules
 
-> Yah
-> Gotcha
-> Sounds good
-> True...
+- **A supplied draft's facts are fixed.** Rewriting a draft the carbon unit wrote? Their facts, nouns, and claims stay. Reorder and cut, but add no detail they did not write, and ask when a sentence needs one.
+- **Lead with the new part.** Sharing something (a demo, a doc, a PR)? Settle first whether the audience already saw it. If they did, skip the intro and recap of what it is.
+- **Name the code, not the person.** Writing up a bug's cause, name the code and why it exists rather than who added it ("came in with #19560", "added by @x"): naming them reads as blame and pings them.
 
-### 2. FYI Drop
-Pattern: `FYI <what happened>. <optional why in parenthetical>.`
+## Tells that mark prose as machine-written
 
-> FYI I created a temp pipeline for the ingest job... (the other pipelines were GUI based)
-> FYI the staging deploy failed. (looks like a config drift from last week's merge)
+Readers can tell, and these are not how the carbon unit writes. Strip every one on sight, on both paths:
 
-### 3. Soft Pushback
-Lead with a hedge, end with humor or a trailing softener.
+- **Filler words:** "just", "basically", "finally", in every sense.
+- **Machine vocabulary:** "delve", "tapestry", "landscape", "game-changer", "unlock", "navigate the complexities".
+- **Corporate preamble and sign-offs:** "I hope this email finds you well", "Just a friendly reminder", "Best,", "Cheers,", "Regards,", or a name under the message.
+- **Em dashes as structure.** Use a colon, a parenthetical, or two sentences.
+- **Kicker clauses** tacked onto a plain claim ("you flip the flag off, and nobody waits on a revert"). End the sentence at the fact ("without needing a revert").
+- **Teasers** that announce a reason without giving one ("Here's why.", "This shows why."). Open with the reason itself.
+- **Reflexive triplets**, "It's not X, it's Y" more than once per piece, stacked rhetorical questions, and uniform sentence length.
+- **Endings that recap**, or open with "In conclusion" or "Ultimately".
+- **Emoji bullets.**
+- **An aphorism standing in for the fact** ("A switch you've flipped zero times is a switch you hope works"). State the fact or the instruction.
+- **A balanced contrast pair the reader must decode** ("A flag decides whether someone gets a feature, and a payload decides how"). Say what the thing is.
+- **A dramatized cost** ("A rollback is a revert, a build, and a deploy, and your users see the bug for as long as all three take"). Name the concrete steps plainly.
+- **A setup line narrating the story's progress** ("It's a pretty average conversation, nothing out of the norm"). Start at the event.
 
-> `Maybe I don't understand...`
-> Idk what you want from me lol
-> Pretty sure its X. Not Y.
+## Lint
 
-### 4. Technical Explain
-Use flow arrows (`>`) or bullet points. Clinical, clear, no filler.
-
-> Phone > Mobile API > Portal API > return
-> Checked: • X • Y • Z. What likely happened: ...
-
-### 5. Directive (Warm)
-Pattern: `Heyo` + reason + ask. Full sentences, friendly but clear.
-
-> `Heyo, saw your message. To keep things organized, lets post those in 'general' instead of 'standup'. That way things don't get too cluttered`
-
-### 6. Banter
-`ahahaha`, `xD` / `XD`, `:P`, `lol`, caps for mock-outrage (reserved for jokes rather than real anger).
-
-> YAH AND??? FIX IT1!
-> Thats disgusting lol
-
-### 7. Coaching / Warm Close
-Full sentences. Use `!` for warmth. No emoji or emoticons.
-
-> `Hey! Wanted to let you know that I hope this first week went great. If you have any questions or need anything at all, don't hesitate to reach out!`
-
-## Structural Rules
-
-**Opener:** `Heyo` (friendly), `FYI` (info), `Ah` / `Oh` (realization), or none (just dive in).
-
-**Hedges:** pretty sure, I believe, I could be wrong, genuinely asking, in my mind, last I knew.
-
-**Asides:** Always parentheticals, excluding footnotes and asterisks.
-
-**Qualifiers:** genuinely, technically, proooobably (stretch vowels for emphasis).
-
-**Closer:** `ty` / `thanks` / `sounds good` / or just end. Keep closers free of "best," "cheers," "regards," and any sign-off formula.
-
-## Micro-Rules
-
-These are what make the voice feel real.
-
-- **Normal capitalization.** Capitalize the first word of each sentence, `I`, and proper nouns, even in quick acks. Casual abbreviations mid-sentence stay lowercase (`idk`, `lol`, `tbh`). All-caps is reserved for comedic caps.
-- **Drop periods on short replies.** Keep them on multi-sentence messages.
-- **Apostrophe plurals:** `PR's`, not `PRs`. `API's`, not `APIs`.
-- **Trailing `...`** means "more to say" or a soft trail-off. Use it.
-- **Caps = joke, not anger.** `FIX IT1!` is playful. Context makes this obvious.
-- **Leave typos.** If a natural typo happens in the flow, keep it. Leave the original message standing without a correction message.
-- **Emoticons over emoji.** `XD` / `xD` and `:P` are frequent and natural; `>.>` shows up occasionally. Real emoji (🎉 🚀 👍 etc.) are rare — reach for the emoticon first.
-- **`lol` at end** softens a complaint or dumb-question admission.
-- **`haha` mid-sentence** warms a technical statement.
-
-## Word Bank
-
-Use these words and abbreviations — not formal synonyms:
-
-`yah` `yeh` `yeppers` · `idk` `imo` `tbh` `tho` `rn` `ty` `FYI` · `Heyo` `Gotcha` `Plz` · `lil` `min` (for minute) · `ahahaha` `xD` `XD` `:P` `lol`
-
-If tempted to write `I don't know`, write `idk`. If tempted to write "in my opinion," write `imo`. Match the register.
-
-## Voice-breaking patterns
-
-These kill the voice:
-
-- The words "just", "basically", and "finally" — excluded in every sense
-- "I hope this email finds you well" or any corporate preamble
-- Em-dashes as structural decoration (the carbon unit uses them occasionally and naturally)
-- "Just a friendly reminder" or passive-aggressive softening
-- Multi-paragraph walls for casual chat — keep it tight
-- Signing off with a name, "Best," "Cheers," or any formal closer
-- Bullet-point lists where a sentence would do (save bullets for technical explains only)
-- Overly polished grammar that removes personality
-- Dramatic kicker clauses tacked onto a sentence (", and nobody drew a single frame by hand"). They read as AI-written, so end the sentence at the fact
-- Naming who caused a bug ("came in with #19560", "added by @x") when writing up a cause. It reads as blame and pings them, so name the code and why it exists instead
-
-## Choosing the Right Archetype
-
-Read the situation:
-
-- Someone asks a yes/no question → **Quick Ack**
-- Reporting something you did or noticed → **FYI Drop**
-- Disagreeing or questioning → **Soft Pushback**
-- Explaining a system or debugging → **Technical Explain**
-- Asking someone to change behavior → **Directive (Warm)**
-- Joking around, reacting to something funny/absurd → **Banter**
-- Onboarding, encouragement, or wrapping up something meaningful → **Coaching / Warm Close**
-
-When the situation is ambiguous, default to casual and short. The carbon unit overwrites only exceptionally — they undershoot length and let the reader fill in context.
-
-Rewriting a draft the carbon unit supplied? Their facts, nouns, and claims are fixed. Reorder and cut, but add no detail they did not write, and ask when a sentence needs one.
-
-Sharing something (a demo, a doc, a PR)? Settle first whether the audience already saw it. If they did, skip the intro and recap of what it is, and lead with the new part.
+Lint every draft before showing or sending it, as `scripts/lint-draft.mjs` below says. Exit 1 lists each flagged sentence and its rule (comma splices, teasers, filler words, em dashes, kicker clauses, machine tells, corporate openers and closers, and on `--longform` vague quantities, hedges, emoji bullets and British forms). Delete or rewrite those sentences and rerun until it exits 0. Delete a comma-spliced sentence outright rather than repairing it, since it is usually a fluff acknowledgement ("Ty for all the detail, the screenshots help a lot.").
 
 ## Scripts
 
-- `scripts/lint-draft.mjs`: run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs <draft-file>` (or pipe the draft on stdin) on every draft meant for someone else, including text about to go to Slack, email, GitHub, or a forum, before showing or sending it. Exit 1 lists each flagged sentence and its rule (comma splices, teaser lines like "here's why", filler words, em dashes, kicker clauses, machine-written tells, corporate openers and closers); delete or rewrite those sentences and rerun until it exits 0. Delete a comma-spliced sentence outright rather than repairing it, since it is usually a fluff acknowledgement ("Ty for all the detail, the screenshots help a lot."). Long-form skills add `--longform`. Chat replies to the carbon unit are not drafts.
+- `scripts/lint-draft.mjs`: run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs <draft-file>` (or pipe the draft on stdin) on every draft; the published path adds `--longform`.

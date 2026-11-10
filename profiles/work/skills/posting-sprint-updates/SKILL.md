@@ -30,7 +30,7 @@ Teammates skim these in a minute. The user's first full draft ran 532 words and 
 
 ## Step 3: Draft
 
-Load `writing-in-voice` and write in it.
+Load `writing-in-voice` and write on its message path: the comment is a turn in the team's weekly thread, not a published piece.
 
 - Keep the template headings and its `>` prompt lines exactly as written.
 - Stay near 250 words, capped at 300. Aim for 3 to 5 progress bullets, 1 or 2 bets, and 2 to 4 plans.

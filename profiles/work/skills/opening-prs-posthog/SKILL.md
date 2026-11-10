@@ -1,6 +1,6 @@
 ---
 name: opening-prs-posthog
-description: "Extends /opening-prs on a work machine with PostHog's PR conventions, the writing-longform pass on the body, PostHog visual-evidence uploads, and a closing Slack message for the product area's channel. Use when /opening-prs loads work-machine extensions; invoke /opening-prs instead of this skill."
+description: "Extends /opening-prs on a work machine with PostHog's PR conventions, the published-path writing pass on the body, PostHog visual-evidence uploads, and a closing Slack message for the product area's channel. Use when /opening-prs loads work-machine extensions; invoke /opening-prs instead of this skill."
 ---
 
 # Open PR: PostHog
@@ -13,7 +13,7 @@ Follow [references/visual-evidence.md](references/visual-evidence.md) together w
 
 ## Step 5: prose
 
-Load `/writing-longform` beside `/writing-in-voice` before drafting any prose. Its work doc rules set the shape: answer first, numbers over vague quantities, and no machine-writing tells. Where it conflicts with `writing-in-voice`'s casual quirks, `writing-longform` wins.
+Draft the body on `writing-in-voice`'s published path. Its work doc rules set the shape: answer first, numbers over vague quantities, and no machine-writing tells.
 
 ## Step 7: Slack message
 

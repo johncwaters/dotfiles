@@ -1,6 +1,6 @@
-# Teaching guide template
+# Docs or tutorial template
 
-For pocket guides, tutorials, and docs pages that teach a product concept.
+For docs pages, tutorials, and pocket guides that teach a product concept.
 
 1. **Teach the mental model, not the setup tool.** Explain the concept so a reader who skipped the wizard, CLI, or template follows every page. Artifacts a setup tool created appear only as an optional, conditional example ("If you ran the wizard, …"), with the frame and running story kept independent of them.
 2. **Follow the concept's lifecycle** (for example, create, roll out, kill, measure, retire) rather than the steps one tool performed.

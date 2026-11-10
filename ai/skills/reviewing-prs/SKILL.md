@@ -55,6 +55,8 @@ Show the verdict and the finding counts by severity first, so the answer is info
 
 For a draft PR, say it is a draft and ask before posting.
 
+The comments post as the carbon unit, so write each one with `writing-in-voice` on its published path before showing them.
+
 ## Step 4: Post the review
 
 Post every finding with a real file and line as one batched review, not one API call per finding. Batching is not cosmetic: one review sends one notification, N individual comments send N.
