@@ -3,5 +3,5 @@ Prefer working in a dedicated git worktree; if the session did not start in one,
 </worktree>
 
 <posthog_writing>
-Writing or editing PostHog prose (posthog.com docs, handbook, tutorials, blog, changelog, RFCs, PR descriptions), even mid-coding-task: load the `writing-longform` skill (`~/.claude/skills/writing-longform/SKILL.md`) before the first draft, because its description alone misses edits that arrive inside a code task.
+Writing or editing prose posted as the carbon unit to a team or the public (GitHub issues, PR descriptions, issue and PR comments, review replies, posthog.com docs, handbook, tutorials, blog, changelog, RFCs; not commit messages), even mid-coding-task: load the `writing-longform` skill (`~/.claude/skills/writing-longform/SKILL.md`) before the first draft, because its description alone misses edits that arrive inside a code task.
 </posthog_writing>

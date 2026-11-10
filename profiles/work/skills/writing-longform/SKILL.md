@@ -1,11 +1,11 @@
 ---
 name: writing-longform
-description: "Drafts long-form writing in a Sorkin-meets-PostHog style, and edits or critiques it: blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, teaching guides (pocket guides, tutorials, docs pages), changelog entries, RFCs, proposals, design docs, PR descriptions, updates. Use when asked to write, outline, rewrite, tighten, or review one, for prose in a posthog.com `contents/` file or handbook page, or for \"make this punchier\". Slack, email, and texts go to writing-in-voice."
+description: "Drafts and edits prose posted as the carbon unit to a team or the public, in a Sorkin-meets-PostHog style: GitHub issues, PR descriptions, issue and PR comments, review replies, docs, tutorials, handbook pages, RFCs, design docs, proposals, blog posts, essays, launch and social posts, changelogs, post-mortems. Use when writing, rewriting, tightening, or reviewing one, even mid-code-task, for prose in a posthog.com `contents/` file, or for \"make this punchier\". Slack, email, and texts go to writing-in-voice."
 ---
 
 # Long-form writing
 
-Covers blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, teaching guides (pocket guides, tutorials, docs pages), PostHog content (posthog.com docs, handbook pages, tutorials, blog posts, changelog entries, RFCs), and work docs (proposals, design docs, PR descriptions, updates). The style uses intention and obstacle, rhythm, strong opinions, specifics, and no fluff.
+Covers blog posts, articles, newsletters, essays, LinkedIn or social posts, launch posts, post-mortems, teaching guides (pocket guides, tutorials, docs pages), PostHog content (posthog.com docs, handbook pages, tutorials, blog posts, changelog entries, RFCs), and work docs (proposals, design docs, PR descriptions, GitHub issues, issue and PR comments, review replies, updates). The style uses intention and obstacle, rhythm, strong opinions, specifics, and no fluff.
 
 Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies stakes, rhythm, and momentum; PostHog supplies opinions, candor, precision, and skimmable structure. Blogs lean on both. Teaching guides lead with the concept and spend no flourish. Work docs lead with the answer and spend at most one Sorkin flourish. When `writing-in-voice` also fires on a long-form piece, this skill's structure and mechanics win over its casual message quirks (typos, apostrophe plurals, emoticons, idk or lol), while the author's word choice and warmth can still carry over. A playful social post is the exception, covered under the post template.
 
@@ -25,7 +25,7 @@ Read the template that fits the piece:
 - [Blog or post](subskills/blog-or-post.md), including short and playful social posts.
 - [Teaching guide](subskills/teaching-guide.md) for pocket guides, tutorials, and docs pages.
 - Launch posts, pitches, announcements, and demo posts: load `storytelling` for the arc, then apply this skill's sentence rules.
-- Work docs: a PR description or status update leads with the answer and ends with the ask; a design doc, RFC, or proposal takes its shape from the `writing-design-docs` skill.
+- Work docs: a PR description, GitHub issue, comment, review reply, or status update leads with the answer and ends with the ask; a design doc, RFC, or proposal takes its shape from the `writing-design-docs` skill.
 
 ## Sentence rules
 
