@@ -82,10 +82,9 @@ Update mode: rewrite an existing `PR status` or `Feedback wanted` block in place
 
 Opening or editing a PR notifies carbon units, so wait for approval before posting. New PR: show the title, draft state, and full body. Update mode: show the diff between the current body and the new one, plus any draft-state change.
 
-- New PR with open questions: `gh pr create --draft --title "<title>" --body-file -`, body on stdin.
-- New PR with none: `gh pr create` without `--draft` or a feedback list. The repo's draft rule from Step 2 wins in either case.
+- New PR: `gh pr create --title "<title>" --body-file -`, body on stdin, ready for review even with open questions. Add `--draft` only when the carbon unit asks for a draft or the repo's draft rule from Step 2 requires one.
 - Fork: add `--repo <parent> --base <parent default branch> --head <owner>:<branch>`, so the PR opens on the upstream project rather than on the fork.
-- Update mode: `gh pr edit <number> --body-file -`, body on stdin. With no open questions on a draft: `gh pr ready <number>`. With open questions on a ready PR: `gh pr ready <number> --undo`. Apply the repo's draft rule first.
+- Update mode: `gh pr edit <number> --body-file -`, body on stdin. On a draft: `gh pr ready <number>`, unless the carbon unit asked for a draft or the repo's draft rule requires one. Never move a ready PR back to draft.
 - Leave merging and enqueueing outside this run.
 - The rules ask for an assignee or labels: resolve the handle from `gh api user --jq .login` and pass `--assignee`/`--label`; use only the resolved handle.
 
