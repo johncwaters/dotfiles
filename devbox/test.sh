@@ -21,10 +21,11 @@ printf 'coder %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 case "$1" in
   whoami)
     if [[ -f "$DOTFILES_TEST_STATE/logged-out" ]]; then printf 'keyring locked\n' >&2; exit 1; fi
+    if [[ -f "$DOTFILES_TEST_STATE/coder-outage" ]]; then printf 'error: unexpected non-JSON response "text/html"\n<title>502 Bad Gateway</title>\n' >&2; exit 1; fi
     printf '[{"url":"https://coder.example","username":"fixture"}]\n'
     ;;
   list)
-    if [[ -f "$DOTFILES_TEST_STATE/list-failed" ]]; then exit 1; fi
+    if [[ -f "$DOTFILES_TEST_STATE/list-failed" ]]; then printf '<title>504 Gateway Time-out</title>\n' >&2; exit 1; fi
     if [[ -f "$DOTFILES_TEST_STATE/no-workspace" ]]; then printf '[]\n'; exit; fi
     printf '[{"name":"devbox-fixture","owner_name":"fixture","outdated":%s,"latest_build":{"status":"%s","transition":"%s","job":{"completed_at":"%s"}}}]\n' \
       "$([[ -f "$DOTFILES_TEST_STATE/workspace-outdated" ]] && printf true || printf false)" \
@@ -209,6 +210,21 @@ check "logged-out ensure never connects" logLacks 'coder ssh'
 check "logged-out ensure never starts a box" logLacks 'coder start'
 rm -f "$stubState/logged-out"
 
+touch "$stubState/coder-outage"
+: > "$commandLog"
+outageEnsureStatus=0
+outageEnsureOutput="$(runDevbox ensure 2>&1)" || outageEnsureStatus=$?
+check "a Coder outage at whoami leaves ensure green for its next run" test "$outageEnsureStatus" -eq 0
+check "a Coder outage at whoami is named as an outage" \
+  outputHas "$outageEnsureOutput" 'devbox ensure: Coder unreachable; coder said: error: unexpected non-JSON response'
+check "a Coder outage at whoami never asks for a login" outputLacks "$outageEnsureOutput" 'coder login'
+check "a Coder outage at whoami never connects" logLacks 'coder ssh'
+outageInstallStatus=0
+outageInstallOutput="$(runInstall 2>&1)" || outageInstallStatus=$?
+check "a Coder outage warns in converge" test "$outageInstallStatus" -eq 1
+check "a Coder outage names its cause in converge" outputHas "$outageInstallOutput" 'Coder unreachable; coder said:'
+rm -f "$stubState/coder-outage"
+
 if [[ -z "$testNodePath" ]]; then
   printf '  skip workspace and config checks: node is unavailable on the test machine\n'
   reportTopicResults devbox
@@ -328,13 +344,26 @@ check "ensure SSH skips the CLI usage report" grep -qx disable "$stubState/ssh-u
 check "ensure runs the box dotfiles converge and repo sync after prepare and before provision" dotfilesConvergeSitsBetweenPrepareAndProvision
 check "ensure never starts a running workspace" logLacks 'coder start'
 
-for failureMarker in list-failed ssh-failed; do
-  touch "$stubState/$failureMarker"
-  ensureFailureStatus=0
-  runDevbox ensure >/dev/null 2>&1 || ensureFailureStatus=$?
-  check "ensure propagates $failureMarker" test "$ensureFailureStatus" -ne 0
-  rm -f "$stubState/$failureMarker"
-done
+touch "$stubState/ssh-failed"
+ensureFailureStatus=0
+runDevbox ensure >/dev/null 2>&1 || ensureFailureStatus=$?
+check "ensure propagates ssh-failed" test "$ensureFailureStatus" -ne 0
+rm -f "$stubState/ssh-failed"
+
+touch "$stubState/list-failed"
+: > "$commandLog"
+listOutageStatus=0
+listOutageOutput="$(runDevbox ensure 2>&1)" || listOutageStatus=$?
+check "a Coder outage at list leaves ensure green for its next run" test "$listOutageStatus" -eq 0
+check "a Coder outage at list is named as an outage with coder's own error" \
+  outputHas "$listOutageOutput" 'devbox ensure: Coder unreachable; coder list said: <title>504 Gateway Time-out</title>; retried next run'
+check "a Coder outage at list never connects" logLacks 'coder ssh'
+listOutageForwardStatus=0
+listOutageForwardError="$(runDevbox forward-agent 2>&1 >/dev/null)" || listOutageForwardStatus=$?
+check "a Coder outage ends the agent forward so launchd retries" test "$listOutageForwardStatus" -ne 0
+check "a Coder outage is named as an outage to the agent forward log" \
+  outputHas "$listOutageForwardError" 'devbox: Coder unreachable; coder list said:'
+rm -f "$stubState/list-failed"
 
 touch "$stubState/ssh-hangs"
 hungEnsureStatus=0
@@ -533,11 +562,14 @@ printf '6 03\n'
 STUB
 provideCommand date
 rm -f "$stubState/forward-ssh-pid"
+: > "$commandLog"
 forwardStatus=0
-runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work SSH_AUTH_SOCK="$stubState/agent.sock" \
-  bash -c 'source "$1/commands.bash"; devbox forward-agent' _ "$topicDirectory" 2>/dev/null || forwardStatus=$?
+outsideHoursForwardOutput="$(runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work SSH_AUTH_SOCK="$stubState/agent.sock" \
+  bash -c 'source "$1/commands.bash"; devbox forward-agent' _ "$topicDirectory" 2>&1)" || forwardStatus=$?
 check "agent forward outside weekday hours exits cleanly" test "$forwardStatus" -eq 0
 check "agent forward outside weekday hours never connects" test ! -e "$stubState/forward-ssh-pid"
+check "agent forward outside weekday hours never asks Coder anything" logLacks 'coder '
+check "agent forward outside weekday hours writes nothing to its log" test -z "$outsideHoursForwardOutput"
 forwardStatus=0
 runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work SSH_AUTH_SOCK="$stubState/agent.sock" \
   DEVBOX_FORWARD_HEARTBEAT_DEADLINE_SECONDS=1 DEVBOX_FORWARD_ANY_HOUR=1 \

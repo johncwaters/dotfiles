@@ -1,6 +1,8 @@
 devboxTopicDirectory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 dotfilesCheckout="${dotfilesRepo:-$(cd -- "$devboxTopicDirectory/.." && pwd)}"
 devboxLookupUnauthenticated=3
+devboxLookupOutage=4
+devboxCoderOutagePattern='Get "[^"]*": |non-JSON response|[Ii]nternal error|Bad Gateway|Gateway Time-out|Service Unavailable|shutting down|connection refused|connection reset|dial tcp|i/o timeout|handshake timeout|no such host|context deadline exceeded'
 devboxFallbackReleaseStatus=75
 devboxFailedBuildRetryDelaySeconds=1800
 source "$devboxTopicDirectory/../script/lib/profile.sh"
@@ -27,19 +29,24 @@ resolveDevboxWorkspace() {
     devboxSkipReason="Coder CLI absent"
     return 1
   fi
-  local identityJson whoamiErrorPath whoamiError
-  if ! whoamiErrorPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-coder-whoami.XXXXXX")"; then
-    printf 'devbox: cannot create a temporary file for coder whoami\n' >&2
+  local identityJson coderErrorPath whoamiError
+  if ! coderErrorPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-coder-error.XXXXXX")"; then
+    printf 'devbox: cannot create a temporary file for coder errors\n' >&2
     return 2
   fi
-  if ! identityJson="$("$devboxCoderPath" whoami --output json 2>"$whoamiErrorPath")"; then
-    whoamiError="$(tr -s '\n' ' ' < "$whoamiErrorPath")"
-    rm -f -- "$whoamiErrorPath"
+  if ! identityJson="$("$devboxCoderPath" whoami --output json 2>"$coderErrorPath")"; then
+    whoamiError="$(tr -s '\n' ' ' < "$coderErrorPath")"
+    whoamiError="${whoamiError% }"
+    rm -f -- "$coderErrorPath"
+    if [[ "$whoamiError" =~ $devboxCoderOutagePattern ]]; then
+      devboxSkipReason="Coder unreachable; coder said: $whoamiError"
+      return "$devboxLookupOutage"
+    fi
     devboxSkipReason="coder whoami failed; run coder login ${devboxDeploymentUrl}; coder said: ${whoamiError:-nothing}"
     return "$devboxLookupUnauthenticated"
   fi
-  rm -f -- "$whoamiErrorPath"
   if ! command -v node >/dev/null 2>&1; then
+    rm -f -- "$coderErrorPath"
     printf 'devbox: node is required to read Coder workspace metadata\n' >&2
     return 2
   fi
@@ -51,15 +58,20 @@ resolveDevboxWorkspace() {
     if (typeof identity.username !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(identity.username)) process.exit(1);
     console.log(identity.username);
   ')"; then
+    rm -f -- "$coderErrorPath"
     printf 'devbox: cannot read Coder username\n' >&2
     return 2
   fi
   devboxWorkspaceName="devbox-$coderUsername"
-  local workspacesJson
-  if ! workspacesJson="$("$devboxCoderPath" list --output json)"; then
-    printf 'devbox: cannot list Coder workspaces\n' >&2
-    return 2
+  local workspacesJson listError
+  if ! workspacesJson="$("$devboxCoderPath" list --output json 2>"$coderErrorPath")"; then
+    listError="$(tr -s '\n' ' ' < "$coderErrorPath")"
+    listError="${listError% }"
+    rm -f -- "$coderErrorPath"
+    devboxSkipReason="Coder unreachable; coder list said: ${listError:-nothing}"
+    return "$devboxLookupOutage"
   fi
+  rm -f -- "$coderErrorPath"
   local workspaceBuildSummary
   if ! workspaceBuildSummary="$(printf '%s' "$workspacesJson" | node -e '
     const workspaces = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
@@ -140,8 +152,6 @@ startDevbox() {
 }
 
 holdDevboxAgentForward() {
-  # Overnight DarkWakes reconnecting here bump Coder activity, so the devbox never autostops.
-  isDevboxForwardHour || return 0
   local forwardedAgentSocket
   forwardedAgentSocket="$(devboxForwardedAgentSocket)"
   if [[ -z "$forwardedAgentSocket" ]]; then
@@ -309,14 +319,19 @@ runDevboxCommand() {
       ;;
     *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure|forward-agent|collect [--diff|--accept <hash>]}\n' >&2; return 1 ;;
   esac
-  if [[ "$subcommand" == ensure ]] && ! isDevboxForwardHour; then
-    printf 'devbox ensure: skipped; outside working hours\n'
+  # Overnight DarkWakes reconnecting here bump Coder activity, so the devbox never autostops.
+  if [[ "$subcommand" == ensure || "$subcommand" == forward-agent ]] && ! isDevboxForwardHour; then
+    [[ "$subcommand" == forward-agent ]] || printf 'devbox ensure: skipped; outside working hours\n'
     return 0
   fi
   local lookupStatus=0
   resolveDevboxWorkspace || lookupStatus=$?
   if [[ "$subcommand" == ensure ]] && ((lookupStatus == 1)); then
     printf 'devbox ensure: skipped; %s\n' "$devboxSkipReason"
+    return 0
+  fi
+  if [[ "$subcommand" == ensure ]] && ((lookupStatus == devboxLookupOutage)); then
+    printf 'devbox ensure: %s; retried next run\n' "$devboxSkipReason"
     return 0
   fi
   if [[ "$subcommand" == ensure ]] && ((lookupStatus == devboxLookupUnauthenticated)); then

@@ -21,7 +21,7 @@ installDevbox() {
     return 0
   fi
   if ((lookupStatus != 0)); then
-    noteWarned "devbox" "workspace lookup failed"
+    noteWarned "devbox" "${devboxSkipReason:-workspace lookup failed}"
     return 0
   fi
   if [[ "$devboxWorkspaceIsOutdated" == 1 ]]; then
