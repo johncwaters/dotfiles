@@ -68,6 +68,7 @@ if ! readDevboxProfile; then
 fi
 installDevbox
 if isDarwin; then
+  rm -f -- "$(dotfilesStateDirectoryLocation)"/devbox-{ensure,forward-agent}.{stdout,stderr}.log
   installDarwinDevboxAgentWithoutStoppingTheTopic "devbox launch agent" dev.dotfiles.devbox.ensure "$dotfilesRepo/devbox/dotfiles-devbox-ensure.plist.template"
   installDarwinDevboxAgentWithoutStoppingTheTopic "devbox agent forward" dev.dotfiles.devbox.forward-agent "$dotfilesRepo/devbox/dotfiles-devbox-forward-agent.plist.template"
 fi

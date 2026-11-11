@@ -4,6 +4,7 @@ devboxLookupUnauthenticated=3
 devboxLookupOutage=4
 devboxCoderOutagePattern='Get "[^"]*": |non-JSON response|[Ii]nternal error|Bad Gateway|Gateway Time-out|Service Unavailable|shutting down|connection refused|connection reset|dial tcp|i/o timeout|handshake timeout|no such host|context deadline exceeded'
 devboxFallbackReleaseStatus=75
+devboxLogCapBytes="${DEVBOX_LOG_CAP_BYTES:-1048576}"
 devboxFailedBuildRetryDelaySeconds=1800
 source "$devboxTopicDirectory/../script/lib/profile.sh"
 
@@ -265,7 +266,40 @@ REMOTE
   fi
 )
 
+rotateDevboxJobLog() {
+  [[ -f "$DEVBOX_LOG_PATH" ]] || return 0
+  local logSizeBytes
+  logSizeBytes="$(wc -c < "$DEVBOX_LOG_PATH")" || return 0
+  ((logSizeBytes > devboxLogCapBytes)) || return 0
+  mv -f -- "$DEVBOX_LOG_PATH" "$DEVBOX_LOG_PATH.1"
+}
+
+stampDevboxJobLines() {
+  local jobLine
+  while IFS= read -r jobLine || [[ -n "$jobLine" ]]; do
+    if [[ "$jobLine" == '[present] '* ]]; then
+      continue
+    fi
+    printf '%(%Y-%m-%dT%H:%M:%S%z)T %s\n' -1 "$jobLine"
+  done
+}
+
+runDevboxJob() {
+  rotateDevboxJobLog
+  dispatchDevboxCommand "$@" 2>&1 | stampDevboxJobLines >> "$DEVBOX_LOG_PATH"
+  local jobStatuses=("${PIPESTATUS[@]}")
+  return "${jobStatuses[0]}"
+}
+
 runDevboxCommand() {
+  if [[ -n "${DEVBOX_LOG_PATH:-}" ]]; then
+    runDevboxJob "$@"
+    return
+  fi
+  dispatchDevboxCommand "$@"
+}
+
+dispatchDevboxCommand() {
   local subcommand="${1:-status}"
   if (($# > 0)); then shift; fi
   case "$subcommand" in

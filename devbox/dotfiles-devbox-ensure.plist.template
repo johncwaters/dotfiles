@@ -16,14 +16,16 @@
   <dict>
     <key>PATH</key>
     <string>{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>DEVBOX_LOG_PATH</key>
+    <string>{{STATE}}/devbox-ensure.log</string>
   </dict>
   <key>StartInterval</key>
   <integer>600</integer>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>{{STATE}}/devbox-ensure.stdout.log</string>
+  <string>{{STATE}}/devbox-ensure.log</string>
   <key>StandardErrorPath</key>
-  <string>{{STATE}}/devbox-ensure.stderr.log</string>
+  <string>{{STATE}}/devbox-ensure.log</string>
 </dict>
 </plist>

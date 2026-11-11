@@ -373,6 +373,30 @@ rm -f "$stubState/ssh-hangs"
 check "a hung coder ssh fails ensure" test "$hungEnsureStatus" -ne 0
 check "a hung coder ssh is killed at its deadline" outputHas "$hungEnsureError" 'coder ssh ran past 1 seconds; killed'
 
+jobLogPath="$stubState/devbox-ensure.log"
+rm -f "$jobLogPath" "$jobLogPath.1"
+jobOutput="$(runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 DEVBOX_LOG_PATH="$jobLogPath" \
+  bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory" 2>&1)"
+check "a launchd job writes nothing to launchd's own output" test -z "$jobOutput"
+check "a launchd job stamps every log line with its time" \
+  bash -c '[[ -s "$1" ]] && ! grep -qvE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4} " "$1"' _ "$jobLogPath"
+check "a launchd job keeps the lines that say something" grep -qF ' https://fixture.invalid/' "$jobLogPath"
+check "a launchd job drops unchanged present lines" bash -c '[[ -s "$1" ]] && ! grep -qF "[present]" "$1"' _ "$jobLogPath"
+printf 'line from the run before\n' >> "$jobLogPath"
+runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 DEVBOX_LOG_PATH="$jobLogPath" DEVBOX_LOG_CAP_BYTES=10 \
+  bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory" >/dev/null 2>&1
+check "a launchd job log past its cap moves to one older file" grep -qF 'line from the run before' "$jobLogPath.1"
+check "a launchd job starts a fresh log after rotating" bash -c '! grep -qF "line from the run before" "$1"' _ "$jobLogPath"
+rm -f "$jobLogPath" "$jobLogPath.1"
+touch "$stubState/list-failed"
+failedJobStatus=0
+failedJobOutput="$(runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 DEVBOX_LOG_PATH="$jobLogPath" \
+  bash -c 'source "$1/commands.bash"; devbox forward-agent' _ "$topicDirectory" 2>&1)" || failedJobStatus=$?
+check "a launchd job keeps the exit status of the command it logs" test "$failedJobStatus" -ne 0
+check "a failing launchd job logs its failure instead of printing it" \
+  bash -c '[[ -z "$1" ]] && grep -qE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+ devbox: Coder unreachable" "$2"' _ "$failedJobOutput" "$jobLogPath"
+rm -f "$stubState/list-failed" "$jobLogPath" "$jobLogPath.1"
+
 ensureUsageStatus=0
 runDevbox ensure extra >/dev/null 2>&1 || ensureUsageStatus=$?
 check "ensure rejects extra arguments" test "$ensureUsageStatus" -ne 0
@@ -413,6 +437,10 @@ runInstall >/dev/null
 check "linux never renders the devbox launch agent" test ! -e "$launchAgentPath"
 check "linux never calls launchctl" logLacks 'launchctl '
 
+mkdir -p "$sandbox/.local/state/dotfiles"
+for retiredLogName in devbox-ensure.stdout.log devbox-ensure.stderr.log devbox-forward-agent.stdout.log devbox-forward-agent.stderr.log; do
+  printf 'old\n' > "$sandbox/.local/state/dotfiles/$retiredLogName"
+done
 touch "$stubState/logged-out"
 : > "$commandLog"
 loggedOutDarwinStatus=0
@@ -424,10 +452,10 @@ check "a logged-out darwin install exits with its login warning" test "$loggedOu
 check "darwin invokes Homebrew bash" grep -qF "<string>$darwinHomebrewPrefix/bin/bash</string>" "$launchAgentPath"
 check "darwin invokes devbox through the dotfiles alias" \
   grep -qF "<string>$sandbox/.dotfiles/devbox/commands.bash</string>" "$launchAgentPath"
-check "darwin logs stdout under converge state" \
-  grep -qF "$sandbox/.local/state/dotfiles/devbox-ensure.stdout.log" "$launchAgentPath"
-check "darwin logs stderr under converge state" \
-  grep -qF "$sandbox/.local/state/dotfiles/devbox-ensure.stderr.log" "$launchAgentPath"
+check "darwin sends launchd output and the job log to one file under converge state" \
+  test "$(grep -cF "<string>$sandbox/.local/state/dotfiles/devbox-ensure.log</string>" "$launchAgentPath")" -eq 3
+check "darwin removes the retired per-stream devbox logs" \
+  bash -c '! compgen -G "$1/devbox-*.std*.log" >/dev/null' _ "$sandbox/.local/state/dotfiles"
 check "darwin supplies a PATH with Homebrew and Coder" \
   grep -qF "$darwinHomebrewPrefix/bin:$darwinHomebrewPrefix/sbin:$sandbox/.npm-global/bin:$sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin" "$launchAgentPath"
 check "darwin protects the rendered plist" test "$(fileModeOf "$launchAgentPath")" = 600

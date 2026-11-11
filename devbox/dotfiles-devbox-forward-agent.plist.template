@@ -16,6 +16,8 @@
   <dict>
     <key>PATH</key>
     <string>{{BREW}}/bin:{{BREW}}/sbin:{{HOME}}/.npm-global/bin:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>DEVBOX_LOG_PATH</key>
+    <string>{{STATE}}/devbox-forward-agent.log</string>
   </dict>
   <key>KeepAlive</key>
   <true/>
@@ -24,8 +26,8 @@
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>{{STATE}}/devbox-forward-agent.stdout.log</string>
+  <string>{{STATE}}/devbox-forward-agent.log</string>
   <key>StandardErrorPath</key>
-  <string>{{STATE}}/devbox-forward-agent.stderr.log</string>
+  <string>{{STATE}}/devbox-forward-agent.log</string>
 </dict>
 </plist>
