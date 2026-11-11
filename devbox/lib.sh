@@ -5,6 +5,7 @@ devboxLookupOutage=4
 devboxCoderOutagePattern='Get "[^"]*": |non-JSON response|[Ii]nternal error|Bad Gateway|Gateway Time-out|Service Unavailable|shutting down|connection refused|connection reset|dial tcp|i/o timeout|handshake timeout|no such host|context deadline exceeded'
 devboxFallbackReleaseStatus=75
 devboxLogCapBytes="${DEVBOX_LOG_CAP_BYTES:-1048576}"
+devboxEnsureAgentLabel=dev.dotfiles.devbox.ensure
 devboxFailedBuildRetryDelaySeconds=1800
 source "$devboxTopicDirectory/../script/lib/profile.sh"
 
@@ -274,20 +275,56 @@ rotateDevboxJobLog() {
   mv -f -- "$DEVBOX_LOG_PATH" "$DEVBOX_LOG_PATH.1"
 }
 
+notifyNewDevboxWarnings() {
+  declare -F noteWarned >/dev/null || source "$devboxTopicDirectory/../script/lib/log.sh"
+  declare -F writeDotfilesState >/dev/null || source "$devboxTopicDirectory/../script/lib/state.sh"
+  local currentWarnings savedWarnings newWarnings
+  currentWarnings="$(printf '%s\n' "$@" | LC_ALL=C sort -u | sed '/^$/d')"
+  savedWarnings="$(readDotfilesState devbox-warnings)" || savedWarnings=""
+  [[ "$currentWarnings" != "$savedWarnings" ]] || return 0
+  newWarnings="$(LC_ALL=C comm -13 <(printf '%s\n' "$savedWarnings") <(printf '%s\n' "$currentWarnings") | sed '/^$/d')"
+  writeDotfilesState devbox-warnings "$currentWarnings"
+  [[ -n "$newWarnings" ]] || return 0
+  local newWarningLines
+  mapfile -t newWarningLines <<< "$newWarnings"
+  osascript -e 'on run argv' -e 'display notification (item 2 of argv) with title (item 1 of argv)' -e 'end run' \
+    "devbox: ${#newWarningLines[@]} new warning(s)" "${newWarningLines[0]}" >/dev/null 2>&1 || true
+}
+
 stampDevboxJobLines() {
+  local boxWarningsPath="$1"
   local jobLine
+  local hasBoxReport=0
+  local boxWarnings=()
   while IFS= read -r jobLine || [[ -n "$jobLine" ]]; do
+    [[ "$jobLine" =~ ^\[[a-z]+\]\  ]] && hasBoxReport=1
+    [[ "$jobLine" == '[warned] '* ]] && boxWarnings+=("$jobLine")
     if [[ "$jobLine" == '[present] '* ]]; then
       continue
     fi
     printf '%(%Y-%m-%dT%H:%M:%S%z)T %s\n' -1 "$jobLine"
   done
+  ((hasBoxReport)) || return 0
+  printf '%s\n' "${boxWarnings[@]}" > "$boxWarningsPath"
+}
+
+notifyNewDevboxWarningsAfterFullRun() {
+  local jobStatus="$1" boxWarningsPath="$2"
+  [[ "${XPC_SERVICE_NAME:-}" == "$devboxEnsureAgentLabel" && -f "$boxWarningsPath" ]] || return 0
+  ((jobStatus == 0 || jobStatus == devboxFallbackReleaseStatus)) || return 0
+  local boxWarnings
+  mapfile -t boxWarnings < "$boxWarningsPath"
+  (notifyNewDevboxWarnings "${boxWarnings[@]}")
 }
 
 runDevboxJob() {
   rotateDevboxJobLog
-  dispatchDevboxCommand "$@" 2>&1 | stampDevboxJobLines >> "$DEVBOX_LOG_PATH"
+  local boxWarningsPath="$DEVBOX_LOG_PATH.warnings"
+  rm -f -- "$boxWarningsPath"
+  dispatchDevboxCommand "$@" 2>&1 | stampDevboxJobLines "$boxWarningsPath" >> "$DEVBOX_LOG_PATH"
   local jobStatuses=("${PIPESTATUS[@]}")
+  notifyNewDevboxWarningsAfterFullRun "${jobStatuses[0]}" "$boxWarningsPath" >> "$DEVBOX_LOG_PATH"
+  rm -f -- "$boxWarningsPath"
   return "${jobStatuses[0]}"
 }
 

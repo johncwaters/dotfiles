@@ -9,7 +9,7 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
 printf 'work\n' > "$DOTFILES_MARKER_PATH"
-linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste sh
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste sh sort comm
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -85,7 +85,7 @@ case "$1" in
     fi
     if [[ -f "$DOTFILES_TEST_STATE/provision-output" ]]; then
       cat "$DOTFILES_TEST_STATE/provision-output"
-      exit 0
+      exit "$(cat "$DOTFILES_TEST_STATE/provision-status" 2>/dev/null || printf 0)"
     fi
     printf '[present] fixture: provisioned\nhttps://fixture.invalid/\n'
     ;;
@@ -396,6 +396,46 @@ check "a launchd job keeps the exit status of the command it logs" test "$failed
 check "a failing launchd job logs its failure instead of printing it" \
   bash -c '[[ -z "$1" ]] && grep -qE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+ devbox: Coder unreachable" "$2"' _ "$failedJobOutput" "$jobLogPath"
 rm -f "$stubState/list-failed" "$jobLogPath" "$jobLogPath.1"
+
+writeStub osascript <<'STUB'
+#!/usr/bin/env bash
+printf 'osascript %s\n' "${*: -2}" >> "$DOTFILES_TEST_LOG"
+STUB
+provideCommand osascript
+runEnsureJobWithWarnings() {
+  printf '%s\n' "$@" > "$stubState/provision-output"
+  : > "$commandLog"
+  runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 DEVBOX_LOG_PATH="$jobLogPath" XPC_SERVICE_NAME=dev.dotfiles.devbox.ensure \
+    bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory" >/dev/null 2>&1 || return 0
+}
+runEnsureJobWithWarnings '[present] fixture: provisioned' '[warned] workbench: build failed'
+check "a new box warning raises one notification naming it" \
+  test "$(grep -cxF 'osascript devbox: 1 new warning(s) [warned] workbench: build failed' "$commandLog")" -eq 1
+runEnsureJobWithWarnings '[present] fixture: provisioned' '[warned] workbench: build failed'
+check "a repeated box warning raises no notification" logLacks 'osascript'
+runEnsureJobWithWarnings '[warned] workbench: build failed' '[warned] glimmervoid settings: cannot collect box config; nothing staged'
+check "only the warning absent from the last run is notified" \
+  grep -qxF 'osascript devbox: 1 new warning(s) [warned] glimmervoid settings: cannot collect box config; nothing staged' "$commandLog"
+touch "$stubState/list-failed"
+runEnsureJobWithWarnings '[present] fixture: provisioned'
+rm -f "$stubState/list-failed"
+runEnsureJobWithWarnings '[warned] workbench: build failed' '[warned] glimmervoid settings: cannot collect box config; nothing staged'
+check "a run that reached no box keeps the saved warnings" logLacks 'osascript'
+printf '1\n' > "$stubState/provision-status"
+runEnsureJobWithWarnings '[warned] provision: another run is in progress'
+rm -f "$stubState/provision-status"
+runEnsureJobWithWarnings '[warned] workbench: build failed'
+check "a run that stopped part way keeps the saved warnings" logLacks 'osascript'
+runEnsureJobWithWarnings '[present] fixture: provisioned'
+runEnsureJobWithWarnings '[warned] workbench: build failed'
+check "a cleared warning that returns is notified again" grep -qF 'osascript devbox: 1 new warning(s) [warned] workbench: build failed' "$commandLog"
+: > "$commandLog"
+printf '[warned] fixture: only by hand\n' > "$stubState/provision-output"
+runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 DEVBOX_LOG_PATH="$jobLogPath" \
+  bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory" >/dev/null 2>&1
+check "only the launchd ensure job notifies" logLacks 'osascript'
+withdrawCommand osascript
+rm -f "$stubState/provision-output" "$jobLogPath" "$jobLogPath.1" "$sandbox/.local/state/dotfiles/devbox-warnings"
 
 ensureUsageStatus=0
 runDevbox ensure extra >/dev/null 2>&1 || ensureUsageStatus=$?
