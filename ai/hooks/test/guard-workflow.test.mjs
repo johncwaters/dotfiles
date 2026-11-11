@@ -292,6 +292,9 @@ test("the first repo edit of a session without /specifying is denied once", () =
     ["git -C . apply x.patch", repository],
     ["sed -i 's/\"/x/' a.txt; echo \"z\"", repository],
     ["sed -i --expression=s/one/two/ a.txt", repository],
+    ["sed -i '' 's/one/two/' a.txt", repository],
+    [`sed -i 's/one two/three/' a.txt ${path.join(sandboxHome, "scratch.txt")}`, repository],
+    [`cd ${outsideRepository} && sed -i 's/one two/three/' ${path.join(repository, "a.txt")}`, repository],
     ["perl -0pi -e 's/one/two/' a.txt", repository],
     [`(cd ${repository} && sed -i s/one/two/ a.txt)`, outsideRepository],
     [`cd ${repository}\nsed -i s/one/two/ a.txt`, outsideRepository],
@@ -309,7 +312,7 @@ test("the first repo edit of a session without /specifying is denied once", () =
   ]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd })).decision, "deny", command);
   }
-  for (const command of ["sed -n 1p a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee", `export S=${sandboxHome}; D="$S/notes"; cat > "$D/scratch.txt"`, `S=${sandboxHome}; cat > $S/tl.py <<'EOF'\nfor row in rows:  # (each)\n    print(row)\nEOF`, `S=${sandboxHome}; mkdir -p $S/libs && cd $S/libs\necho x > gbm.c`]) {
+  for (const command of ["sed -n 1p a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, `sed -i '' 's#one#two#' ${path.join(sandboxHome, "scratch.txt")}`, `sed -i 's/one two/three/' ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee", `export S=${sandboxHome}; D="$S/notes"; cat > "$D/scratch.txt"`, `S=${sandboxHome}; cat > $S/tl.py <<'EOF'\nfor row in rows:  # (each)\n    print(row)\nEOF`, `S=${sandboxHome}; mkdir -p $S/libs && cd $S/libs\necho x > gbm.c`]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd: repository })).decision, "allow", command);
   }
   assert.equal(decisionFor(bashCall("sed -i s/one/two/ a.txt", afterDenial, { cwd: repository })).decision, "allow");

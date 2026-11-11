@@ -78,6 +78,8 @@ const CONDITIONAL_OR_SUBSHELL_CODE = /(?:^|[\s;&|])(?:if|then|elif|else|fi|for|w
 const STATEMENT_SEPARATOR = /^(?:&&|\|\||;;|[;\n|&])/;
 const SHELL_RUNS_NEXT_WORD = /(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval)\s*$/;
 const IN_PLACE_FLAG = /^(?:-[A-Za-z0-9]*i|--in-place)/;
+const SUFFIX_TAKING_IN_PLACE_FLAG = /^-[A-Za-z0-9]*i$/;
+const EMPTY_SINGLE_QUOTED_WORD = "''";
 const SCRIPT_TAKING_FLAG = /^(?:--expression|-f|--file)$/;
 const ATTACHED_SCRIPT_FLAG = /^(?:--(?:expression|file)=|-e.)/;
 const INLINE_SCRIPT_FLAG = /^-[A-Za-z0-9]*e$/;
@@ -455,6 +457,10 @@ function editedFileWords(commandName, argumentWords) {
     }
     if (SCRIPT_TAKING_FLAG.test(word) || (INLINE_SCRIPT_FLAG.test(word) && !word.includes("i"))) {
       hasInlineScript = true;
+      index += 1;
+      continue;
+    }
+    if (SUFFIX_TAKING_IN_PLACE_FLAG.test(word) && argumentWords[index + 1] === EMPTY_SINGLE_QUOTED_WORD) {
       index += 1;
       continue;
     }
