@@ -442,7 +442,7 @@ test("mainline is never deleted as a feature branch", () => {
   }
 });
 
-test("a rerun after a promotion conflict resolved by hand keeps the remote branch until --prune-remote-branch is passed", () => {
+test("a rerun after a promotion conflict resolved by hand deletes the remote branch whose conflict main edited underneath", () => {
   const featureBranch = "glimmervoid/session/hand-resolved-conflict";
   const { origin, seed, local } = seedOrigin(featureBranch);
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();
@@ -464,14 +464,12 @@ test("a rerun after a promotion conflict resolved by hand keeps the remote branc
     const rerun = land(local, ["--promote"], "", ledgerEnv);
 
     assert.deepEqual(rerun.result.promoted, ["main"]);
-    assert.equal(rerun.result.deletedRemoteBranches, undefined);
-    assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), conflicted.result.commit);
-    assert.match((rerun.result.warnings as string[]).join("\n"), /rerun land\.ts --promote --prune-remote-branch/);
-
-    const pruningRerun = land(local, ["--promote", "--prune-remote-branch"], "", ledgerEnv);
-
-    assert.deepEqual(pruningRerun.result.deletedRemoteBranches, [featureBranch]);
+    assert.deepEqual(rerun.result.deletedRemoteBranches, [featureBranch]);
     assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", featureBranch]), 0);
+    assert.match(
+      (rerun.result.warnings as string[]).join("\n"),
+      new RegExp(`held ${String(conflicted.result.commit).slice(0, 12)}, matched on main through a conflict resolved by hand; .* recover them from ${String(conflicted.result.commit)}`),
+    );
   } finally {
     cleanup(origin, seed, local, ledgerDirectory);
   }
@@ -544,7 +542,7 @@ test("a later landing keeps a remote branch whose commit main reverted and then 
   }
 });
 
-test("a later landing with --prune-remote-branch keeps a remote branch whose amended commit main lacks behind an ours-merge marker", () => {
+test("a later landing keeps a remote branch whose amended commit main lacks behind an ours-merge marker", () => {
   const featureBranch = "glimmervoid/session/amended-behind-marker";
   const { origin, seed, local } = seedOrigin(featureBranch);
   try {
@@ -559,7 +557,7 @@ test("a later landing with --prune-remote-branch keeps a remote branch whose ame
     runGit(local, ["fetch", "-q", "origin"]);
     runGit(local, ["reset", "-q", "--hard", "origin/main"]);
     writeFile(local, "other.txt", "later work\n");
-    const later = land(local, ["--promote", "--prune-remote-branch"], VALID_MESSAGE);
+    const later = land(local, ["--promote"], VALID_MESSAGE);
 
     assert.deepEqual(later.result.promoted, ["main"]);
     assert.equal(later.result.deletedRemoteBranches, undefined);
@@ -569,7 +567,7 @@ test("a later landing with --prune-remote-branch keeps a remote branch whose ame
   }
 });
 
-test("a rerun with --prune-remote-branch after a promotion conflict keeps the remote branch when the conflicted commit was dropped instead of carried", () => {
+test("a rerun after a promotion conflict keeps the remote branch when the conflicted commit was dropped instead of carried", () => {
   const featureBranch = "glimmervoid/session/dropped-conflict";
   const { origin, seed, local } = seedOrigin(featureBranch);
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();
@@ -585,7 +583,7 @@ test("a rerun with --prune-remote-branch after a promotion conflict keeps the re
     runGit(local, ["fetch", "-q", "origin"]);
     runGit(local, ["reset", "-q", "--hard", "origin/main"]);
     writeFile(local, "other.txt", "unrelated\n");
-    const rerun = land(local, ["--promote", "--prune-remote-branch"], VALID_MESSAGE, ledgerEnv);
+    const rerun = land(local, ["--promote"], VALID_MESSAGE, ledgerEnv);
 
     assert.deepEqual(rerun.result.promoted, ["main"]);
     assert.equal(rerun.result.deletedRemoteBranches, undefined);

@@ -115,7 +115,6 @@ function unreviewedCommitFindings(git: Git, revisionArgs: string[]): string[] {
 type Arguments = {
   promote: boolean;
   noPush: boolean;
-  pruneRemoteBranch: boolean;
   pushRetryDelayMs: number;
   messageFile: string | null;
 };
@@ -124,7 +123,6 @@ function parseArguments(argv: string[]): Arguments {
   const parsed: Arguments = {
     promote: false,
     noPush: false,
-    pruneRemoteBranch: false,
     pushRetryDelayMs: 2000,
     messageFile: null,
   };
@@ -136,10 +134,6 @@ function parseArguments(argv: string[]): Arguments {
     }
     if (argument === "--no-push") {
       parsed.noPush = true;
-      continue;
-    }
-    if (argument === "--prune-remote-branch") {
-      parsed.pruneRemoteBranch = true;
       continue;
     }
     if (argument === "--message-file") {
@@ -173,6 +167,7 @@ class Landing {
   private readonly warnings: string[] = [];
   private readonly promoted: string[] = [];
   private readonly deletedRemoteBranches: string[] = [];
+  private commitsCarriedThroughConflicts: string[] = [];
   private denylistedStagedFiles: string[] = [];
   private homePathStagedLines: string[] = [];
   private conflicts: string[] = [];
@@ -740,20 +735,16 @@ class Landing {
       this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
       return;
     }
-    const wasLocalTip = this.wasLocalTipOf(featureBranch, remoteFeatureTip);
-    if (wasLocalTip && this.isEveryCommitCarriedOnto(mainlineRef, remoteFeatureTip, this.config.pruneRemoteBranch)) {
+    if (this.wasLocalTipOf(featureBranch, remoteFeatureTip) && this.isEveryCommitCarriedOnto(mainlineRef, remoteFeatureTip)) {
       this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
+      this.warnAboutCommitsCarriedThroughConflicts(featureBranch, remoteFeatureTip, mainline);
       return;
     }
 
     const preRebaseTip = this.preRebaseFeatureTip;
     if (preRebaseTip === null || !this.git.isAncestor(remoteFeatureTip, preRebaseTip)) {
-      const wouldPruneOnRequest = !this.config.pruneRemoteBranch && wasLocalTip && this.isEveryCommitCarriedOnto(mainlineRef, remoteFeatureTip, true);
-      const pruneHint = !wouldPruneOnRequest
-        ? ""
-        : `; when every one of them was carried to ${mainline} through a conflict resolved by hand, rerun land.ts --promote --prune-remote-branch`;
       this.warnings.push(
-        `remote branch ${featureBranch} at ${remoteFeatureTip} carries commits this landing never rebased from ${preRebaseTip ?? "an unresolved head"}; keeping branch${pruneHint}`,
+        `remote branch ${featureBranch} at ${remoteFeatureTip} carries commits this landing never rebased from ${preRebaseTip ?? "an unresolved head"}; keeping branch`,
       );
       return;
     }
@@ -776,12 +767,22 @@ class Landing {
     this.pruneMergedRemoteBranch(featureBranch, remoteFeatureTip, mainline, mainlineTip);
   }
 
+  private warnAboutCommitsCarriedThroughConflicts(featureBranch: string, remoteFeatureTip: string, mainline: string): void {
+    if (this.commitsCarriedThroughConflicts.length === 0 || !this.deletedRemoteBranches.includes(featureBranch)) {
+      return;
+    }
+    const shortCommits = this.commitsCarriedThroughConflicts.map((commit) => commit.slice(0, 12)).join(", ");
+    this.warnings.push(
+      `deleted remote branch ${featureBranch} held ${shortCommits}, matched on ${mainline} through a conflict resolved by hand; if that resolution dropped any of their lines, recover them from ${remoteFeatureTip} in this checkout's reflog`,
+    );
+  }
+
   private wasLocalTipOf(featureBranch: string, remoteFeatureTip: string): boolean {
     const pastLocalTips = this.git.run(["rev-list", "--walk-reflogs", "--ignore-missing", `refs/heads/${featureBranch}`]);
     return pastLocalTips.code === 0 && pastLocalTips.stdout.split("\n").includes(remoteFeatureTip);
   }
 
-  private isEveryCommitCarriedOnto(mainlineRef: string, remoteFeatureTip: string, acceptsHandResolvedConflicts: boolean): boolean {
+  private isEveryCommitCarriedOnto(mainlineRef: string, remoteFeatureTip: string): boolean {
     const commitsIn = (revisionArgs: string[]) => {
       const listing = this.git.run(["-c", "core.quotePath=false", "log", "--date=raw", "--no-renames", "--diff-merges=first-parent", "--name-only", "--format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s", ...revisionArgs]);
       if (listing.code !== 0) {
@@ -796,6 +797,7 @@ class Landing {
         return { commit, parents, isEmptyMergeMarker, authorship: [...authorship, ...changedPaths.sort()].join("\x1f") };
       });
     };
+    this.commitsCarriedThroughConflicts = [];
     const unmergedCommits = commitsIn([`${mainlineRef}..${remoteFeatureTip}`]);
     const mainlineTreeOid = this.git.treeOid(mainlineRef);
     if (unmergedCommits === null || mainlineTreeOid === null) {
@@ -825,7 +827,7 @@ class Landing {
       if (carriedCommit === undefined || carriedTreeOid === null) {
         return false;
       }
-      if (!this.reappliesOnto(carriedCommit, carriedTreeOid, commit, acceptsHandResolvedConflicts)) {
+      if (!this.reappliesOnto(carriedCommit, carriedTreeOid, commit)) {
         return false;
       }
       const inversePatchId = this.git.inversePatchId(carriedCommit);
@@ -838,13 +840,13 @@ class Landing {
     });
   }
 
-  private reappliesOnto(carriedCommit: string, carriedTreeOid: string, commit: string, acceptsHandResolvedConflicts: boolean): boolean {
+  private reappliesOnto(carriedCommit: string, carriedTreeOid: string, commit: string): boolean {
     const appliedOntoCarried = this.git.mergeTree(carriedCommit, commit, `${commit}^`);
     if (appliedOntoCarried.code === 0) {
       return isTreeContained(appliedOntoCarried.stdout, carriedTreeOid);
     }
     const [writtenTreeLine = "", ...linesAfterTree] = appliedOntoCarried.stdout.split("\n");
-    if (!acceptsHandResolvedConflicts || appliedOntoCarried.code !== MERGE_TREE_CONFLICT_EXIT_CODE || !WRITTEN_TREE_LINE.test(writtenTreeLine)) {
+    if (appliedOntoCarried.code !== MERGE_TREE_CONFLICT_EXIT_CODE || !WRITTEN_TREE_LINE.test(writtenTreeLine)) {
       return false;
     }
     const conflictedFileLines = linesAfterTree.slice(0, linesAfterTree.indexOf(""));
@@ -854,7 +856,11 @@ class Landing {
     }
     const editedUnderneath = this.git.run(["-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", `${commit}^`, `${carriedCommit}^`, "--", ...conflictedPaths.map((conflictedPath) => `:(literal)${conflictedPath}`)]);
     const pathsEditedUnderneath = editedUnderneath.code === 0 ? editedUnderneath.stdout.split("\n") : [];
-    return conflictedPaths.every((conflictedPath) => pathsEditedUnderneath.includes(conflictedPath));
+    if (!conflictedPaths.every((conflictedPath) => pathsEditedUnderneath.includes(conflictedPath))) {
+      return false;
+    }
+    this.commitsCarriedThroughConflicts.push(commit);
+    return true;
   }
 
   private pruneMergedRemoteBranch(
