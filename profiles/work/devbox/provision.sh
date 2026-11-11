@@ -80,6 +80,7 @@ syncDevboxRepositories() {
 
 devboxWorkbenchStateDirectory="$HOME/.local/state/dotfiles/devbox-workbench"
 devboxWorkbenchLog="$HOME/.local/state/dotfiles/devbox-workbench.log"
+devboxWorkbenchFailedBuildRetryMinutes="${DEVBOX_WORKBENCH_FAILED_BUILD_RETRY_MINUTES:-360}"
 
 installDevboxPhrocs() {
   if command -v phrocs >/dev/null 2>&1; then
@@ -167,14 +168,21 @@ buildDevboxWorkbenchRepository() {
   local buildCommand="$2"
   local repositoryPath="$HOME/Projects/$repositoryName"
   local builtCommitPath="$devboxWorkbenchStateDirectory/$repositoryName.built"
-  local headCommit
+  local headCommit builtRecord
   headCommit="$(git -C "$repositoryPath" rev-parse HEAD 2>/dev/null)" || headCommit=""
   if [[ -z "$headCommit" ]]; then
     reportDevboxItem warned "$repositoryName build" "~/Projects/$repositoryName is not cloned; retried next run"
     return 0
   fi
-  if [[ -d "$repositoryPath/node_modules" && "$(cat "$builtCommitPath" 2>/dev/null)" == "$headCommit" ]]; then
+  builtRecord="$(cat "$builtCommitPath" 2>/dev/null)" || builtRecord=""
+  if [[ -d "$repositoryPath/node_modules" && "$builtRecord" == "$headCommit" ]]; then
     reportDevboxItem present "$repositoryName build" "${headCommit:0:12}"
+    return 0
+  fi
+  local failedBuildWarning="$buildCommand failed; retried on a new commit or after $devboxWorkbenchFailedBuildRetryMinutes minutes; see ~/.local/state/dotfiles/devbox-workbench.log"
+  local failedBuildRecord="failed $headCommit $buildCommand"
+  if [[ "$builtRecord" == "$failedBuildRecord" && -n "$(find "$builtCommitPath" -mmin "-$devboxWorkbenchFailedBuildRetryMinutes" 2>/dev/null)" ]]; then
+    reportDevboxItem warned "$repositoryName build" "$failedBuildWarning"
     return 0
   fi
   if (cd -- "$repositoryPath" && bash -c "$buildCommand") >> "$devboxWorkbenchLog" 2>&1 < /dev/null 9>&-; then
@@ -182,8 +190,8 @@ buildDevboxWorkbenchRepository() {
     reportDevboxItem installed "$repositoryName build" "${headCommit:0:12}"
     return 0
   fi
-  rm -f -- "$builtCommitPath"
-  reportDevboxItem warned "$repositoryName build" "$buildCommand failed; retried next run; see ~/.local/state/dotfiles/devbox-workbench.log"
+  printf '%s\n' "$failedBuildRecord" > "$builtCommitPath"
+  reportDevboxItem warned "$repositoryName build" "$failedBuildWarning"
 }
 
 installDevboxWizardWorkbench() {

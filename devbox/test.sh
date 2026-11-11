@@ -9,7 +9,7 @@ source "$repoRoot/test/harness.sh"
 
 startStubbedSandbox devbox
 printf 'work\n' > "$DOTFILES_MARKER_PATH"
-linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste sh sort comm
+linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste sh sort comm find
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
@@ -1585,6 +1585,43 @@ check "a workbench rerun reports both files present and writes nothing" bash -c 
 personalAuthOutput="$(runProvisionFunction installDevboxPersonalGitAuth)"
 check "missing personal auth warns once without printing credentials" \
   test "$(grep -cF '[warned] personal GitHub token: GH_PERSONAL_TOKEN not set; johncwaters repos will 403' <<< "$personalAuthOutput")" -eq 1
+buildRepositoryPath="$sandbox/Projects/backoff-fixture"
+buildRecordPath="$sandbox/.local/state/dotfiles/devbox-workbench/backoff-fixture.built"
+buildAttemptsPath="$stubState/build-attempts"
+"$testGitPath" init -q "$buildRepositoryPath"
+commitBuildFixture() {
+  "$testGitPath" -C "$buildRepositoryPath" -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false \
+    commit -q --allow-empty -m "$1"
+}
+runBuildFixture() {
+  runProvisionFunction buildDevboxWorkbenchRepository backoff-fixture "printf x >> '$buildAttemptsPath'; $1"
+}
+buildAttemptCount() {
+  wc -c < "$buildAttemptsPath" | tr -d ' '
+}
+commitBuildFixture first
+: > "$buildAttemptsPath"
+firstFailedBuildOutput="$(runBuildFixture false)"
+failedBuildCommit="$("$testGitPath" -C "$buildRepositoryPath" rev-parse HEAD)"
+check "a failed build records the commit it failed at" bash -c '[[ "$(cat "$1")" == "failed $2 "* ]]' _ "$buildRecordPath" "$failedBuildCommit"
+repeatedFailedBuildOutput="$(runBuildFixture false)"
+check "a failed build is not rerun at the same commit inside the retry window" test "$(buildAttemptCount)" -eq 1
+check "a skipped failed build repeats the same warning" test "$firstFailedBuildOutput" = "$repeatedFailedBuildOutput"
+check "a failed build warning names when it is retried" \
+  outputHas "$firstFailedBuildOutput" 'failed; retried on a new commit or after 360 minutes'
+runBuildFixture 'false || false' >/dev/null
+check "a failed build is retried when its build command changes" test "$(buildAttemptCount)" -eq 2
+touch -t 202001010000 "$buildRecordPath"
+runBuildFixture 'false || false' >/dev/null
+check "a failed build is retried once the retry window passes" test "$(buildAttemptCount)" -eq 3
+commitBuildFixture second
+runBuildFixture 'false || false' >/dev/null
+check "a failed build is retried at a new commit" test "$(buildAttemptCount)" -eq 4
+mkdir -p "$buildRepositoryPath/node_modules"
+commitBuildFixture third
+runBuildFixture true >/dev/null
+check "a passing build replaces the failed record with its commit" \
+  bash -c '[[ "$(cat "$1")" == "$("$2" -C "$3" rev-parse HEAD)" ]]' _ "$buildRecordPath" "$testGitPath" "$buildRepositoryPath"
 credentialHelperPath="$sandbox/.local/bin/git-credential-personal"
 check "personal auth uses a path-scoped helper and useHttpPath" \
   "$testGitPath" config --file "$sandbox/.gitconfig" --get credential.https://github.com/johncwaters/.useHttpPath
