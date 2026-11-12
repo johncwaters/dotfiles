@@ -63,3 +63,7 @@ here.
   those units survived adversarial simplification; the validator refuses a stamp once the
   units ready for work differ from that list, because a stamp says nothing about a unit no
   challenger saw. An unstamped design spec is not ready to be cut into tickets.
+- **extension**: An installed skill named `<base>-<suffix>` that adds one machine's
+  conventions to the base skill. The base loads every extension listed among the available
+  skills before its first step and applies each section at the step it names. Extensions
+  win over the base's defaults, and a repo's own rules win over extensions.

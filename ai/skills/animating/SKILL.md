@@ -27,7 +27,7 @@ Then the subskill for the kind being made, which adds to every step above:
 
 ## Extensions
 
-Each installed skill whose name starts with `animating-` extends this one with a machine's conventions. Load every one listed among your available skills before step 1, then apply each section it adds at the step that section names. Extensions win over this skill's defaults.
+Load every `animating-` extension before step 1. Terms: extension. Defined in `~/.dotfiles/GLOSSARY.md`.
 
 ## Scripts
 

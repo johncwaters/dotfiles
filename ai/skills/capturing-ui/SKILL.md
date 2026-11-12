@@ -9,7 +9,7 @@ Capture only real UI: the product's own code, on its own dev server or in a harn
 
 ## Extensions
 
-Each installed skill whose name starts with `capturing-ui-` extends this one with a machine's conventions. Load every one listed among your available skills before capturing, then apply each section it adds at the section of this skill it names. Extensions win over this skill's defaults, and the repo's own screenshot or reviewer guide wins over extensions.
+Load every `capturing-ui-` extension before capturing; the repo's own screenshot or reviewer guide wins over them. Terms: extension. Defined in `~/.dotfiles/GLOSSARY.md`.
 
 ## Screenshots
 
