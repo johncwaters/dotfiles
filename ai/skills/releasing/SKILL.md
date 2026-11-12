@@ -7,7 +7,7 @@ description: Executes a versioned release for the current repo using its .claude
 
 Profile-driven release runbook. All repo-specific knowledge lives in one tracked file per repo: `.claude/release-profile.json`. Use evidenced facts only: a required field that is absent or contradicts the repo state stops the release.
 
-No program enforces the profile checks below; you apply them, and every check is blocking.
+No program enforces the Step 1 and Step 2 checks; you apply them, and every check is blocking unless it says it warns. `publish.ts` enforces only the push-time checks: profile `release_from` and `tag_format` present, tag matches `tag_format`, tag annotated, branches allowed, tag on the `release_from` tip.
 
 ## Step 1: Load or derive the profile
 
