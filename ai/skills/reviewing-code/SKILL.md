@@ -1,6 +1,6 @@
 ---
 name: reviewing-code
-description: Reviews diffs as the internal engine. Pins an immutable object, calls swarming-reviews, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only except its REVIEW_FILE, with no git history changes, posts, or repeat passes. Use when /gating-reviews or /reviewing-prs invokes the engine; direct requests route through those entry points.
+description: Reviews diffs as the internal engine. Pins an immutable object, runs the qa-swarm lanes, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only except its REVIEW_FILE, with no git history changes, posts, or repeat passes. Use when /gating-reviews or /reviewing-prs invokes the engine; direct requests route through those entry points.
 ---
 
 # Code Review
@@ -21,38 +21,27 @@ One pass. Pin, find, triage, judge, return. A change gets this pass once, so it 
 
 ## Step 1: Pin the target
 
-Pin only to an immutable object. `swarming-reviews` runs lanes concurrently for minutes, and `git diff --cached` re-reads the index on every call, so an edit or a `git add` mid-review silently hands later lanes a different diff.
+Pin only to an immutable object. Lanes run concurrently for minutes, and `git diff --cached` re-reads the index on every call, so an edit or a `git add` mid-review silently hands later lanes a different diff.
 
 - **staged**: `TREE=$(git write-tree)`, then `REVIEW_CMD="git diff HEAD $TREE"`. `write-tree` freezes the current index as a tree object without touching the index, the refs, or the stash stack
 
-- **working**: snapshot through a throwaway index, keeping the live index intact. Use `git add -A` only against the throwaway index; using the real index stages what the carbon unit left unstaged, and the next commit quietly carries it
-
-```
-REVIEW_INDEX=$(mktemp)
-cp "$(git rev-parse --git-dir)/index" "$REVIEW_INDEX"
-GIT_INDEX_FILE="$REVIEW_INDEX" git add -A
-TREE=$(GIT_INDEX_FILE="$REVIEW_INDEX" git write-tree)
-rm -f "$REVIEW_INDEX"
-REVIEW_CMD="git diff HEAD $TREE"
-```
-
-`mktemp` and not `mktemp -u`: the `-u` form only reserves a name, so another local process can land a symlink there first and have the `cp` overwrite its target. A file, not a directory, because the Safety Net denies `rm -rf` on a variable.
+- **working**: `TREE=$(node "$HOME/.claude/skills/landing/stamp.ts" pin)`, then `REVIEW_CMD="git diff HEAD $TREE"`. It snapshots through a throwaway index, so the live index stays intact. A non-zero exit or empty `TREE` means the target could not be pinned: return `FAILED`, since `git diff HEAD ` reads the live tree
 
 - **branch or pull request**: resolve `BASE_SHA` and `HEAD_SHA`, then `REVIEW_CMD="git diff <BASE_SHA>..<HEAD_SHA>"`. Both are already immutable
 
-## Step 2: Call `swarming-reviews`
+## Step 2: Find
 
-Invoke `/swarming-reviews` with the pinned `REVIEW_CMD`, the repo path, the caller's context verbatim, the changed-file set, `findingCap: null` when `uncapped`, and all lanes when `allLanes`.
+Run `node "$HOME/.claude/skills/reviewing-code/scripts/route-lanes.mjs" --review-cmd "$REVIEW_CMD" --repo <repo path> -- <changed files>` (`--all-lanes` when `allLanes`). Exit 2 means an unreadable diff: return `FAILED`. Refused: use `{lanes: ['code'], filesByLane: {code: <changed files>}}`; the workflow router widens it.
 
-Route all finding through `swarming-reviews` rather than spawning a reviewer agent directly, so there is exactly one place that knows which lanes exist and when they trigger.
+Call `Workflow({name: 'qa-swarm', args: {reviewCmd, repoPath, context, changedFiles, ruleLanes}})` with its JSON as `ruleLanes`, the caller's context verbatim, and `findingCap: null` when `uncapped`. Always call by `name`: the `Workflow(qa-swarm)` allow rule matches named runs only. To re-run a dead retry under `resumeFromRunId`, pass a new `retryAttemptId`. No Workflow tool: read `~/.claude/workflows/qa-swarm.js`, spawn its rule lanes in one message, and converge by its rules.
 
-`swarming-reviews` reporting a blocking lane death is a failed review. Return `VERDICT: FAILED` with whatever findings did arrive and a summary naming the dead lane. Return FAILED rather than APPROVE on a dead lane, and always include the `VERDICT` line: a caller parsing for it would hang or guess.
+A result whose first line is `LANE_DEATH:` is a failed review. Return `VERDICT: FAILED` with whatever findings did arrive and a summary naming the dead lane, and always include the `VERDICT` line: a caller parsing for it would hang or guess.
 
 ## Step 3: Triage
 
 Every finding leaves this step with exactly one disposition. A finding with none is a bug in the run, not an acceptable outcome.
 
-Before applying severity rules, remove any finding whose `file` is outside the changed-file set, or whose line is untouched by the diff and describes a pre-existing defect. The scope hook's PostToolUse note on each lane result names both kinds mechanically, as `outside the current diff` and `lines the diff did not change`; a finding it names survives only when its body attributes the defect to a changed line. That note is authoritative only for a `working` target, where the hook's HEAD-versus-tree diff is the pinned diff. A `staged` target pins `git write-tree` of the index while the hook keeps diffing the live tree, so an unstaged edit above a staged defect shifts its line and the note calls a correct finding unchanged; a branch or pull request target describes the wrong tree outright, and a clean checkout leaves the note naming every finding file. Ignore it entirely for both and apply the prose rule above on its own. Mention all such removals only in `OVERALL_SUMMARY`, in at most one sentence, excluding them from `STRUCTURED_FINDINGS`. Severity does not rescue an out-of-scope finding. Then, unless `uncapped`, keep at most 10 findings per lane, highest severity first. Set the `TRUNCATED` line of the return to the union of the lanes `swarming-reviews`'s `truncated lanes:` phrase names and the lanes this cap dropped findings from, so the caller can tell a swept diff from a capped one. The union makes the line true: every lane caps itself first, so reading `TRUNCATED` off this cap alone reports `none` for the swarm's own overflow.
+Remove a finding whose line the diff did not change and whose body describes a pre-existing defect rather than one a changed line causes, and count removals in one `OVERALL_SUMMARY` sentence; severity does not rescue it. The scope hook's note on a lane result names such lines for a `working` target only; ignore it for other targets, where it diffs the wrong tree. Set `TRUNCATED` to the lanes the swarm's `truncated lanes:` phrase names.
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
@@ -62,12 +51,11 @@ Before applying severity rules, remove any finding whose `file` is outside the c
 
 Rules that decide the hard cases:
 
-- `swarming-reviews` drops every row without a `Proof:` label, so the label's presence is settled before triage and its content is what triage reads. A proof that narrates what a caller could do, with no command output and no quoted lines, is a `NIT` below HIGH and `AMBIGUOUS` at HIGH or CRITICAL: the writer needs a run or quote to recheck the defect.
+- qa-swarm drops every row without a `Proof:` label, so the label's presence is settled before triage and its content is what triage reads. A proof that narrates what a caller could do, with no command output and no quoted lines, is a `NIT` below HIGH and `AMBIGUOUS` at HIGH or CRITICAL: the writer needs a run or quote to recheck the defect.
 - A finding whose `body` carries `Confidence: low` is ineligible for `ACTIONABLE`. Only a `contested:` merge carries it now. It is `AMBIGUOUS` if it would block, `NIT` if it would not.
 - A `convergent:` finding is `ACTIONABLE` if its fix is bounded and one of its parts carries a re-runnable proof. Agreement between lanes confirms a proof; it requires one.
 - A CRITICAL or HIGH finding is ineligible for `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
 - A CRITICAL finding needing an architecture call is `AMBIGUOUS`.
-- A finding tagged `code/scale`, or carrying a `convergent:` tag that names it, whose fix is a local rewrite inside the changed-file set — a flat-array index or a keyed lookup when keys are sparse, a single pass, a bottom-up table, a structure-of-arrays layout, or hoisting a query out of a loop — is `ACTIONABLE` at HIGH and above. One whose fix needs a schema, index, pagination contract, or data-model change is a design decision and is `AMBIGUOUS` at HIGH and above, with both readings stated.
 
 ## Step 4: Verdict
 
@@ -82,7 +70,7 @@ The tier is the highest severity still standing after triage and dedup:
 
 Highest-severity-wins rather than a count-weighted score, because CRITICAL and HIGH block outright. Counts go in the summary, where they inform without moving the gate.
 
-A fifth value, `FAILED`, means the review could not be completed: `swarming-reviews` reported a blocking lane death, or the target could not be pinned. It is not a judgement about the code. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
+A fifth value, `FAILED`, means the review could not be completed: qa-swarm returned `LANE_DEATH:`, or the target could not be pinned. It is not a judgement about the code. A caller treats it exactly as it treats `BLOCKED`, except that re-running is worth trying once because the cause is usually a dead process rather than a defect.
 
 State the verdict and the count of surviving `ACTIONABLE` findings at HIGH or higher on separate lines in the summary.
 
@@ -105,10 +93,14 @@ Nothing found: `VERDICT: APPROVE`, `ACTIONABLE: 0`, and `(none)` as the `STRUCTU
 
 Write the return to `review-<pinned id>.txt` in the scratchpad and name it in `REVIEW_FILE`: callers pass the path, since Safety Net blocks review text in a Bash command.
 
-`VERDICT` and `ACTIONABLE` come first so a caller can gate on two lines without parsing the block. A looping caller gates on `ACTIONABLE`; a landing caller gates on `VERDICT`; both are needed because they can disagree. `TRUNCATED` names every lane whose findings a cap dropped, its own or the lane's, or `none`, and it is machine-readable rather than a summary sentence because the caller reports it: nothing afterwards sweeps for the overflow a cap dropped.
+`VERDICT` comes first so a caller can gate on one line without parsing the block. `TRUNCATED` names every lane whose findings a cap dropped, or `none`, and it is machine-readable because the caller reports it: nothing afterwards sweeps for the overflow a cap dropped.
 
-The summary states: the pinned tree or SHA range, changed-file set, file and line counts, which lanes ran and which degraded, the count per severity, the count per disposition, and `swarming-reviews`'s `Dropped unproven` count. Then stop. No recommendation about what to do next, and no offer to fix anything.
+The summary states: the pinned tree or SHA range, changed-file set, file and line counts, which lanes ran and which degraded, the count per severity, the count per disposition, and qa-swarm's `Dropped unproven` count. Then stop. No recommendation about what to do next, and no offer to fix anything.
 
 ## Token discipline
 
-Expense should land on lanes, not on this skill's own reasoning. Everything here is bookkeeping over a block `swarming-reviews` already produced: pinning, one classification per finding, one table lookup. Re-reading the diff to second-guess a lane means the lane prompt was wrong.
+Expense should land on lanes, not on this skill's own reasoning. Everything here is bookkeeping over a block qa-swarm already produced: pinning, one classification per finding, one table lookup. Re-reading the diff to second-guess a lane means the lane prompt was wrong.
+
+## Scripts
+
+- `scripts/route-lanes.mjs`: picks rule lanes from changed paths and lines; run in Step 2.

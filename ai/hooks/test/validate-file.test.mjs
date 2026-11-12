@@ -121,8 +121,7 @@ test("review-ladder writes cannot grow across runtime, alias, and worktree paths
     "skills/gating-reviews/SKILL.md",
     "skills/gating-reviews/subskills/review.md",
     "skills/reviewing-code/SKILL.md",
-    "skills/swarming-reviews/SKILL.md",
-    "skills/gating-reviews/subskills/fix.md",
+      "skills/gating-reviews/subskills/fix.md",
     "workflows/qa-swarm.js",
   ];
   const ladderRoots = [".claude", ".dotfiles/ai", "worktree/ai"];
@@ -201,7 +200,7 @@ test("new review-ladder files and other skill files may grow", () => {
 });
 
 test("review-ladder growth is measured in UTF-8 bytes", () => {
-  const filePath = path.join(validatorHome, "bytes/skills/swarming-reviews/SKILL.md");
+  const filePath = path.join(validatorHome, "bytes/skills/reviewing-code/SKILL.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, "a");
   assert.match(readDenialReason(validateWrite({ file_path: filePath, content: "\u00e9" })), /2 bytes, prior 1/);

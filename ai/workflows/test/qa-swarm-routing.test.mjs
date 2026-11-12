@@ -245,7 +245,7 @@ test('route-lanes picks the same lanes from a pinned diff on every run, docs alo
   fs.appendFileSync(path.join(repoPath, 'README.md'), 'more\n')
   git('add', '-A')
   git('commit', '-qm', 'change')
-  const routeLanesScript = path.join(import.meta.dirname, '../../skills/swarming-reviews/scripts/route-lanes.mjs')
+  const routeLanesScript = path.join(import.meta.dirname, '../../skills/reviewing-code/scripts/route-lanes.mjs')
   const routeLanes = (reviewCmd, changedFiles, extraFlags = []) => JSON.parse(execFileSync(process.execPath, [routeLanesScript, '--review-cmd', reviewCmd, '--repo', repoPath, ...extraFlags, '--', ...changedFiles], { encoding: 'utf8' }))
 
   const codeChange = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'])

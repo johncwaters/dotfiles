@@ -17,11 +17,13 @@ import {
   writeStamp,
 } from "./lib/stamp.ts";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const BROWSER_CODE_FAILED_EXIT_CODE = 30;
 const UI_EVIDENCE_MISSING_EXIT_CODE = 31;
-const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--ui-evidence <screenshot> | --no-ui-evidence <reason>] | verify | clear`;
+const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--ui-evidence <screenshot> | --no-ui-evidence <reason>] | verify | clear | pin`;
 
 function releaseBaseRef(git: Git): string | null {
   const { mainline } = readResolvedPolicy(git);
@@ -135,6 +137,27 @@ if (command === "verify") {
 }
 if (command === "clear") {
   releaseBranch(git, releaseBaseRef(git));
+  process.exit(0);
+}
+function snapshotWorkingTree(scratchIndexPath: string): string | null {
+  try {
+    return git.workingTreeOid(scratchIndexPath);
+  } catch {
+    return null;
+  }
+}
+
+if (command === "pin") {
+  const scratchDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "review-pin-"));
+  try {
+    const tree = snapshotWorkingTree(path.join(scratchDirectory, "index"));
+    if (tree === null) {
+      fail("could not snapshot the working tree");
+    }
+    process.stdout.write(`${tree}\n`);
+  } finally {
+    fs.rmSync(scratchDirectory, { recursive: true, force: true });
+  }
   process.exit(0);
 }
 fail(`unknown command ${command ?? "(none)"}`);
