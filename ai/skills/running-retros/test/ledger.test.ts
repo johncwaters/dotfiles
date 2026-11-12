@@ -27,7 +27,7 @@ function sighting(sessionId: string, lessonKey = "bash-stash-denied", explicit =
 function report(): RetroReport {
   return { v: 1, generatedAt: "2026-10-14T12:00:00Z", sessionIds: ["session-one"], outcome: "proposals",
     proposals: [{ id: "proposal-one", lessonKey: "bash-stash-denied", target: "ai/hooks/guard.mjs", changeKind: "hook",
-      summary: "Respect the stash restriction", incidents: [{ sessionId: "session-one", line: 4, kind: "permission-denial" }] }], reported: [] };
+      summary: "Respect the stash restriction", pairedRetirement: "none: no prose restates the stash denial", incidents: [{ sessionId: "session-one", line: 4, kind: "permission-denial" }] }], reported: [] };
 }
 function runCli(script: string, argumentsList: string[]) {
   return spawnSync(process.execPath, [join(import.meta.dirname, "..", script), ...argumentsList], { encoding: "utf8", timeout: 5000 });
@@ -55,7 +55,7 @@ test("replacing a session's sightings is idempotent and preserves foreign and ga
   ok(readFileSync(ledgerPath, "utf8").includes(foreignLines));
 }));
 
-test("validate-report CLI accepts a valid report and rejects six proposals", () => withLedger((directory) => {
+test("validate-report CLI accepts a valid report and rejects six proposals or a hook naming no retired prose", () => withLedger((directory) => {
   const reportPath = join(directory, "report.json");
   const validReport = report();
   writeFileSync(reportPath, JSON.stringify(validReport));
@@ -69,9 +69,15 @@ test("validate-report CLI accepts a valid report and rejects six proposals", () 
   const invalidProcess = runCli("validate-report.ts", [reportPath]);
   equal(invalidProcess.status, 1, invalidProcess.stdout + invalidProcess.stderr);
   ok(JSON.parse(invalidProcess.stdout).errors.some((error: string) => error.startsWith("proposals:")));
+  const { pairedRetirement: _retiredProse, ...hookNamingNoProse } = proposal;
+  validReport.proposals = [hookNamingNoProse];
+  writeFileSync(reportPath, JSON.stringify(validReport));
+  const hookProcess = runCli("validate-report.ts", [reportPath]);
+  equal(hookProcess.status, 1, hookProcess.stdout + hookProcess.stderr);
+  ok(JSON.parse(hookProcess.stdout).errors.some((error: string) => error.startsWith("proposals[0].pairedRetirement:")));
 }));
 
-test("record-run and show persist pending proposals and reviewed sessions without rerun duplicates", () => withLedger((directory) => {
+test("record-run and show persist pending proposals with their paired retirement and reviewed sessions without rerun duplicates", () => withLedger((directory) => {
   const session = { sessionId: "session-one", transcriptPath: "/transcripts/session-one.jsonl", repo: "/repo", incidentCount: 1, counts: { "permission-denial": 1 } };
   ok(recordSession({ ...session, v: 1, kind: "session", at: "2026-10-13T12:00:00Z", reviewed: false }));
   equal(JSON.parse(runCli("ledger.ts", ["show", "--repo", "/repo"]).stdout).unreviewedSessions.length, 1);
@@ -88,6 +94,7 @@ test("record-run and show persist pending proposals and reviewed sessions withou
     const shown = JSON.parse(showProcess.stdout);
     equal(shown.pendingProposals.length, 1);
     equal(shown.pendingProposals[0].id, "proposal-one");
+    equal(shown.pendingProposals[0].pairedRetirement, "none: no prose restates the stash denial");
     deepEqual(shown.unreviewedSessions, []);
     deepEqual(shown.knownLessonKeys, ["bash-stash-denied"]);
     equal(shown.readyLessons.length, 1);

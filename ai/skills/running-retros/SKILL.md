@@ -17,17 +17,6 @@ Most sessions teach nothing durable, and saying so is a good outcome. A lesson e
 /running-retros --since <YYYY-MM-DD>      every session since that date
 ```
 
-Scripts live beside this file:
-
-```
-node ~/.claude/skills/running-retros/digest.ts <session-id|transcript.jsonl> [--no-git]
-node ~/.claude/skills/running-retros/digest.ts --since <YYYY-MM-DD> [--no-git]
-node ~/.claude/skills/running-retros/ledger.ts show [--repo <abs path>]
-node ~/.claude/skills/running-retros/ledger.ts record-run <run.json>
-node ~/.claude/skills/running-retros/ledger.ts set-status <proposal-id> applied|declined
-node ~/.claude/skills/running-retros/validate-report.ts <report.json>
-```
-
 Write every intermediate file only to the scratchpad directory, keeping repos free of intermediates.
 
 ## Step 1: Digest
@@ -38,7 +27,7 @@ Write every intermediate file only to the scratchpad directory, keeping repos fr
 
 ## Step 2: Judge in a fresh context
 
-Judge the work only in a fresh context outside the session that did it. Spawn one `general-purpose` agent with `model: "opus"` (Claude only, excluding Codex: digests carry transcript excerpts that may hold secrets). Its prompt carries only these, as file paths it reads itself: the digest file, the `ledger.ts show` output file, and the brief below; excluding candidate incidents or conclusions of your own, which anchor the judge. Its `Scope:` is reading those files plus the config named in the brief; `Out of scope:` is editing anything; `Definition of done:` is a run file at a scratch path that `validate-report.ts` accepts.
+Judge the work only in a fresh context outside the session that did it. Spawn one `general-purpose` agent (Claude only, excluding Codex: digests carry transcript excerpts that may hold secrets). Its prompt carries only these, as file paths it reads itself: the digest file, the `ledger.ts show` output file, and the brief below; excluding candidate incidents or conclusions of your own, which anchor the judge. It reads those files plus the config named in the brief, edits nothing, and is done when `validate-report.ts` accepts its run file at a scratch path.
 
 Judge brief:
 
@@ -49,7 +38,7 @@ Judge brief:
 - Discard incidents that are the setup working: a hook denying what it exists to deny, a permission prompt the carbon unit wanted, a test failing on a real bug, a one-off typo. Discard what belongs to the task, not the setup.
 - A lesson becomes a proposal only when, counting this run's sightings, it spans two sessions or is explicit (the ledger's `readyLessons` lists those already ready). The rest are recorded as sightings only.
 - Read the config the proposal would touch before proposing: `~/.dotfiles/ai/AGENTS.md`, `~/.dotfiles/ai/MODELS.md`, `~/.dotfiles/ai/skills/`, `~/.dotfiles/ai/hooks/`, `~/.dotfiles/ai/agents/`, `~/.dotfiles/ai/settings.base.json`, `~/.dotfiles/profiles/<name>/AGENTS.md`, and the session repo's AGENTS.md nearest the code involved. Propose nothing the config already says unless the proposal is to enforce it.
-- Pick the strongest form that would have prevented the incidents: a hook or test first (a rule the agent already broke once as prose needs enforcement, not rewording), then a skill edit, then an AGENTS.md line in the file nearest the code it governs. Agent rules go in AGENTS.md files only, profile-only rules in `profiles/<name>/AGENTS.md`, keeping CLAUDE.md free of agent rules.
+- Pick the strongest form that would have prevented the incidents: a hook or test first (a rule the agent already broke once as prose needs enforcement, not rewording), then a skill edit, then an AGENTS.md line in the file nearest the code it governs. A hook replaces its prose rather than joining it: its `pairedRetirement` names the skill or AGENTS.md prose its denial message restates, or `none: <reason>`. Agent rules go in AGENTS.md files only, profile-only rules in `profiles/<name>/AGENTS.md`, keeping CLAUDE.md free of agent rules.
 - Propose a `retirement` when the session shows a rule, skill step, or hook is dead (its code is gone, a test now pins it) or caused the friction.
 - An `agents-line` whose target sits at its byte cap (`~/.dotfiles/ai/hooks/validate-file.mjs` denies growth there) carries `pairedRetirement` naming the rule it retires in the same file; without one, drop the proposal. Keep live rules intact rather than trimming their words to fit.
 - Bugs in tools outside the config (Glimmervoid, Claude Code, a CLI) go only in `reported` with an `owner`, outside proposals. Failures in the config repo itself, such as its own failing tests, go only in sightings or proposals, outside `reported`.
@@ -66,20 +55,22 @@ Run `validate-report.ts` on the result; on errors, send the errors back to the s
 
 Show the proposals from this run plus every pending one from `ledger.ts show`: number, `changeKind`, `target`, summary, and the incidents behind it as `session:line`. List `reported` items separately as things to file elsewhere.
 
-Ask with AskUserQuestion, `multiSelect: true`, one option per proposal, offering at most sixteen per round: this run's first, then the newest pending. The tool takes at most four questions of two to four options each, so spread the offered proposals until no question holds a single option, and ask a lone proposal as an apply or decline pair. An offered proposal left unpicked is `declined` with `set-status`; say so, since a declined lesson can resurface only through new sightings. A proposal not offered stays `pending` for the next round; say how many.
+Ask with AskUserQuestion, `multiSelect: true`, one option per proposal, offering at most sixteen per round: this run's first, then the newest pending; a lone proposal is an apply or decline pair. An offered proposal left unpicked is `declined` with `set-status`; say so, since a declined lesson can resurface only through new sightings. A proposal not offered stays `pending` for the next round; say how many.
 
 ## Step 5: Apply
 
 1. Group picks by target repository. For the dotfiles, work in a fresh worktree off mainline, keeping `~/.dotfiles` itself untouched: `git -C ~/.dotfiles worktree add <scratchpad>/retro-dotfiles -b retro/<date>-<short id> origin/main`. For the session repo, use a worktree the same way unless this session is already in one with a clean tree.
-2. Hand that repository's picks to `/specifying` in that worktree as one request, naming each proposal id and asking for each change as its proposal states, smallest form first; a hook comes with its test under `ai/hooks/test/` and its row in `ai/hooks/AGENTS.md`. Its build reviews and lands every ticket.
+2. Hand that repository's picks to `/specifying` in that worktree as one request, naming each proposal id and asking for each change as its proposal states, smallest form first; a hook comes with its test under `ai/hooks/test/` and its row in `ai/hooks/AGENTS.md`, and deletes the prose its `pairedRetirement` names. Its build reviews and lands every ticket.
 3. Mark a proposal `applied` with `set-status` once the ticket implementing it lands. One whose ticket did not land stays `pending` with the reason reported.
 4. Undo is `git revert` of that commit; say which commit holds which proposal.
 
 ## Scripts
 
-- `digest.ts`: Summarizes session transcripts; run in Step 1 before judging.
-- `ledger.ts`: Shows lessons, records runs, and sets proposal status; run for judging context, recording, and picks.
-- `validate-report.ts`: Validates the judge's run file; run before recording it.
+Run from `~/.claude/skills/running-retros/` with `node`.
+
+- `digest.ts`: `digest.ts <session-id|transcript.jsonl> [--no-git]` or `digest.ts --since <YYYY-MM-DD> [--no-git]` summarizes transcripts in Step 1.
+- `ledger.ts`: `ledger.ts show [--repo <abs path>]`, `record-run <run.json>`, and `set-status <proposal-id> applied|declined` for judging context, recording, and picks.
+- `validate-report.ts`: `validate-report.ts <report.json>` validates the judge's run file before recording it.
 
 ## Hand off
 

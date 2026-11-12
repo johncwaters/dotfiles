@@ -48,6 +48,8 @@ function validateProposal(value: unknown, path: string, errors: string[]): void 
   if (!isChangeKind(value.changeKind)) errors.push(`${path}.changeKind: must be hook, test, skill-edit, agents-line, or retirement`);
   if (!isSummary(value.summary)) errors.push(`${path}.summary: must be one line of at most 200 characters`);
   if (Object.hasOwn(value, "pairedRetirement") && !isSummary(value.pairedRetirement)) errors.push(`${path}.pairedRetirement: must name the retired rule in one line of at most 200 characters`);
+  if (typeof value.pairedRetirement === "string" && /^none\b/i.test(value.pairedRetirement) && !/^none: \S/.test(value.pairedRetirement)) errors.push(`${path}.pairedRetirement: write 'none: <reason>' with the reason`);
+  if (value.changeKind === "hook" && !Object.hasOwn(value, "pairedRetirement")) errors.push(`${path}.pairedRetirement: a hook proposal names the prose its denial message restates, which its ticket deletes, or 'none: <why no prose restates it>'`);
   if (!Array.isArray(value.incidents) || value.incidents.length === 0) {
     errors.push(`${path}.incidents: must contain at least one source incident`);
     return;

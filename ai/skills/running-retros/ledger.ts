@@ -86,6 +86,7 @@ function recordRun(run: RetroRun, options: Arguments): void {
     sessionIds: [...new Set(proposal.incidents.map((incident) => incident.sessionId))],
     target: proposal.target, changeKind: proposal.changeKind, summary: proposal.summary,
     origin: "focus", status: "pending",
+    ...(proposal.pairedRetirement === undefined ? {} : { pairedRetirement: proposal.pairedRetirement }),
   }));
   if (!recordProposals(proposals, options.ledger)) {
     fail(["proposals: could not append ledger proposals"]);

@@ -16,7 +16,7 @@ export const CHANGE_KINDS = ["hook", "test", "skill-edit", "agents-line", "retir
 export type ProposalEntry = {
   v: 1; kind: "proposal"; at: string; id: string; lessonKey: string; sessionIds: string[];
   target: string; changeKind: (typeof CHANGE_KINDS)[number];
-  summary: string; origin: "focus"; status: "pending" | "applied" | "declined";
+  summary: string; origin: "focus"; status: "pending" | "applied" | "declined"; pairedRetirement?: string;
 };
 type RetroEntry = SessionEntry | SightingEntry | ProposalEntry;
 type RetroLedger = { sessions: SessionEntry[]; sightings: SightingEntry[]; proposals: ProposalEntry[] };
@@ -64,10 +64,11 @@ export function isSightingEntry(value: unknown): value is SightingEntry {
     && typeof value.explicit === "boolean";
 }
 export function isProposalEntry(value: unknown): value is ProposalEntry {
-  if (!hasEntryFields(value, "proposal", ["id", "lessonKey", "sessionIds", "target", "changeKind", "summary", "origin", "status"])) return false;
+  if (!hasEntryFields(value, "proposal", ["id", "lessonKey", "sessionIds", "target", "changeKind", "summary", "origin", "status", "pairedRetirement"])) return false;
   return isText(value.id) && isLessonKey(value.lessonKey) && isStringList(value.sessionIds) && value.sessionIds.length > 0
     && isText(value.target) && isChangeKind(value.changeKind)
     && isSummary(value.summary) && value.origin === "focus"
+    && (!Object.hasOwn(value, "pairedRetirement") || isSummary(value.pairedRetirement))
     && typeof value.status === "string" && ["pending", "applied", "declined"].includes(value.status);
 }
 export function retroLedgerPath(): string {
