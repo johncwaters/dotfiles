@@ -11,19 +11,6 @@ Run `node ~/.claude/skills/securing-browser-code/check.ts [--json] [repo]`. It e
 
 Fix each failure in the target repo as ordinary work under that repo's review gate; the script only reports. Before calling a failure a false flag, trace the failing file upstream (why the repo tracks it, whether anything serves or references it): a file nothing ships is deleted or stripped in the target repo, and `check.ts` changes only when it misjudges a file the repo really ships.
 
-## Fixes by check
-
-- `exact-pin`: every direct dependency in every `package.json` names one version. Install with `--save-exact` and commit `"save-exact": true` in `.npmrc`, so a later install keeps it.
-- `lockfile`: one committed lockfile covers each `package.json`. Keep the lockfile of the package manager CI and deploy use and delete the other.
-- `frozen-install`: CI and deploy install from the lockfile as is: `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`, `bun install --frozen-lockfile`. It reads GitHub workflows and composite actions, `.gitlab-ci.yml`, `netlify.toml`, `vercel.json`, and Dockerfiles; a repo with no install command in any of them fails, because the platform default may rewrite the lockfile.
-- `script-integrity`: a cross-origin `<script src>` carries `integrity` and `crossorigin`, or the code is bundled. A PostHog snippet install (`/static/array.js` or `loader.js`) uses the snippet from posthog-js 1.445.0 or later with the pinned hashes from its `integrity.json`; an npm install needs neither.
-- `csp-missing`: each package shipping browser code is covered by an enforced `Content-Security-Policy`, declared inside that package or in a root `netlify.toml`, `vercel.json`, or `_headers`. A `Content-Security-Policy-Report-Only` alone fails, since it blocks nothing.
-- `csp-unsafe`: `script-src` (or `default-src` without one) grants neither `'unsafe-eval'` nor a bare `'unsafe-inline'`. Inline scripts get a per-response nonce or a sha256 hash; `'unsafe-inline'` beside one is ignored by browsers and passes.
-- `runtime-loading` (posthog): `posthog.init` or a `<PostHogProvider apiKey>` passes `disable_external_dependency_loading: true`, and the app imports the extensions it uses (`posthog-js/dist/recorder`, surveys, ...) so they ship in the bundle instead of loading from the CDN.
-- `secret-literal`: no SDK secret is committed outside tests and `.example` files: a PostHog `phx_` personal key, a Stripe or Clerk `sk_`/`rk_` key or `whsec_` webhook secret, a Supabase `sb_secret_` key or `service_role` JWT. It runs in every repo, browser code or not. Revoke a committed one first, since it stays in git history, then read its replacement from a server-side environment variable.
-- `public-secret`: no server-only SDK secret's env name (`STRIPE_SECRET_KEY`, `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CONVEX_DEPLOY_KEY`, `POSTHOG_PERSONAL_API_KEY`, ...) carries a client prefix (`NEXT_PUBLIC_`, `VITE_`, `PUBLIC_`, `EXPO_PUBLIC_`, ...), which inlines it into the browser bundle. Rename it, read it only in server code, and rotate it if a build shipped it.
-- `waiver-reason`: a waiver needs a reason a reviewer can judge.
-
 ## Live check
 
 A declared policy counts only once the host reads the file declaring it, so the audit also fetches each deployed site's root and prints `NOTE live-csp <url> ...` when it serves no enforced policy or one `csp-unsafe` would fail. The exit code and gate blocking follow failures alone, since a fix cannot be served before it lands; gates probe only repos the carbon unit owns, since any checkout can name the URL, and record notes on the stamp. The probe refuses loopback, private, and link-local addresses on every redirect hop. Sites come from a tracked `.browser-sdk-sites.json` (a JSON array of URLs; `[]` turns the probe off), else from an `astro.config` `site`, the `homepage` of a `package.json` shipping browser code, or a `CNAME`.

@@ -33,33 +33,12 @@ the warning names which. Run `land.ts` without `--promote`; an invalid policy al
 
 ## Step 2: write the message
 
-You write the message; nothing generates it for you. The convention:
-
-```
-<type>(<scope>): <description>
-
-Body paragraph explaining the why.
-
-Constraint: ...
-Rejected: ...
-Directive: ...
-Confidence: high|medium|low
-Scope-risk: narrow|moderate|broad
-Not-tested: ...
-Ticket: <spec-slug>/<ticket-id>
-```
-
-`type` is one of feat, fix, refactor, chore, docs, test, style, perf, build, ci.
-`description` is one line, 72 characters or fewer, no trailing period. Trailers are
-optional as a block, but a message that carries any trailer must carry `Confidence` and
-must carry `Scope-risk`; `Constraint`, `Rejected`, `Directive`, and `Not-tested` are
-included only when they apply (the stamp from Step 1: its `unverifiedFindings`
-go in `Not-tested`, which keeps `Confidence` below `high`, its `preexistingFailures` in
-`Constraint`, and each live MEDIUM+ in the body), and `Ticket` only on the commit that lands one ticket of an intent, where a resumed build reads it to find the tickets left. Omit the trailer block only for a genuinely trivial change (a
-version bump with no logic change); a header-only message is refused unless its type is `chore`.
-Check a message without committing with
-`node "$HOME/.claude/skills/landing/preflight.ts" --check-message <file>`; send `land.ts` only the
-final message, since it commits and pushes whatever it accepts.
+Write a conventional-commit message; `node "$HOME/.claude/skills/landing/preflight.ts" --check-message <file>`
+names each format and trailer rule it breaks without committing, so send `land.ts` only the final
+message. It does not check the Step 1 stamp mapping, so apply it yourself: `unverifiedFindings` go in `Not-tested`, which keeps `Confidence` below `high`;
+`preexistingFailures` in `Constraint`; each live MEDIUM+ in the body. `Ticket: <spec-slug>/<ticket-id>`
+goes only on the commit that lands one ticket of an intent, where a resumed build reads it to find the
+tickets left.
 
 ## Step 3: disclosure check
 

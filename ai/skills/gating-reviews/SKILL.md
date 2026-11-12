@@ -37,17 +37,10 @@ committing on this branch. `policy.commitBranches.onForbidden` permits only
 `create-feature-branch`: create
 a branch named for the work item, switch to it, and proceed.
 
-**Mainline freshness.** A `rerun` next on a branch behind mainline comes only on a clean
-tree: integrate `origin/<mainline>` with the verb the warning names, then re-run preflight.
-Merge only for `afterCommit: pull-request` with an upstream, since rebasing a pushed
-branch needs a force-push; a landing that passes `--promote` rebases, because
-promotion's rebase drops a merge commit. A tree holding uncommitted work proceeds behind
-mainline: integrating first would mean committing or stashing unreviewed work, and
-`land.ts --promote` already rebases the landed commit onto mainline while carrying the
-files left uncommitted. On a conflict, resolve by step 2 of [Conflict resolution](../landing/subskills/recovery.md#conflict-resolution), `git add` each resolved file, then
-`git rebase --continue` or `git merge --continue`. No re-review,
-since nothing has been reviewed yet.
-`checked: false` with a `reason` means freshness is unknown; proceed. `--no-fetch` skips this check and omits `mainlineFreshness`; promotion re-verifies when origin exists and refuses failed fetches or a missing remote mainline with `MAINLINE_UNVERIFIED`.
+**Mainline freshness.** A behind-mainline warning names the integration verb and when to
+use it; follow it, then re-run preflight. On a conflict, resolve by step 2 of
+[Conflict resolution](../landing/subskills/recovery.md#conflict-resolution) and continue;
+no re-review, since nothing has been reviewed yet. `checked: false`: proceed.
 
 An unresolved mainline warns; landing pushes the feature branch without promotion, unless the warning names a mainline `--promote` founds, which happens only while the current branch is the repo's only branch locally and on origin.
 

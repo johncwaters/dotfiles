@@ -21,11 +21,11 @@ CHALLENGE: <kept> kept, <shrunk> shrunk, <cut> cut
 
 The `specifying` skill stores that line as the design spec's `challengeStamp`, and its validator refuses a stamp that does not cover the units ready for work, which is what makes this skill part of the process rather than a suggestion. Writing the stamp without running the challengers defeats the gate and is a violation.
 
-**Boundaries.** Challengers argue without editing files, rewriting the plan, or adding work. A challenge that proposes a new step is out of order and dropped: the only legal moves are cut, shrink, merge, keep. A scale SHRINK replaces only a step's approach with a lower-order one, or a speed cache with the cache-free redesign at the same bound. A lowering that needs new infrastructure the plan lacks — an index, a pagination contract — is out of the challenger's power and comes back as a KEEP naming that infrastructure, which Step 3 carries into the Bounds block rather than into a new step. The `plan-challenger` agent definition withholds Edit and Write, so the file-editing tools are structurally absent; the ban on writing through Bash is part of the lane brief the challenger honors.
+**Boundaries.** Challengers argue without editing files, rewriting the plan, or adding work. A challenge that proposes a new step is out of order and dropped: the only legal moves are cut, shrink, merge, keep.
 
 ## Step 1: Run the workflow
 
-Call `Workflow({name: 'plan-challenge', args: { goal, planText, repoPath }})`. To re-run a dead lane retry under `resumeFromRunId` without replaying its cached output, add a new `retryAttemptId`. `lanes` holds the surviving lanes only, each one's `text` being the challenger output to judge; a lane whose verdicts leave any numbered step uncovered is dropped rather than returned, so a plan text with no detectable numbered step returns nothing. Read `survivingLanes` for the `(lanes: <comma-separated names>)` stamp suffix whenever fewer than all three lanes survive. A plan written as prose or headings has no detectable step, so before calling, restate it as a numbered list (`1.`, `2.`, one line per step at column zero) and pass that text. Always call by `name`: the `Workflow(plan-challenge)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
+Call `Workflow({name: 'plan-challenge', args: { goal, planText, repoPath }})`. To re-run a dead lane retry under `resumeFromRunId` without replaying its cached output, add a new `retryAttemptId`. `lanes` holds each surviving lane's `text` to judge. Read `survivingLanes` for the `(lanes: <comma-separated names>)` stamp suffix whenever fewer than all three lanes survive. A plan written as prose or headings has no detectable step, so before calling, restate it as a numbered list (`1.`, `2.`, one line per step at column zero) and pass that text. Always call by `name`: the `Workflow(plan-challenge)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
 
 Workflow tool absent in this session: read `~/.claude/workflows/plan-challenge.js`, spawn the lane set it names in one message with multiple calls, as before, and converge by the rules in that script.
 
@@ -40,23 +40,3 @@ No lane surviving is not a thinner challenge but no challenge at all: return the
 ## Step 3: Revise and stamp
 
 Apply the surviving verdicts, merge and renumber, and keep each step one short line naming its work; a merged step names the combined work in one line, not both texts. Under the steps, list a `Bounds:` block with one line per surviving step, keyed by its new number: a step a scale SHRINK rewrote carries only the lowered bound that SHRINK named, or for a cache SHRINK at the same bound, that bound marked `O(n) in rows; no cache`; a merged step carries the bounds of every step it absorbed; only a cut step drops its bound. Write a bound as `O(n) in rows` or, when a scale KEEP named the infrastructure a lowering would need, `O(n²) in rows; O(n log n) needs an index on created_at`, so the carbon unit approving the plan sees the cost being approved and what would lower it, while step lines stay short enough to become titles. Append the `CHALLENGE:` stamp as the last line and hand the revised plan to whatever comes next — usually the `specifying` skill, which records the stamp. Counts in the stamp refer to the original steps: a step merged into another counts as shrunk.
-
-## Challenger output format
-
-Each lane ends its response with:
-
-```
-STEP_VERDICTS:
-- step: <n> | verdict: <CUT|SHRINK|KEEP> | because: <one sentence> | evidence: <file:line, command output, or "unverified">
-- step: ...
-
-PLAN_SUMMARY:
-<one paragraph: the plan's weakest step and the single biggest simplification available>
-```
-
-Every numbered step gets exactly one verdict line. One verdict per line, no bare `|` inside a field.
-
-## Token discipline
-
-- Plans are small: paste the plan text into each prompt. Keep repo contents out of prompts; the lanes read the repo themselves.
-- Three lanes is the fleet. A hard disagreement is settled by the caller's judgment at convergence, not by a fourth agent.

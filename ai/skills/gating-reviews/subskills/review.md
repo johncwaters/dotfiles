@@ -8,9 +8,8 @@ passing tests, when the stamped paths change nothing else; code the carbon unit 
 
 **Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list. Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed.
 
-**Then one review, the fixes, and the commit.** A second sweep of the same diff finds
-fresh MEDIUM findings every time, so the review runs once and reports only what a
-lane proved: every finding carries a `Proof:`, a command with its output or quoted lines,
+**Then one review, the fixes, and the commit.** The review runs once and reports only
+what a lane proved: every finding carries a `Proof:`, a command with its output or quoted lines,
 and you re-run that proof in place of a confirming review.
 
 1. Invoke `/reviewing-code` with target `working`, the repo path, preflight's `paths`
@@ -47,12 +46,7 @@ and you re-run that proof in place of a confirming review.
 `node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings <file>`
 with `{liveFindings, unverifiedFindings, preexistingFailures, truncatedLanes, droppedUnproven}`
 in a file saved with Write, each finding `{severity, file, summary}`. A live or `UNVERIFIED` MEDIUM+ on any branch
-stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 (`BROWSER_CODE_FAILED`) means the
-repo ships third-party browser code that fails `/securing-browser-code`: fix each printed `FAIL` line as new
-work, then review again.
-Exit 31 (`UI_EVIDENCE_MISSING`) means the paths change a style or markup file and no screenshot names the
-result: render the changed UI (`/capturing-ui`), then stamp again with `--ui-evidence <file>` saved outside the
-checkout after the last edit, or `--no-ui-evidence "<reason>"` when nothing visible changed, which records a LOW unverified finding.
+stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 or 31 prints its fix; render UI evidence with `/capturing-ui`.
 
 A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
 overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review
