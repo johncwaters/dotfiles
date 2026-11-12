@@ -9,7 +9,7 @@ A demo video sells one story on the real app. `capturing-ui` owns stills and the
 
 ## Story
 
-The arc (pain, hero action, result, one idea) comes from the `storytelling` skill's Demos section, and motion timing from `animating`. These are the recording-side rules.
+The arc (pain, hero action, result, one idea) comes from the Demos section of `writing-in-voice`'s launch-or-pitch template, and motion timing from `animating`. These are the recording-side rules.
 
 1. **Storyboard before recording.** A table of who is on screen, the state each starts in, and each beat with its time. Get it approved first: a re-record of live agents costs money and an hour, a table costs a minute.
 2. **Every beat shows cause and effect.** A session waiting for input gets answered on screen and visibly continues. A viewer reads a beat that only parks and moves on as the app hanging; that was the first complaint about the glimmervoid hero.

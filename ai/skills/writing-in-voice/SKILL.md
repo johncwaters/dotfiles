@@ -1,6 +1,6 @@
 ---
 name: writing-in-voice
-description: "Writes as the carbon unit, in their voice, anything someone else reads. Message path: Slack, email, texts, chats, replies. Published path: GitHub issues, PR descriptions, issue and PR comments, review replies, docs, tutorials, RFCs, design docs, blog, launch and social posts, changelogs, post-mortems. Use when asked to write, reply, rewrite, tighten, or critique one, for \"say this in my voice\" or \"make this punchier\", and before any draft posted as them, even mid-code-task."
+description: "Writes as the carbon unit, in their voice, anything someone else reads. Message path: Slack, email, texts, replies. Published path: GitHub issues and PRs, their comments and review replies, docs, tutorials, RFCs, design docs, blog, launch and social posts, pitches, demo scripts, changelogs, post-mortems. Use when asked to write, reply, rewrite, tighten, or critique one, for \"say this in my voice\", \"make this punchier\", or \"tell the story\", and before any draft posted as them, even mid-code-task."
 ---
 
 # Writing in voice
@@ -14,7 +14,7 @@ The carbon unit writes like a senior engineer in casual-professional mode: warm 
 ## Pick the path
 
 - **Message**: a turn in a conversation, read now by the carbon units in it (Slack, email, texts, chats, a customer reply). Follow [subskills/message.md](subskills/message.md).
-- **Published**: posted where others read it later (a GitHub issue, PR description, issue or PR comment, review reply, docs page, tutorial, RFC, design doc, blog or social post, changelog, post-mortem). Follow [subskills/published.md](subskills/published.md), which picks its template: `subskills/blog-or-post.md` or `subskills/docs-or-tutorial.md`.
+- **Published**: posted where others read it later (a GitHub issue, PR description, issue or PR comment, review reply, docs page, tutorial, RFC, design doc, blog or social post, changelog, post-mortem). Follow [subskills/published.md](subskills/published.md), which picks its template: `subskills/blog-or-post.md`, `subskills/docs-or-tutorial.md`, or `subskills/launch-or-pitch.md`.
 - A calling skill that names a path wins over this list, even when its text lands on GitHub or a ticket.
 - A profile may name a skill that adds its own conventions on top of either path; load it before drafting.
 
@@ -26,25 +26,20 @@ The carbon unit writes like a senior engineer in casual-professional mode: warm 
 
 ## Tells that mark prose as machine-written
 
-Readers can tell, and these are not how the carbon unit writes. Strip every one on sight, on both paths:
+Readers can tell, and these are not how the carbon unit writes. Strip every one on sight, on both paths. `scripts/lint-draft.mjs` flags filler words, machine vocabulary, corporate openers and sign-offs, em dashes, kicker clauses, teasers, and, with `--longform`, emoji bullets; these it does not:
 
-- **Filler words:** "just", "basically", "finally", in every sense.
-- **Machine vocabulary:** "delve", "tapestry", "landscape", "game-changer", "unlock", "navigate the complexities".
-- **Corporate preamble and sign-offs:** "I hope this email finds you well", "Just a friendly reminder", "Best,", "Cheers,", "Regards,", or a name under the message.
-- **Em dashes as structure.** Use a colon, a parenthetical, or two sentences.
-- **Kicker clauses** tacked onto a plain claim ("you flip the flag off, and nobody waits on a revert"). End the sentence at the fact ("without needing a revert").
-- **Teasers** that announce a reason without giving one ("Here's why.", "This shows why."). Open with the reason itself.
-- **Reflexive triplets**, "It's not X, it's Y" more than once per piece, stacked rhetorical questions, and uniform sentence length.
-- **Endings that recap**, or open with "In conclusion" or "Ultimately".
-- **Emoji bullets.**
+- **Reflexive triplets**, "It's not X, it's Y" more than once per piece, stacked rhetorical questions, uniform sentence length, and emoji bullets in a message.
+- **Endings that recap**, or a name signed under the message.
 - **An aphorism standing in for the fact** ("A switch you've flipped zero times is a switch you hope works"). State the fact or the instruction.
 - **A balanced contrast pair the reader must decode** ("A flag decides whether someone gets a feature, and a payload decides how"). Say what the thing is.
 - **A dramatized cost** ("A rollback is a revert, a build, and a deploy, and your users see the bug for as long as all three take"). Name the concrete steps plainly.
 - **A setup line narrating the story's progress** ("It's a pretty average conversation, nothing out of the norm"). Start at the event.
 
+Docs reviewers call the last four "Claudish" and send the page back.
+
 ## Lint
 
-Lint every draft before showing or sending it, as `scripts/lint-draft.mjs` below says. Exit 1 lists each flagged sentence and its rule (comma splices, teasers, filler words, em dashes, kicker clauses, machine tells, corporate openers and closers, and on `--longform` vague quantities, hedges, emoji bullets and British forms). Delete or rewrite those sentences and rerun until it exits 0. Delete a comma-spliced sentence outright rather than repairing it, since it is usually a fluff acknowledgement ("Ty for all the detail, the screenshots help a lot.").
+Lint every draft before showing or sending it, as `scripts/lint-draft.mjs` below says, and rewrite or delete each flagged sentence as its output says until it exits 0.
 
 ## Scripts
 

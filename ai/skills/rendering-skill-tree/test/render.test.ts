@@ -10,7 +10,7 @@ import test from 'node:test';
 const executeFile = promisify(execFile);
 const rendererPath = fileURLToPath(new URL('../render.ts', import.meta.url));
 
-test('renders byte-identical HTML and graph with the opening-prs storytelling dependency and no skill load cycle', async (context) => {
+test('renders byte-identical HTML and graph with the opening-prs writing-in-voice dependency and no skill load cycle', async (context) => {
   const firstDirectory = await mkdtemp(path.join(os.tmpdir(), 'skill-tree-first-'));
   context.after(() => rm(firstDirectory, { recursive: true, force: true }));
   const secondDirectory = await mkdtemp(path.join(os.tmpdir(), 'skill-tree-second-'));
@@ -22,6 +22,6 @@ test('renders byte-identical HTML and graph with the opening-prs storytelling de
     assert.deepEqual(await readFile(path.join(firstDirectory, fileName)), await readFile(path.join(secondDirectory, fileName)));
   }
   const graph = JSON.parse(await readFile(path.join(firstDirectory, 'graph.json'), 'utf8'));
-  assert.ok(graph.edges.some((edge: { from: string; to: string; kind: string }) => edge.from === 'skill:opening-prs' && edge.to === 'skill:storytelling' && edge.kind === 'loads'));
+  assert.ok(graph.edges.some((edge: { from: string; to: string; kind: string }) => edge.from === 'skill:opening-prs' && edge.to === 'skill:writing-in-voice' && edge.kind === 'loads'));
   assert.deepEqual(graph.cycles, [], `skill load cycles: ${graph.cycles.map((cycle: string[]) => cycle.join(' -> ')).join('; ')}`);
 });

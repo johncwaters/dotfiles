@@ -1,23 +1,6 @@
----
-name: storytelling
-description: Shapes a piece that has to make a reader believe in something new (launch post, pitch, announcement, talk or keynote script, demo script or demo video, blog post, README intro, the framing of a feature PR or design doc) with the story arc Steve Jobs used on stage. Use when asked to pitch, launch, announce, demo, "tell the story", "make people care", or "make this land", or when another writing skill sends a draft here. Voice and sentence mechanics stay with the calling writing skill.
----
+# Launch or pitch template
 
-# Storytelling
-
-Use for launch posts, pitches, announcements, talk or keynote scripts, demo scripts or videos, blog posts, README intros, and the framing of feature PRs or design docs.
-
-Jobs's keynotes made carbon units believe in a future before they could hold it. Imitators copied the turtleneck and the timeline, and their stories collapsed because the product did not do what the story said. So everything here serves a real thing, shown working.
-
-## Pick the shape
-
-| Piece | Shape |
-|---|---|
-| Launch, pitch, announcement, talk, blog post, demo | The full arc |
-| Design doc, PR body, status update, README | Answer first, then borrow: timeline framing, the problem as villain, numbers in context, show it working |
-| Short message | `writing-in-voice` alone |
-
-## The arc
+For a piece that has to make a reader believe in something new: a launch post, pitch, announcement, talk or keynote script, demo script or video, or README intro. It follows the arc Steve Jobs used on stage, and everything in it serves a real thing shown working, because a story the product does not back collapses.
 
 1. **What is.** Open on the reader's world today, in their words, with the pain made concrete. iPhone, 2007: smartphones are "not so smart and not so easy to use", plotted on two axes.
 2. **Villain.** Name what stands in the way: an approach, a habit, a tool. "Who wants a stylus?" Aim at the approach and keep respect for the carbon units using it.
@@ -27,7 +10,7 @@ Jobs's keynotes made carbon units believe in a future before they could hold it.
 6. **What could be.** The reader's life with it, from their seat. Swing between what is and what could be until the gap is obvious.
 7. **One more thing.** Save one true surprise for the end, or call back to the opening line. The last line is the strongest one.
 
-## Sentence techniques
+## Techniques
 
 - **Analogy.** One familiar image carries the whole idea: "a bicycle for the mind". At most one per piece, returned to, and true when pressed.
 - **Concrete.** The felt experience in place of the spec: "1,000 songs in your pocket" for 5 GB, "you can throw it out the window" for 12 pounds.
@@ -42,8 +25,6 @@ Jobs's keynotes made carbon units believe in a future before they could hold it.
 A demo is the arc in miniature: the pain in one line, the hero action, the result on screen, the number. One idea per demo, the hero moment early, and real data. In a video or live demo, every narrated noun is on screen as it is said; in a written demo, each step shows its command or screenshot beside the sentence about it.
 
 ## Check
-
-The full arc checks every item; a work doc checks the proof, number, and timeline items.
 
 - [ ] The headline fits in one repeatable sentence.
 - [ ] The villain is an approach, named.

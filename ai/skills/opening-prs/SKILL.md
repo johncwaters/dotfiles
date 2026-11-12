@@ -55,9 +55,7 @@ Any visual change (frontend files, or anything a repo rule covers) requires scre
 
 ## Step 5: Build the body
 
-The body is written as the carbon unit, so load `/writing-in-voice` before drafting any prose in it: the feedback questions, the description sections, and testing notes. It supplies the word choice and first person ("from me setting one up myself"). The repo's template and rules from Step 2 still own section structure.
-
-Load `/storytelling` for its work-doc row: frame the change against the old behavior and put the proof (output, screenshot) right beside the claim it proves.
+The body is written as the carbon unit, so load `/writing-in-voice` before drafting any prose in it: the feedback questions, the description sections, and testing notes. It supplies the word choice, first person ("from me setting one up myself"), and the work-doc framing: the change against the old behavior, with the proof beside the claim it proves. The repo's template and rules from Step 2 still own section structure.
 
 With 1 to 3 open questions, put a short `Feedback wanted:` list at the top of the template's main description section: the first of `Problem`, `Overview`, `Motivation and Context`, or `Changes` the template has, or `Problem` with no template. A lead line the repo's rules require first stays above it. Use the template's `##` headings without adding new ones, since some repos reject PRs that change a template's section structure.
 
