@@ -84,7 +84,7 @@ function withoutMergeTagPrefixes(taggedValue) {
 
 function reviewerTagsFrom(reviewerValue) {
   const composedValue = String(reviewerValue == null ? '' : reviewerValue).trim()
-  return composedValue.split(/ \+ | vs /).map(withoutMergeTagPrefixes).filter((reviewerTag) => reviewerTag !== '')
+  return composedValue.split(/ \+ | vs |; /).map(withoutMergeTagPrefixes).filter((reviewerTag) => reviewerTag !== '')
 }
 
 function isAcceptedFindingsHeaderTail(headerTail) {
@@ -531,7 +531,7 @@ ${JSON.stringify(laneSummaries)}
 
 Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Each finding is one line: join a merged body's parts without a line break. Convergence does not raise severity.
 
-A contradiction is one lane asserting a defect and another explicitly verifying it safe. Rule on each from its two positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
+A contradiction is one lane asserting a defect and another explicitly verifying it safe. Rule on each from its two positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable. A finding both merged and contested carries both tags in one field: convergent: <tag> + <tag>; contested: <asserting lane> vs <disputing lane>.
 
 Return the reviewer output format exactly. The summary is one paragraph carrying exactly this text, with the surviving finding count in place of <count>:
 

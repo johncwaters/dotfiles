@@ -285,3 +285,12 @@ test('a converged finding whose merged body wraps onto continuation lines valida
   assert.equal(findConvergenceValidationFailure(withJudgmentRowsFolded(wrappedJudgment), [], reviewedFiles), null)
   assert.match(parseLaneResponse(withJudgmentRowsFolded(wrappedJudgment)).findings[0].fields.body, /^Two upgrade cases break: - Released builds verified children through an old id\. code\/migration Proof: a scratch script printed verifierIntentIds: \[\]\.$/)
 })
+
+test('a judgment finding tagged both convergent and contested validates', () => {
+  const combinedTagJudgment = responseWith(
+    '- file: session/sessions.ts | line: 1654 | side: RIGHT | severity: HIGH | reviewer: convergent: redteam/coverage + boundary/key-collision; contested: redteam vs code | body: A child spawn clears the parent pack skills. Proof: a scratch node:test printed conflicts: skills-agent-made.1. Confidence: low, tiebreak unavailable.',
+    '1 finding(s) survived. truncated lanes: none'
+  )
+
+  assert.equal(findConvergenceValidationFailure(combinedTagJudgment, [], new Set(['session/sessions.ts'])), null)
+})
