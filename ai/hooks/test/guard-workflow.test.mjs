@@ -350,12 +350,16 @@ test("a /specifying question round is denied until every question weighs a chang
   const bare = question("Which store?", ["Redis", "Postgres"]);
   const denial = ask(bare, question("Which risk?\nUpstream: none: risk is the carbon unit's call", ["Medium", "High"]));
   assert.equal(denial.decision, "deny");
-  assert.match(denial.reason, /Which store\?/);
+  assert.match(denial.reason, /Which store\? \(it has no `Upstream:` line/);
   assert.doesNotMatch(denial.reason, /Which risk/);
+  assert.match(ask(question("Which store? Upstream: share the cache, ruled out by cache.ts:12", ["Redis", "Postgres"])).reason, /clause does not start a line/);
+  assert.match(ask(question("Which store?\nUpstream: share the existing cache", ["Redis", "Postgres"])).reason, /names no `, ruled out by <evidence>`/);
   assert.equal(ask(question("Which store?\nUpstream: share the existing cache, ruled out by cache.ts:12", ["Redis", "Postgres"])).decision, "allow");
   assert.equal(ask(question("Which store?", ["Fix the cache (change at the source)", "Redis"])).decision, "allow");
   for (const evasiveUpstream of ["none", "n/a", "-", "nothing"]) {
-    assert.equal(ask(question(`Which store?\nUpstream: ${evasiveUpstream}`, ["Redis", "Postgres"])).decision, "deny", evasiveUpstream);
+    const evasiveDenial = ask(question(`Which store?\nUpstream: ${evasiveUpstream}`, ["Redis", "Postgres"]));
+    assert.equal(evasiveDenial.decision, "deny", evasiveUpstream);
+    assert.match(evasiveDenial.reason, evasiveUpstream === "none" ? /needs `none: <reason>`/ : /names no `, ruled out by/, evasiveUpstream);
   }
   const describedOnly = { ...bare, options: [{ label: "Redis", description: "does not change at the source" }, { label: "Postgres", description: "fast" }] };
   assert.equal(ask(describedOnly).decision, "deny");

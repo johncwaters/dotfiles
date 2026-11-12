@@ -95,9 +95,10 @@ const RAW_COMMIT_REASON =
   "Commits already made (a mainline sync's merge) push through /landing's land.ts with no message, which withholds any commit no review recorded. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
-function upstreamQuestionReason(unweighedHeaders) {
+function upstreamQuestionReason(unweighedQuestions) {
+  const defects = unweighedQuestions.map(({ header, defect }) => `${header} (${defect})`).join("; ");
   return (
-    `A /specifying question round must weigh a change at the source, and these questions do not: ${unweighedHeaders.join(", ")}. ` +
+    `A /specifying question round must weigh a change at the source, and these questions do not: ${defects}. ` +
     "Give each one an option whose label carries `(change at the source)` when one is workable, else an `Upstream: <alternative>, ruled out by <evidence>` line in the question, else an `Upstream: none: <reason>` line when nothing sits above the choice (ai/skills/specifying/subskills/ask.md step 1)."
   );
 }
@@ -136,10 +137,14 @@ async function isSpecifyingUnfinished(transcriptPath) {
   return isUnfinished;
 }
 
-function isWeighedUpstream(upstreamText) {
+function upstreamLineDefect(upstreamText) {
   const upstream = upstreamText.trim();
-  if (/^none\b/i.test(upstream)) return NO_UPSTREAM.test(upstream);
-  return RULED_OUT_BY.test(upstream);
+  if (/^none\b/i.test(upstream)) {
+    if (NO_UPSTREAM.test(upstream)) return null;
+    return "its `Upstream: none` line needs `none: <reason>` with a reason of two or more words";
+  }
+  if (RULED_OUT_BY.test(upstream)) return null;
+  return "its Upstream line names no `, ruled out by <evidence>` and is not `none: <reason>`";
 }
 
 function changeAtSourceOptionIndex(question) {
@@ -147,11 +152,15 @@ function changeAtSourceOptionIndex(question) {
   return options.findIndex((option) => CHANGE_AT_SOURCE_LABEL.test(String(option?.label || "")));
 }
 
-function questionWeighsUpstream(question) {
-  if (!question || typeof question !== "object") return false;
+function upstreamDefect(question) {
+  if (!question || typeof question !== "object") return "it is not a question object";
+  if (changeAtSourceOptionIndex(question) !== -1) return null;
   const questionText = String(question.question || "");
-  if ([...questionText.matchAll(UPSTREAM_LINE)].some((match) => isWeighedUpstream(match[1]))) return true;
-  return changeAtSourceOptionIndex(question) !== -1;
+  const lineDefects = [...questionText.matchAll(UPSTREAM_LINE)].map((match) => upstreamLineDefect(match[1]));
+  if (lineDefects.includes(null)) return null;
+  if (lineDefects.length > 0) return lineDefects[0];
+  if (/Upstream:/i.test(questionText)) return "its `Upstream:` clause does not start a line";
+  return "it has no `Upstream:` line and no `(change at the source)` option";
 }
 
 function questionHeader(question) {
@@ -160,12 +169,14 @@ function questionHeader(question) {
 
 async function guardUpstreamQuestions(toolInput, transcriptPath) {
   const questions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
-  const unweighedHeaders = questions.filter((question) => !questionWeighsUpstream(question)).map(questionHeader);
+  const unweighedQuestions = questions
+    .map((question) => ({ header: questionHeader(question), defect: upstreamDefect(question) }))
+    .filter(({ defect }) => defect !== null);
   const misorderedHeaders = questions.filter((question) => changeAtSourceOptionIndex(question) > 0).map(questionHeader);
-  if (unweighedHeaders.length === 0 && misorderedHeaders.length === 0) return;
+  if (unweighedQuestions.length === 0 && misorderedHeaders.length === 0) return;
   if (!(await isSpecifyingUnfinished(transcriptPath))) return;
   const reasons = [];
-  if (unweighedHeaders.length > 0) reasons.push(upstreamQuestionReason(unweighedHeaders));
+  if (unweighedQuestions.length > 0) reasons.push(upstreamQuestionReason(unweighedQuestions));
   if (misorderedHeaders.length > 0) reasons.push(misorderedSourceQuestionReason(misorderedHeaders));
   denyPreToolUse(reasons.join(" "));
 }
