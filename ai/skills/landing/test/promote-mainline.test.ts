@@ -511,6 +511,41 @@ test("a promotion whose only conflict is both sides adding Unreleased changelog 
   }
 });
 
+test("a promotion conflicting in code and changelog reports only the code, and resolve-changelog.ts merges the changelog in the agent's own rebase", () => {
+  const { origin, seed, local } = seedOrigin();
+  const changelog = (bullets: string) => `# Changelog\n\n## [Unreleased]\n\n### Added\n\n${bullets}\n## [1.0.0]\n\n- First\n`;
+  try {
+    runGit(seed, ["checkout", "-q", "main"]);
+    commitFile(seed, "CHANGELOG.md", changelog(""), "changelog");
+    commitFile(seed, "code.txt", "base\n", "code");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["rebase", "-q", "origin/main"]);
+    commitFile(seed, "code.txt", "main\n", "main code");
+    commitFile(seed, "CHANGELOG.md", changelog("- Main bullet\n"), "main bullet");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    writeFile(local, "code.txt", "feature\n");
+    writeFile(local, "CHANGELOG.md", changelog("- Feature bullet\n"));
+
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "PROMOTE_CONFLICT");
+    assert.deepEqual(result.conflicts, ["code.txt"]);
+    assert.ok(!result.warnings.some((warning: string) => warning.includes("kept both sides' Unreleased bullets")));
+
+    runGit(local, ["fetch", "-q", "origin"]);
+    assert.notEqual(spawnSync("git", ["rebase", "-q", "origin/main"], { cwd: local }).status, 0);
+    fs.mkdirSync(path.join(local, "packages"));
+    fs.writeFileSync(path.join(local, "packages", "CHANGELOG.md"), "untracked nested changelog\n");
+    const resolveRun = spawnSync("node", [path.join(SKILL_DIR, "resolve-changelog.ts")], { cwd: path.join(local, "packages"), encoding: "utf8" });
+    assert.deepEqual(JSON.parse(resolveRun.stdout), { resolvedPaths: ["CHANGELOG.md"], remainingConflicts: ["code.txt"] });
+    assert.equal(gitOutput(local, ["show", ":CHANGELOG.md"]), changelog("- Main bullet\n- Feature bullet\n").trimEnd());
+  } finally {
+    spawnSync("git", ["rebase", "--abort"], { cwd: local });
+    cleanup(origin, seed, local);
+  }
+});
+
 test("a promotion conflict records the parked feature branch", () => {
   const { origin, seed, local } = seedOrigin();
   const { ledgerDirectory, ledgerPath } = makeLedgerPath();

@@ -1,3 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
+import type { Git } from "./git.ts";
+
 const OURS_MARKER = "<<<<<<< ";
 const BASE_MARKER = "||||||| ";
 const SEPARATOR = "=======";
@@ -68,4 +72,24 @@ export function keepBothUnreleasedBullets(zdiff3Text: string): string | null {
     index = hunk.nextIndex;
   }
   return resolvedLines.join("\n");
+}
+
+export type ChangelogResolution = { resolvedPaths: string[]; remainingConflicts: string[] };
+
+function resolveOneChangelog(git: Git, checkoutPath: string, conflictPath: string): boolean {
+  const zdiff3 = git.run(["checkout", "--conflict=zdiff3", "--", conflictPath], { cwd: checkoutPath });
+  if (zdiff3.code !== 0) return false;
+  const filePath = path.join(checkoutPath, conflictPath);
+  const resolvedText = keepBothUnreleasedBullets(fs.readFileSync(filePath, "utf8"));
+  if (resolvedText === null) return false;
+  fs.writeFileSync(filePath, resolvedText);
+  return git.run(["add", "--", conflictPath], { cwd: checkoutPath }).code === 0;
+}
+
+export function resolveChangelogConflicts(git: Git, checkoutPath: string): ChangelogResolution {
+  const conflicts = git.conflictingFilesIn(checkoutPath);
+  const resolvedPaths = conflicts.filter(
+    (conflictPath) => isChangelogPath(conflictPath) && resolveOneChangelog(git, checkoutPath, conflictPath),
+  );
+  return { resolvedPaths, remainingConflicts: conflicts.filter((conflictPath) => !resolvedPaths.includes(conflictPath)) };
 }

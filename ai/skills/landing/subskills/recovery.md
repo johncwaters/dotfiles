@@ -18,7 +18,9 @@ Every result carries a typed `next`; do what it names. This file holds only the 
 `PROMOTE_CONFLICT` with files in `conflicts` is yours to resolve; continue through recovery.
 
 1. On the feature branch, fetch origin and rebase onto `policy.resolved.mainline`.
-2. Resolve each conflicted file on its merits: read both sides, keep both intents where
+2. Run `node "$HOME/.claude/skills/landing/resolve-changelog.ts"` first: it merges and stages
+   each CHANGELOG.md whose only conflicts add Unreleased bullets on both sides, and prints
+   `remainingConflicts`. Resolve each remaining file on its merits: read both sides, keep both intents where
    they are independent, and pick the semantically correct result where they collide. Choose
    resolutions on their merits rather than blanket `--ours`/`--theirs`; retain changes you cannot account for.
 3. Stage the resolutions and continue the rebase.

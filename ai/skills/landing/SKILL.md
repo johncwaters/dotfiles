@@ -117,6 +117,7 @@ Flags:
 - `preflight.ts`: review gates run it first to resolve policy, freshness, branch eligibility, and scoped paths.
 - `land.ts`: run after the message and disclosure checks to stage, commit, push, and optionally promote.
 - `stamp.ts`: review gates write the stamp; `verify` prints it with the policy and remote visibility.
+- `resolve-changelog.ts`: run first when resolving a rebase or merge conflict to merge CHANGELOG.md Unreleased bullets from both sides.
 
 ## Outcomes
 
