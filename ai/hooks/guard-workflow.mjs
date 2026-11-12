@@ -443,12 +443,13 @@ function resolveShellPath(word, baseDirectory) {
   return path.resolve(baseDirectory, unquotedWord);
 }
 
-function editedFileWords(commandName, argumentWords) {
+function editedFileWords(commandName, argumentWords, namesExistingPath) {
   if (commandName === "tee") return argumentWords.filter((word) => !word.startsWith("-"));
   const isInPlace = argumentWords.some((word) => IN_PLACE_FLAG.test(word));
   if (!isInPlace) return [];
   const positionalWords = [];
   let hasInlineScript = false;
+  let hasEmptyBackupSuffix = false;
   for (let index = 0; index < argumentWords.length; index += 1) {
     const word = argumentWords[index];
     if (ATTACHED_SCRIPT_FLAG.test(word)) {
@@ -461,12 +462,14 @@ function editedFileWords(commandName, argumentWords) {
       continue;
     }
     if (SUFFIX_TAKING_IN_PLACE_FLAG.test(word) && argumentWords[index + 1] === EMPTY_SINGLE_QUOTED_WORD) {
+      hasEmptyBackupSuffix = true;
       index += 1;
       continue;
     }
     if (!word.startsWith("-")) positionalWords.push(word);
   }
-  const fileWords = hasInlineScript ? positionalWords : positionalWords.slice(1);
+  const isScriptSlotAnExistingPath = hasEmptyBackupSuffix && positionalWords.length > 0 && namesExistingPath(positionalWords[0]);
+  const fileWords = hasInlineScript || isScriptSlotAnExistingPath ? positionalWords : positionalWords.slice(1);
   return fileWords.length > 0 ? fileWords : [""];
 }
 
@@ -587,7 +590,7 @@ function bashWriteTargets(command, sessionDirectory) {
       continue;
     }
     const argumentWords = argumentText.split(/[<>]/)[0].match(QUOTE_AWARE_WORD) ?? [];
-    for (const word of editedFileWords(commandName, argumentWords)) targets.push(resolveTarget(word));
+    for (const word of editedFileWords(commandName, argumentWords, (candidate) => fs.existsSync(resolveTarget(candidate)))) targets.push(resolveTarget(word));
   }
   return [...new Set(targets)].filter((target) => !isInsideDirectory(target, "/dev"));
 }

@@ -295,6 +295,7 @@ test("the first repo edit of a session without /specifying is denied once", () =
     ["sed -i '' 's/one/two/' a.txt", repository],
     [`sed -i 's/one two/three/' a.txt ${path.join(sandboxHome, "scratch.txt")}`, repository],
     [`cd ${outsideRepository} && sed -i 's/one two/three/' ${path.join(repository, "a.txt")}`, repository],
+    [`cd ${outsideRepository} && sed -n -i '' ${path.join(repository, "a.txt")}`, repository],
     ["perl -0pi -e 's/one/two/' a.txt", repository],
     [`(cd ${repository} && sed -i s/one/two/ a.txt)`, outsideRepository],
     [`cd ${repository}\nsed -i s/one/two/ a.txt`, outsideRepository],
