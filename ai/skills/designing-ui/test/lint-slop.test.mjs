@@ -21,14 +21,18 @@ test("each taste-neutral tell flags on its own line and a clean screen with uppe
     '<button class="transition-all">Save</button>',
     '<div class="card hover:scale-105">Card</div>',
     '<span class="animate-pulse">Live</span>',
+    '<span class="animate-bounce">Scroll</span>',
     '<h1 class="bg-clip-text text-transparent bg-gradient-to-r">Title</h1>',
     '<h2 class="font-black">Heading</h2>',
     "<p>Welcome back! \u{1F44B}</p>",
     '<div class="shadow-[0_0_20px_rgba(139,92,246,0.5)]">Glow</div>',
     '<div class="mt-[13px]">Nudged</div>',
     ".pill { box-shadow: 0 0 24px #8b5cf6; }",
+    ".cue { animation: bounce 1s infinite; }",
+    '<div style="animation: 1s infinite bounce">Cue</div>',
+    '<div class="animate-[bounce_1s_infinite]">Cue</div>',
   ].join("\n");
-  assert.deepEqual(lintSlopFile("screen.html", sloppyScreen).rules, ["transition-all", "hover-scale", "looping-pulse", "gradient-text", "heavy-weight", "emoji", "colored-glow", "off-grid-px", "colored-glow"]);
+  assert.deepEqual(lintSlopFile("screen.html", sloppyScreen).rules, ["transition-all", "hover-scale", "looping-pulse", "looping-pulse", "gradient-text", "heavy-weight", "emoji", "colored-glow", "off-grid-px", "colored-glow", "looping-pulse", "looping-pulse", "looping-pulse"]);
 
   const prettierFormattedStylesheet = [".card:hover {", "  transform: scale(1.05);", "}", ".pill {", "  box-shadow:", "    0 0 24px #8b5cf6;", "}", ".live {", "  animation: pulse 2s;", "  animation-iteration-count: infinite;", "}"].join("\n");
   assert.deepEqual(lintSlopFile("screen.css", prettierFormattedStylesheet).rules, ["hover-scale", "colored-glow", "looping-pulse"]);

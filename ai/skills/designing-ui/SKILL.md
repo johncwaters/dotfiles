@@ -30,4 +30,4 @@ Finish when each step has walked the whole flow in scope and every gap has a fix
 
 ## Scripts
 
-- `scripts/lint-slop.mjs`: flags taste-neutral AI-template tells (transition-all, hover scale, looping pulse, gradient text, 800+ weights, emoji, colored glows, off-grid arbitrary px) as `file:line: rule`, exit 1 while any remain.
+- `scripts/lint-slop.mjs`: flags taste-neutral AI-template tells (transition-all, hover scale, looping pulse or bounce, gradient text, 800+ weights, emoji, colored glows, off-grid arbitrary px) as `file:line: rule`, exit 1 while any remain.

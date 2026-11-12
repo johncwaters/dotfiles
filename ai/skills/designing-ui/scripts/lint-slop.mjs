@@ -10,13 +10,13 @@ const TAILWIND_COLORED_SHADOW = /(?<![\w-])shadow-(?:red|orange|amber|yellow|lim
 const ZERO_OFFSET_SHADOW = /(?:box-shadow|text-shadow)\s*:\s*0(?:px)?\s+0(?:px)?\s+[1-9][^;]*|drop-shadow\(\s*0(?:px)?\s+0(?:px)?\s+[1-9][^)]*\)|shadow-\[0_0_[1-9][^\]]*\]/gi;
 const CSS_RULE_BLOCK = /([^{};]*)\{([^{}]*)\}/g;
 const HOVER_SCALE_DECLARATION = /transform\s*:\s*scale\(\s*1\.\d|(?<![\w-])scale\s*:\s*1\.\d/;
-const PULSE_ANIMATION_DECLARATION = /animation(?:-name)?\s*:[^;}]*\b(?:pulse|ping)\b/;
+const PULSE_ANIMATION_DECLARATION = /animation(?:-name)?\s*:[^;}]*\b(?:pulse|ping|bounce)\b/;
 const SHADOW_COLOR = /rgba?\(([^)]*)\)|#([0-9a-f]{3,8})\b|hsla?\(([^)]*)\)/i;
 
 const PATTERN_RULES = [
   { rule: "transition-all", pattern: /(?<![\w-])transition-all\b|transition\s*:\s*all\b/ },
   { rule: "hover-scale", pattern: /(?<![\w-])(?:group-)?hover:scale-\d|:hover\s*\{[^}]*transform\s*:\s*scale\(\s*1\.\d/ },
-  { rule: "looping-pulse", pattern: /(?<![\w-])animate-(?:pulse|ping)\b|animation\s*:[^;]*\b(?:pulse|ping)\b[^;]*\binfinite\b/ },
+  { rule: "looping-pulse", pattern: /(?<![\w-])animate-(?:(?:pulse|ping|bounce)\b|\[(?:pulse|ping|bounce)[_\]])|animation\s*:(?=[^;]*\binfinite\b)[^;]*\b(?:pulse|ping|bounce)\b/ },
   { rule: "gradient-text", pattern: /(?<![\w-])bg-clip-text\b|(?:-webkit-)?background-clip\s*:\s*text\b/ },
   { rule: "heavy-weight", pattern: /font-weight\s*:\s*(?:800|900|extrabold|black)\b|(?<![\w-])font-(?:extrabold|black)\b/ },
   { rule: "emoji", pattern: /\p{Emoji_Presentation}|\p{Extended_Pictographic}️/u },
