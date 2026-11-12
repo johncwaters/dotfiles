@@ -5,3 +5,6 @@ spacing:
 shadows:
   raised: 0 2px 8px rgb(0 0 0 / 0.4)
 restingShadow: false
+rules:
+  - rule: Never mark a card with a colored side stripe.
+    why: A stripe spends emphasis on one edge instead of the thing that changed.

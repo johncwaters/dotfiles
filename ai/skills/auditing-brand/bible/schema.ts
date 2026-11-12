@@ -75,11 +75,14 @@ const Typography = z.strictObject({
   literalSizesAllowedIn: z.array(Glob),
 });
 
+const DesignRules = z.array(z.strictObject({ rule: Text, why: Why }));
+
 const Shape = z.strictObject({
   radius: z.record(TokenName, z.number().nonnegative()),
   spacing: z.record(TokenName, z.number().nonnegative()),
   shadows: z.record(TokenName, Text),
   restingShadow: z.boolean(),
+  rules: DesignRules,
 });
 
 const Iconography = z.strictObject({
@@ -117,7 +120,7 @@ const Motion = z.strictObject({
   easings: z.record(TokenName, Text),
   reducedMotion: z.literal('required'),
   logoAnimation: Text,
-  rules: z.array(z.strictObject({ rule: Text, why: Why })),
+  rules: DesignRules,
 });
 
 const Applications = z.array(z.strictObject({
