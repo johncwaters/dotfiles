@@ -143,4 +143,4 @@ Read `policy.afterCommit`:
   carbon unit declines, or the remote is one `/opening-prs` cannot serve, report the pushed branch and stop; leave merging to the PR host. `/reviewing-prs` reviews a pull request only when asked for by name.
 - `unresolved`: GitHub could not say who owns the repo and no earlier answer was saved. Report
   the warning and the pushed branch, then ask the carbon unit whether to promote (rerun
-  `land.ts --promote` with no message) or open a pull request with `/opening-prs`.
+  `land.ts --promote` with no message) or follow `pull-request` above.

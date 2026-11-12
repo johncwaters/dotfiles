@@ -145,9 +145,10 @@ function readCommitsCited(nodes: unknown[], repoRoot: unknown): Set<string> | un
   const hexRuns = [...new Set(citationsNeedingACommit.flatMap(listHexRuns))];
   if (hexRuns.length === 0) return new Set();
   if (typeof repoRoot !== "string" || !path.isAbsolute(repoRoot)) return undefined;
-  const gitProcess = spawnSync("git", ["--no-lazy-fetch", "-C", repoRoot, "cat-file", "--batch-check"], {
+  const gitProcess = spawnSync("git", ["-C", repoRoot, "cat-file", "--batch-check"], {
     input: hexRuns.map((hexRun) => `${hexRun}^{commit}\n`).join(""),
     encoding: "utf8",
+    env: { ...process.env, GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" },
     timeout: COMMIT_LOOKUP_TIMEOUT_MS,
   });
   if (gitProcess.error || gitProcess.status !== 0) return undefined;
