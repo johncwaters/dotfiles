@@ -483,7 +483,7 @@ function findSharedRepoPathsByUnitPair(rootPath: string, changedPathsById: Map<s
   return sharedRepoPathsByUnitPair;
 }
 
-type ReadingMeasurement = { totalBytes: number; unmeasurablePaths: string[] };
+type ReadingMeasurement = { totalBytes: number; unmeasurablePaths: string[]; hasUncountedPaths: boolean };
 
 const BINARY_SNIFF_BYTES = 8000;
 const WIDE_TEXT_BYTE_ORDER_MARKS = [
@@ -505,27 +505,39 @@ function isBinaryFile(filePath: string): boolean {
   }
 }
 
-function measureReadingBytes(resolvedRoot: string, listedPaths: string[]): ReadingMeasurement {
+function measureReadingBytes(resolvedRoot: string, listedPaths: string[], stopAboveBytes: number): ReadingMeasurement {
   const visitedPaths = new Set<string>();
   const unmeasurablePaths: string[] = [];
-  function measure(target: string): number {
+  let totalBytes = 0;
+  let hasUncountedPaths = false;
+  function measure(target: string): void {
+    if (totalBytes > stopAboveBytes) {
+      hasUncountedPaths = true;
+      return;
+    }
     try {
       const resolvedTarget = fs.realpathSync(target);
-      if (!staysInside(resolvedRoot, resolvedTarget) || visitedPaths.has(resolvedTarget)) return 0;
+      if (!staysInside(resolvedRoot, resolvedTarget) || visitedPaths.has(resolvedTarget)) return;
       visitedPaths.add(resolvedTarget);
       const fileStatus = fs.statSync(resolvedTarget);
-      if (fileStatus.isFile()) return isBinaryFile(resolvedTarget) ? 0 : fileStatus.size;
-      if (!fileStatus.isDirectory()) return 0;
-      return fs.readdirSync(resolvedTarget)
-        .filter((entry: string) => entry !== ".git" && entry !== "node_modules")
-        .reduce((totalBytes: number, entry: string) => totalBytes + measure(path.join(resolvedTarget, entry)), 0);
+      if (fileStatus.isFile()) {
+        if (!isBinaryFile(resolvedTarget)) totalBytes += fileStatus.size;
+        return;
+      }
+      if (!fileStatus.isDirectory()) return;
+      for (const entry of fs.readdirSync(resolvedTarget)) {
+        if (entry !== ".git" && entry !== "node_modules") measure(path.join(resolvedTarget, entry));
+      }
     } catch (error) {
-      if (!isMissingPathError(error)) unmeasurablePaths.push(`${target} (${failureCodeOf(error)})`);
-      return 0;
+      if (isMissingPathError(error)) {
+        hasUncountedPaths = true;
+        return;
+      }
+      unmeasurablePaths.push(`${target} (${failureCodeOf(error)})`);
     }
   }
-  const totalBytes = [...new Set(listedPaths)].reduce((runningBytes, listedPath) => runningBytes + measure(listedPath), 0);
-  return { totalBytes, unmeasurablePaths };
+  for (const listedPath of new Set(listedPaths)) measure(listedPath);
+  return { totalBytes, unmeasurablePaths, hasUncountedPaths };
 }
 
 function validateChallengeStamp(spec: DesignSpec, units: Unit[], errors: string[]): void {
@@ -716,17 +728,25 @@ export function validateGraph(value: unknown): string[] {
     }
   }
   for (const unit of units) {
-    if (!isSliced || unit.budgetWaiver !== undefined) continue;
+    if (!isSliced) continue;
+    const isWaived = unit.budgetWaiver !== undefined;
     const changedPaths = unit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate));
     const splitPath = unit.splits === undefined ? undefined : path.resolve(spec.repoRoot, unit.splits);
     const allReadPaths = unit.reads.map((candidate) => path.resolve(spec.repoRoot, candidate));
     if (splitPath !== undefined && !isSplitWellFormed(splitPath, allReadPaths, changedPaths, `node ${unit.id}`, errors)) continue;
     const readPaths = allReadPaths.filter((readPath) => readPath !== splitPath);
     const changedOnlyPaths = changedPaths.filter((changedPath) => !readPaths.some((readPath) => staysInside(readPath, changedPath)));
-    const readMeasurement = measureReadingBytes(resolvedRoot, readPaths);
-    const changedOnlyMeasurements = [...new Set(changedOnlyPaths)].map((changedPath) => measureReadingBytes(resolvedRoot, [changedPath]));
+    const stopAboveBytes = isWaived ? READING_BUDGET_BYTES : Number.POSITIVE_INFINITY;
+    const readMeasurement = measureReadingBytes(resolvedRoot, readPaths, stopAboveBytes);
+    const changedOnlyMeasurements = [...new Set(changedOnlyPaths)].map((changedPath) => measureReadingBytes(resolvedRoot, [changedPath], stopAboveBytes));
+    const allMeasurements = [readMeasurement, ...changedOnlyMeasurements];
     const totalBytes = changedOnlyMeasurements.reduce((runningBytes, measurement) => runningBytes + Math.min(measurement.totalBytes, CHANGED_ONLY_PATH_CAP_BYTES), readMeasurement.totalBytes);
-    const unmeasurablePaths = [readMeasurement, ...changedOnlyMeasurements].flatMap((measurement) => measurement.unmeasurablePaths);
+    const unmeasurablePaths = allMeasurements.flatMap((measurement) => measurement.unmeasurablePaths);
+    if (isWaived) {
+      const isEveryPathCounted = unmeasurablePaths.length === 0 && allMeasurements.every((measurement) => !measurement.hasUncountedPaths);
+      if (isEveryPathCounted && totalBytes <= READING_BUDGET_BYTES) addError(errors, 13, `node ${unit.id}`, `drop budgetWaiver: reads plus capped changes total ${totalBytes} bytes, within ${READING_BUDGET_BYTES} bytes`);
+      continue;
+    }
     for (const unmeasurablePath of unmeasurablePaths) {
       addError(errors, 13, `node ${unit.id}`, `path ${unmeasurablePath} cannot be measured; narrow reads and changes to readable paths or supply budgetWaiver`);
     }

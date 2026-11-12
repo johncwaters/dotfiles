@@ -200,7 +200,7 @@ test("Edit and MultiEdit replay detect dependency cycles without changing disk",
   }
 });
 
-test("a real reading budget excess requires a waiver and deduplicates overlapping paths", () => {
+test("a real reading budget excess requires a waiver, a unit within budget refuses one, and overlapping paths count once", () => {
   fs.mkdirSync(path.join(repoRoot, "large"));
   fs.writeFileSync(path.join(repoRoot, "large", "contract.txt"), "x".repeat(200001));
   const spec = slicedSpec();
@@ -209,6 +209,20 @@ test("a real reading budget excess requires a waiver and deduplicates overlappin
   unit.changes = ["large/contract.txt"];
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*200001 bytes.*budgetWaiver/);
   unit.budgetWaiver = "The migration needs the complete existing contract";
+  assertAllowed(writeSpec(spec));
+  fs.writeFileSync(path.join(repoRoot, "large", "contract.txt"), "x".repeat(200000));
+  assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1: drop budgetWaiver: .*200000 bytes/);
+  fs.mkdirSync(path.join(repoRoot, "spilled"));
+  fs.writeFileSync(path.join(repoRoot, "spilled", "a-text.txt"), "x".repeat(30000));
+  fs.symlinkSync("z-loop", path.join(repoRoot, "spilled", "z-loop"));
+  unit.reads = [];
+  unit.changes = ["spilled"];
+  assertAllowed(writeSpec(spec));
+  fs.rmSync(path.join(repoRoot, "spilled"), { recursive: true });
+  spec.nodes.push({ id: "U2", kind: "unit", title: "Generate the contract", reads: [], changes: ["large/generated.txt"], checks: [], serves: [1] });
+  spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U1", kind: "dependsOn", to: "U2" });
+  unit.reads = ["large/generated.txt"];
+  unit.changes = ["graph.ts"];
   assertAllowed(writeSpec(spec));
 });
 
