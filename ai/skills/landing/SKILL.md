@@ -107,7 +107,7 @@ Flags:
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
   mainline, and pushing mainline. Omit it when the
   disclosure check held the change back, when the carbon unit asked for commit-only
-  (`commit only`, `don't merge`), when `policy.afterCommit` is `pull-request`, or when there is no
+  (`commit only`, `don't merge`), when `policy.afterCommit` is `pull-request` or `unresolved`, or when there is no
   policy.
 - `--no-push`: only when the carbon unit asks for local-only work or the disclosure check held
   the change back.
@@ -140,3 +140,6 @@ Read `policy.afterCommit`:
   the change back, stop after reporting; a public pull request discloses it too. Otherwise
   offer to open a pull request against the repository's mainline with `/opening-prs`. If the
   carbon unit declines, or the remote is one `/opening-prs` cannot serve, report the pushed branch and stop; leave merging to the PR host. `/reviewing-prs` reviews a pull request only when asked for by name.
+- `unresolved`: GitHub could not say who owns the repo and no earlier answer was saved. Report
+  the warning and the pushed branch, then ask the carbon unit whether to promote (rerun
+  `land.ts --promote` with no message) or open a pull request with `/opening-prs`.

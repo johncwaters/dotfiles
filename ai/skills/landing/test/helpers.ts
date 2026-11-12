@@ -204,7 +204,12 @@ export function stamp(repo: string, paths: string[], findings: Record<string, un
   const proc = spawnSync(
     "node",
     [path.join(SKILL_DIR, "stamp.ts"), "write", "--gate", "gating-reviews", "--paths", ...stampPaths, "--findings", findingsFile, ...evidenceArgs],
-    { cwd: repo, encoding: "utf8", env: { ...process.env, REVIEW_GATES_DIR: reviewGatesDirectory(repo) } },
+    { cwd: repo, encoding: "utf8", env: {
+        ...process.env,
+        REVIEW_GATES_DIR: reviewGatesDirectory(repo),
+        CLAUDE_COMMIT_LEDGER: path.join(reviewGatesDirectory(repo), "commit-ledger.jsonl"),
+      },
+    },
   );
   return { code: proc.status ?? 1, result: proc.stdout ? (JSON.parse(proc.stdout) as Record<string, unknown>) : {}, stderr: proc.stderr ?? "" };
 }

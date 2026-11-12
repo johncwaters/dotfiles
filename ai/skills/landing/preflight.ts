@@ -148,7 +148,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
     ? undefined
     : checkMainlineFreshness(git, mainline);
   if (mainlineFreshness?.checked && mainlineFreshness.behind > 0) {
-    const shouldMergeMainline = policy?.afterCommit === "pull-request" && git.hasUpstream();
+    const shouldMergeMainline = policy?.afterCommit !== "promote" && git.hasUpstream();
     const integrationVerb = shouldMergeMainline ? "merge" : "rebase onto";
     const integrationAdvice = hasUncommittedWork
       ? `${integrationVerb} it once this work is committed; landing with --promote does that itself`

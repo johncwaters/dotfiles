@@ -119,7 +119,7 @@ function browserCodeAudit(git: Git, ownership: () => Ownership): { failureLines:
 function resolveOwnership(git: Git): Ownership {
   const origin = readGithubRemote(git);
   const resolution = resolveAfterCommit(origin);
-  return { isOwned: resolution.mode === "promote", lookupFailed: origin.repositoryName !== null && resolution.warning !== undefined };
+  return { isOwned: resolution.mode === "promote", lookupFailed: resolution.lookupFailed === true };
 }
 
 function blocksBrowserCodeFailures({ isOwned, lookupFailed }: Ownership): boolean {
