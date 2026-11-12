@@ -32,6 +32,15 @@ const REVIEW_LADDER_PATH_SUFFIXES = [
   "skills/reviewing-code/SKILL.md",
   "skills/gating-reviews/subskills/fix.md",
   "workflows/qa-swarm.js",
+  "skills/challenging-plans/SKILL.md",
+  "skills/reviewing-prs/SKILL.md",
+  "skills/landing/subskills/recovery.md",
+  "agents/qa-code-reviewer.md",
+  "agents/boundary-reviewer.md",
+  "agents/redteam-reviewer.md",
+  "agents/security-reviewer.md",
+  "agents/plan-challenger.md",
+  "workflows/plan-challenge.js",
 ];
 
 function deny(filePath, diagnostic) {
@@ -147,12 +156,17 @@ function reviewLadderCeiling(filePath) {
   return { bytes: fs.statSync(filePath).size, label: "prior" };
 }
 
+function isOutsideDotfilesCheckout(filePath) {
+  const repositoryRoot = gitOutput(path.dirname(realPathOrSelf(filePath)), ["rev-parse", "--show-toplevel"]);
+  return repositoryRoot !== null && !exists(path.join(repositoryRoot, "ai", "hooks", "validate-file.mjs"));
+}
+
 function reviewLadderGrowthError(filePath, content) {
   const normalizedPath = path.posix.normalize(filePath.replace(/\\/g, "/"));
   const isReviewLadderFile = REVIEW_LADDER_PATH_SUFFIXES.some(
     (suffix) => normalizedPath === suffix || normalizedPath.endsWith(`/${suffix}`),
   );
-  if (!isReviewLadderFile || !exists(filePath)) return null;
+  if (!isReviewLadderFile || !exists(filePath) || isOutsideDotfilesCheckout(filePath)) return null;
   let ceiling;
   try {
     ceiling = reviewLadderCeiling(filePath);

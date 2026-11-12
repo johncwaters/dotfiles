@@ -121,8 +121,17 @@ test("review-ladder writes cannot grow across runtime, alias, and worktree paths
     "skills/gating-reviews/SKILL.md",
     "skills/gating-reviews/subskills/review.md",
     "skills/reviewing-code/SKILL.md",
-      "skills/gating-reviews/subskills/fix.md",
+    "skills/gating-reviews/subskills/fix.md",
     "workflows/qa-swarm.js",
+    "skills/challenging-plans/SKILL.md",
+    "skills/reviewing-prs/SKILL.md",
+    "skills/landing/subskills/recovery.md",
+    "agents/qa-code-reviewer.md",
+    "agents/boundary-reviewer.md",
+    "agents/redteam-reviewer.md",
+    "agents/security-reviewer.md",
+    "agents/plan-challenger.md",
+    "workflows/plan-challenge.js",
   ];
   const ladderRoots = [".claude", ".dotfiles/ai", "worktree/ai"];
   for (const ladderRoot of ladderRoots) {
@@ -247,9 +256,25 @@ test("review-ladder MultiEdit checks the final full content", () => {
   assert.equal(fs.readFileSync(filePath, "utf8"), "rule rule");
 });
 
-test("review-ladder ceiling is the committed size, so a shrink can be grown back up to it", () => {
+function makeDotfilesRepo() {
   const repository = makeRepo();
   after(() => removeAll(repository));
+  fs.mkdirSync(path.join(repository, "ai/hooks"), { recursive: true });
+  fs.writeFileSync(path.join(repository, "ai/hooks/validate-file.mjs"), "");
+  return repository;
+}
+
+test("review-ladder suffixes in another project's repo can grow", () => {
+  const repository = makeRepo();
+  after(() => removeAll(repository));
+  commitFile(repository, ".claude/agents/security-reviewer.md", "rule\n");
+  const growthProcess = validateWrite({ file_path: path.join(repository, ".claude/agents/security-reviewer.md"), content: "rules\n" });
+  assert.equal(growthProcess.status, 0, growthProcess.stderr);
+  assert.equal(growthProcess.stdout, "");
+});
+
+test("review-ladder ceiling is the committed size, so a shrink can be grown back up to it", () => {
+  const repository = makeDotfilesRepo();
   commitFile(repository, "skills/landing/SKILL.md", "rule rule\n");
   const filePath = path.join(repository, "skills/landing/SKILL.md");
   fs.writeFileSync(filePath, "rule\n");
@@ -261,8 +286,7 @@ test("review-ladder ceiling is the committed size, so a shrink can be grown back
 });
 
 test("untracked review-ladder files fall back to the on-disk size", () => {
-  const repository = makeRepo();
-  after(() => removeAll(repository));
+  const repository = makeDotfilesRepo();
   commitFile(repository, "README.md", "readme\n");
   const filePath = path.join(repository, "skills/gating-reviews/subskills/fix.md");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
