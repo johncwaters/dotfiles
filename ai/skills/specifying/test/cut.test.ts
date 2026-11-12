@@ -67,14 +67,10 @@ test("cut refuses the deferred example and renders its challenged tickets", () =
     assert.equal(repeatedProcess.status, 0, repeatedProcess.stderr || repeatedProcess.stdout);
     assert.equal(fs.readFileSync(intentPath, "utf8"), intentText);
     assert.equal(intent.reviewGate, "gating-reviews");
-    spec.reviewGate = "converging-reviews";
-    fs.writeFileSync(specPath, JSON.stringify(spec), "utf8");
-    assert.equal(spawnSync("node", [scriptPath, specPath], { encoding: "utf8" }).status, 0);
-    assert.equal(JSON.parse(fs.readFileSync(intentPath, "utf8")).reviewGate, "converging-reviews");
     fs.writeFileSync(specPath, JSON.stringify({ ...spec, reviewGate: "committing" }), "utf8");
     const badGateProcess = spawnSync("node", [scriptPath, specPath], { encoding: "utf8" });
     assert.equal(badGateProcess.status, 1);
-    assert.match(badGateProcess.stdout, /spec\.reviewGate: use one of gating-reviews, converging-reviews/);
+    assert.match(badGateProcess.stdout, /spec\.reviewGate: use one of gating-reviews/);
     spec.status = "sliced";
     delete spec.challengeStamp;
     delete spec.challengedUnitIds;

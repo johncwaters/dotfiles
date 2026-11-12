@@ -49,7 +49,7 @@ export type Design = {
 export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit | Design;
 export type EdgeKind = "blocks" | "implements" | "dependsOn" | "deferredBy";
 export type Edge = { from: Node["id"]; kind: EdgeKind; to: Node["id"] };
-export const REVIEW_GATES = ["gating-reviews", "converging-reviews"] as const;
+export const REVIEW_GATES = ["gating-reviews"] as const;
 export type ReviewGate = (typeof REVIEW_GATES)[number];
 export type DesignSpec = {
   status: "sketch" | "grilled" | "sliced" | "challenged";

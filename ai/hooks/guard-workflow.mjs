@@ -22,7 +22,7 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
 const LANDING_SKILLS = ["landing", "opening-prs"];
 const UPSTREAM_LINE = /^\s*Upstream:[ \t]*(.*)$/gm;
 const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)/i;
-const SKILLS_ENDING_SPECIFYING = [...LANDING_SKILLS, "gating-reviews", "converging-reviews", "reviewing-prs"];
+const SKILLS_ENDING_SPECIFYING = [...LANDING_SKILLS, "gating-reviews", "reviewing-prs"];
 const RULED_OUT_BY = /\S.*,\s*ruled out by\s+\S/i;
 const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
 const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
@@ -192,7 +192,7 @@ function isSpecGateDenial(event) {
 
 async function hasSpecGateCleared(transcriptPath, specsDirectory) {
   for await (const event of sessionEvents(transcriptPath)) {
-    if (["specifying", "gating-reviews", "converging-reviews"].some((skillName) => isSkillRun(event, skillName))) return true;
+    if (["specifying", "gating-reviews"].some((skillName) => isSkillRun(event, skillName))) return true;
     if (isSpecGateDenial(event)) return true;
     if (event.kind !== "toolUse" || event.name !== "Read") continue;
     const readPath = String(event.input.file_path || "");

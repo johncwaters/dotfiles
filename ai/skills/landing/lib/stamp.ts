@@ -8,7 +8,8 @@ import { readGithubRemote, resolveAfterCommit } from "./visibility.ts";
 
 const MAX_BROWSER_CODE_NOTES = 20;
 
-export const REVIEW_GATES = ["gating-reviews", "converging-reviews"] as const;
+export const REVIEW_GATES = ["gating-reviews"] as const;
+const LEDGER_REVIEW_GATES: readonly string[] = [...REVIEW_GATES, "converging-reviews"];
 
 export const STAMP_GATES = [...REVIEW_GATES, "releasing", "coherence-journal"] as const;
 
@@ -366,7 +367,7 @@ export function verifyStamp(git: Git): StampVerification {
 }
 
 function reviewCoversFile(stamp: StampRow, file: string): boolean {
-  if (!(REVIEW_GATES as readonly string[]).includes(stamp.gate)) {
+  if (!LEDGER_REVIEW_GATES.includes(stamp.gate)) {
     return false;
   }
   return stamp.paths.some((stampPath) => {

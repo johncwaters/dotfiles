@@ -65,7 +65,6 @@ chmod +x "$skillDependencyStubBin/npm"
 printf '#!/usr/bin/env bash\n[[ ! -e "$HOME/.syntax-engine-cannot-start" ]]\n' > "$skillDependencyStubBin/biome"
 chmod +x "$skillDependencyStubBin/biome"
 export BIOME_BIN="$skillDependencyStubBin/biome"
-pathWithoutNpmStub="$PATH"
 export PATH="$skillDependencyStubBin:$PATH"
 export SKILL_DEPENDENCY_LOG="$skillDependencyLog"
 export XDG_STATE_HOME="$sandbox/.local/state"
@@ -1205,7 +1204,6 @@ check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-
 check "securing-browser-code check tests pass" node --test "$topicDir/skills/securing-browser-code/test/check.test.ts"
 check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"
 check "designing-ui slop lint tests pass" node --test "$topicDir/skills/designing-ui/test/lint-slop.test.mjs"
-check "converging-reviews round tests pass" env PATH="$pathWithoutNpmStub" node --test "$topicDir/skills/converging-reviews/test/round.test.mjs"
 if ((${#workSkillTestFiles[@]} > 0)); then
   check "work profile skill behavior tests pass" node --test "${workSkillTestFiles[@]}"
 fi

@@ -319,7 +319,7 @@ test("running /specifying or a review gate or reading a design spec clears the s
   const repoFile = path.join(repository, "a.txt");
   const specRun = writeTranscript([prompt("add an export button"), ...skillRun("specifying")]);
   assert.equal(decisionFor(editCall(repoFile, specRun)).decision, "allow");
-  for (const gate of ["gating-reviews", "converging-reviews"]) {
+  for (const gate of ["gating-reviews"]) {
     const gateRun = writeTranscript([prompt(`/${gate}`), ...skillRun(gate)]);
     assert.equal(decisionFor(editCall(repoFile, gateRun)).decision, "allow");
   }
