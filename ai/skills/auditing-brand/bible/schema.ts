@@ -67,7 +67,7 @@ const TypeRole = z.strictObject({
 });
 
 const Typography = z.strictObject({
-  families: z.array(z.strictObject({ id: TokenName, family: Text, files: z.array(Text), license: Text, fallback: z.array(Text).min(1) })).min(1).max(2),
+  families: z.array(z.strictObject({ id: TokenName, family: Text, files: z.array(Text), license: Text, fallback: z.array(Text).min(1) })).min(1).max(3),
   scale: z.record(TokenName, TypeRole).refine((roles) => Object.keys(roles).length <= 8, { error: 'a type scale has at most 8 roles' }),
   weights: z.array(z.number().int()).min(1).max(3),
   minSizePx: Px,
