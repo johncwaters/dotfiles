@@ -25,10 +25,9 @@ Clean AI-generated code slop without drifting scope or changing its observable o
 ## Execution Posture
 
 - Behavior is observable output: what callers, carbon units, and stored data see. Internals such as types, branches, files, and helpers are free to reshape.
-- Change output only when the carbon unit asks, or to fix a wrong output the cleanup exposes at its source inside the bounded scope, named in the report; a source outside that scope goes in the report unedited.
-- Lock behavior by running the existing tests and the code path; write a new test only as a regression test for a bug actually fixed or for an uncovered contract whose break would be silent.
+- Change output only when the carbon unit asks, or to fix a wrong output the cleanup exposes at its source inside the bounded scope, named in the report.
+- Tests, reuse, scope, and failing gates follow `~/.claude/AGENTS.md`'s `<tests>`, `<reuse_before_create>`, `<scope_boundary>`, and `<research_not_assume>`.
 - Prefer deletion over addition.
-- Reuse existing utilities and patterns before introducing new ones.
 - Add new dependencies only when the carbon unit explicitly requests them.
 - Keep diffs small, reversible, and smell-focused.
 
@@ -44,7 +43,7 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
 
 1. **Protect current behavior first**
    - Identify the observable output that must stay the same.
-   - Run the existing tests that cover it before editing; add one only for a fixed bug or an uncovered contract whose break would be silent.
+   - Run the existing tests that cover it before editing.
    - If tests cannot come first, record the verification plan explicitly before touching code.
 
 2. **Bound the pass**
@@ -57,13 +56,13 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
    - **Needless abstraction**: pass-through wrappers, speculative indirection, single-use helper layers
    - **Boundary violations**: hidden coupling, misplaced responsibilities, wrong-layer imports or side effects
    - **Bolted-on shape**: a feature layered onto code built before it, such as an `if (newKind)` branch in code that already dispatches on kind, a near-copy file or component for one variant, a flag repeating what a type already says, an optional parameter only one caller passes, or a second system beside one that already owns the concern. This class covers feature code; a bug fix stays the smallest change that fixes it.
-   - **Low-value tests**: assertions mirroring the implementation, mocks of the unit under test, coverage-padding per-function cases, tests of constants or config shape; excluding regression tests for fixed bugs and tests of contracts whose break would be silent
+   - **Low-value tests**: the kinds `~/.claude/AGENTS.md`'s `<tests>` rules out
 
 4. **Run one smell-focused pass at a time**
    - **Pass 1: Dead code deletion**. Before deleting a path that production could still reach, check the repo's telemetry read-only when a tool for it is connected (PostHog, logs, error tracking), and keep that data out of the diff and commit message.
    - **Pass 2: Duplicate and bolted-on shape removal**. For bolted-on shape, ask how the code would look had the feature been in the original design, reshape the existing types, dispatch, and systems to that, delete the workaround, and grep its removed symbols for leftovers.
    - **Pass 3: Naming and error-handling cleanup**
-   - **Pass 4: Low-value test removal**, including tests that only prove a removed workaround survived, keeping regression tests for fixed bugs and tests of silent-break contracts
+   - **Pass 4: Low-value test removal**, including tests that only prove a removed workaround survived
    - Re-run targeted verification after each pass.
    - Keep each edit set limited to related refactors.
 
@@ -71,7 +70,7 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
    - Keep regression tests green.
    - Run the relevant lint, typecheck, and unit/integration tests for the touched area.
    - Run existing static or security checks when available.
-   - If a gate fails, fix the issue or back out the risky cleanup instead of forcing it through. Keep gates active, with rules enabled, tests running, and code free of gate-silencing ignore comments.
+   - If a gate fails, fix the issue or back out the risky cleanup instead of forcing it through.
 
 6. **Close with an evidence-dense report**
    Always report:
