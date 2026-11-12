@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { devNull, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -12,7 +12,8 @@ const sheetCellWidth = 520
 const audioBitrateKbps = 160
 const artifactSizeHeadroom = 0.95
 const voiceDuckFilter = 'sidechaincompress=threshold=0.03:ratio=6:attack=20:release=350'
-const loudnessFilter = 'loudnorm=I=-16:TP=-1.5:LRA=11'
+const targetLoudnessLufs = -16
+const limiterFilter = 'alimiter=limit=0.84:level=false'
 const narrationDriftToleranceSeconds = 0.15
 const loudnessWindowSeconds = 0.05
 const sustainFadeOutSeconds = 0.15
@@ -61,7 +62,22 @@ function readSoundCue(sound, sheetDirectory) {
     if (sound.align !== undefined && sound.align !== 'peak') {
         throw new Error(`cue ${sound.clip} at ${sound.at}: align must be "peak", got ${JSON.stringify(sound.align)}`)
     }
-    return { clip: resolve(sheetDirectory, sound.clip), at: sound.at, level: sound.level ?? 1, isPeakAligned: sound.align === 'peak', until: sound.until, notBefore: sound.notBefore }
+    if (sound.align === 'peak' && sound.clipAt !== undefined) {
+        throw new Error(`cue ${sound.clip} at ${sound.at}: align and clipAt both pick the clip second that lands on at; keep one`)
+    }
+    return {
+        clip: resolve(sheetDirectory, sound.clip),
+        at: sound.at,
+        level: sound.level ?? 1,
+        isPeakAligned: sound.align === 'peak',
+        clipAtSeconds: sound.clipAt ?? 0,
+        filter: sound.filter,
+        fadeInSeconds: sound.fadeIn ?? trimmedHeadFadeInSeconds,
+        fadeOutSeconds: sound.fadeOut ?? sustainFadeOutSeconds,
+        stopBeforeSeconds: sound.stopBefore ?? 0,
+        until: sound.until,
+        notBefore: sound.notBefore,
+    }
 }
 
 async function resolveCueTimes(page, cueSheet) {
@@ -77,7 +93,7 @@ async function resolveCueTimes(page, cueSheet) {
         sounds: cueSheet.sounds.map((sound, soundIndex) => ({
             ...sound,
             realSeconds: soundSeconds[soundIndex * 3],
-            untilSeconds: optionalSeconds(sound.until, soundSeconds[soundIndex * 3 + 1]),
+            untilSeconds: optionalSeconds(sound.until, soundSeconds[soundIndex * 3 + 1] - sound.stopBeforeSeconds),
             notBeforeSeconds: optionalSeconds(sound.notBefore, soundSeconds[soundIndex * 3 + 2]),
         })),
     }
@@ -97,8 +113,8 @@ async function printCueTimes(flags) {
     }, null, 1))
 }
 
-function delayedInputFilter(inputIndex, startSeconds, extraFilters) {
-    return `[${inputIndex}:a]aresample=48000,aformat=channel_layouts=mono,${extraFilters}adelay=${Math.round(startSeconds * 1000)}:all=1`
+function delayedInputFilter(inputIndex, startSeconds, channelLayout, extraFilters) {
+    return `[${inputIndex}:a]aresample=48000,aformat=channel_layouts=${channelLayout},${extraFilters}adelay=${Math.round(startSeconds * 1000)}:all=1`
 }
 
 function measureWindowDecibels(audioPath) {
@@ -117,7 +133,7 @@ function loudestWindowCenterSeconds(windowDecibels) {
 }
 
 function placeSound(sound, peakSecondsByClip) {
-    const peakSeconds = sound.isPeakAligned ? peakSecondsByClip.get(sound.clip) : 0
+    const peakSeconds = sound.isPeakAligned ? peakSecondsByClip.get(sound.clip) : sound.clipAtSeconds
     const naturalStartSeconds = sound.realSeconds - peakSeconds
     const startSeconds = Math.max(naturalStartSeconds, sound.notBeforeSeconds ?? 0, 0)
     const label = `cue ${sound.clip} at ${sound.at}`
@@ -129,14 +145,31 @@ function placeSound(sound, peakSecondsByClip) {
 
 function soundShapingFilters(placedSound, soundLevel) {
     const headTrim = placedSound.skippedHeadSeconds > 0
-        ? `atrim=start=${placedSound.skippedHeadSeconds.toFixed(3)},asetpts=PTS-STARTPTS,afade=t=in:d=${trimmedHeadFadeInSeconds},`
+        ? `atrim=start=${placedSound.skippedHeadSeconds.toFixed(3)},asetpts=PTS-STARTPTS,${placedSound.fadeInSeconds > 0 ? `afade=t=in:d=${placedSound.fadeInSeconds},` : ''}`
         : ''
-    const sustain = placedSound.untilSeconds === undefined ? '' : sustainFilters(placedSound.untilSeconds - placedSound.startSeconds)
-    return `${headTrim}${sustain}volume=${placedSound.level * soundLevel},`
+    const customFilter = placedSound.filter === undefined ? '' : `${placedSound.filter},`
+    const sustain = placedSound.untilSeconds === undefined ? '' : sustainFilters(placedSound.untilSeconds - placedSound.startSeconds, placedSound.fadeOutSeconds)
+    return `${headTrim}${customFilter}${sustain}volume=${placedSound.level * soundLevel},`
 }
 
-function sustainFilters(sustainSeconds) {
-    return `aloop=loop=-1:size=2147483647,atrim=0:${sustainSeconds.toFixed(3)},asetpts=PTS-STARTPTS,afade=t=out:st=${Math.max(0, sustainSeconds - sustainFadeOutSeconds).toFixed(3)}:d=${sustainFadeOutSeconds},`
+function sustainFilters(sustainSeconds, fadeOutSeconds) {
+    return `aloop=loop=-1:size=2147483647,atrim=0:${sustainSeconds.toFixed(3)},asetpts=PTS-STARTPTS,afade=t=out:st=${Math.max(0, sustainSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds},`
+}
+
+function measureIntegratedLufs(audioPath) {
+    const ebur128Report = spawnSync('ffmpeg', ['-nostats', '-i', audioPath, '-af', 'ebur128', '-f', 'null', '-'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stderr ?? ''
+    const integratedLines = [...ebur128Report.matchAll(/^\s+I:\s+(-?[\d.]+) LUFS/gm)]
+    if (integratedLines.length === 0) {
+        throw new Error(`ebur128 printed no integrated loudness for ${audioPath}`)
+    }
+    return Number(integratedLines.at(-1)[1])
+}
+
+function writeLoudnessMatched(rawMixPath, outPath) {
+    const measuredLufs = measureIntegratedLufs(rawMixPath)
+    const gainDecibels = targetLoudnessLufs - measuredLufs
+    execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-i', rawMixPath, '-af', `volume=${gainDecibels.toFixed(2)}dB,${limiterFilter}`, '-ar', '48000', outPath], { stdio: 'inherit' })
+    console.log(`measured ${measuredLufs.toFixed(1)} LUFS, fixed gain ${gainDecibels.toFixed(1)} dB to ${targetLoudnessLufs} LUFS, then limiter`)
 }
 
 function formatDecibels(decibels) {
@@ -180,16 +213,23 @@ async function writeAudioMix(flags) {
     const peakSecondsByClip = new Map([...peakAlignedClips].map((clip) => [clip, loudestWindowCenterSeconds(measureWindowDecibels(clip))]))
     const placedSounds = cueTimes.sounds.map((sound) => placeSound(sound, peakSecondsByClip))
     const clips = [...cueTimes.voices, ...placedSounds].map((cue) => cue.clip)
-    const voiceFilters = cueTimes.voices.map((voice, voiceIndex) => `${delayedInputFilter(voiceIndex, voice.realSeconds, '')}[voice${voiceIndex}]`)
-    const soundFilters = placedSounds.map((placedSound, soundIndex) => `${delayedInputFilter(cueTimes.voices.length + soundIndex, placedSound.startSeconds, soundShapingFilters(placedSound, cueSheet.soundLevel))}[sound${soundIndex}]`)
+    const voiceFilters = cueTimes.voices.map((voice, voiceIndex) => `${delayedInputFilter(voiceIndex, voice.realSeconds, 'mono', '')}[voice${voiceIndex}]`)
+    const soundFilters = placedSounds.map((placedSound, soundIndex) => `${delayedInputFilter(cueTimes.voices.length + soundIndex, placedSound.startSeconds, 'stereo', soundShapingFilters(placedSound, cueSheet.soundLevel))}[sound${soundIndex}]`)
     const trimToLoop = `apad,atrim=0:${cueTimes.totalSeconds}`
     const soundLabels = placedSounds.map((_, soundIndex) => `[sound${soundIndex}]`).join('')
     const soundBus = `${soundLabels}amix=inputs=${placedSounds.length}:normalize=0,${trimToLoop}`
     const busFilters = cueTimes.voices.length === 0
-        ? [`${soundBus},${loudnessFilter},aresample=48000[mixed]`]
+        ? [`${soundBus},aresample=48000[mixed]`]
         : duckedBusFilters(cueTimes.voices, soundBus, trimToLoop)
     const inputArguments = clips.flatMap((clip) => ['-i', clip])
-    execFileSync('ffmpeg', ['-loglevel', 'error', '-y', ...inputArguments, '-filter_complex', [...voiceFilters, ...soundFilters, ...busFilters].join(';'), '-map', '[mixed]', '-ac', '2', flags.out], { stdio: 'inherit' })
+    const rawMixDirectory = mkdtempSync(join(tmpdir(), 'animating-mix-'))
+    const rawMixPath = join(rawMixDirectory, 'raw.wav')
+    try {
+        execFileSync('ffmpeg', ['-loglevel', 'error', '-y', ...inputArguments, '-filter_complex', [...voiceFilters, ...soundFilters, ...busFilters].join(';'), '-map', '[mixed]', '-ac', '2', '-c:a', 'pcm_f32le', rawMixPath], { stdio: 'inherit' })
+        writeLoudnessMatched(rawMixPath, flags.out)
+    } finally {
+        rmSync(rawMixDirectory, { recursive: true, force: true })
+    }
     console.log(`${flags.out}: ${cueTimes.voices.length} voice clips, ${placedSounds.length} sounds, ${cueTimes.totalSeconds.toFixed(2)} s`)
     printLandingReport(flags.out, placedSounds)
 }
@@ -200,7 +240,7 @@ function duckedBusFilters(voices, soundBus, trimToLoop) {
         `${voiceLabels}amix=inputs=${voices.length}:normalize=0,${trimToLoop},asplit=2[voicebus][voicekey]`,
         `${soundBus}[soundbus]`,
         `[soundbus][voicekey]${voiceDuckFilter}[duckedsound]`,
-        `[voicebus][duckedsound]amix=inputs=2:normalize=0,${loudnessFilter},aresample=48000[mixed]`,
+        `[voicebus][duckedsound]amix=inputs=2:normalize=0,aresample=48000[mixed]`,
     ]
 }
 
