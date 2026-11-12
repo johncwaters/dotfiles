@@ -20,10 +20,11 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
   "m",
 );
 const LANDING_SKILLS = ["landing", "opening-prs"];
-const UPSTREAM_LINE = /^\s*Upstream:[ \t]*(.*)$/gm;
+const UPSTREAM_CLAUSE = /\bUpstream:[ \t]*(.*)$/gm;
 const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)/i;
 const SKILLS_ENDING_SPECIFYING = [...LANDING_SKILLS, "gating-reviews", "reviewing-prs"];
-const RULED_OUT_BY = /\S.*,\s*ruled out by\s+\S/i;
+const RULED_OUT_BY = /\S.*\bruled out by\s+\S/i;
+const SPEC_ARCHIVE_RUN = /\bnode\s+(?:-\S+\s+)*\S*specifying\/archive\.ts\s/;
 const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
 const SHELL_EVALUATES_NEXT_WORD = new RegExp(String.raw`(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval|\s-c|${INTERPRETER_EVAL_FLAG})\s*$`);
 const SHELL_WORD_ON_LINE = /(?:^|[;&|(\s])(?:\S*\/)?(?:(?:ba|z|da|k)?sh|eval)(?=$|[\s;&|)])/;
@@ -101,14 +102,14 @@ function upstreamQuestionReason(unweighedQuestions) {
   const defects = unweighedQuestions.map(({ header, defect }) => `${header} (${defect})`).join("; ");
   return (
     `A /specifying question round must weigh a change at the source, and these questions do not: ${defects}. ` +
-    "Give each one an option whose label carries `(change at the source)` when one is workable, else an `Upstream: <alternative>, ruled out by <evidence>` line in the question, else an `Upstream: none: <reason>` line when nothing sits above the choice (ai/skills/specifying/subskills/ask.md step 1)."
+    "Give each one an option whose label carries `(change at the source)` when one is workable, else an `Upstream: <alternative>, ruled out by <evidence>` clause in the question, else an `Upstream: none: <reason>` clause when nothing sits above the choice."
   );
 }
 
 function misorderedSourceQuestionReason(misorderedHeaders) {
   return (
     `A /specifying question lists its \`(change at the source)\` option below another option: ${misorderedHeaders.join(", ")}. ` +
-    "Move that option to first in each one; `(Recommended)` still goes to the option with the best design (ai/skills/specifying/subskills/ask.md step 1)."
+    "Move that option to first in each one; `(Recommended)` still goes to the option with the best design."
   );
 }
 
@@ -130,11 +131,18 @@ async function hasLandingSkillRunSinceLastPrompt(transcriptPath) {
   return hasLandingSkillRun;
 }
 
+function isSpecArchiveCall(event) {
+  return event.kind === "toolUse" && event.name === "Bash" && SPEC_ARCHIVE_RUN.test(String(event.input?.command ?? ""));
+}
+
 async function isSpecifyingUnfinished(transcriptPath) {
   let isUnfinished = false;
+  const archiveCallIds = new Set();
   for await (const event of sessionEvents(transcriptPath)) {
+    if (isSpecArchiveCall(event)) archiveCallIds.add(event.id);
     if (isSkillRun(event, "specifying")) isUnfinished = true;
-    if (SKILLS_ENDING_SPECIFYING.some((skillName) => isSkillRun(event, skillName))) isUnfinished = false;
+    const isArchived = event.kind === "toolResult" && !event.isError && archiveCallIds.has(event.toolUseId);
+    if (isArchived || SKILLS_ENDING_SPECIFYING.some((skillName) => isSkillRun(event, skillName))) isUnfinished = false;
   }
   return isUnfinished;
 }
@@ -143,10 +151,10 @@ function upstreamLineDefect(upstreamText) {
   const upstream = upstreamText.trim();
   if (/^none\b/i.test(upstream)) {
     if (NO_UPSTREAM.test(upstream)) return null;
-    return "its `Upstream: none` line needs `none: <reason>` with a reason of two or more words";
+    return "its `Upstream: none` clause needs `none: <reason>` with a reason of two or more words";
   }
   if (RULED_OUT_BY.test(upstream)) return null;
-  return "its Upstream line names no `, ruled out by <evidence>` and is not `none: <reason>`";
+  return "its Upstream clause names no `ruled out by <evidence>` and is not `none: <reason>`";
 }
 
 function changeAtSourceOptionIndex(question) {
@@ -158,11 +166,10 @@ function upstreamDefect(question) {
   if (!question || typeof question !== "object") return "it is not a question object";
   if (changeAtSourceOptionIndex(question) !== -1) return null;
   const questionText = String(question.question || "");
-  const lineDefects = [...questionText.matchAll(UPSTREAM_LINE)].map((match) => upstreamLineDefect(match[1]));
+  const lineDefects = [...questionText.matchAll(UPSTREAM_CLAUSE)].map((match) => upstreamLineDefect(match[1]));
   if (lineDefects.includes(null)) return null;
   if (lineDefects.length > 0) return lineDefects[0];
-  if (/Upstream:/i.test(questionText)) return "its `Upstream:` clause does not start a line";
-  return "it has no `Upstream:` line and no `(change at the source)` option";
+  return "it has no `Upstream:` clause and no `(change at the source)` option";
 }
 
 function questionHeader(question) {

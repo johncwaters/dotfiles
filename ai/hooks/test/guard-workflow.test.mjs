@@ -354,16 +354,17 @@ test("a /specifying question round is denied until every question weighs a chang
   const bare = question("Which store?", ["Redis", "Postgres"]);
   const denial = ask(bare, question("Which risk?\nUpstream: none: risk is the carbon unit's call", ["Medium", "High"]));
   assert.equal(denial.decision, "deny");
-  assert.match(denial.reason, /Which store\? \(it has no `Upstream:` line/);
+  assert.match(denial.reason, /Which store\? \(it has no `Upstream:` clause/);
   assert.doesNotMatch(denial.reason, /Which risk/);
-  assert.match(ask(question("Which store? Upstream: share the cache, ruled out by cache.ts:12", ["Redis", "Postgres"])).reason, /clause does not start a line/);
-  assert.match(ask(question("Which store?\nUpstream: share the existing cache", ["Redis", "Postgres"])).reason, /names no `, ruled out by <evidence>`/);
+  assert.equal(ask(question("Which store? Upstream: share the cache, ruled out by cache.ts:12", ["Redis", "Postgres"])).decision, "allow");
+  assert.equal(ask(question("Which store?\nUpstream: share the cache ruled out by cache.ts:12", ["Redis", "Postgres"])).decision, "allow");
+  assert.match(ask(question("Which store?\nUpstream: share the existing cache", ["Redis", "Postgres"])).reason, /names no `ruled out by <evidence>`/);
   assert.equal(ask(question("Which store?\nUpstream: share the existing cache, ruled out by cache.ts:12", ["Redis", "Postgres"])).decision, "allow");
   assert.equal(ask(question("Which store?", ["Fix the cache (change at the source)", "Redis"])).decision, "allow");
   for (const evasiveUpstream of ["none", "n/a", "-", "nothing"]) {
     const evasiveDenial = ask(question(`Which store?\nUpstream: ${evasiveUpstream}`, ["Redis", "Postgres"]));
     assert.equal(evasiveDenial.decision, "deny", evasiveUpstream);
-    assert.match(evasiveDenial.reason, evasiveUpstream === "none" ? /needs `none: <reason>`/ : /names no `, ruled out by/, evasiveUpstream);
+    assert.match(evasiveDenial.reason, evasiveUpstream === "none" ? /needs `none: <reason>`/ : /names no `ruled out by/, evasiveUpstream);
   }
   const describedOnly = { ...bare, options: [{ label: "Redis", description: "does not change at the source" }, { label: "Postgres", description: "fast" }] };
   assert.equal(ask(describedOnly).decision, "deny");
@@ -381,7 +382,7 @@ test("a /specifying question round is denied when a change-at-the-source option 
   assert.equal(decisionFor({ ...questionRound(misordered), transcript_path: writeTranscript([prompt("pick one")]) }).decision, "allow");
 });
 
-test("a /specifying question round stays gated through its own challenge, utility commands and the carbon unit's replies, until a review, landing or pull request skill runs", () => {
+test("a /specifying question round stays gated through its own challenge, utility commands and the carbon unit's replies, until a review, landing or pull request skill runs or the spec is archived", () => {
   const bare = question("Which store?", ["Redis", "Postgres"]);
   const roundAfter = (entries) => decisionFor({ ...questionRound(bare), transcript_path: writeTranscript(entries) }).decision;
   assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), ...skillRun("challenging-plans")]), "deny");
@@ -390,4 +391,9 @@ test("a /specifying question round stays gated through its own challenge, utilit
   assert.equal(decisionFor({ ...questionRound(question("Which store?", ["Fix the cache (change at the source) (Recommended)", "Redis"])), transcript_path: writeTranscript([prompt("spec this"), ...skillRun("specifying")]) }).decision, "allow");
   assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), ...skillRun("opening-prs")]), "allow");
   assert.equal(roundAfter([prompt("ship it"), ...skillRun("landing")]), "allow");
+  const archiveCall = (command) => toolUse("Bash", { command });
+  const archiveCommand = "node ~/.claude/skills/specifying/archive.ts ~/.agents/specs/repo/export.json abandoned";
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), archiveCall(archiveCommand), toolResult('{"outcome":"ARCHIVED"}', { toolUseId: "tool-Bash", isError: false }), ...skillRun("running-retros")]), "allow");
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), archiveCall(archiveCommand), toolResult('{"outcome":"REFUSED"}', { toolUseId: "tool-Bash" })]), "deny");
+  assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), archiveCall("cat ~/.claude/skills/specifying/archive.ts"), toolResult("source", { toolUseId: "tool-Bash", isError: false })]), "deny");
 });
