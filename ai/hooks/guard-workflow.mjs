@@ -93,7 +93,7 @@ const DRY_RUN_PUSH_OPTIONS = new Set(["--dry-run", "-n", "--verbose", "-v", "--q
 const RAW_COMMIT_REASON =
   "Raw `git commit` and `git push` are denied outside /landing, so every landing commits a tree a review gate stamped. " +
   "Run the review gate (the intent's gate, else /gating-reviews), then /landing, which also commits without pushing (land.ts --no-push) when asked; /gating-reviews stamps a pure rename or a reviewer's suggestion applied verbatim without a review pass. " +
-  "Never commit a WIP set-aside to integrate mainline: uncommitted work proceeds behind mainline, land.ts --promote rebases the landed commit onto it, and a conflict there resolves through landing recovery. " +
+  "Never commit a WIP set-aside to integrate mainline: uncommitted work proceeds behind mainline, land.ts --promote rebases the landed commit onto it, and a conflict there resolves through landing recovery; work that needs mainline's new code before it can be finished is set aside as a patch instead: `git diff --binary HEAD > <scratchpad>/set-aside.patch`, unstage with `git reset -q`, delete each file the patch adds (`git apply --summary` names them as create mode), restore each other changed file with `git show HEAD:./<path> > <path>`, integrate mainline, then `git apply --3way <scratchpad>/set-aside.patch`. " +
   "Commits already made (a mainline sync's merge) push through /landing's land.ts with no message, which withholds any commit no review recorded. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
 
