@@ -67,7 +67,7 @@ Read the README, the top-level tree, and whatever touches agent workflow: skills
 
 ## Step 4: Map each piece against what already exists
 
-Search dotfiles (`~/.dotfiles/ai/`, `ai/skills/`, `ai/hooks/`, the AGENTS.md files) and glimmervoid by behavior and synonym, not by the source's names. Search work in flight too: the design specs and intents in `~/.agents/specs/<repo>/`, and unmerged branches (`git branch -a --no-merged main`). Give each piece one verdict:
+Search dotfiles (`~/.dotfiles/ai/`, `ai/skills/`, `ai/hooks/`, the AGENTS.md files) and glimmervoid by behavior and synonym, not by the source's names. Then print all work in flight in full, not grepped by the source's names: the `request` of every design spec in `~/.agents/specs/<repo>/` for both repos, every unmerged branch (`git branch -a --no-merged main`), and, inside a Glimmervoid session, every live session's name and state from `glimmervoid sessions`. Mark each entry that overlaps a piece before giving verdicts. Give each piece one verdict:
 
 - **Already have**: name the path, spec, or branch that covers it.
 - **Take**: fills a gap. Name the target repo and the path where it would land.
