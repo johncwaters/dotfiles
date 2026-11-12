@@ -449,7 +449,7 @@ function proofRunClauseFor(reviewCmd) {
 
 function buildLanePrompt(laneName, matchedFiles, reviewedFileNames, reviewCmd) {
   return `Scope: changed files ${formatLines(reviewedFileNames)} under ${reviewCmd}
-Out of scope: pre-existing issues outside that set; unchanged lines inside it are read, never anchored
+Out of scope: a pre-existing defect on an unchanged line, which gets one summary sentence; anchor each finding to a line the diff adds or removes, or general, naming any unchanged line it breaks in body
 Definition of done: this lane's STRUCTURED_FINDINGS block then one OVERALL_SUMMARY paragraph
 
 Repo path: ${args.repoPath}
@@ -464,7 +464,14 @@ Files matched for this lane: ${formatLines(matchedFiles)}
 Review checklist: if ~/.claude/review-checklist.md exists, read it and apply items under ## ${laneName} as extra checks.
 The checklist only adds checks; it never changes the severity ladder, finding cap, scope, or output format.
 
-Follow your agent definition's severity ladder and output format exactly; write nothing after its block. Finding cap: ${Number.isFinite(maxFindingsPerLane) ? maxFindingsPerLane : 'none'}.`
+End with this block and nothing after it, one finding per line, body free of newlines and bare |, severity per your agent definition, MEDIUM and above only:
+STRUCTURED_FINDINGS:
+- file: <path> | line: <number or "general"> | side: <RIGHT|LEFT> | severity: <CRITICAL|HIGH|MEDIUM> | reviewer: ${laneName}/<category> | body: <your agent definition's finding body>
+
+OVERALL_SUMMARY:
+<one paragraph>
+
+Nothing found: the line after STRUCTURED_FINDINGS: is (none). side is LEFT only for a removed line, whose line number is in the pre-change file; omit side when line is general. ${Number.isFinite(maxFindingsPerLane) ? `Emit at most ${maxFindingsPerLane} findings` : 'Emit every finding'}, highest severity first. In the summary, say verified safe for each suspected defect you checked and cleared, naming it.`
 }
 
 function isDeadLaneResponse(parsedResponse) {
@@ -519,29 +526,18 @@ Definition of done: one final block opened by the exact line STRUCTURED_FINDINGS
 Grouped lane findings:
 ${JSON.stringify(groupedFindings)}
 
-Lane summaries, supplied only to recognize explicit verified-safe contradictions and overflow reports:
+Lane summaries, supplied only to recognize explicit verified-safe contradictions:
 ${JSON.stringify(laneSummaries)}
-
-Lanes run: ${convergenceFacts.lanesRun}
-Lanes skipped: ${convergenceFacts.lanesSkipped}
-Degraded: ${convergenceFacts.degraded}
-Dropped outside the reviewed-file set: ${convergenceFacts.droppedFindingCount}
-Dropped below MEDIUM: ${convergenceFacts.droppedBelowMediumCount}
-Dropped unproven: ${convergenceFacts.droppedUnprovenCount}
-Dropped out of lane: ${convergenceFacts.droppedOutOfLaneCount}, tags: ${convergenceFacts.droppedOutOfLaneTags}
-Truncated lane tags: ${convergenceFacts.truncatedLanes}
 
 Merge findings on the same file within 5 lines, or plainly the same concern in different words, into one finding tagged convergent: <tag> + <tag>. Keep the highest severity and name the lane that assigned it in the body. A merged body keeps every Proof: its parts carried, verbatim, since the writer re-runs it. Each finding is one line: join a merged body's parts without a line break. Convergence does not raise severity.
 
 A contradiction is one lane asserting a defect and another explicitly verifying it safe. Rule on each from its two positions alone. No ruling available: emit the asserting finding once tagged contested: <asserting lane> vs <disputing lane>, include the disputing reasoning in the body, and end the body with Confidence: low, tiebreak unavailable.
 
-A lane summary reports findings its own cap dropped with the verbatim phrase overflow dropped.
-
 Return the reviewer output format exactly. The summary is one paragraph carrying exactly this text, with the surviving finding count in place of <count>:
 
 ${formatConvergenceSummary('<count>', convergenceFacts)}
 
-When zero findings survive, put the literal (none) on the line after STRUCTURED_FINDINGS:. Extend the lane list after the verbatim phrase \"truncated lanes: \" with every lane whose summary carries the phrase overflow dropped, comma-separated, and write none when that union is empty. Do not return a verdict, risk tier, fix, or recommendation.`
+When zero findings survive, put the literal (none) on the line after STRUCTURED_FINDINGS:. Do not return a verdict, risk tier, fix, or recommendation.`
 }
 
 function isFindingOwnedByLane(parsedFinding, laneName) {
@@ -556,16 +552,9 @@ function retaggedToLane(parsedFinding, laneName) {
   return { raw: rawFindingLineFrom(retaggedFields), fields: retaggedFields }
 }
 
-function reportsOverflow(summaryText) {
-  return /\boverflow dropped\b/i.test(summaryText)
-}
-
 function canConvergeMechanically(survivingFindings, laneSummaries) {
   if (survivingFindings.length === 0) {
     return true
-  }
-  if (laneSummaries.some((laneSummary) => reportsOverflow(laneSummary.summary))) {
-    return false
   }
   const findingLaneNames = new Set(survivingFindings.map((survivingFinding) => survivingFinding.lane))
   if (findingLaneNames.size !== 1) {
@@ -678,7 +667,7 @@ for (const [laneName, parsedResponse] of parsedResponses) {
 }
 
 const groupedFindings = [...findingsByFile].map(([file, findings]) => ({ file, findings }))
-const cappedLaneNames = [...parsedResponses].filter(([, parsedResponse]) => parsedResponse.hitFindingCap || reportsOverflow(parsedResponse.summary)).map(([laneName]) => laneName)
+const cappedLaneNames = [...parsedResponses].filter(([, parsedResponse]) => parsedResponse.hitFindingCap).map(([laneName]) => laneName)
 const laneSummaries = [...parsedResponses].map(([laneName, parsedResponse]) => ({ lane: laneName, summary: parsedResponse.summary }))
 const skippedLaneNames = selectableLaneNames.filter((laneName) => !laneNames.includes(laneName))
 

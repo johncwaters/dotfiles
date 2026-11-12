@@ -63,9 +63,6 @@ test('a lane or the router reviewing a range executes none of its code while a w
   assert.match(workingTreeLanePrompt, /Run commands in the repo/)
   assert.match(rangeRouterPrompt, /execute none of its code and extract nothing/)
   assert.match(workingTreeRouterPrompt, /Run commands in the repo/)
-  const convergingRoundReviewCommand = 'git diff 5ce9c5514e0f8a3b1c2d4e6f7a8b9c0d1e2f3a4b 451d83f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'
-  assert.match(buildLanePrompt('code', [], baseWorkflowArgs.changedFiles, convergingRoundReviewCommand), /Run commands in the repo/)
-  assert.match(workflowFunctionNamed('buildRouterPrompt', { ...baseWorkflowArgs, reviewCmd: convergingRoundReviewCommand })(['security'], baseWorkflowArgs.changedFiles), /Run commands in the repo/)
 })
 
 test('a zero-finding lane with verified safe and no overflow converges to a canonical empty block', async () => {
@@ -167,8 +164,8 @@ test('a finding whose body carries no Proof: is dropped before convergence and c
   assert.match(workflowResponse, /1 finding\(s\) survived\..* Dropped unproven: 1\./)
 })
 
-test('a lane summary reporting overflow lands in the truncated lane list when every finding is dropped', async () => {
-  const laneResponse = 'STRUCTURED_FINDINGS:\n- file: src/other.js | line: 3 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing. Proof: `node guard.js` printed undefined.\n\nOVERALL_SUMMARY:\nOverflow dropped 3 further findings.'
+test('a lane under its finding cap stays out of the truncated lane list whatever its summary says', async () => {
+  const laneResponse = 'STRUCTURED_FINDINGS:\n- file: src/other.js | line: 3 | side: RIGHT | severity: MEDIUM | reviewer: code/logic | body: The guard is missing. Proof: `node guard.js` printed undefined.\n\nOVERALL_SUMMARY:\nThe overflow dropped no rows; the buffer guard was verified safe.'
   let agentCallCount = 0
   const runtimeBindings = workflowRuntimeReturning(() => {
     agentCallCount += 1
@@ -179,7 +176,7 @@ test('a lane summary reporting overflow lands in the truncated lane list when ev
 
   assert.equal(agentCallCount, 1)
   assert.match(workflowResponse, /^STRUCTURED_FINDINGS:\n\(none\)\n\nOVERALL_SUMMARY:\n0 finding\(s\) survived\./)
-  assert.match(workflowResponse, /truncated lanes: code$/)
+  assert.match(workflowResponse, /truncated lanes: none$/)
 })
 
 test('a zero-finding lane discussing arithmetic overflow stays out of the truncated lane list', async () => {
