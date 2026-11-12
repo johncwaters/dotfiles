@@ -5,7 +5,7 @@ description: "Drafts and posts the carbon unit's comment on their team's weekly 
 
 # Sprint Update
 
-Teammates skim these in a minute. The user's first full draft ran 532 words and was cut to about 250 to match the team; they then deleted a request to tag a teammate, because they wanted to answer that question themselves. Short, sourced, and nobody tagged is the target.
+Teammates skim these in a minute: short, sourced, and nobody tagged.
 
 ## Step 1: Find the issue
 
@@ -42,7 +42,7 @@ Load `writing-in-voice` and write on its message path: the comment is a turn in 
 
 ## Step 4: Verify every claim
 
-The first full run claimed a NUL-byte fix from a closed, unmerged PR, and called an eval "promising" from a Slack post while its PR reported a failing run. Re-check the finished draft, one claim at a time, against the primary source:
+Re-check the finished draft, one claim at a time, against the primary source:
 
 - Each PR: `gh pr view` for state and merge date. Closed is not merged, and done means merged inside the window.
 - Each number or result: the PR body, the code, or a fresh query. A Slack message is a lead, not proof; when the PR or code says otherwise, the PR or code wins.

@@ -119,16 +119,6 @@ For each, suggest one of: **investigate** (`investigating-error-issue`), **assig
 (`error-tracking-issues-partial-update`), **suppress** (`suppressing-noisy-errors`),
 **merge** (`grouping-noisy-errors`), or **resolve** if it's already known fixed.
 
-## Available tools
-
-| Tool                                        | Purpose                                                                   |
-| ------------------------------------------- | ------------------------------------------------------------------------- |
-| `posthog:query-error-tracking-issues-list`  | List + rank issues with aggregate metrics (occurrences, users, sessions)  |
-| `posthog:query-error-tracking-issue`        | Compact details for a single issue (status, assignee, top frame, release) |
-| `posthog:query-error-tracking-issue-events` | Sampled `$exception` events with stack, URL, browser, and `$session_id`   |
-| `posthog:query-session-recordings-list`     | Find replays of users hitting an issue                                    |
-| `posthog:inbox-reports-list`                | Pre-curated actionable signals if the project uses Inbox                  |
-
 ## Tips
 
 - A single deploy often surfaces several related new issues. If multiple new issues

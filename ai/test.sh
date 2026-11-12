@@ -531,19 +531,19 @@ for entryKind in agents workflows; do
 done
 
 skillsPath="$sandbox/.claude/skills"
-mkdir -p "$skillsPath/querying-posthog"
-printf 'foreign skill state\n' > "$skillsPath/querying-posthog/state.json"
+mkdir -p "$skillsPath/triaging-posthog-errors"
+printf 'foreign skill state\n' > "$skillsPath/triaging-posthog-errors/state.json"
 foreignWorkSkillPath="$sandbox/foreign-sprint-update"
 mkdir -p "$foreignWorkSkillPath"
 printf 'foreign linked skill state\n' > "$foreignWorkSkillPath/state.json"
 ln -s "$foreignWorkSkillPath" "$skillsPath/posting-sprint-updates"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile preserves a foreign directory named after a work skill" \
-  bash -c '[[ ! -L "$1" ]] && grep -qx "foreign skill state" "$1/state.json"' _ "$skillsPath/querying-posthog"
+  bash -c '[[ ! -L "$1" ]] && grep -qx "foreign skill state" "$1/state.json"' _ "$skillsPath/triaging-posthog-errors"
 check "personal profile preserves a foreign symlink named after a work skill" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]] && grep -qx "foreign linked skill state" "$1/state.json"' _ \
   "$skillsPath/posting-sprint-updates" "$foreignWorkSkillPath"
-rm -rf "$skillsPath/querying-posthog"
+rm -rf "$skillsPath/triaging-posthog-errors"
 rm -f "$skillsPath/posting-sprint-updates"
 for skillName in "${workSkillNames[@]}"; do
   ln -s "$sandbox/.dotfiles/ai/skills/$skillName" "$skillsPath/$skillName"

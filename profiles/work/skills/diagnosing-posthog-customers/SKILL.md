@@ -6,10 +6,7 @@ description: "Diagnoses a PostHog customer's reported issue (support ticket, Dis
 # Diagnosing a PostHog customer issue
 
 A reading of the code produces a plausible cause in minutes, and it is often wrong for this
-customer. Both sessions this skill comes from sent a first answer that the customer's own
-events later overturned or reframed: a guessed missing consent setting turned out to be a
-ticket the AI had already processed. The work is to turn each hypothesis into a query
-result before saying it.
+customer, so turn each hypothesis into a query result before saying it.
 
 ## Output
 
@@ -63,14 +60,13 @@ in question; `organization_id` and region are often null on the group (see Acces
 ## Step 2: Frame the contradiction
 
 Write in one sentence what the customer sees and why it contradicts expected behavior. Do the
-arithmetic on any screenshot first. For example, 55k tokens at Opus list price ($4/$20 per
-1M) cannot cost $10, so either the token count or the cost is wrong. That one line decides
-which number to chase.
+arithmetic on any screenshot first: a token count and a cost that cannot agree decide which
+number to chase.
 
 ## Step 3: Load the domain skills
 
 Run `learn -s "<product area> <symptom>"` on the PostHog MCP alone, wait for it to return,
-and load the matches before you read code or write SQL. Load `querying-posthog` before the
+and load the matches before you read code or write SQL. Load `querying-posthog-data` before the
 first `execute-sql`, because guessed HogQL fields and types fail. The server skills
 own product specifics such as token semantics, gating rules and known-cause catalogs:
 
@@ -118,7 +114,7 @@ Each hypothesis gets a query that could kill it:
 ## Step 6: Baseline and change
 
 - **Platform-wide baseline.** Run the same query across all customers. If the feature
-  works for others (583 runs a week, about 22% with no note), the cause is
+  works for others, the cause is
   customer-specific. If everyone shifted, it is a platform change.
 - **Find the change.** Skip this when the baseline shows nothing shifted. Otherwise group by day and by any version-like field (`$lib`, model
   string, emitter) to find the day it shifted. Then search merged PRs around that date:

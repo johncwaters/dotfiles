@@ -7,12 +7,10 @@ description: "Opens a PostHog support ticket on behalf of a community or forum u
 
 A free org past its onboarding window cannot open a ticket from Help, so a forum post that
 needs PostHog to act dead-ends unless someone opens the ticket for them. Support's agreed
-route is an outbound email ticket, kept out of the forum. Ticket 75872 is the reference
-shape.
+route is an outbound email ticket, kept out of the forum.
 
-The ticket is Support's to work, not the carbon unit's. Ticket 79965 sat five days because a
-John sign-off and a first-person plan in the note read to Support as John working it, so
-nothing in the drafts may suggest the carbon unit owns it.
+The ticket is Support's to work, not the carbon unit's: a sign-off or a first-person plan in
+the note reads to Support as the carbon unit working it, and the ticket sits.
 
 ## Step 1: Gather
 

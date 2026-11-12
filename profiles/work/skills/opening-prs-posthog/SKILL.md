@@ -1,19 +1,15 @@
 ---
 name: opening-prs-posthog
-description: "Extends /opening-prs on a work machine with PostHog's PR conventions, the published-path writing pass on the body, PostHog visual-evidence uploads, and a closing Slack message for the product area's channel. Use when /opening-prs loads work-machine extensions; invoke /opening-prs instead of this skill."
+description: "Extends /opening-prs on a work machine with PostHog's PR conventions, PostHog visual-evidence uploads, and a closing Slack message for the product area's channel. Use when /opening-prs loads work-machine extensions; invoke /opening-prs instead of this skill."
 ---
 
 # Open PR: PostHog
 
-PostHog opens pull requests early and often, so reviewers can steer work before it hardens. The core skill reads each repo's conventions; this extension adds work-only prose, visual evidence, and a team announcement.
+PostHog opens pull requests early and often, so reviewers can steer work before it hardens. The core skill reads each repo's conventions; this extension adds visual evidence and a team announcement.
 
 ## Step 4: visual evidence
 
 Follow [references/visual-evidence.md](references/visual-evidence.md) together with the core skill's evidence reference.
-
-## Step 5: prose
-
-Draft the body on `writing-in-voice`'s published path. Its work doc rules set the shape: answer first, numbers over vague quantities, and no machine-writing tells.
 
 ## Step 7: Slack message
 

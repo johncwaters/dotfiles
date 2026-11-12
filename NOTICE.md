@@ -5,20 +5,12 @@ projects and remain under their upstream licenses, not this repo's.
 
 | Path | Upstream | License |
 |---|---|---|
-| `profiles/work/skills/querying-posthog/` | [PostHog/posthog](https://github.com/PostHog/posthog), `products/posthog_ai/skills/querying-posthog-data/` | MIT |
 | `ai/skills/cleaning-ai-slop/` | [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode), `skills/ai-slop-cleaner/` | MIT |
 | `fonts/` | [CommitMono](https://commitmono.com) | SIL Open Font License 1.1, text in `fonts/OFL.txt` |
 | `glimmervoid/sounds/` | two RuneScape Wiki audio clips (Jagex game audio) | private use only |
 
-The first three permit redistribution with attribution; the sounds do not, so this repo stays
+The first two permit redistribution with attribution; the sounds do not, so this repo stays
 private while it carries them. Required notices follow.
-
-## profiles/work/skills/querying-posthog/ (MIT)
-
-Vendored from https://github.com/PostHog/posthog at
-`products/posthog_ai/skills/querying-posthog-data/`, renamed and snapshotted at an
-earlier upstream revision. PostHog's root `LICENSE` places everything outside `ee/`
-under the MIT Expat license; `products/` is outside `ee/`.
 
 `profiles/work/skills/triaging-posthog-errors/` is original to this repo. It is not vendored. It
 names PostHog MCP tools and PostHog skill slugs so it interoperates with them, and
@@ -32,11 +24,9 @@ Ralph-workflow material removed), but the same workflow and structure.
 
 ## MIT notice
 
-Applies to `profiles/work/skills/querying-posthog/` and `ai/skills/cleaning-ai-slop/`, under the
-copyrights listed below.
+Applies to `ai/skills/cleaning-ai-slop/`, under the copyright listed below.
 
 ```
-Copyright (c) 2020-2026 PostHog Inc.      (profiles/work/skills/querying-posthog/)
 Copyright (c) 2025 Yeachan Heo            (ai/skills/cleaning-ai-slop/)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

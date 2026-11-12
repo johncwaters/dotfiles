@@ -21,7 +21,7 @@ Allowed providers: ElevenLabs for voice, because work audio and scripts go only 
 Run before calling an explainer or poster done.
 
 - Read the handbook brand pages as Markdown: `https://posthog.com/handbook/brand/{foundations,visual-identity,assets,art-requests}.md`. Report each rule as pass or fix, then apply only the fixes the carbon unit picks.
-- Put every number through the handbook's Hacker News test: one baseline across all stats, raw numbers beside each percentage, and a stat from a different test labeled on the board itself, not only in the footer. Picking the friendliest baseline per stat was the first thing the audit caught.
+- Put every number through the handbook's Hacker News test: one baseline across all stats, raw numbers beside each percentage, and a stat from a different test labeled on the board itself, not only in the footer.
 - The headline states a specific result, with its number, about the piece's main point. Vague benefit words such as "smarter" fail the foundations page.
 - Use quote marks only on a line someone said.
 - Keep the isometric view even though the visual identity page lists isometric 3D under `avoid`: it is the Portal reference, and the graphics team draws isometric scenes too.
