@@ -55,12 +55,24 @@ export function selectRuleLanes({ changedFiles, changedLines, allLanes = false }
   return { lanes: Object.keys(filesByLane), filesByLane }
 }
 
-export function readChangedLines(reviewCmd, repoPath) {
-  const [program, subcommand, ...diffArguments] = reviewCmd.trim().split(/\s+/)
-  if (program !== 'git' || subcommand !== 'diff') {
+function diffArgumentsOf(reviewCmd) {
+  const [program, ...rest] = reviewCmd.trim().split(/\s+/)
+  const afterRepo = rest[0] === '-C' ? rest.slice(2) : rest
+  if (program !== 'git' || afterRepo[0] !== 'diff') {
     throw new Error(`REVIEW_CMD must be a git diff command, got: ${reviewCmd}`)
   }
-  const diffText = execFileSync('git', ['-C', repoPath, 'diff', '-U0', '--no-color', ...diffArguments], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
+  const separatorIndex = afterRepo.indexOf('--')
+  const revisions = separatorIndex < 0 ? afterRepo.slice(1) : afterRepo.slice(1, separatorIndex)
+  const optionArgument = revisions.find((argument) => argument.startsWith('-'))
+  if (optionArgument) {
+    throw new Error(`REVIEW_CMD may name revisions and paths only, got: ${optionArgument}`)
+  }
+  return afterRepo.slice(1)
+}
+
+export function readChangedLines(reviewCmd, repoPath) {
+  const diffArguments = diffArgumentsOf(reviewCmd)
+  const diffText = execFileSync('git', ['-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', '-C', repoPath, 'diff', '--no-ext-diff', '--no-textconv', '-U0', '--no-color', ...diffArguments], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
   return diffText.split('\n').filter((diffLine) => /^[+-](?![+-]{2})/.test(diffLine)).join('\n')
 }
 

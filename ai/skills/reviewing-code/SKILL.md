@@ -1,6 +1,7 @@
 ---
 name: reviewing-code
 description: Reviews diffs as the internal engine. Pins an immutable object, runs the qa-swarm lanes, gives every finding one disposition, and returns a verdict plus dispositioned findings. Stays read-only except its REVIEW_FILE, with no git history changes, posts, or repeat passes. Use when /gating-reviews or /reviewing-prs invokes the engine; direct requests route through those entry points.
+allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/route-lanes.mjs *)
 ---
 
 # Code Review
@@ -31,7 +32,7 @@ Pin only to an immutable object. Lanes run concurrently for minutes, and `git di
 
 ## Step 2: Find
 
-Run `node "$HOME/.claude/skills/reviewing-code/scripts/route-lanes.mjs" --review-cmd "$REVIEW_CMD" --repo <repo path> -- <changed files>` (`--all-lanes` when `allLanes`). Exit 2 means an unreadable diff: return `FAILED`. Refused: use `{lanes: ['code'], filesByLane: {code: <changed files>}}`; the workflow router widens it.
+Run `node ${CLAUDE_SKILL_DIR}/scripts/route-lanes.mjs --review-cmd "$REVIEW_CMD" --repo <repo path> -- <changed files>` (`--all-lanes` when `allLanes`), with the path unquoted so it matches this skill's `allowed-tools` grant in a locked-down review; `${CLAUDE_SKILL_DIR}` is this skill's directory, `~/.claude/skills/reviewing-code`, for an agent that does not substitute it. Exit 2 means an unreadable diff: return `FAILED`. Refused: use `{lanes: ['code'], filesByLane: {code: <changed files>}}`; the workflow router widens it.
 
 Call `Workflow({name: 'qa-swarm', args: {reviewCmd, repoPath, context, changedFiles, ruleLanes}})` with its JSON as `ruleLanes`, the caller's context verbatim, and `findingCap: null` when `uncapped`. Always call by `name`: the `Workflow(qa-swarm)` allow rule matches named runs only. To re-run a dead retry under `resumeFromRunId`, pass a new `retryAttemptId`. No Workflow tool: read `~/.claude/workflows/qa-swarm.js`, spawn its rule lanes in one message, and converge by its rules.
 

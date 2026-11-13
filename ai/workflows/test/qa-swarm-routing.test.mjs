@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -255,4 +255,47 @@ test('route-lanes picks the same lanes from a pinned diff on every run, docs alo
   const allLanes = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'], ['--all-lanes'])
   assert.deepEqual(allLanes.filesByLane, { code: ['README.md', 'src/quota-gate.js'], security: ['README.md', 'src/quota-gate.js'], redteam: ['src/quota-gate.js'], boundary: ['src/quota-gate.js'] })
   assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md'], ['--all-lanes']).lanes, ['code', 'security'])
+  assert.deepEqual(routeLanes(`git -C ${repoPath} diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js']), codeChange)
+})
+
+test('route-lanes refuses a review command carrying a git option and writes no file', (context) => {
+  const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'route-lanes-option-'))
+  context.after(() => fs.rmSync(repoPath, { recursive: true, force: true }))
+  execFileSync('git', ['-C', repoPath, 'init', '-q'])
+  const leakedPath = path.join(repoPath, 'leaked.txt')
+  const routeLanesScript = path.join(import.meta.dirname, '../../skills/reviewing-code/scripts/route-lanes.mjs')
+  for (const reviewCmd of [`git diff --output=${leakedPath} HEAD`, `git -C ${repoPath} diff HEAD --output ${leakedPath}`]) {
+    const routeRun = spawnSync(process.execPath, [routeLanesScript, '--review-cmd', reviewCmd, '--repo', repoPath, '--', 'README.md'], { encoding: 'utf8' })
+    assert.equal(routeRun.status, 2)
+    assert.match(routeRun.stderr, /may name revisions and paths only/)
+  }
+  assert.equal(fs.existsSync(leakedPath), false)
+})
+
+test('route-lanes runs no diff driver from the repo it is pointed at and refuses an implicit bare repo', (context) => {
+  const scratchPath = fs.mkdtempSync(path.join(os.tmpdir(), 'route-lanes-driver-'))
+  context.after(() => fs.rmSync(scratchPath, { recursive: true, force: true }))
+  const sourcePath = path.join(scratchPath, 'source')
+  const git = (repoPath, ...gitArguments) => execFileSync('git', ['-C', repoPath, '-c', 'user.name=t', '-c', 'user.email=t@t', ...gitArguments], { encoding: 'utf8' }).trim()
+  fs.mkdirSync(sourcePath)
+  git(sourcePath, 'init', '-q')
+  fs.writeFileSync(path.join(sourcePath, 'f'), 'one\n')
+  git(sourcePath, 'add', '-A')
+  git(sourcePath, 'commit', '-qm', 'one')
+  const baseCommit = git(sourcePath, 'rev-parse', 'HEAD')
+  fs.writeFileSync(path.join(sourcePath, 'f'), 'two\n')
+  git(sourcePath, 'commit', '-qam', 'two')
+  const markerPath = path.join(scratchPath, 'driver-ran')
+  const driverPath = path.join(scratchPath, 'driver.sh')
+  fs.writeFileSync(driverPath, `#!/bin/sh\ntouch ${markerPath}\n`, { mode: 0o755 })
+  git(sourcePath, 'config', 'diff.external', driverPath)
+  const barePath = path.join(scratchPath, 'bare')
+  execFileSync('git', ['clone', '-q', '--bare', sourcePath, barePath])
+  git(barePath, 'config', 'diff.external', driverPath)
+  const routeLanesScript = path.join(import.meta.dirname, '../../skills/reviewing-code/scripts/route-lanes.mjs')
+  const routeRun = (repoPath) => spawnSync(process.execPath, [routeLanesScript, '--review-cmd', `git diff ${baseCommit} HEAD`, '--repo', repoPath, '--', 'f'], { encoding: 'utf8' })
+
+  assert.equal(routeRun(sourcePath).status, 0)
+  assert.equal(routeRun(barePath).status, 2)
+  assert.equal(fs.existsSync(markerPath), false)
 })
