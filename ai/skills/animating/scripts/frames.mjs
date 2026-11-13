@@ -215,7 +215,7 @@ async function writeAudioMix(flags) {
     const clips = [...cueTimes.voices, ...placedSounds].map((cue) => cue.clip)
     const voiceFilters = cueTimes.voices.map((voice, voiceIndex) => `${delayedInputFilter(voiceIndex, voice.realSeconds, 'mono', '')}[voice${voiceIndex}]`)
     const soundFilters = placedSounds.map((placedSound, soundIndex) => `${delayedInputFilter(cueTimes.voices.length + soundIndex, placedSound.startSeconds, 'stereo', soundShapingFilters(placedSound, cueSheet.soundLevel))}[sound${soundIndex}]`)
-    const trimToLoop = `apad,atrim=0:${cueTimes.totalSeconds}`
+    const trimToLoop = `aresample=async=1:first_pts=0,apad,atrim=0:${cueTimes.totalSeconds}`
     const soundLabels = placedSounds.map((_, soundIndex) => `[sound${soundIndex}]`).join('')
     const soundBus = `${soundLabels}amix=inputs=${placedSounds.length}:normalize=0,${trimToLoop}`
     const busFilters = cueTimes.voices.length === 0

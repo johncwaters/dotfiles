@@ -1190,15 +1190,16 @@ releaseTestFiles=("$topicDir"/skills/releasing/test/*.test.ts)
 specTestFiles=("$topicDir"/skills/specifying/test/*.test.ts)
 capturingUiTestFiles=("$topicDir"/skills/capturing-ui/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/composing-social-images/test/*.test.mjs)
+animatingTestFiles=("$topicDir"/skills/animating/test/*.test.mjs)
 skillTreeTestFiles=("$topicDir"/skills/rendering-skill-tree/test/*.test.ts)
 whiteboardTestFiles=("$topicDir"/skills/drawing-whiteboards/test/*.test.ts)
 hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
 workSkillTestFiles=("$repoRoot"/profiles/work/skills/*/test/*.test.ts)
 shopt -u nullglob
 check "all behavior test groups are present" \
-  test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0 && ${#workSkillTestFiles[@]} > 0))" -eq 1
-if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
-  check "hook, workflow, landing, running-retros, releasing, capturing-ui, composing-social-images, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
+  test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#animatingTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0 && ${#workSkillTestFiles[@]} > 0))" -eq 1
+if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#animatingTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
+  check "hook, workflow, landing, running-retros, releasing, capturing-ui, composing-social-images, animating, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${animatingTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
 fi
 check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-brand/test/census.test.ts"
 check "securing-browser-code check tests pass" node --test "$topicDir/skills/securing-browser-code/test/check.test.ts"
