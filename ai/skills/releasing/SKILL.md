@@ -36,11 +36,11 @@ Stop on any failure; fix upstream while keeping every gate enforced.
 
 1. Freeze `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` per the repo's format; generate store notes when the profile defines them (respect caps).
 2. Bump `version_file` (and lockfile when the ecosystem pairs them).
-3. Stamp the bump without a review: `node "$HOME/.claude/skills/landing/stamp.ts" write --gate releasing --only <version_file> <lockfile> <changelog>`, adding `store_notes.path` when the profile defines it and a newly derived profile on first run; it refuses a tree that changes any other path. Then land the release commit through `/landing` with `--promote`, with the repo's exact `release_commit_pattern` as its subject. Nothing else rides in the release commit except the store notes and a newly derived profile on first run. `/landing --promote` pushes the resolved mainline itself, so present the release commit and get carbon-unit approval before running it. This path requires `git.release_from` to equal `stamp.ts verify`'s `policy.resolved.mainline` and `policy.afterCommit` to be `promote`; when either does not hold, stop and report.
+3. Stamp the bump without a review: `node "$HOME/.claude/skills/landing/stamp.ts" write --gate releasing --only <version_file> <lockfile> <changelog>`, adding `store_notes.path` when the profile defines it and a newly derived profile on first run; it refuses a tree that changes any other path. Then land the release commit through `/landing` with `--promote`, with the repo's exact `release_commit_pattern` as its subject. Nothing else rides in the release commit except the store notes and a newly derived profile on first run. `/landing --promote` pushes the resolved mainline itself. This path requires `git.release_from` to equal `stamp.ts verify`'s `policy.resolved.mainline` and `policy.afterCommit` to be `promote`; when either does not hold, stop and report.
 
 ## Step 4: Execute, by archetype
 
-**Carbon-unit approval before every irreversible step** (push, tag push, publish, store promotion). Present what will run and wait.
+The release request is the approval for every push, tag push, publish, and store promotion: run them without a go-ahead question, and stop only where a gate fails or a step below names its own confirmation. A profile's leftover `approval` key is retired and ignored. `--dry-run` is the preview.
 
 Every branch and tag push in this step goes through the release push script, run from the repo root. After `/landing` promoted the release commit, fetch, create the annotated tag on the promoted `release_from` tip (origin's tip), then run:
 

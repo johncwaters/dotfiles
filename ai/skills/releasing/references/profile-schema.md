@@ -28,8 +28,7 @@
   "rollback": {
     "steps": [],
     "never": ["unpublish", "retag", "reuse_version_or_build_number"]
-  },
-  "approval": { "human_before": ["tag_push", "publish", "store_promotion"] }
+  }
 }
 ```
 
