@@ -76,7 +76,8 @@ const DIRECTORY_CHANGE = /(?:^|[;&|(\n])\s*(?:cd|pushd)\s+([^\s;&|)]+)/g;
 const VARIABLE_REFERENCE = /\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))/g;
 const PLAIN_ASSIGNMENT = /^(?:export\s+)?([A-Za-z_]\w*)=((?:'[^']*'|"[^"\\`$]*(?:\$\{?[A-Za-z_]\w*\}?[^"\\`$]*)*"|[^\s'"\\`])*)$/;
 const CONDITIONAL_OR_SUBSHELL_CODE = /(?:^|[\s;&|])(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function|\{|\}|#\S*)(?=$|[\s;&|])|(?<!\$)\(|`|\bcoproc\b/;
-const STATEMENT_SEPARATOR = /^(?:&&|\|\||;;|[;\n|&])/;
+const RUNTIME_REBINDING = /(?:^|[\s;&|(])(?:source|\.|eval|(?:declare|typeset|local)\s+-\w*n\w*)(?=\s)|<\(/;
+const STATEMENT_SEPARATOR =/^(?:&&|\|\||;;|[;\n|&])/;
 const SHELL_RUNS_NEXT_WORD = /(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval)\s*$/;
 const IN_PLACE_FLAG = /^(?:-[A-Za-z0-9]*i|--in-place)/;
 const SUFFIX_TAKING_IN_PLACE_FLAG = /^-[A-Za-z0-9]*i$/;
@@ -565,12 +566,23 @@ function isRunUnconditionallyInThisShell({ separatorBefore, separatorAfter }) {
   return ["", ";", "\n"].includes(separatorBefore) && !["|", "&"].includes(separatorAfter);
 }
 
+function firstControlKeywordIndex(command) {
+  const controlMatch = CONDITIONAL_OR_SUBSHELL_CODE.exec(command);
+  if (!controlMatch) return command.length;
+  const hasLeadingSeparator = controlMatch[0].length > 1 && /^[\s;&|]/.test(controlMatch[0]);
+  return controlMatch.index + (hasLeadingSeparator ? 1 : 0);
+}
+
 function provenVariableValues(command) {
   const valueByName = new Map();
-  if (CONDITIONAL_OR_SUBSHELL_CODE.test(command)) return valueByName;
   const bareWordCount = (name) => command.match(new RegExp(String.raw`(?<![$\w{])${name}(?!\w)`, "g")).length;
   const firstReferenceOffset = (name) => command.search(new RegExp(String.raw`\$\{?${name}(?!\w)`));
-  for (const statement of topLevelStatements(command)) {
+  if (RUNTIME_REBINDING.test(command)) return valueByName;
+  const statements = topLevelStatements(command);
+  const controlKeywordIndex = firstControlKeywordIndex(command);
+  const isCompleteBeforeControl = (index) => (statements[index + 1]?.offset ?? command.length) <= controlKeywordIndex;
+  for (const [index, statement] of statements.entries()) {
+    if (!isCompleteBeforeControl(index)) break;
     const assignment = statement.text.match(PLAIN_ASSIGNMENT);
     if (!assignment || !isRunUnconditionallyInThisShell(statement)) continue;
     const [, name, rawValue] = assignment;
@@ -587,7 +599,12 @@ function bashWriteTargets(command, sessionDirectory) {
   const scannedCommand = maskQuotedTextForWriteScan(commandWithoutLiteralHeredocs);
   const valueByName = provenVariableValues(commandWithoutLiteralHeredocs);
   let baseDirectory = sessionDirectory;
-  for (const [, directoryWord] of scannedCommand.matchAll(DIRECTORY_CHANGE)) baseDirectory = resolveShellPath(expandAssignedVariables(directoryWord, valueByName), baseDirectory) ?? baseDirectory;
+  const scannedControlKeywordIndex = firstControlKeywordIndex(scannedCommand);
+  for (const directoryChange of scannedCommand.matchAll(DIRECTORY_CHANGE)) {
+    const isUnconditionalDirectoryChange = directoryChange.index < scannedControlKeywordIndex;
+    const directoryWord = expandAssignedVariables(directoryChange[1], isUnconditionalDirectoryChange ? valueByName : new Map());
+    baseDirectory = resolveShellPath(directoryWord, baseDirectory) ?? baseDirectory;
+  }
   const fileInBaseDirectory = path.join(baseDirectory, UNRESOLVED_TARGET_NAME);
   const resolveTarget = (word) => resolveShellPath(expandAssignedVariables(word, valueByName), baseDirectory) ?? fileInBaseDirectory;
   const targets = [...scannedCommand.matchAll(OUTPUT_REDIRECT)].map((redirect) => resolveTarget(redirect[1]));

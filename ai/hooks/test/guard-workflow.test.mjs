@@ -310,10 +310,14 @@ test("the first repo edit of a session without /specifying is denied once", () =
     [`echo "x;S=${sandboxHome}"; echo x > $S/a.txt`, repository],
     [`# ;S=${sandboxHome}\necho x > $S/a.txt`, repository],
     ['S="my notes"; printf x > "$S/a.txt"', repository],
+    [`for f in a; do :; done; S=${sandboxHome}; echo x > $S/a.txt`, repository],
+    [`S=${sandboxHome}; (cd $S); echo x > a.txt`, repository],
+    [`S=${sandboxHome}; if false; then :; cd $S; fi; echo x > a.txt`, repository],
+    [`S=${sandboxHome}; . <(printf x); echo x > $S/a.txt`, repository],
   ]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd })).decision, "deny", command);
   }
-  for (const command of ["sed -n 1p a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, `sed -i '' 's#one#two#' ${path.join(sandboxHome, "scratch.txt")}`, `sed -i 's/one two/three/' ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee", `export S=${sandboxHome}; D="$S/notes"; cat > "$D/scratch.txt"`, `S=${sandboxHome}; cat > $S/tl.py <<'EOF'\nfor row in rows:  # (each)\n    print(row)\nEOF`, `S=${sandboxHome}; mkdir -p $S/libs && cd $S/libs\necho x > gbm.c`]) {
+  for (const command of ["sed -n 1p a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, `sed -i '' 's#one#two#' ${path.join(sandboxHome, "scratch.txt")}`, `sed -i 's/one two/three/' ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee", `export S=${sandboxHome}; D="$S/notes"; cat > "$D/scratch.txt"`, `S=${sandboxHome}; cat > $S/tl.py <<'EOF'\nfor row in rows:  # (each)\n    print(row)\nEOF`, `S=${sandboxHome}; mkdir -p $S/libs && cd $S/libs\necho x > gbm.c`, `S=${sandboxHome}; cd $S && cat > a.md <<'EOF'\nx\nEOF\nfor f in $S/*.md; do echo $f; done`, `S=${sandboxHome}\nfor f in a; do :; done\necho x > $S/a.txt`]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd: repository })).decision, "allow", command);
   }
   assert.equal(decisionFor(bashCall("sed -i s/one/two/ a.txt", afterDenial, { cwd: repository })).decision, "allow");
