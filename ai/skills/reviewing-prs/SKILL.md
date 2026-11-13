@@ -96,17 +96,16 @@ Failure of the batched call falls back to `gh api repos/{owner}/{repo}/pulls/{nu
 Each inline body:
 
 ```
-> [!NOTE]
-> Automated review. Not written by a human.
-
 **[<reviewer tag>] <SEVERITY>**
 
 <the finding body>
+
+<sub>Automated review. Not written by a human</sub>
 ```
 
 Convergent findings use `**[convergent: <tag> + <tag>] <SEVERITY>**`.
 
-No separate top-level summary comment: the review is the whole record, and a second bot comment per PR is noise. The review `body` is the same `> [!NOTE]` disclaimer, then `Verdict: <VERDICT>`, then one bullet per `line: general` finding in the same tagged format, then `See inline comments.` only when there are inline comments.
+No separate top-level summary comment: the review is the whole record, and a second bot comment per PR is noise. The review `body` is `Verdict: <VERDICT>`, then one bullet per `line: general` finding in the same tagged format, then `See inline comments.` only when there are inline comments, then `<sub>Automated review by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>`.
 
 ## Step 5: Report
 
@@ -128,5 +127,3 @@ Posted: <yes, N inline + M in review body | no, declined> (fallback used, when i
 
 - No file edits, no writer, no fix loop. Reviewing somebody's work does not include doing it
 - No `git` writes beyond `fetch`, and no checkout
-- No `APPROVE` or `REQUEST_CHANGES` review events
-- No posting without asking first
