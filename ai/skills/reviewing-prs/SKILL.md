@@ -1,6 +1,11 @@
 ---
 name: reviewing-prs
 description: Reviews a GitHub pull request and optionally posts the result to it. Resolves the PR to a base and head SHA without touching the working tree, runs one reviewing-code pass over that range, then asks before posting one batched review of inline comments. Fixes nothing, runs one pass, and pushes nothing. Use when asked to review a PR, review somebody's changes, or leave review comments on GitHub.
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: "node $HOME/.claude/hooks/engine-gate.mjs"
 ---
 
 # PR Review
@@ -40,6 +45,8 @@ No PR found: say so and stop, keeping the working tree outside the review; it is
 Invoke `/reviewing-code` with the base and head SHAs, the repo path, and context assembled from the PR itself: title, body, author, and target branch. That context is the only thing standing in for the intent behind a change you did not write, so pass it verbatim rather than summarized.
 
 `/reviewing-code` returns a `VERDICT`, an `ACTIONABLE` count, a dispositioned `STRUCTURED_FINDINGS` block, and a summary. That is the whole review.
+
+No diff is too small, too familiar, or too docs-only to skip `/reviewing-code`, re-reviews included: a hand read is not this review, and the `engine-gate.mjs` Stop hook sends a run that stops before launching the engine back to this step.
 
 `VERDICT: FAILED` means the review did not complete. Re-run it once, since the usual cause is a dead lane process rather than anything about the code. Failing twice: report the failure and post nothing. Posting a partial review as though it were a complete one misrepresents how much of the pull request was actually looked at.
 
