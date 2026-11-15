@@ -27,7 +27,7 @@ Write every intermediate file only to the scratchpad directory, keeping repos fr
 
 ## Step 2: Judge in a fresh context
 
-Judge the work only in a fresh context outside the session that did it. Spawn one `general-purpose` agent (Claude only, excluding Codex: digests carry transcript excerpts that may hold secrets). Its prompt carries only these, as file paths it reads itself: the digest file, the `ledger.ts show` output file, and the brief below; excluding candidate incidents or conclusions of your own, which anchor the judge. It reads those files plus the config named in the brief, edits nothing, and is done when `validate-report.ts` accepts its run file at a scratch path.
+Judge the work only in a fresh context outside the session that did it. Spawn one `general-purpose` agent. Its prompt carries only these, as file paths it reads itself: the digest file, the `ledger.ts show` output file, and the brief below; excluding candidate incidents or conclusions of your own, which anchor the judge. It reads those files plus the config named in the brief, edits nothing, and is done when `validate-report.ts` accepts its run file at a scratch path.
 
 Judge brief:
 
