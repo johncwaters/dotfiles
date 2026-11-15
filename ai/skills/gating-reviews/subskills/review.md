@@ -4,13 +4,12 @@ One review is the gate. What you fix after it is checked by re-running each
 finding's proof and then the suite.
 
 **Skip the review** for a pure rename or a reviewer's suggestion applied verbatim, with
-passing tests, when the stamped paths change nothing else; code the carbon unit dictates is a logic change and gets the review. Go straight to **Stamp the tree**. Any logic change, however small, gets the review.
+passing tests, when the stamped paths change nothing else; code the carbon unit dictates is a logic change and gets the review. Go straight to **Stamp the tree**.
 
 **Step 0, once.** Run `cleaning-ai-slop` on preflight's `paths` as its file list. Edit existing files only, including tests; run existing tests only. Limit naming, error-handling cleanup, and low-value test removal to lines already changed.
 
-**Then one review, the fixes, and the commit.** The review runs once and reports only
-what a lane proved: every finding carries a `Proof:`, a command with its output or quoted lines,
-and you re-run that proof in place of a confirming review.
+**Then one review, the fixes, and the commit.** Each finding carries a `Proof:`; re-run
+that proof in place of a confirming review.
 
 1. Invoke `/reviewing-code` with target `working`, the repo path, preflight's `paths`
    as `--paths`, and one or two sentences of what changed and the goal
