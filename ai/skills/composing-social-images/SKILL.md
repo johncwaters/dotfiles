@@ -36,7 +36,7 @@ Template picker:
 - [features.html](templates/features.html): headline and `items`, 2-4 short strings.
 - [code.html](templates/code.html): real code/terminal excerpt or quickstart command, with headline and supporting copy.
 - [release.html](templates/release.html): `version`, `date`, and `highlights` from release notes; prefer `{ "title": "Short title", "detail": "One-line detail" }` objects, with plain strings also accepted.
-- [chart.html](templates/chart.html): grouped horizontal bars of cited figures; `series` (1-3 names), `groups` (1-4 `{ "label", "values" }`, one number per series), optional `unit`, `subline` and `note` (a data credit); `source` is mandatory. Caps: headline 8 words, subline 10, note 8, each label 3; eyebrow, items, highlights and code are refused.
+- [chart.html](templates/chart.html): grouped horizontal bars of cited figures; `series` (1-3 names), `groups` (1-4 `{ "label", "values" }`, one number per series), optional `unit`, `subline` and `note` (a data credit); `source` is mandatory.
 
 Placement picker:
 - `instagram-portrait` 1080x1350 / `instagram-square` 1080x1080: feed posts and carousel sets.
@@ -47,7 +47,7 @@ Placement picker:
 - `youtube-thumbnail` 1280x720: video thumbnails; the bottom duration-badge band is unsafe.
 - `pinterest` 1000x1500: tall pins.
 
-List vars other than highlights are arrays of 1-6 nonempty strings rendered as escaped list items into `data-slot-list`. Code uses `"code": { "file": "../../src/example.ts", "startLine": 1, "endLine": 8 }` (inclusive, at most 12 lines) or a nonempty `command`, exclusively. Commands use explicit newlines with trailing shell backslashes for continuations; tokens stay unwrapped. The renderer fits the longest line down to the placement minimum, then rejects overflow. Both slots have a 12-line cap and excerpts come only from git-tracked files inside the repo. Shorten copy instead of shrinking below the placement minimum.
+List vars other than highlights are arrays of 1-6 nonempty strings rendered as escaped list items into `data-slot-list`. Code uses `"code": { "file": "../../src/example.ts", "startLine": 1, "endLine": 8 }` (inclusive) or a nonempty `command`, exclusively, each at most 12 lines. Commands use explicit newlines with trailing shell backslashes for continuations; tokens stay unwrapped. The renderer fits the longest line down to the placement minimum, then rejects overflow. Excerpts come only from git-tracked files inside the repo. Shorten copy instead of shrinking below the placement minimum.
 
 Run `node <skill-dir>/scripts/render.mjs --manifest marketing/social/manifest.json --safe-zones --sheet`. Inspect every PNG and `out/review/preview.html`; fix overlap, clipping, low contrast and unused space. Change shot outputs to `out/final/`, then render with `--sheet` without safe zones. Both runs must exit 0. The renderer enforces shapes, assets/fonts, text size and safe insets, PNG dimensions and the 1,000,000-byte ceiling; inspect screenshot readability visually. `alt.json` and sibling `sources.json` merge by filename. These files support publication; rendering does not authorize publishing.
 

@@ -5,7 +5,7 @@ description: Makes authored animations and motion inside running apps or games, 
 
 # Animation
 
-Authored pieces include narrated explainers, isometric "test chamber" clips, launch posters, onboarding animations, animated scenes, and characters. In-app animation sequences the product's own components so card attacks, enemy reveals, turn changes, celebrations, and status indicators read clearly. The reference trigger includes `make an animation like <reference>`.
+In-app animation sequences the product's own components so card attacks, enemy reveals, turn changes, celebrations, and status indicators read clearly.
 
 One animation is one self-contained HTML page: an SVG scene driven by a single clock. The same page is the interactive Artifact, the downloadable HTML, and the source for the MP4 or a still. Keeping it one file means a fix lands everywhere with one rebuild.
 
