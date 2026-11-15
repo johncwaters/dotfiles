@@ -23,7 +23,7 @@ import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const BROWSER_CODE_FAILED_EXIT_CODE = 30;
 const UI_EVIDENCE_MISSING_EXIT_CODE = 31;
-const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--ui-evidence <screenshot> | --no-ui-evidence <reason>] | verify | clear | pin`;
+const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--ui-evidence <layout-shift report> | --no-ui-evidence <reason>] | verify | clear | pin`;
 
 function releaseBaseRef(git: Git): string | null {
   const { mainline } = readResolvedPolicy(git);
@@ -42,14 +42,14 @@ type WriteArguments = { gate: string; paths: string[]; findingsFile: string | nu
 
 function parseWriteArguments(argv: string[]): WriteArguments {
   const parsed = { gate: "", paths: [] as string[], findingsFile: null as string | null, refusesOtherChanges: false };
-  let screenshotFile: string | undefined;
+  let reportFile: string | undefined;
   let waiverReason: string | undefined;
   let collectingPaths = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] ?? "";
     if (argument === "--ui-evidence" || argument === "--no-ui-evidence") {
       const value = argv[index + 1] ?? "";
-      if (argument === "--ui-evidence") screenshotFile = value;
+      if (argument === "--ui-evidence") reportFile = value;
       if (argument === "--no-ui-evidence") waiverReason = value;
       index += 1;
       collectingPaths = false;
@@ -81,7 +81,7 @@ function parseWriteArguments(argv: string[]): WriteArguments {
     }
     parsed.paths.push(argument);
   }
-  const uiEvidence = uiEvidenceFromFlags(screenshotFile, waiverReason);
+  const uiEvidence = uiEvidenceFromFlags(reportFile, waiverReason);
   if (typeof uiEvidence === "string") {
     fail(uiEvidence);
   }
@@ -114,7 +114,7 @@ function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: 
     return writeStamp(git, gate, paths, findings, uiEvidence);
   } catch (error) {
     if (error instanceof UiEvidenceMissing) {
-      process.stderr.write(`UI_EVIDENCE_MISSING: render the changed UI, then pass --ui-evidence <screenshot> taken after the last edit, or --no-ui-evidence <reason>\n${error.message}\n`);
+      process.stderr.write(`UI_EVIDENCE_MISSING: serve the changed UI, run node ~/.claude/skills/designing-ui/scripts/layout-shift.mjs --url <url> --report $(mktemp -d)/ui.json until it exits 0, then pass --ui-evidence <that report>, or --no-ui-evidence <reason>\n${error.message}\n`);
       process.exit(UI_EVIDENCE_MISSING_EXIT_CODE);
     }
     if (!(error instanceof BrowserCodeFailed)) throw error;

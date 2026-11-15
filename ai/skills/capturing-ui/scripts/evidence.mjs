@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { escapeHtml } from '../../../lib/capture-files.mjs'
-import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../lib/headless-chrome.mjs'
+import { chromeLaunchOptions, parseFlags, requireFlags, trackPageActivity } from '../../../lib/headless-chrome.mjs'
 
 export { parseFlags }
 
@@ -85,6 +85,7 @@ export function renderGridMarkdown(area, urlsByStem, heading = area) {
 }
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+const hydrationQuietMs = 1000
 
 async function openPage(browser, { url, width, mode, localStorageTemplate, hydrationMs }) {
     const context = await browser.newContext({ viewport: { width, height: 860 }, colorScheme: mode })
@@ -97,12 +98,13 @@ async function openPage(browser, { url, width, mode, localStorageTemplate, hydra
         }, entries)
     }
     const page = await context.newPage()
+    const pageActivity = trackPageActivity(page)
     const consoleErrors = []
     page.on('dialog', (dialog) => dialog.accept().catch(() => {}))
     page.on('console', (message) => message.type() === 'error' && consoleErrors.push(message.text()))
     page.on('pageerror', (error) => consoleErrors.push(error.message.split('\n')[0]))
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 240000 })
-    await sleep(hydrationMs)
+    await pageActivity.waitUntilQuiet({ capMs: hydrationMs, quietMs: hydrationQuietMs })
     return { context, page, consoleErrors }
 }
 
@@ -145,8 +147,9 @@ async function captureGrid(flags) {
     requireFlags(flags, ['url', 'selector', 'state', 'area', 'out'])
     const browser = await launchChrome()
     const consoleErrors = new Set()
-    for (const mode of colorModes) {
-        for (const [width, pixels] of Object.entries(viewportWidths)) {
+    const shots = colorModes.flatMap((mode) => Object.entries(viewportWidths).map(([width, pixels]) => ({ mode, width, pixels })))
+    await Promise.all(
+        shots.map(async ({ mode, width, pixels }) => {
             const { context, page, consoleErrors: pageErrors } = await openPage(browser, {
                 url: flags.url,
                 width: pixels,
@@ -160,8 +163,8 @@ async function captureGrid(flags) {
             await page.screenshot({ path: join(flags.out, fileName), clip })
             pageErrors.forEach((message) => consoleErrors.add(message.slice(0, 200)))
             await context.close()
-        }
-    }
+        })
+    )
     await browser.close()
     console.log(JSON.stringify({ consoleErrors: [...consoleErrors] }, null, 1))
 }

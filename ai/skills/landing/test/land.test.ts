@@ -970,7 +970,7 @@ test("a review gate refuses to stamp an untracked browser-code failure in an own
   assert.match((ownedLiveNoteStamp.result.preexistingFailures as string[]).join("\n"), /^browser-code: NOTE live-csp http:\/\/127\.0\.0\.1:9\/ could not be reached \(refused the private address 127\.0\.0\.1\)/m);
 });
 
-test("a review gate refuses to stamp a changed or deleted stylesheet, however its path is spelled, until a screenshot newer than the edit or a waiver reason is named", (context) => {
+test("a review gate refuses to stamp a changed or deleted stylesheet, however its path is spelled, until a zero-shift layout-shift report newer than the edit or a waiver reason is named", (context) => {
   const repo = makeRepo();
   context.after(() => cleanup(repo));
   commitFile(repo, "old.css", "p { margin: 0; }\n", "init");
@@ -979,6 +979,11 @@ test("a review gate refuses to stamp a changed or deleted stylesheet, however it
   const screenshot = path.join(screenshotDirectory, "after.png");
   fs.writeFileSync(screenshot, "png");
   fs.utimesSync(screenshot, new Date(0), new Date(0));
+  const report = path.join(screenshotDirectory, "ui.json");
+  const writeReport = (shifts: unknown[], screenshots: string[]) => {
+    fs.writeFileSync(report, JSON.stringify({ url: "http://localhost/", shifts, screenshots }));
+    fs.utimesSync(report, new Date(), new Date(Date.now() + 60_000));
+  };
   writeFile(repo, "app.css", "body { color: red; }\n");
 
   const missing = stamp(repo, ["app.css"]);
@@ -994,25 +999,36 @@ test("a review gate refuses to stamp a changed or deleted stylesheet, however it
   runGit(repo, ["rm", "-q", "-f", "old.txt"]);
   assert.equal(stamp(repo, ["old.css"]).code, 31);
 
-  const stale = stamp(repo, ["app.css"], {}, ["--ui-evidence", screenshot]);
+  writeReport([], [screenshot]);
+  const stale = stamp(repo, ["app.css"], {}, ["--ui-evidence", report]);
   assert.equal(stale.code, 31, stale.stderr);
-  assert.match(stale.stderr, /older than the last edit/);
+  assert.match(stale.stderr, /after\.png is older than the last edit/);
 
   fs.utimesSync(screenshot, new Date(), new Date(Date.now() + 60_000));
-  const inCheckoutScreenshot = path.join(repo, "after.png");
-  fs.writeFileSync(inCheckoutScreenshot, "png");
-  const inCheckout = stamp(repo, ["app.css"], {}, ["--ui-evidence", inCheckoutScreenshot]);
+  const plainScreenshot = stamp(repo, ["app.css"], {}, ["--ui-evidence", screenshot]);
+  assert.equal(plainScreenshot.code, 31, plainScreenshot.stderr);
+  assert.match(plainScreenshot.stderr, /is not a \.json file/);
+  writeReport([{ width: 640, mode: "light", after: "load", score: 0.02 }], [screenshot]);
+  const shifted = stamp(repo, ["app.css"], {}, ["--ui-evidence", report]);
+  assert.equal(shifted.code, 31, shifted.stderr);
+  assert.match(shifted.stderr, /records 1 layout shifts/);
+  writeReport([], [path.join(screenshotDirectory, "gone.png")]);
+  assert.match(stamp(repo, ["app.css"], {}, ["--ui-evidence", report]).stderr, /gone\.png does not exist/);
+  writeReport([], [screenshot]);
+  const inCheckoutReport = path.join(repo, "ui.json");
+  fs.copyFileSync(report, inCheckoutReport);
+  const inCheckout = stamp(repo, ["app.css"], {}, ["--ui-evidence", inCheckoutReport]);
   assert.equal(inCheckout.code, 31, inCheckout.stderr);
   assert.match(inCheckout.stderr, /inside the checkout/);
-  fs.rmSync(inCheckoutScreenshot);
-  fs.symlinkSync(screenshot, inCheckoutScreenshot);
-  const inCheckoutLink = stamp(repo, ["app.css"], {}, ["--ui-evidence", inCheckoutScreenshot]);
+  fs.rmSync(inCheckoutReport);
+  fs.symlinkSync(report, inCheckoutReport);
+  const inCheckoutLink = stamp(repo, ["app.css"], {}, ["--ui-evidence", inCheckoutReport]);
   assert.equal(inCheckoutLink.code, 31, inCheckoutLink.stderr);
   assert.match(inCheckoutLink.stderr, /inside the checkout/);
-  fs.rmSync(inCheckoutScreenshot);
-  const evidenced = stamp(repo, ["app.css"], {}, ["--ui-evidence", screenshot]);
+  fs.rmSync(inCheckoutReport);
+  const evidenced = stamp(repo, ["app.css"], {}, ["--ui-evidence", report]);
   assert.equal(evidenced.code, 0, evidenced.stderr);
-  assert.equal(evidenced.result.uiEvidence, screenshot);
+  assert.equal(evidenced.result.uiEvidence, report);
 
   const waived = stamp(repo, ["app.css"], {}, ["--no-ui-evidence", "token rename only, no rendered change"]);
   assert.equal(waived.code, 0, waived.stderr);

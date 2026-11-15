@@ -36,14 +36,15 @@ export type StampRow = StampFindings & {
   uiEvidence?: string;
 };
 
-export type UiEvidence = { kind: "screenshot"; file: string } | { kind: "waived"; reason: string } | { kind: "none" };
+export type UiEvidence = { kind: "report"; file: string } | { kind: "waived"; reason: string } | { kind: "none" };
 
 export type StampVerification =
   | { matches: true; stamp: StampRow }
   | { matches: false; stamp: StampRow | null; tree: string | null };
 
 const UI_FILE_EXTENSIONS = new Set([".css", ".scss", ".sass", ".less", ".html", ".tsx", ".jsx", ".vue", ".svelte", ".astro"]);
-const UI_EVIDENCE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"]);
+const SCREENSHOT_EXTENSIONS = new Set([".png"]);
+const REPORT_EXTENSIONS = new Set([".json"]);
 
 const BLOCKING_SEVERITIES = new Set(["MEDIUM", "HIGH", "CRITICAL"]);
 const KNOWN_SEVERITIES = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
@@ -173,10 +174,10 @@ export function changedPathsOutside(git: Git, allowedPaths: string[]): string[] 
   return changedPaths.filter((changedPath) => !isAllowed(changedPath));
 }
 
-export function uiEvidenceFromFlags(screenshotFile: string | undefined, waiverReason: string | undefined): UiEvidence | string {
-  if (screenshotFile !== undefined && waiverReason !== undefined) return "pass --ui-evidence or --no-ui-evidence, not both";
+export function uiEvidenceFromFlags(reportFile: string | undefined, waiverReason: string | undefined): UiEvidence | string {
+  if (reportFile !== undefined && waiverReason !== undefined) return "pass --ui-evidence or --no-ui-evidence, not both";
   if (waiverReason !== undefined) return waiverReason.trim() === "" ? "--no-ui-evidence needs a reason" : { kind: "waived", reason: waiverReason.trim() };
-  if (screenshotFile !== undefined) return screenshotFile === "" ? "--ui-evidence needs the screenshot path" : { kind: "screenshot", file: path.resolve(screenshotFile) };
+  if (reportFile !== undefined) return reportFile === "" ? "--ui-evidence needs the layout-shift report path" : { kind: "report", file: path.resolve(reportFile) };
   return { kind: "none" };
 }
 
@@ -204,15 +205,35 @@ function isInsideDirectory(directory: string, existingFile: string): boolean {
   return isResolvedPathInside(resolvedDirectory, entryLocation) || isResolvedPathInside(resolvedDirectory, fs.realpathSync(existingFile));
 }
 
-function screenshotRefusal(repoRoot: string, screenshotFile: string, uiFiles: string[]): string | null {
-  if (!fs.existsSync(screenshotFile)) return `${screenshotFile} does not exist`;
-  if (isInsideDirectory(repoRoot, screenshotFile)) return `${screenshotFile} is inside the checkout, which moves the reviewed tree; save it outside, under mktemp -d`;
-  if (!UI_EVIDENCE_EXTENSIONS.has(path.extname(screenshotFile).toLowerCase())) return `${screenshotFile} is not a ${[...UI_EVIDENCE_EXTENSIONS].join(" ")} file`;
+function evidenceFileRefusal(repoRoot: string, evidenceFile: string, uiFiles: string[], allowedExtensions: Set<string>): string | null {
+  if (!fs.existsSync(evidenceFile)) return `${evidenceFile} does not exist`;
+  if (isInsideDirectory(repoRoot, evidenceFile)) return `${evidenceFile} is inside the checkout, which moves the reviewed tree; save it outside, under mktemp -d`;
+  if (!allowedExtensions.has(path.extname(evidenceFile).toLowerCase())) return `${evidenceFile} is not a ${[...allowedExtensions].join(" ")} file`;
   const remainingUiFiles = uiFiles.filter((uiFile) => fs.existsSync(uiFile));
   if (remainingUiFiles.length === 0) return null;
   const newestUiEditMs = Math.max(...remainingUiFiles.map((uiFile) => fs.statSync(uiFile).mtimeMs));
-  if (fs.statSync(screenshotFile).mtimeMs <= newestUiEditMs) return `${screenshotFile} is older than the last edit to the changed UI files`;
+  if (fs.statSync(evidenceFile).mtimeMs <= newestUiEditMs) return `${evidenceFile} is older than the last edit to the changed UI files`;
   return null;
+}
+
+function readLayoutShiftReport(reportFile: string): { shifts: unknown[]; screenshots: string[] } | null {
+  try {
+    const report = JSON.parse(fs.readFileSync(reportFile, "utf8"));
+    const hasScreenshots = Array.isArray(report?.screenshots) && report.screenshots.length > 0 && report.screenshots.every((screenshot: unknown) => typeof screenshot === "string");
+    return Array.isArray(report?.shifts) && hasScreenshots ? report : null;
+  } catch {
+    return null;
+  }
+}
+
+function layoutShiftReportRefusal(repoRoot: string, reportFile: string, uiFiles: string[]): string | null {
+  const reportFileRefusal = evidenceFileRefusal(repoRoot, reportFile, uiFiles, REPORT_EXTENSIONS);
+  if (reportFileRefusal !== null) return reportFileRefusal;
+  const report = readLayoutShiftReport(reportFile);
+  if (report === null) return `${reportFile} is not a layout-shift.mjs --report file`;
+  if (report.shifts.length > 0) return `${reportFile} records ${report.shifts.length} layout shifts; fix them and rerun`;
+  const screenshotRefusals = report.screenshots.map((screenshot) => evidenceFileRefusal(repoRoot, path.resolve(path.dirname(reportFile), screenshot), uiFiles, SCREENSHOT_EXTENSIONS));
+  return screenshotRefusals.find((refusal) => refusal !== null) ?? null;
 }
 
 function uiEvidenceOutcome(git: Git, paths: string[], uiEvidence: UiEvidence): { recordedEvidence?: string; waiverFindings: StampFinding[] } {
@@ -221,8 +242,8 @@ function uiEvidenceOutcome(git: Git, paths: string[], uiEvidence: UiEvidence): {
   if (uiEvidence.kind === "waived") {
     return { waiverFindings: [{ severity: "LOW", file: path.relative(git.run(["rev-parse", "--show-toplevel"]).stdout.trim(), uiFiles[0] ?? ""), summary: `UI change not rendered: ${uiEvidence.reason}` }] };
   }
-  if (uiEvidence.kind === "none") throw new UiEvidenceMissing("no --ui-evidence screenshot of the changed UI was named", uiFiles);
-  const refusal = screenshotRefusal(git.run(["rev-parse", "--show-toplevel"]).stdout.trim(), uiEvidence.file, uiFiles);
+  if (uiEvidence.kind === "none") throw new UiEvidenceMissing("no --ui-evidence layout-shift report of the changed UI was named", uiFiles);
+  const refusal = layoutShiftReportRefusal(git.run(["rev-parse", "--show-toplevel"]).stdout.trim(), uiEvidence.file, uiFiles);
   if (refusal !== null) throw new UiEvidenceMissing(refusal, uiFiles);
   return { recordedEvidence: uiEvidence.file, waiverFindings: [] };
 }

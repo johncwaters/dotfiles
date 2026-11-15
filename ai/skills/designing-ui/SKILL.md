@@ -17,7 +17,7 @@ Open each step's file with the Read tool before acting on that step; the one-lin
 6. [break-it](subskills/break-it.md): failure, empty, and offline states designed as carefully as success.
 7. [motion](subskills/motion.md): how anything moves.
 
-Building runs steps 2 to 7 and the finish on the flow in scope. On an existing screen, step 1 runs first and its level sets the scope: heavy runs all of it, light fixes only the found tells, none stops at the offered refinements. Reviewing runs step 1, then steps 4 to 7 on the rendered UI, and reports each gap as one row:
+Building runs steps 2 to 7 and the finish on the flow in scope. On an existing screen, step 1 runs first and its level sets the scope: heavy runs all of it, light fixes only the found tells, none stops at the offered refinements. Reviewing runs step 1, then steps 4 to 7 and finish step 2's layout-shift run on the rendered UI, and reports each gap, every shift included, as one row:
 
 ```
 screen | state | fix
@@ -32,4 +32,4 @@ Finish when each step has walked the whole flow in scope and every gap has a fix
 ## Scripts
 
 - `scripts/lint-slop.mjs`: flags taste-neutral AI-template tells (transition-all, hover scale, looping pulse or bounce, gradient text, 800+ weights, emoji, colored glows, off-grid arbitrary px) as `file:line: rule`, exit 1 while any remain.
-- `scripts/layout-shift.mjs`: loads a URL in Chromium at 640 and 1440 wide, scrolls the whole page after load and after the last step, since only on-screen shifts are reported, walks the optional steps, and prints every layout shift as `width | when | score | frame url | element rects`, exit 1 while any remain. Chromium only: Firefox and Safari lack the Layout Instability API.
+- `scripts/layout-shift.mjs`: loads a URL in Chromium at 640 and 1440 wide in light and dark, scrolls the whole page after load and after the last step, since only on-screen shifts are reported, walks the optional steps, and prints every layout shift as `width mode | when | score | frame url | element rects`, exit 1 while any remain. `--report <file>` outside the checkout also writes a screenshot per width and mode beside it, named after it, and the JSON report the review stamp's `--ui-evidence` takes. Chromium only: Firefox and Safari lack the Layout Instability API.

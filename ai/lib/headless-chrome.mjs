@@ -121,3 +121,30 @@ export async function launchCaptureBrowser(chromium) {
         return chromium.launch(options)
     }
 }
+
+const quietPollMs = 100
+
+export function trackPageActivity(page) {
+    let lastActivityAt = Date.now()
+    let requestsInFlight = 0
+    const markActivity = () => {
+        lastActivityAt = Date.now()
+    }
+    page.on('request', () => {
+        requestsInFlight++
+        markActivity()
+    })
+    for (const requestEnd of ['requestfinished', 'requestfailed']) {
+        page.on(requestEnd, () => {
+            requestsInFlight--
+            markActivity()
+        })
+    }
+    const waitUntilQuiet = async ({ capMs, quietMs }) => {
+        const deadline = Date.now() + capMs
+        while (Date.now() < deadline && (requestsInFlight > 0 || Date.now() - lastActivityAt < quietMs)) {
+            await new Promise((resolve) => setTimeout(resolve, quietPollMs))
+        }
+    }
+    return { markActivity, waitUntilQuiet }
+}

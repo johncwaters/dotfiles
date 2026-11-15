@@ -46,7 +46,7 @@ and you re-run that proof in place of a confirming review.
 `node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings <file>`
 with `{liveFindings, unverifiedFindings, preexistingFailures, truncatedLanes, droppedUnproven}`
 in a file saved with Write, each finding `{severity, file, summary}`. A live or `UNVERIFIED` MEDIUM+ on any branch
-stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 or 31 prints its fix; render UI evidence with `/capturing-ui`.
+stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 or 31 prints its fix; UI evidence is a zero-shift `layout-shift.mjs --report` from `/designing-ui`.
 
 A `TRUNCATED` line naming a lane goes in the commit report, since nothing sweeps for the
 overflow that lane dropped, and so does a nonzero `Dropped unproven` count from the review

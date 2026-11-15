@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { chromium } from 'playwright-core'
-import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../lib/headless-chrome.mjs'
+import { chromeLaunchOptions, parseFlags, requireFlags, trackPageActivity } from '../../../lib/headless-chrome.mjs'
 
 const viewportWidths = [640, 1440]
+const colorModes = ['light', 'dark']
 const stepSettleMs = 600
-const quietPollMs = 100
 const usageExitCode = 2
 
 function observeLayoutShifts() {
@@ -75,36 +76,21 @@ async function scrollThroughPage(page) {
     await page.evaluate(() => window.scrollTo(0, 0))
 }
 
-async function measureAtWidth(browser, { url, width, settleMs, quietMs, steps }) {
-    const context = await browser.newContext({ viewport: { width, height: 860 } })
+async function measureContext(browser, { url, width, mode, settleMs, quietMs, steps, screenshotPrefix }) {
+    const context = await browser.newContext({ viewport: { width, height: 860 }, colorScheme: mode })
     const shifts = []
     let currentStepLabel = 'load'
-    let lastActivityAt = Date.now()
-    let requestsInFlight = 0
-    const markActivity = () => {
-        lastActivityAt = Date.now()
-    }
+    let markActivity = () => {}
     await context.exposeBinding('__reportLayoutShift', (_source, shift) => {
         markActivity()
-        shifts.push({ width, after: currentStepLabel, ...shift })
+        shifts.push({ width, mode, after: currentStepLabel, ...shift })
     })
     await context.addInitScript(observeLayoutShifts)
     const page = await context.newPage()
-    page.on('request', () => {
-        requestsInFlight++
-        markActivity()
-    })
-    for (const requestEnd of ['requestfinished', 'requestfailed']) {
-        page.on(requestEnd, () => {
-            requestsInFlight--
-            markActivity()
-        })
-    }
+    const pageActivity = trackPageActivity(page)
+    markActivity = pageActivity.markActivity
     const settleAndScroll = async (scrollLabel) => {
-        const settleDeadline = Date.now() + settleMs
-        while (Date.now() < settleDeadline && (requestsInFlight > 0 || Date.now() - lastActivityAt < quietMs)) {
-            await sleep(quietPollMs)
-        }
+        await pageActivity.waitUntilQuiet({ capMs: settleMs, quietMs })
         currentStepLabel = scrollLabel
         await scrollThroughPage(page)
     }
@@ -118,26 +104,36 @@ async function measureAtWidth(browser, { url, width, settleMs, quietMs, steps })
         markActivity()
     }
     if (steps.length) await settleAndScroll('final scroll pass')
+    const screenshot = screenshotPrefix ? `${screenshotPrefix}-${width}-${mode}.png` : null
+    if (screenshot) await page.screenshot({ path: screenshot })
     await context.close()
-    return shifts
+    return { shifts, screenshot }
 }
 
 function formatShift(shift) {
     const inputNote = shift.hadRecentInput ? ' (input-driven)' : ''
-    return `${shift.width} | after ${shift.after} +${shift.atMs}ms | ${shift.score.toFixed(4)}${inputNote} | ${shift.frameUrl} | ${shift.sources.join('; ')}`
+    return `${shift.width} ${shift.mode} | after ${shift.after} +${shift.atMs}ms | ${shift.score.toFixed(4)}${inputNote} | ${shift.frameUrl} | ${shift.sources.join('; ')}`
 }
 
 async function main() {
     const flags = parseFlags(process.argv.slice(2))
     requireFlags(flags, ['url'])
+    if (flags.report === true) throw new Error('--report needs a file path')
     const steps = readSteps(flags.steps)
     const settleMs = readMillisecondsFlag(flags, 'settle-ms', 9000)
     const quietMs = readMillisecondsFlag(flags, 'quiet-ms', 1000)
     const browser = await chromium.launch(chromeLaunchOptions())
     try {
-        const shiftsByWidth = await Promise.all(viewportWidths.map((width) => measureAtWidth(browser, { url: flags.url, width, settleMs, quietMs, steps })))
-        const shifts = shiftsByWidth.flat()
+        const reportFile = flags.report ? resolve(flags.report) : null
+        const screenshotPrefix = reportFile ? join(dirname(reportFile), basename(reportFile, extname(reportFile))) : null
+        const contexts = viewportWidths.flatMap((width) => colorModes.map((mode) => ({ width, mode })))
+        const measurements = await Promise.all(contexts.map(({ width, mode }) => measureContext(browser, { url: flags.url, width, mode, settleMs, quietMs, steps, screenshotPrefix })))
+        const shifts = measurements.flatMap((measurement) => measurement.shifts)
         for (const shift of shifts) console.log(formatShift(shift))
+        if (reportFile) {
+            const screenshots = measurements.map((measurement) => measurement.screenshot)
+            writeFileSync(reportFile, `${JSON.stringify({ url: flags.url, shifts, screenshots }, null, 1)}\n`)
+        }
         process.exitCode = shifts.length ? 1 : 0
     } finally {
         await browser.close()
