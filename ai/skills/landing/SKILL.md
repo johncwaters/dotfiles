@@ -106,8 +106,7 @@ Exit code carries the outcome; the JSON carries the detail and a typed `next`. A
 [Conflict resolution](subskills/recovery.md#conflict-resolution); `relay` passes `report` on verbatim, then continues the caller's flow; `stop` relays `report`. Report one line with the outcome, short hash, and
 message subject, then one line per finding fixed.
 
-`pushed: false` after successful mainline promotion is normal. Report safety-push failures
-from `warnings`; the outcome stays unchanged.
+Report safety-push failures from `warnings`; the outcome stays unchanged.
 
 ## After the commit
 

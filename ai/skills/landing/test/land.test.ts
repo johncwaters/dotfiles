@@ -453,7 +453,7 @@ test("a push advances the origin ref and reports pushed", () => {
     const { result } = land(repo, [], VALID_MESSAGE);
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
     const branch = gitOutput(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
     assert.equal(gitOutput(origin, ["rev-parse", branch]), result.commit);
   } finally {
@@ -477,7 +477,7 @@ test("a feature push follows its upstream remote and ref when origin rejects pus
 
     assert.equal(code, 0);
     assert.equal(result.outcome, "COMMITTED");
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
     assert.equal(gitOutput(upstream, ["rev-parse", "refs/heads/fast-stop-hook"]), result.commit);
   } finally {
     cleanup(origin, upstream, repo);
@@ -497,7 +497,7 @@ test("a feature branch tracking origin main pushes under its own name and leaves
     const { code, result } = land(repo, [], VALID_MESSAGE);
 
     assert.equal(code, 0);
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
     assert.equal(gitOutput(origin, ["rev-parse", "refs/heads/main"]), originMainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "refs/heads/feature"]), result.commit);
   } finally {
@@ -514,7 +514,7 @@ test("a repo with no origin commits and warns instead of pushing", () => {
     const { result } = land(repo, [], VALID_MESSAGE);
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.equal(result.pushed, false);
+    assert.equal(result.branchPushed, false);
     assert.match((result.warnings as string[]).join("\n"), /no origin remote configured/);
   } finally {
     cleanup(repo);
@@ -541,7 +541,7 @@ test("a rejected push is PUSH_FAILED with the commit already made", () => {
 
     assert.equal(result.outcome, "PUSH_FAILED");
     assert.equal(code, 22);
-    assert.equal(result.pushed, false);
+    assert.equal(result.branchPushed, false);
     assert.equal(result.commit, gitOutput(repo, ["rev-parse", "HEAD"]));
   } finally {
     cleanup(origin, repo, other);
@@ -603,7 +603,7 @@ test("a clean rerun without --promote retries a failed push and clears the parke
     const rerun = land(repo, [], VALID_MESSAGE, ledgerEnv);
 
     assert.equal(rerun.result.outcome, "NOTHING_TO_COMMIT");
-    assert.equal(rerun.result.pushed, true);
+    assert.equal(rerun.result.branchPushed, true);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
     assert.deepEqual(parkedBranchesIn(ledgerPath), []);
   } finally {
@@ -623,7 +623,7 @@ test("a clean rerun without --promote on an already pushed branch pushes nothing
     const { result } = land(repo, [], VALID_MESSAGE);
 
     assert.equal(result.outcome, "NOTHING_TO_COMMIT");
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
   } finally {
     cleanup(origin, repo);
   }
@@ -641,7 +641,7 @@ test("a clean rerun with --no-push leaves an unpushed branch alone", () => {
     const { result } = land(repo, ["--no-push"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "NOTHING_TO_COMMIT");
-    assert.equal(result.pushed, false);
+    assert.equal(result.branchPushed, false);
     assert.notEqual(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
   } finally {
     cleanup(origin, repo);
@@ -671,7 +671,7 @@ test("a mainline sync pushes git's clean merge and a stack-after-squash merge th
     runGit(repo, ["merge", "-q", "--no-edit", "origin/main"]);
     const cleanSync = landUnstamped(repo, [], "", reviewGatesEnv);
     assert.equal(cleanSync.result.outcome, "NOTHING_TO_COMMIT");
-    assert.equal(cleanSync.result.pushed, true);
+    assert.equal(cleanSync.result.branchPushed, true);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), gitOutput(repo, ["rev-parse", "HEAD"]));
 
     advanceMainline("b.txt", "mainline\n");
@@ -682,7 +682,7 @@ test("a mainline sync pushes git's clean merge and a stack-after-squash merge th
     const resolvedMerge = gitOutput(repo, ["rev-parse", "HEAD"]);
     const withheldSync = landUnstamped(repo, [], "", reviewGatesEnv);
     assert.equal(withheldSync.result.outcome, "PUSH_WITHHELD");
-    assert.equal(withheldSync.result.pushed, false);
+    assert.equal(withheldSync.result.branchPushed, false);
     assert.deepEqual(withheldSync.result.next, { action: "runGate", gate: "gating-reviews", then: "landing", commits: [resolvedMerge.slice(0, 12)] });
     assert.notEqual(gitOutput(origin, ["rev-parse", "feature"]), resolvedMerge);
 
@@ -700,7 +700,7 @@ test("a mainline sync pushes git's clean merge and a stack-after-squash merge th
     commitFile(repo, "stacked.txt", "lower\ntop\n", "top work");
     const stackRecorded = spawnSync("node", [path.join(SKILL_DIR, "stamp.ts"), "clear"], { cwd: repo, encoding: "utf8", env: { ...process.env, ...reviewGatesEnv } });
     assert.equal(stackRecorded.status, 0, stackRecorded.stderr ?? "");
-    assert.equal(landUnstamped(repo, [], "", reviewGatesEnv).result.pushed, true);
+    assert.equal(landUnstamped(repo, [], "", reviewGatesEnv).result.branchPushed, true);
     runGit(repo, ["switch", "-q", "main"]);
     runGit(repo, ["merge", "-q", "--squash", "origin/lower"]);
     runGit(repo, ["commit", "-q", "-m", "squash lower"]);

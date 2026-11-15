@@ -254,7 +254,7 @@ class Landing {
 
     return committed({
       commit: this.commitHash ?? "",
-      pushed: this.pushed,
+      branchPushed: this.pushed,
       promoted: this.promoted,
       ...(this.deletedRemoteBranches.length > 0
         ? { deletedRemoteBranches: this.deletedRemoteBranches }
@@ -290,14 +290,14 @@ class Landing {
       if (pushOutcome) {
         return this.failure(pushOutcome);
       }
-      return nothingToCommit({ pushed: this.pushed, warnings: this.warnings });
+      return nothingToCommit({ branchPushed: this.pushed, warnings: this.warnings });
     }
     const promoteOutcome = this.promote();
     if (promoteOutcome) {
       return this.failure(promoteOutcome);
     }
     return nothingToCommit({
-      pushed: this.pushed,
+      branchPushed: this.pushed,
       promoted: this.promoted,
       ...(this.deletedRemoteBranches.length > 0
         ? { deletedRemoteBranches: this.deletedRemoteBranches }
@@ -310,7 +310,7 @@ class Landing {
     this.recordParkedBranch(outcome);
     const state = {
       ...(this.commitHash ? { commit: this.commitHash } : {}),
-      pushed: this.pushed,
+      branchPushed: this.pushed,
       promoted: this.promoted,
       warnings: this.warnings,
     };
@@ -336,7 +336,7 @@ class Landing {
       return pushWithheld({ ...state, findings: this.withheldFindings });
     }
     if (outcome === "NOTHING_TO_COMMIT") {
-      return nothingToCommit({ pushed: this.pushed, promoted: this.promoted, warnings: this.warnings });
+      return nothingToCommit({ branchPushed: this.pushed, promoted: this.promoted, warnings: this.warnings });
     }
     if (outcome === "DENYLISTED_FILE_STAGED") {
       return denylistedFileStaged({ files: this.denylistedStagedFiles, warnings: this.warnings });

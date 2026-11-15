@@ -51,7 +51,7 @@ test("promotion rebases a feature branch onto main and pushes one mainline ref",
 
     assert.equal(result.outcome, "COMMITTED");
     assert.deepEqual(result.promoted, ["main"]);
-    assert.equal(result.pushed, false);
+    assert.equal(result.branchPushed, false);
     assert.equal(gitOutput(local, ["rev-parse", "main"]), result.commit);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
     assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "feature"]), 0);
@@ -312,7 +312,7 @@ test("a repository without origin promotes locally and warns", () => {
 
     assert.equal(result.outcome, "COMMITTED");
     assert.deepEqual(result.promoted, ["main"]);
-    assert.equal(result.pushed, false);
+    assert.equal(result.branchPushed, false);
     assert.equal(gitOutput(repo, ["rev-parse", "main"]), result.commit);
     assert.match((result.warnings as string[]).join("\n"), /updated locally only/);
   } finally {
@@ -401,7 +401,7 @@ test("a failed mainline fetch returns MAINLINE_UNVERIFIED and never creates orig
     assert.equal(result.outcome, "MAINLINE_UNVERIFIED");
     assert.equal(code, 29);
     assert.equal(result.mainline, "main");
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
     assert.equal(gitOutput(repo, ["rev-parse", "main"]), localMainBefore);
     assert.notEqual(tryGit(origin, ["rev-parse", "-q", "--verify", "refs/heads/main"]), 0);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
@@ -450,7 +450,7 @@ test("a rejected mainline push is PROMOTE_FAILED and pushes the feature branch",
 
     assert.equal(result.outcome, "PROMOTE_FAILED");
     assert.equal(code, 24);
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
     assert.deepEqual(result.promoted, []);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", featureBranch]), result.commit);
@@ -800,7 +800,7 @@ test("a mainline checked out in a dirty worktree stops promotion", () => {
     const { result } = land(session, ["--promote"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "PROMOTE_FAILED");
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
     assert.equal(gitOutput(holder, ["rev-parse", "main"]), mainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
     assert.match((result.warnings as string[]).join("\n"), /has uncommitted changes/);
@@ -945,7 +945,7 @@ test("--promote --no-push updates local mainline without pushing any ref", () =>
     const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.equal(result.pushed, false);
+    assert.equal(result.branchPushed, false);
     assert.deepEqual(result.promoted, ["main"]);
     assert.equal(gitOutput(local, ["rev-parse", "main"]), result.commit);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
@@ -969,7 +969,7 @@ test("--no-push suppresses the feature safety push on a mainline refusal", () =>
     const { result } = land(local, ["--promote", "--no-push"], VALID_MESSAGE);
 
     assert.equal(result.outcome, "PROMOTE_CONFLICT");
-    assert.equal(result.pushed, false);
+    assert.equal(result.branchPushed, false);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), originMainBefore);
     assert.equal(gitOutput(origin, ["rev-parse", "feature"]), originFeatureBefore);
   } finally {
@@ -1082,7 +1082,7 @@ test("a successful feature push clears the parked entry for that branch", () => 
     const { result } = land(local, [], VALID_MESSAGE, { CLAUDE_COMMIT_LEDGER: ledgerPath });
 
     assert.equal(result.outcome, "COMMITTED");
-    assert.equal(result.pushed, true);
+    assert.equal(result.branchPushed, true);
     assert.deepEqual(parseLedger(fs.readFileSync(ledgerPath, "utf8")).entries, []);
   } finally {
     cleanup(origin, seed, local, ledgerDirectory);

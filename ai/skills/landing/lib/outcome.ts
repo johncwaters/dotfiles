@@ -140,7 +140,7 @@ export const ready = defineOutcome("READY", {
 
 export const committed = defineOutcome("COMMITTED", {
   commit: required("string"),
-  pushed: required("boolean"),
+  branchPushed: required("boolean"),
   promoted: required("stringList"),
   deletedRemoteBranches: optional("stringList"),
   noPullRequestHost: optional("string"),
@@ -162,7 +162,7 @@ export const operationInProgress = defineOutcome("OPERATION_IN_PROGRESS", {
   : { action: "stop", report: `A ${operation} is in flight; nothing was written.` });
 
 export const nothingToCommit = defineOutcome("NOTHING_TO_COMMIT", {
-  pushed: optional("boolean"),
+  branchPushed: optional("boolean"),
   promoted: optional("stringList"),
   deletedRemoteBranches: optional("stringList"),
 }, ({ promoted = [] }) => ({ action: "stop", report: promoted.length > 0 ? `Nothing new to commit; promoted ${promoted.join(", ")}.` : "Nothing to commit." }));
@@ -183,13 +183,13 @@ export const homePathStaged = defineOutcome("HOME_PATH_STAGED", {
 
 export const pushFailed = defineOutcome("PUSH_FAILED", {
   commit: optional("string"),
-  pushed: required("boolean"),
+  branchPushed: required("boolean"),
   promoted: required("stringList"),
 }, () => ({ action: "rerun", script: "land.ts", after: "fixing the push failure named in warnings, by Push and promote recovery" }));
 
 export const promoteConflict = defineOutcome("PROMOTE_CONFLICT", {
   commit: optional("string"),
-  pushed: required("boolean"),
+  branchPushed: required("boolean"),
   promoted: required("stringList"),
   conflicts: required("stringList"),
 }, ({ conflicts }) =>
@@ -199,7 +199,7 @@ export const promoteConflict = defineOutcome("PROMOTE_CONFLICT", {
 
 export const promoteFailed = defineOutcome("PROMOTE_FAILED", {
   commit: optional("string"),
-  pushed: required("boolean"),
+  branchPushed: required("boolean"),
   promoted: required("stringList"),
 }, () => ({ action: "rerun", script: "land.ts", after: "fixing the promote failure named in warnings, by Push and promote recovery" }));
 
@@ -209,7 +209,7 @@ export const branchForbidden = defineOutcome("BRANCH_FORBIDDEN", {
 
 export const mainlineUnverified = defineOutcome("MAINLINE_UNVERIFIED", {
   commit: optional("string"),
-  pushed: required("boolean"),
+  branchPushed: required("boolean"),
   promoted: required("stringList"),
   mainline: required("string"),
 }, () => ({ action: "rerun", script: "land.ts", after: "restoring the remote verification named in warnings" }));
@@ -222,7 +222,7 @@ export const notReviewed = defineOutcome("NOT_REVIEWED", {
 
 const withheldFields = {
   commit: optional("string"),
-  pushed: required("boolean"),
+  branchPushed: required("boolean"),
   promoted: required("stringList"),
   findings: required("stringList"),
 };

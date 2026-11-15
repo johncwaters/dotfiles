@@ -27,22 +27,22 @@ function roundTrip(result: Result): Record<string, unknown> {
 test("every outcome constructor round-trips through JSON", () => {
   const results: Result[] = [
     ready({ branch: "feature", branchAllowed: true, changed: ["a.ts"], untracked: [], hasUncommittedWork: true }),
-    committed({ commit: "abc123", pushed: true, promoted: ["main"] }),
+    committed({ commit: "abc123", branchPushed: true, promoted: ["main"] }),
     notARepo({}),
     detachedHead({}),
     operationInProgress({ operation: "MERGE_HEAD" }),
-    nothingToCommit({ pushed: false, promoted: [] }),
+    nothingToCommit({ branchPushed: false, promoted: [] }),
     messageValid({}),
     messageInvalid({ errors: ["description must not be empty"] }),
     hookFailed({ warnings: ["pre-commit hook failed"] }),
     denylistedFileStaged({ files: [".env"] }),
-    pushFailed({ commit: "abc123", pushed: false, promoted: [] }),
-    promoteConflict({ commit: "abc123", pushed: false, promoted: [], conflicts: ["a.ts"] }),
-    promoteFailed({ commit: "abc123", pushed: true, promoted: [] }),
+    pushFailed({ commit: "abc123", branchPushed: false, promoted: [] }),
+    promoteConflict({ commit: "abc123", branchPushed: false, promoted: [], conflicts: ["a.ts"] }),
+    promoteFailed({ commit: "abc123", branchPushed: true, promoted: [] }),
     branchForbidden({ branch: "main" }),
     mainlineUnverified({
       commit: "abc123",
-      pushed: true,
+      branchPushed: true,
       promoted: [],
       mainline: "main",
     }),
@@ -55,9 +55,9 @@ test("every outcome constructor round-trips through JSON", () => {
 });
 
 test("empty warnings are omitted and non-empty warnings survive", () => {
-  assert.equal("warnings" in committed({ commit: "a", pushed: true, promoted: [] }), false);
+  assert.equal("warnings" in committed({ commit: "a", branchPushed: true, promoted: [] }), false);
   assert.deepEqual(
-    committed({ commit: "a", pushed: true, promoted: [], warnings: ["no origin remote configured; skipping push"] })
+    committed({ commit: "a", branchPushed: true, promoted: [], warnings: ["no origin remote configured; skipping push"] })
       .warnings,
     ["no origin remote configured; skipping push"],
   );
@@ -65,7 +65,7 @@ test("empty warnings are omitted and non-empty warnings survive", () => {
 
 test("a missing required field throws instead of reaching stdout", () => {
   assert.throws(
-    () => committed({ pushed: true, promoted: [] } as unknown as { commit: string; pushed: boolean; promoted: string[] }),
+    () => committed({ branchPushed: true, promoted: [] } as unknown as { commit: string; branchPushed: boolean; promoted: string[] }),
     /missing required field commit/,
   );
 });
@@ -73,21 +73,21 @@ test("a missing required field throws instead of reaching stdout", () => {
 test("a field of the wrong type throws instead of reaching stdout", () => {
   assert.throws(
     () =>
-      committed({ commit: "abc", pushed: "yes", promoted: [] } as unknown as {
+      committed({ commit: "abc", branchPushed: "yes", promoted: [] } as unknown as {
         commit: string;
-        pushed: boolean;
+        branchPushed: boolean;
         promoted: string[];
       }),
-    /field pushed must be a boolean/,
+    /field branchPushed must be a boolean/,
   );
 });
 
 test("an unknown field throws instead of reaching stdout", () => {
   assert.throws(
     () =>
-      committed({ commit: "abc", pushed: true, promoted: [], findings: [] } as unknown as {
+      committed({ commit: "abc", branchPushed: true, promoted: [], findings: [] } as unknown as {
         commit: string;
-        pushed: boolean;
+        branchPushed: boolean;
         promoted: string[];
       }),
     /has no field named findings/,
