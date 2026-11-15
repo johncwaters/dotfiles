@@ -8,7 +8,7 @@ const clickSaveStepsPath = new URL("click-save.json", fixturesDirectory).pathnam
 
 function measureFixture(fixtureName) {
   const fixtureUrl = new URL(fixtureName, fixturesDirectory).href;
-  const run = spawnSync(process.execPath, [layoutShiftScript, "--url", fixtureUrl, "--steps", clickSaveStepsPath, "--settle-ms", "800"], { encoding: "utf8" });
+  const run = spawnSync(process.execPath, [layoutShiftScript, "--url", fixtureUrl, "--steps", clickSaveStepsPath], { encoding: "utf8" });
   return { exitCode: run.status, stdout: run.stdout, stderr: run.stderr };
 }
 
@@ -22,8 +22,8 @@ test("a late insert, a click-widened button label, and lazy content below the fo
   const { exitCode, stdout } = measureFixture("shifting.html");
   assert.equal(exitCode, 1);
   for (const width of [640, 1440]) {
-    assert.match(stdout, new RegExp(`^${width} \\| load \\+\\d+ms \\| [\\d.]+ \\| \\S+shifting\\.html \\| P#below `, "m"));
-    assert.match(stdout, new RegExp(`^${width} \\| after step 1 click #save \\| [\\d.]+ \\(input-driven\\) \\| \\S+shifting\\.html \\| DIV#neighbor `, "m"));
-    assert.match(stdout, new RegExp(`^${width} \\| after load scroll pass \\| [\\d.]+ \\| \\S+shifting\\.html \\| P#below-fold `, "m"));
+    assert.match(stdout, new RegExp(`^${width} \\| after load \\+\\d+ms \\| [\\d.]+ \\| \\S+shifting\\.html \\| P#below `, "m"));
+    assert.match(stdout, new RegExp(`^${width} \\| after step 1 click #save \\+\\d+ms \\| [\\d.]+ \\(input-driven\\) \\| \\S+shifting\\.html \\| DIV#neighbor `, "m"));
+    assert.match(stdout, new RegExp(`^${width} \\| after load scroll pass \\+\\d+ms \\| [\\d.]+ \\| \\S+shifting\\.html \\| P#below-fold `, "m"));
   }
 });

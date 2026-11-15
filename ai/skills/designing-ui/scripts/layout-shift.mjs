@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { chromium } from 'playwright-core'
 import { chromeLaunchOptions, parseFlags, requireFlags } from '../../../lib/headless-chrome.mjs'
 
 const viewportWidths = [640, 1440]
 const stepSettleMs = 600
+const quietPollMs = 100
 const usageExitCode = 2
-
-const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 function observeLayoutShifts() {
     const describeNode = (node) => {
@@ -47,12 +47,12 @@ function readSteps(stepsPath) {
     return steps
 }
 
-function readSettleMs(flags) {
-    const settleMs = Number(flags['settle-ms'] ?? 9000)
-    if (!Number.isFinite(settleMs) || settleMs < 0 || flags['settle-ms'] === true) {
-        throw new Error(`--settle-ms must be a number of milliseconds, got ${flags['settle-ms']}`)
+function readMillisecondsFlag(flags, name, defaultMs) {
+    const milliseconds = Number(flags[name] ?? defaultMs)
+    if (!Number.isFinite(milliseconds) || milliseconds < 0 || flags[name] === true) {
+        throw new Error(`--${name} must be a number of milliseconds, got ${flags[name]}`)
     }
-    return settleMs
+    return milliseconds
 }
 
 async function runStep(page, step) {
@@ -75,48 +75,67 @@ async function scrollThroughPage(page) {
     await page.evaluate(() => window.scrollTo(0, 0))
 }
 
-async function measureAtWidth(browser, { url, width, settleMs, steps }) {
+async function measureAtWidth(browser, { url, width, settleMs, quietMs, steps }) {
     const context = await browser.newContext({ viewport: { width, height: 860 } })
     const shifts = []
     let currentStepLabel = 'load'
+    let lastActivityAt = Date.now()
+    let requestsInFlight = 0
+    const markActivity = () => {
+        lastActivityAt = Date.now()
+    }
     await context.exposeBinding('__reportLayoutShift', (_source, shift) => {
+        markActivity()
         shifts.push({ width, after: currentStepLabel, ...shift })
     })
     await context.addInitScript(observeLayoutShifts)
     const page = await context.newPage()
+    page.on('request', () => {
+        requestsInFlight++
+        markActivity()
+    })
+    for (const requestEnd of ['requestfinished', 'requestfailed']) {
+        page.on(requestEnd, () => {
+            requestsInFlight--
+            markActivity()
+        })
+    }
+    const settleAndScroll = async (scrollLabel) => {
+        const settleDeadline = Date.now() + settleMs
+        while (Date.now() < settleDeadline && (requestsInFlight > 0 || Date.now() - lastActivityAt < quietMs)) {
+            await sleep(quietPollMs)
+        }
+        currentStepLabel = scrollLabel
+        await scrollThroughPage(page)
+    }
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 240000 })
-    await sleep(settleMs)
-    currentStepLabel = 'load scroll pass'
-    await scrollThroughPage(page)
+    await settleAndScroll('load scroll pass')
     for (const [stepIndex, step] of steps.entries()) {
         currentStepLabel = describeStep(step, stepIndex)
         await runStep(page, step).catch((error) => {
             throw new Error(`${currentStepLabel}: ${error.message}`)
         })
+        markActivity()
     }
-    if (steps.length) {
-        await sleep(settleMs)
-        currentStepLabel = 'final scroll pass'
-        await scrollThroughPage(page)
-    }
+    if (steps.length) await settleAndScroll('final scroll pass')
     await context.close()
     return shifts
 }
 
 function formatShift(shift) {
-    const timing = shift.after === 'load' ? `load +${shift.atMs}ms` : `after ${shift.after}`
     const inputNote = shift.hadRecentInput ? ' (input-driven)' : ''
-    return `${shift.width} | ${timing} | ${shift.score.toFixed(4)}${inputNote} | ${shift.frameUrl} | ${shift.sources.join('; ')}`
+    return `${shift.width} | after ${shift.after} +${shift.atMs}ms | ${shift.score.toFixed(4)}${inputNote} | ${shift.frameUrl} | ${shift.sources.join('; ')}`
 }
 
 async function main() {
     const flags = parseFlags(process.argv.slice(2))
     requireFlags(flags, ['url'])
     const steps = readSteps(flags.steps)
-    const settleMs = readSettleMs(flags)
+    const settleMs = readMillisecondsFlag(flags, 'settle-ms', 9000)
+    const quietMs = readMillisecondsFlag(flags, 'quiet-ms', 1000)
     const browser = await chromium.launch(chromeLaunchOptions())
     try {
-        const shiftsByWidth = await Promise.all(viewportWidths.map((width) => measureAtWidth(browser, { url: flags.url, width, settleMs, steps })))
+        const shiftsByWidth = await Promise.all(viewportWidths.map((width) => measureAtWidth(browser, { url: flags.url, width, settleMs, quietMs, steps })))
         const shifts = shiftsByWidth.flat()
         for (const shift of shifts) console.log(formatShift(shift))
         process.exitCode = shifts.length ? 1 : 0
