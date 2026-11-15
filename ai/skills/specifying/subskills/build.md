@@ -8,7 +8,7 @@ One session builds every ticket in an intent file, in the listed order, and land
 4. Before the last ticket's gate, confirm each criterion of the intent against the landed commits and the working tree. Invoke the `<reviewGate>` skill over the ticket's work with one commit carrying the trailer `Ticket: <slug>/<id>`, commit-only (no `--promote`, no `opening-prs` offer) for every ticket but the last; the last lands by [`policy.afterCommit`](#landing-by-policyaftercommit). `gating-reviews` lands the ticket through the `landing` skill under that instruction.
 5. A `NOT_REVIEWED` result from landing returns to step 4. Then start the next ticket.
 6. `PROMOTE_WITHHELD` on the last ticket is acted on by its `next`: fix and rerun for a blocking finding, the `gating-reviews` skill with its `commits` for commits not landed through `land.ts`. A resumed build whose tickets have all landed finishes the last ticket's landing by [`policy.afterCommit`](#landing-by-policyaftercommit).
-7. Archive the design spec and the intent file with `node <skill-dir>/archive.ts <spec.json> built` once the intent is promoted or its PR is open.
+7. Once the intent is promoted or its PR is open, close out: run `node <skill-dir>/archive.ts <spec.json> built`, sync the whiteboard to what was built, remove the scratch, worktree, and branch this run made, and report each ticket's `land.ts` outcome, the PR or promotion state, what is owed, and the next step.
 
 ## Landing by policy.afterCommit
 

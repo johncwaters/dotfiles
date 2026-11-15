@@ -1,11 +1,11 @@
 ---
 name: specifying
-description: Turns a feature request into a design spec, a typed and validated JSON graph of decisions and units of work. Sketches it from the repo, asks the carbon unit rounds of questions until every decision is settled, cuts it into ticket-sized units with verifiable contracts, and runs challenging-plans on them. Use for /specifying, "spec this", "sharpen this", "grill me on this", and before the first edit of any change that involves a choice, as the spec_first rule defines it.
+description: Turns a feature request into a design spec, a typed and validated JSON graph of decisions and units of work. Sketches it from the repo and outside research, settles each decision on research, leaving the carbon unit only contested or irreversible ones, cuts it into ticket-sized units with verifiable contracts, and runs challenging-plans on them. Use for /specifying, "spec this", "sharpen this", "grill me on this", and before the first edit of any change that involves a choice, as the spec_first rule defines it.
 ---
 
 # Spec
 
-Surface a feature's hidden decisions while the carbon unit is here to make them.
+Settle a feature's hidden decisions on research, leaving the carbon unit only the contested, irreversible, or critical ones.
 
 Terms: design spec, sketch, branch, question round, decision, design node, open question, unit of work, contract, ticket, intent, challenge stamp. Defined in `~/.dotfiles/GLOSSARY.md`; read it first.
 
@@ -78,8 +78,8 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 1. Show the `tree` rendering, then reply with the path, the goal's problem, criteria, and risk with the signal that set it, every open question with the units it defers, every `assumed` decision, and every budget waiver.
 2. With an open question left, stop there.
 3. Keep without asking every `assumed` decision the challenge did not overturn and every changed design node whose code you wrote.
-4. Settle each decision `challenge.md` step 2 overturned and each changed design node whose code the carbon unit chose in a round, keep or restore, with a question round through `ask.md`, since the challenge undid their own answer. A restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A kept overturn sets that decision's source to `decided`, keeping its `why`. A round the carbon unit ends early stops the hand off like an open question.
-5. Once none is left, unless the carbon unit asked for the design spec alone, cut and build without asking.
+4. Settle each decision `challenge.md` step 2 overturned and each changed design node whose code the carbon unit chose in a round, keep or restore, with a question round through `ask.md`, since the challenge undid their own answer. A restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A kept overturn sets that decision's source to `decided`, keeping its `why`.
+5. Once none is left, unless the carbon unit asked for the design spec alone or the goal is `critical`, which waits for their approval, cut and build without asking.
 
 ## Scripts
 

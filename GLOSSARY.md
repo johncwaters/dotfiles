@@ -24,7 +24,8 @@ here.
   each with a recommended answer. Questions in a round never depend on each other's
   answers; a dependent question waits for the next round.
 - **decision**: A closed branch, recorded with its answer, its reason, and its source:
-  `decided` by the carbon unit, `read` from the repo at a cited file and line, or `assumed`
+  `decided` by the carbon unit, `read` from the repo or an outside source at a cited
+  file and line or the probe that showed it (`WebFetch <url>`), or `assumed`
   when the recommendation stood in for an answer the carbon unit never gave, or when the
   challenge overturned the answer they gave on evidence verified in the repo. Only the
   challenge may overturn a `decided` one; it then reads `assumed` and keeps the displaced
