@@ -94,11 +94,3 @@ Credit, decided by each artifact's license:
 | Ideas only, no text copied | Commit body line: `Ideas adapted from <owner>/<repo> (<license>); no text copied.` |
 | Copied or derived text or code (only when the license permits it) | A row in `~/.dotfiles/NOTICE.md` plus its notice section, in the same form as the existing entries, and the same commit body line naming it derived |
 | No license or a non-redistributable one | Ideas only. Copy no text, and say so in the reply |
-
-## Check
-
-- The reply names the license and fills in the `Code found`, `Seen before`, `Already have`, and `Upstream caveats` lines, even when they are empty.
-- Item 0 describes full adoption, and every rule-blocked piece sits on the `Blocked by a rule` line.
-- Every numbered item names a target repo, a path, its `Touches:`, and its probes.
-- No file in the source was executed, no symlink in it was followed, and nothing was built before the carbon unit picked.
-- The hand-off request carries the credit line that the license calls for.

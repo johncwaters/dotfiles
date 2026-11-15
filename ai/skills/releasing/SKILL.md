@@ -7,7 +7,7 @@ description: Executes a versioned release for the current repo using its .claude
 
 Profile-driven release runbook. All repo-specific knowledge lives in one tracked file per repo: `.claude/release-profile.json`. Use evidenced facts only: a required field that is absent or contradicts the repo state stops the release.
 
-No program enforces the Step 1 and Step 2 checks; you apply them, and every check is blocking unless it says it warns. `publish.ts` enforces only the push-time checks: profile `release_from` and `tag_format` present, tag matches `tag_format`, tag annotated, branches allowed, tag on the `release_from` tip.
+No program enforces the Step 1 and Step 2 checks; you apply them, and every check is blocking unless it says it warns. `publish.ts` enforces only the push-time checks.
 
 ## Step 1: Load or derive the profile
 
@@ -36,7 +36,7 @@ Stop on any failure; fix upstream while keeping every gate enforced.
 
 1. Freeze `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` per the repo's format; generate store notes when the profile defines them (respect caps).
 2. Bump `version_file` (and lockfile when the ecosystem pairs them).
-3. Stamp the bump without a review: `node "$HOME/.claude/skills/landing/stamp.ts" write --gate releasing --only <version_file> <lockfile> <changelog>`, adding `store_notes.path` when the profile defines it and a newly derived profile on first run; it refuses a tree that changes any other path. Then land the release commit through `/landing` with `--promote`, with the repo's exact `release_commit_pattern` as its subject. Nothing else rides in the release commit except the store notes and a newly derived profile on first run. `/landing --promote` pushes the resolved mainline itself. This path requires `git.release_from` to equal `stamp.ts verify`'s `policy.resolved.mainline` and `policy.afterCommit` to be `promote`; when either does not hold, stop and report.
+3. Stamp the bump without a review: `node "$HOME/.claude/skills/landing/stamp.ts" write --gate releasing --only <version_file> <lockfile> <changelog>`, adding `store_notes.path` when the profile defines it and a newly derived profile on first run; it refuses a tree that changes any other path. Then land the release commit through `/landing` with `--promote`, with the repo's exact `release_commit_pattern` as its subject. `/landing --promote` pushes the resolved mainline itself. This path requires `git.release_from` to equal `stamp.ts verify`'s `policy.resolved.mainline` and `policy.afterCommit` to be `promote`; when either does not hold, stop and report.
 
 ## Step 4: Execute, by archetype
 
@@ -50,10 +50,10 @@ node "$HOME/.claude/skills/releasing/publish.ts" --tag <tag> [--branch <integrat
 
 Pass `--branch <integration>` when the release fast-forwards the integration branch. Leave `release_from` out of `--branch`: `/landing` already pushed it. Any outcome other than `PUBLISHED` stops the release per the failure posture below.
 
-- `tag_push` (CI releases on tag, e.g. Electron/NSIS or store upload): promote integration to release branch ff-only, the bump commit lands on the release branch via `/landing` promote (Step 3 item 3), create the **annotated tag on that exact commit**, run the release push script with that tag (plus `--branch <integration>` when integration moves), then `gh run watch` the release workflow to completion. **Unsigned-build feed stop:** when a live auto-update feed is enabled (confirmed by a live check) and builds are unsigned, the tag push auto-updates real carbon units to an unsigned build; require explicit carbon-unit confirmation that names exactly that consequence before pushing the tag.
+- `tag_push` (CI releases on tag, e.g. Electron/NSIS or store upload): promote integration to the release branch ff-only before the bump lands; after the tag push above, `gh run watch` the release workflow to completion. **Unsigned-build feed stop:** when a live auto-update feed is enabled (confirmed by a live check) and builds are unsigned, the tag push auto-updates real carbon units to an unsigned build; require explicit carbon-unit confirmation that names exactly that consequence before pushing the tag.
 - `workflow_dispatch` (repo owns its release workflow): `gh workflow run <workflow>` with the profile's inputs, monitor the produced PR/run, confirm the downstream tag and release workflow complete. Leave execution of those steps to the workflow.
 - `local_script` (e.g. npm publish script): run the repo's script only after commits are in place; afterwards sync the release branch through the release push script so it does not drift behind; confirm registry state and check what landed before re-running a partially failed publish.
-- `push_to_main` (host deploys on push, tag is metadata): merge the integration branch into the deploy branch first when the release content lives there, the bump commit lands on the deploy branch (the deploy branch is `release_from`) via `/landing` promote, then tag it and push the tag with the release push script, then watch the host deploy. If the host reports nothing headless (no CI status, no CLI token — Netlify posts nothing to GitHub by default), verify with a **live-site content marker**: a class name or string literal introduced by this release, grepped from the served CSS/JS bundles. After release, sync the integration branch back per the repo's flow, pushing it with the release push script and the release tag.
+- `push_to_main` (host deploys on push, tag is metadata): merge the integration branch into the deploy branch (`release_from`) first when the release content lives there; after the tag push above, watch the host deploy. If the host reports nothing headless (no CI status, no CLI token — Netlify posts nothing to GitHub by default), verify with a **live-site content marker**: a class name or string literal introduced by this release, grepped from the served CSS/JS bundles. After release, sync the integration branch back per the repo's flow, pushing it with the release push script and the release tag.
 
 ## Step 5: Verify and report
 
