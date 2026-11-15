@@ -75,7 +75,11 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 
 ## Hand off
 
-Show the `tree` rendering, then reply with the path, the goal's problem, criteria, and risk with the signal that set it, every open question with the units it defers, every `assumed` decision, and every budget waiver. With an open question left, stop there. Keep without asking every `assumed` decision the challenge did not overturn and every changed design node whose code you wrote. Settle each decision `challenge.md` step 2 overturned and each changed design node whose code the carbon unit chose in a round, keep or restore, with a question round through `ask.md`, since the challenge undid their own answer; a restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A kept overturn sets that decision's source to `decided`, keeping its `why`; a round the carbon unit ends early stops the hand off like an open question. Once none is left, unless the carbon unit asked for the design spec alone, cut and build without asking.
+1. Show the `tree` rendering, then reply with the path, the goal's problem, criteria, and risk with the signal that set it, every open question with the units it defers, every `assumed` decision, and every budget waiver.
+2. With an open question left, stop there.
+3. Keep without asking every `assumed` decision the challenge did not overturn and every changed design node whose code you wrote.
+4. Settle each decision `challenge.md` step 2 overturned and each changed design node whose code the carbon unit chose in a round, keep or restore, with a question round through `ask.md`, since the challenge undid their own answer. A restore follows `challenge.md` step 5, and a changed answer resumes in `grill.md`. A kept overturn sets that decision's source to `decided`, keeping its `why`. A round the carbon unit ends early stops the hand off like an open question.
+5. Once none is left, unless the carbon unit asked for the design spec alone, cut and build without asking.
 
 ## Scripts
 
