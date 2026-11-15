@@ -37,10 +37,6 @@ Readers can tell, and these are not how the carbon unit writes. Strip every one 
 
 Docs reviewers call the last four "Claudish" and send the page back.
 
-## Lint
-
-Lint every draft before showing or sending it, as `scripts/lint-draft.mjs` below says, and rewrite or delete each flagged sentence as its output says until it exits 0.
-
 ## Scripts
 
-- `scripts/lint-draft.mjs`: run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs <draft-file>` (or pipe the draft on stdin) on every draft; the published path adds `--longform`.
+- `scripts/lint-draft.mjs`: run `node ~/.claude/skills/writing-in-voice/scripts/lint-draft.mjs <draft-file>` (or pipe the draft on stdin) on every draft before showing or sending it, adding `--longform` on the published path, and rewrite or delete each flagged sentence as its output says until it exits 0.

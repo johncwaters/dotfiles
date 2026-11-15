@@ -10,7 +10,7 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 2. **Title first.** Specific beats clever: a number, a concrete claim, a real dollar figure. Generic test: if a bland B2B SaaS blog would publish this title, rewrite it. An issue title names the defect and where it lives.
 3. **Draft with the template** that fits under [Templates](#templates).
 4. **Revise** against the sentence rules and the template's steps. Rewriting is easier than writing because now there is a problem to solve.
-5. **Lint** with `--longform`, as the skill's Lint section says, and rerun until it exits 0.
+5. **Lint** with `--longform`, as the skill's `scripts/lint-draft.mjs` entry says, and rerun until it exits 0.
 6. **Deliver** the piece, then at most three lines on the choices made and any open questions (missing numbers, unverified claims).
 
 ## Templates
