@@ -39,6 +39,9 @@
     "reReviewAfterHours": 2,
     "skipIdleAfterDays": 14
   },
+  "coherence": {
+    "enabled": false
+  },
   "benchmarks": {
     "enabled": true
   },

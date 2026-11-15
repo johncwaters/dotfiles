@@ -13,7 +13,7 @@ export const syncedKeys = new Set([
   'autoResume', 'telegramNotifications', 'integrationBranch', 'worktreeRoot',
   'worktreeShare', 'worktreeAutoRebase', 'worktreeSyncOnStart', 'worktreeRerere',
   'repoRoots', 'changeMap', 'taskTitle', 'branchGc', 'postTurnChecks', 'visions',
-  'teamReview', 'benchmarks', 'posthog', 'usage', 'telegram', 'ingest',
+  'teamReview', 'coherence', 'benchmarks', 'posthog', 'usage', 'telegram', 'ingest',
   'agentApi', 'telemetry', 'workflows', 'trace', 'planReview', 'customAgents',
   'hooks', 'projects', 'millEnabled', 'scrollback', 'teams',
 ]);
