@@ -26,8 +26,10 @@ screen | state | fix
 Finish when each step has walked the whole flow in scope and every gap has a fix or a named reason to leave it, then:
 
 1. Run `node ~/.claude/skills/designing-ui/scripts/lint-slop.mjs <ui-files-or-dir>` and rerun until it exits 0, keeping a flag only where the resolved taste names that rule.
-2. Template check: swap in a competitor's product name. A screen that still fits gets pushed further in its copy, its moments, and its signature detail.
+2. Serve the flow and run `node ~/.claude/skills/designing-ui/scripts/layout-shift.mjs --url <flow-url> [--steps steps.json]`, with steps as `[{"click": "<selector>"}, {"fill": "<selector>", "value": "..."}, {"scroll": "<selector>"}, {"waitMs": 1500}]` walking every state in scope. Rerun until it exits 0: zero shifts, click-driven ones included, so reserve space for late content and keep controls a fixed size.
+3. Template check: swap in a competitor's product name. A screen that still fits gets pushed further in its copy, its moments, and its signature detail.
 
 ## Scripts
 
 - `scripts/lint-slop.mjs`: flags taste-neutral AI-template tells (transition-all, hover scale, looping pulse or bounce, gradient text, 800+ weights, emoji, colored glows, off-grid arbitrary px) as `file:line: rule`, exit 1 while any remain.
+- `scripts/layout-shift.mjs`: loads a URL in Chromium at 640 and 1440 wide, scrolls the whole page after load and after the last step, since only on-screen shifts are reported, walks the optional steps, and prints every layout shift as `width | when | score | frame url | element rects`, exit 1 while any remain. Chromium only: Firefox and Safari lack the Layout Instability API.

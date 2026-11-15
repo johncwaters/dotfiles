@@ -1,0 +1,10 @@
+<!doctype html>
+<html><body>
+<div style="display:flex;gap:8px"><button id="save" style="width:12rem" onclick="document.getElementById('status').textContent='Saving'">Save</button><div>next</div></div>
+<p id="status" style="min-height:1.5em"></p>
+<p>content below</p>
+<div style="height:2000px"></div>
+<div id="lazy-image" style="height:120px"></div>
+<p>content below the fold</p>
+<script>setTimeout(() => { document.getElementById('status').textContent = 'Loaded' }, 300)</script>
+</body></html>

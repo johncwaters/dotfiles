@@ -7,7 +7,7 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 
-for skillWithDependenciesDirectory in "$topicDir/skills/rendering-skill-tree" "$topicDir/skills/auditing-brand"; do
+for skillWithDependenciesDirectory in "$topicDir/skills/rendering-skill-tree" "$topicDir/skills/auditing-brand" "$topicDir/skills/designing-ui"; do
   if [[ ! -d "$skillWithDependenciesDirectory/node_modules" ]]; then
     (cd -- "$skillWithDependenciesDirectory" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund > /dev/null)
   fi
@@ -1205,6 +1205,7 @@ check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-
 check "securing-browser-code check tests pass" node --test "$topicDir/skills/securing-browser-code/test/check.test.ts"
 check "writing-in-voice draft lint tests pass" node --test "$topicDir/skills/writing-in-voice/test/lint-draft.test.mjs"
 check "designing-ui slop lint tests pass" node --test "$topicDir/skills/designing-ui/test/lint-slop.test.mjs"
+check "designing-ui layout shift tests pass" node --test "$topicDir/skills/designing-ui/test/layout-shift.test.mjs"
 if ((${#workSkillTestFiles[@]} > 0)); then
   check "work profile skill behavior tests pass" node --test "${workSkillTestFiles[@]}"
 fi

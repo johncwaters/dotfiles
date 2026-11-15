@@ -1,0 +1,18 @@
+<!doctype html>
+<html><body>
+<div style="display:flex;gap:8px"><button id="save" onclick="this.textContent='Saving everything now'">Save</button><div id="neighbor">next</div></div>
+<div id="late-banner"></div>
+<p id="below">content below</p>
+<div style="height:2000px"></div>
+<div id="lazy-image"></div>
+<p id="below-fold">content below the fold</p>
+<script>
+setTimeout(() => { document.getElementById('late-banner').style.height = '60px' }, 300)
+const lazyImage = document.getElementById('lazy-image')
+new IntersectionObserver(([entry], observer) => {
+  if (!entry.isIntersecting) return
+  observer.disconnect()
+  setTimeout(() => { lazyImage.style.height = '120px' }, 100)
+}).observe(lazyImage)
+</script>
+</body></html>
