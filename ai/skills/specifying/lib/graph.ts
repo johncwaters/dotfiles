@@ -263,6 +263,8 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     const evidence = typeof value.evidence === "string" ? value.evidence : "";
     const isEvidenceCited = /^\S(?:.*\S)?:[1-9]\d*$/.test(evidence) || citesSource(evidence, commitsCited, false);
     if (value.source === "read" && !isEvidenceCited) addError(errors, 1, `${subject}.evidence`, `cite what you read for a read decision: ${CITATION_FORMS}`);
+    const isAssumptionCited = isEvidenceCited || citesSource(evidence, commitsCited, true);
+    if (value.source === "assumed" && !isAssumptionCited) addError(errors, 1, `${subject}.evidence`, `research before assuming: find an outside source with WebSearch, read it with WebFetch (load both through ToolSearch where they are deferred), and cite the page as \`WebFetch <url>\`, or cite ${CITATION_FORMS}; or write 'none: <why no source applies>'`);
     return;
   }
   if (nodeKind === "branch") {

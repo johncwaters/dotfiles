@@ -267,8 +267,8 @@ test("a large file the unit only changes counts at the changed-only cap", () => 
   assert.match(denialReason(writeSpec(spec)), /Rule 13: node U1:.*list the splits path in both reads and changes/);
 });
 
-test("a goal or branch upstream and a read decision's evidence are refused until they cite what was read", (testContext) => {
-  const citingFields = { G1: "upstream", B1: "upstream", D1: "evidence" };
+test("a goal or branch upstream and a read or assumed decision's evidence are refused until they cite what was read", (testContext) => {
+  const citingFields = { G1: "upstream", B1: "upstream", D1: "evidence", D2: "evidence" };
   const sketchCiting = (citedText, citingNodeId = "B1", specRepoRoot = repoRoot) => {
     const citation = (nodeId, fallback) => {
       if (nodeId !== citingNodeId) return { [citingFields[nodeId]]: fallback };
@@ -282,6 +282,7 @@ test("a goal or branch upstream and a read decision's evidence are refused until
         { id: "G1", kind: "goal", text: "The card clears once answered", problem: "An answered card stays on the board", ...citation("G1", "none: the card is new") },
         { id: "B1", kind: "branch", question: "Which hook reports the answer?", leaning: "PostToolUse", ...citation("B1", "none: the hook name is new") },
         { id: "D1", kind: "decision", question: "Where is the card drawn?", answer: "In the card view.", why: "It owns the card.", source: "read", ...citation("D1", "server/cards.ts:212") },
+        { id: "D2", kind: "decision", question: "How long does the card fade?", answer: "200ms.", why: "Material's standard exit duration.", source: "assumed", ...citation("D2", "`WebFetch https://m3.material.io/styles/motion`") },
       ],
       edges: [],
     };
@@ -297,6 +298,8 @@ test("a goal or branch upstream and a read decision's evidence are refused until
   }
   assertAllowed(writeSpec(sketchCiting("none: the name is new", "G1")));
   assertAllowed(writeSpec(sketchCiting("none: the name is new", "B1")));
+  assertAllowed(writeSpec(sketchCiting("none: the fade is new", "D2")));
+  assert.match(denialReason(writeSpec(sketchCiting(undefined, "D2"))), /Rule 1: node D2\.evidence: research before assuming: .*ToolSearch.*`WebFetch <url>`/);
   assert.match(denialReason(writeSpec(sketchCiting("none: the name is new", "D1"))), /Rule 1: node D1\.evidence: cite what you read/);
   const grilledWithoutGoalUpstream = sketchCiting(undefined, "G1");
   grilledWithoutGoalUpstream.status = "grilled";
