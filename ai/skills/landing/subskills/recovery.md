@@ -20,9 +20,9 @@ Every result carries a typed `next`; do what it names. This file holds only the 
 1. On the feature branch, fetch origin and rebase onto `policy.resolved.mainline`.
 2. Run `node "$HOME/.claude/skills/landing/resolve-changelog.ts"` first: it merges and stages
    each CHANGELOG.md whose only conflicts add Unreleased bullets on both sides, and prints
-   `remainingConflicts`. Resolve each remaining file on its merits: read both sides, keep both intents where
-   they are independent, and pick the semantically correct result where they collide. Choose
-   resolutions on their merits rather than blanket `--ours`/`--theirs`; retain changes you cannot account for.
+   `remainingConflicts`. Resolve each remaining file on its merits rather than blanket
+   `--ours`/`--theirs`: read both sides, keep both intents where they are independent, pick the
+   semantically correct result where they collide, and retain changes you cannot account for.
 3. Stage the resolutions and continue the rebase.
 4. Re-review the rewritten feature range before it reaches mainline.
 5. Re-run `land.ts` with the same flags so it finishes the fast-forward and push.

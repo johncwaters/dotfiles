@@ -85,9 +85,8 @@ Flags:
 - `--promote`: pass it when `policy.afterCommit` is `promote`. It carries the commit
   by rebasing the feature branch onto `policy.resolved.mainline`, fast-forwarding
   mainline, and pushing mainline. Omit it when the
-  disclosure check held the change back, when the carbon unit asked for commit-only
-  (`commit only`, `don't merge`), when `policy.afterCommit` is `pull-request` or `unresolved`, or when there is no
-  policy.
+  disclosure check held the change back or the carbon unit asked for commit-only
+  (`commit only`, `don't merge`).
 - `--no-push`: only when the carbon unit asks for local-only work or the disclosure check held
   the change back.
 
@@ -112,9 +111,8 @@ Report safety-push failures from `warnings`; the outcome stays unchanged.
 
 Read `policy.afterCommit`:
 
-- `promote`: promotion already ran inside `land.ts`. Merge branches yourself only in
-  [recovery](subskills/recovery.md); even when asked to "just merge it quickly",
-  re-run `land.ts`.
+- `promote`: promotion already ran inside `land.ts`. Even when asked to "just merge it
+  quickly", re-run `land.ts`.
 - `pull-request`: keep the feature branch unmerged everywhere. When the disclosure check held
   the change back, stop after reporting; a public pull request discloses it too. Otherwise
   offer to open a pull request against the repository's mainline with `/opening-prs`. If the
