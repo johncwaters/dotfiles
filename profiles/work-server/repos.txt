@@ -1,3 +1,4 @@
+Projects/agent-eval=https://github.com/PostHog/agent-eval nodeps
 Projects/ai-gateway=https://github.com/PostHog/ai-gateway nodeps
 Projects/context-mill=https://github.com/PostHog/context-mill nodeps
 Projects/posthog.com=https://github.com/PostHog/posthog.com nodeps

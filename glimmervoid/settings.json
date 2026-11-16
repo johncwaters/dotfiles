@@ -102,6 +102,12 @@
       "dangerouslySkipPermissions": true
     },
     {
+      "id": "3b6f2c1e-8d4a-4f7b-9e25-a1c0d7e4b863",
+      "name": "agent-eval",
+      "path": "{{HOME}}/Projects/agent-eval",
+      "dangerouslySkipPermissions": true
+    },
+    {
       "id": "7ffca8ec-e2fa-4790-99f9-f0a6c847b6c7",
       "name": "ai-gateway",
       "path": "{{HOME}}/Projects/ai-gateway",
