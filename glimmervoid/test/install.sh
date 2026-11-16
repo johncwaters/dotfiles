@@ -46,7 +46,7 @@ check "a personal machine never probes the remote listener" logLacks "http://127
   "$personalHome/.glimmervoid/config.json" "$isolatedWorkPort"
 runInstall "$personalHome" personal > /dev/null || true
 check "a personal machine converges the shared glimmervoid hooks" \
-  test "$(configValue "$personalHome" 'require(process.argv[1]).hooks.map(hook => hook.command).join(" ")')" = "node $personalHome/.claude/hooks/block-comments.mjs node $personalHome/.claude/hooks/block-else.mjs node $personalHome/.claude/hooks/block-use-effect.mjs"
+  test "$(configValue "$personalHome" 'require(process.argv[1]).hooks.map(hook => hook.command).join(" ")')" = "node $personalHome/.claude/hooks/block-comments.mjs"
 check "the shared settings resolve the home token to this home" \
   test "$(configValue "$personalHome" 'require(process.argv[1]).repoRoots[0]')" = "$personalHome/Projects"
 "$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=3000;fs.writeFileSync(process.argv[1], JSON.stringify(config))' \

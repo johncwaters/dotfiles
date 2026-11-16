@@ -30,8 +30,8 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. `block-else.mjs` and `block-use-effect.mjs` are wired the same way for Claude and in
-`ai/codex-hooks.base.json` for every Codex. Profile-only hooks and their evidence belong in
+to Glimmervoid sessions. `block-else.mjs` and `block-use-effect.mjs` bind every agent, so they
+are wired in `ai/settings.base.json` for every Claude and `ai/codex-hooks.base.json` for every Codex. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.
 `ai/test.sh` pins the installed paths; shared event wiring lives in `ai/settings.base.json`.
