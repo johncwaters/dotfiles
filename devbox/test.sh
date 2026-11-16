@@ -1102,7 +1102,7 @@ assert.equal(config.projects[1].id, "bcea0337-5a86-4f96-beb3-ea0ea1fcdcf7");
 assert.equal(config.port, 3456);
 assert.equal(config.checkForUpdates, undefined);
 assert.deepEqual(config.repoRoots, [require("node:path").join(process.argv[3], "Projects")]);
-assert.deepEqual(config.remote, {enabled: true, port: 3457, publicHost: "3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev", allowedOrigins: ["https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev"]});
+assert.deepEqual(config.remote, {port: 3457, publicHost: "3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev", allowedOrigins: ["https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev"]});
 assert.equal(config.coder, undefined);
 JS
 backups=("$sandbox/.glimmervoid"/config.json.*.bak)

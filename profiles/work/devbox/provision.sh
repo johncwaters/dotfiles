@@ -699,7 +699,7 @@ mergeDevboxConfig() {
     }
     config.port = 3456;
     config.repoRoots = [path.join(process.env.HOME, "Projects")];
-    config.remote = { enabled: true, port: 3457, publicHost: process.env.DEVBOX_PUBLIC_HOST, allowedOrigins: [`https://${process.env.DEVBOX_PUBLIC_HOST}`] };
+    config.remote = { port: 3457, publicHost: process.env.DEVBOX_PUBLIC_HOST, allowedOrigins: [`https://${process.env.DEVBOX_PUBLIC_HOST}`] };
     const merged = JSON.stringify(config, null, 2) + "\n";
     if (hasConfig && isDeepStrictEqual(parsedOriginal, config)) {
       fs.chmodSync(configPath, 0o600);
