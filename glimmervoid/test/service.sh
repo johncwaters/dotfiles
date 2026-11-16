@@ -28,10 +28,15 @@ check "the unit builds nothing before starting" bash -c '! grep -q "^ExecStartPr
 check "the unit works out of the home, not a checkout" grep -qx 'WorkingDirectory=%h' "$serverUnitPath"
 check "an OOM-killed session leaves the dashboard and its other sessions running" \
   grep -q "^OOMPolicy=continue\$" "$serverUnitPath"
-check "the unit caps its memory below the whole machine" \
-  bash -c 'max="$(sed -n "s/^MemoryMax=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; [[ -n "$max" ]] && (( 10#$max > 0 && 10#$max < 100 ))' _ "$serverUnitPath"
-check "the unit throttles memory strictly below its hard cap" \
-  bash -c 'max="$(sed -n "s/^MemoryMax=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; high="$(sed -n "s/^MemoryHigh=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; [[ -n "$max" && -n "$high" ]] && (( 10#$high > 0 && 10#$high < 10#$max ))' _ "$serverUnitPath"
+serverSlicePath="$serverHome/.config/systemd/user/app-glimmervoid.slice"
+check "the unit runs in the glimmervoid slice" grep -qx 'Slice=app-glimmervoid.slice' "$serverUnitPath"
+check "the unit caps no memory on itself, so glimmervoid turns session scopes on" \
+  bash -c '! grep -qE "^Memory(High|Max)=" "$1"' _ "$serverUnitPath"
+check "the slice is installed beside the unit as the repo copy" cmp -s "$serverSlicePath" "$repoRoot/glimmervoid/app-glimmervoid.slice"
+check "the slice caps its memory below the whole machine" \
+  bash -c 'max="$(sed -n "s/^MemoryMax=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; [[ -n "$max" ]] && (( 10#$max > 0 && 10#$max < 100 ))' _ "$serverSlicePath"
+check "the slice throttles memory strictly below its hard cap" \
+  bash -c 'max="$(sed -n "s/^MemoryMax=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; high="$(sed -n "s/^MemoryHigh=\([0-9]\{1,\}\)%\$/\1/p" "$1")"; [[ -n "$max" && -n "$high" ]] && (( 10#$high > 0 && 10#$high < 10#$max ))' _ "$serverSlicePath"
 check "the unit carries a rendered PATH" grep -q "^Environment=PATH=.\+\$" "$serverUnitPath"
 check "no placeholder survives the render" \
   bash -c '! grep -qE "__(NODE|NPM|APP_DIR|HOME|PATH)__" "$1"' _ "$serverUnitPath"
@@ -68,6 +73,17 @@ check "a second run restarts nothing" logLacks "restart glimmervoid"
 check "a second run re-serves nothing" logLacks "serve --bg"
 check "a localhost route is recognized as the current remote port" logLacks "serve --bg 3001"
 check "a second run keeps linger alone" logLacks "enable-linger"
+
+printf '[Slice]\nMemoryMax=90%%\n' > "$serverSlicePath"
+: > "$commandLog"
+sliceEditOutput="$(runInstall "$serverHome" server)"
+check "a drifted slice is rendered back" cmp -s "$serverSlicePath" "$repoRoot/glimmervoid/app-glimmervoid.slice"
+check "a drifted slice is reported" outputMatches "$sliceEditOutput" '\[ ok \].*glimmervoid slice.*copied'
+check "a drifted slice reloads the manager" logHas "systemctl --user daemon-reload"
+check "a slice-only change restarts none of the sessions the slice holds" logLacks "restart glimmervoid"
+: > "$commandLog"
+runInstall "$serverHome" server > /dev/null
+check "a settled slice reloads nothing" logLacks "daemon-reload"
 
 rm -f "$stubState/$(basename -- "$serverHome")/linger-enabled"
 : > "$commandLog"
@@ -183,6 +199,7 @@ insideServiceStatus=0
 insideServiceOutput="$(DOTFILES_CGROUP_FILE="$insideServiceCgroup" runInstall "$serverHome" server)" \
   || insideServiceStatus=$?
 check "a run hosted by the service never restarts it" logLacks "restart glimmervoid"
+check "a run hosted by the service leaves the running unit on its loaded caps until the owed restart" logLacks "daemon-reload"
 check "a run hosted by the service hands nothing to a detached unit" logLacks "systemd-run"
 check "the owed restart is reported" \
   outputMatches "$insideServiceOutput" '\[ ok \].*glimmervoid service.*restart owed'
@@ -213,6 +230,7 @@ rm -f "$serverStubState/ports-with-no-listener"
 runInstall "$serverHome" server > /dev/null
 check "the next run from outside the service pays the owed restart" \
   logHas "systemctl --user restart glimmervoid"
+check "the run that pays the owed restart reloads the unit first" logHas "systemctl --user daemon-reload"
 check "a paid restart clears the pending state" test ! -e "$serviceRestartPendingMarker"
 check "the run that pays the owed restart probes the local listener" \
   logHas "http://127.0.0.1:3020/"
@@ -223,6 +241,17 @@ check "the run that pays the owed restart publishes the route" \
 : > "$commandLog"
 runInstall "$serverHome" server > /dev/null
 check "a paid restart is not owed again on the next run" logLacks "restart glimmervoid"
+
+insideSessionScopeCgroup="$sandboxTemp/inside-glimmervoid-session.cgroup"
+printf '0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-glimmervoid.slice/app-glimmervoid-sessions.slice/glimmervoid-session-0a1b-2c3d.scope\n' > "$insideSessionScopeCgroup"
+printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=rotated-inside-a-session\n' > "$serverHome/.glimmervoid/secrets.env"
+: > "$commandLog"
+insideSessionScopeOutput="$(DOTFILES_CGROUP_FILE="$insideSessionScopeCgroup" runInstall "$serverHome" server)"
+check "a run from a session scope bound to the service never restarts it" logLacks "restart glimmervoid"
+check "a run from a session scope leaves the running unit on its loaded caps until the owed restart" logLacks "daemon-reload"
+check "a run from a session scope reports the owed restart" \
+  outputMatches "$insideSessionScopeOutput" '\[ ok \].*glimmervoid service.*restart owed'
+runInstall "$serverHome" server > /dev/null
 
 printf 'a11a11a11a11a11a11a11a11a11a11a11a11a11a\n' > "$stubState/$(basename -- "$serverHome")/app-head"
 : > "$commandLog"

@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 systemdUserDirectory="$HOME/.config/systemd/user"
 glimmervoidUnitPath="$systemdUserDirectory/glimmervoid.service"
+glimmervoidSlicePath="$systemdUserDirectory/app-glimmervoid.slice"
 glimmervoidServiceInputsStateName="glimmervoid-service-inputs-record"
 
 # Splicing the ambient PATH in makes the unit differ between converging shells, and every difference restarts the live service.
@@ -131,6 +132,25 @@ startGlimmervoidService() {
   recordGlimmervoidServiceInputs "$inputsToken"
 }
 
+installGlimmervoidSlice() {
+  local sliceChanged=0
+  if ! filesAreIdentical "$dotfilesRepo/glimmervoid/app-glimmervoid.slice" "$glimmervoidSlicePath"; then
+    sliceChanged=1
+  fi
+  copyEntry "glimmervoid slice" "glimmervoid/app-glimmervoid.slice" "$glimmervoidSlicePath"
+  ((sliceChanged == 1))
+}
+
+# systemd applies a slice's limits live on reload, so a slice-only change owes no restart of the sessions it holds.
+reloadUserManagerForGlimmervoidSlice() {
+  if ! userServiceManagerIsReachable; then
+    return 0
+  fi
+  if ! systemctl --user daemon-reload >/dev/null 2>&1; then
+    noteWarned "glimmervoid slice" "run: systemctl --user daemon-reload"
+  fi
+}
+
 installGlimmervoidService() {
   local label="glimmervoid service"
   local templatePath="$dotfilesRepo/glimmervoid/glimmervoid.service"
@@ -161,6 +181,9 @@ installGlimmervoidService() {
   fi
   if ((unitChanged == 0)); then
     notePresent "$label" "up to date"
+  fi
+  if installGlimmervoidSlice && ((unitChanged == 0)); then
+    reloadUserManagerForGlimmervoidSlice
   fi
   if ! startGlimmervoidService "$unitChanged"; then
     return 0

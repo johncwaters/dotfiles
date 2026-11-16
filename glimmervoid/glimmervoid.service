@@ -4,6 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
+# The memory caps live on the slice: glimmervoid gives each session its own scope only when this unit caps nothing itself.
+Slice=app-glimmervoid.slice
 WorkingDirectory=%h
 ExecStart=%h/.glimmervoid/bin/glimmervoid
 # Credentials live outside the dashboard config; the leading dash keeps a machine without the file bootable.
@@ -18,9 +20,6 @@ Restart=on-failure
 RestartSec=5
 # Without it the default OOMPolicy=stop turns one OOM-killed session into a restart that drops every live session.
 OOMPolicy=continue
-# Sessions run builds and tests inside this cgroup; capping it reclaims here before the kernel picks victims box-wide.
-MemoryHigh=50%
-MemoryMax=60%
 
 [Install]
 WantedBy=default.target

@@ -51,11 +51,11 @@ recordLinkedUnitContent() {
   writeDotfilesState "$(linkedUnitContentStateName "$unitPath")" "$(< "$unitPath")"
 }
 
-# A restart from inside the unit's own cgroup kills the converge and the session hosting it (KillMode=control-group), so the restart stays owed as pending state until a run from outside.
+# A restart from inside the unit's own cgroup, or a scope its app-<unit>.slice holds and BindsTo it, kills the converge and the session hosting it (KillMode=control-group), so the restart stays owed as pending state until a run from outside.
 runningInsideUserService() {
   local unitName="$1"
   local cgroupFile="${DOTFILES_CGROUP_FILE:-/proc/self/cgroup}"
-  [[ -r "$cgroupFile" ]] && grep -q -- "/$unitName.service" "$cgroupFile"
+  [[ -r "$cgroupFile" ]] && grep -qE -- "/($unitName\\.service|app-$unitName\\.slice)(/|\$)" "$cgroupFile"
 }
 
 # is-enabled before is-active: a unit running but never enabled is one reboot from gone, and checking activity first would call it done.
@@ -70,6 +70,11 @@ enableUserService() {
   fi
   if ((unitChanged == 1)); then
     markUserServicePending "$unitName"
+  fi
+  # A reload without the restart applies the new file to the live unit, so a unit moving its limits to a slice would run uncapped until the owed restart.
+  if ((unitChanged == 1)) && runningInsideUserService "$unitName"; then
+    noteApplied "$label" "restart owed, this run is hosted by $unitName; the next run from outside it reloads and restarts"
+    return 0
   fi
   if ((unitChanged == 1)) && ! systemctl --user daemon-reload >/dev/null 2>&1; then
     noteWarned "$label" "systemctl --user daemon-reload failed"
@@ -87,10 +92,6 @@ enableUserService() {
   fi
   # enable --now starts a dead unit off the current file but leaves a live one on the old one.
   if ((unitChanged == 1)) && ((wasActive == 1)); then
-    if runningInsideUserService "$unitName"; then
-      noteApplied "$label" "restart owed, this run is hosted by $unitName; the next run from outside it restarts"
-      return 0
-    fi
     if ! systemctl --user restart "$unitName" >/dev/null 2>&1; then
       noteWarned "$label" "restart failed, run: journalctl --user -u $unitName -n 20"
       return 1
