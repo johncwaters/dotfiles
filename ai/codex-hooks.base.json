@@ -8,6 +8,11 @@
             "type": "command",
             "command": "node \"{{HOME}}/.claude/hooks/block-else.mjs\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-use-effect.mjs\"",
+            "timeout": 10
           }
         ]
       }

@@ -383,11 +383,9 @@ function statementElsesIn(code, language) {
   return code.match(/\b(?:else|elif|elsif)\b/g) ?? [];
 }
 
-function scanElseLines(content, syntax) {
+function* codeLinesOf(content, syntax) {
   const strings = (syntax.stringTracker ?? makeNoStringRegions)();
   const state = {};
-  const openersByIndent = new Map();
-  const found = [];
   const tail = { marker: syntax.line ?? "\u0000", needsSpaceBefore: false };
   for (const line of String(content).split("\n")) {
     if (strings.startsInsideString()) {
@@ -396,16 +394,44 @@ function scanElseLines(content, syntax) {
       continue;
     }
     const wasInsideBlock = state.isInsideBlock;
-    let code = dropCommentTail(stripQuotedSpans(line, [], state, syntax), tail);
+    const code = dropCommentTail(stripQuotedSpans(line, [], state, syntax), tail);
     if (!wasInsideBlock && !state.isInsideBlock) strings.advance(line);
-    if (!code.trim()) continue;
-    if (isExemptIndentedElse(code, syntax.statementLanguage, openersByIndent)) continue;
-    if (syntax.statementLanguage === ".rs") {
-      code = code.replace(/^(\s*let\b[^;]*?=[^;]*?)\belse(?=\s*\{)/, "$1");
-    }
+    if (code.trim()) yield { line, code };
+  }
+}
+
+function scanElseLines(content, syntax) {
+  const openersByIndent = new Map();
+  const found = [];
+  for (const { line, code: rawCode } of codeLinesOf(content, syntax)) {
+    if (isExemptIndentedElse(rawCode, syntax.statementLanguage, openersByIndent)) continue;
+    const code = syntax.statementLanguage === ".rs"
+      ? rawCode.replace(/^(\s*let\b[^;]*?=[^;]*?)\belse(?=\s*\{)/, "$1")
+      : rawCode;
     found.push(...Array.from(statementElsesIn(code, syntax.statementLanguage), () => line.trim()));
   }
   return found;
 }
 
-export { commentLinesOnlyInAfter, scanCommentLines, syntaxFor, elseSyntaxFor, scanElseLines };
+const EFFECT_HOOK_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts"]);
+const EFFECT_HOOK_RE = /\b(?:React\.)?use(?:Isomorphic)?(?:Layout)?Effect\s*(?:\(|\bas\b)/g;
+
+function useEffectSyntaxFor(filePath) {
+  if (!EFFECT_HOOK_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return null;
+  return syntaxFor(filePath);
+}
+
+function scanUseEffectLines(content, syntax) {
+  const found = [];
+  for (const line of String(content).split("\n")) {
+    const tail = { marker: syntax.line, needsSpaceBefore: false };
+    const code = dropCommentTail(stripQuotedSpans(line, [], {}, syntax), tail);
+    found.push(...Array.from(code.matchAll(EFFECT_HOOK_RE), () => line.trim()));
+  }
+  return found;
+}
+
+export {
+  commentLinesOnlyInAfter, scanCommentLines, syntaxFor, elseSyntaxFor, scanElseLines,
+  useEffectSyntaxFor, scanUseEffectLines,
+};

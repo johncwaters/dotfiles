@@ -23,14 +23,14 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `retro-reminder.mjs` | SessionEnd incident count and nudge; SessionStart unreviewed-retro report | `test/retro-reminder.test.mjs` |
 | `block-comments.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
-| `block-else.mjs`, `edit-judge.mjs` | PreToolUse else-growth guard; shared Write/Edit/MultiEdit growth judge | `test/block-else.test.mjs` |
-| `comment-scanner.mjs` | Shared comment and else scanners with string tracking | `test/block-comments.test.mjs`, `test/block-else.test.mjs` |
+| `block-else.mjs`, `block-use-effect.mjs`, `edit-judge.mjs` | PreToolUse else- and useEffect-growth guards; shared Write/Edit/MultiEdit/apply_patch growth runner | `test/block-else.test.mjs`, `test/block-use-effect.test.mjs` |
+| `comment-scanner.mjs` | Shared comment, else, and useEffect scanners with string tracking | `test/block-comments.test.mjs`, `test/block-else.test.mjs`, `test/block-use-effect.test.mjs` |
 | `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. `block-else.mjs` is wired the same way for Claude and in
+to Glimmervoid sessions. `block-else.mjs` and `block-use-effect.mjs` are wired the same way for Claude and in
 `ai/codex-hooks.base.json` for every Codex. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.

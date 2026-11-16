@@ -63,6 +63,10 @@ Do not write `else` statements. Use early returns and guard clauses.
 - Editing existing code: refactor every `else` branch on lines the current change already modifies. Any `else` in a diff you produce is a defect.
 </code_style_no_else>
 
+<code_style_no_use_effect>
+Never write `useEffect` or `useLayoutEffect`. Derive values during render; run side effects in the event handler that causes them; fetch through the app's data layer or loader; subscribe to external stores with `useSyncExternalStore`; reset state with a `key`. No exceptions.
+</code_style_no_use_effect>
+
 <code_style_comments>
 Default to no comments, whatever the surrounding file's comment density; this overrides the "write code that reads like the surrounding code" default.
 - A comment earns its line only when deleting it would invite a wrong future edit, and it must point at something the code cannot show: an upstream issue, a spec or RFC, a measured incident, a cross-file invariant. "Clarifying" what well-named code already says fails this bar; rename or restructure instead.

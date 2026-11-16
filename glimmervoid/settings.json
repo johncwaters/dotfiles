@@ -89,6 +89,15 @@
       "enabled": true,
       "matcher": "Write|Edit|MultiEdit",
       "command": "node {{HOME}}/.claude/hooks/block-else.mjs"
+    },
+    {
+      "id": "c3e1f5b7-540b-478f-92c3-070db13172ce",
+      "name": "Block new useEffect calls",
+      "event": "PreToolUse",
+      "type": "command",
+      "enabled": true,
+      "matcher": "Write|Edit|MultiEdit",
+      "command": "node {{HOME}}/.claude/hooks/block-use-effect.mjs"
     }
   ],
   "projects": [
