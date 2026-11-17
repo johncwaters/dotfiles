@@ -67,11 +67,11 @@ const CHANGED_ONLY_PATH_CAP_BYTES = 20000;
 const REPO_GATE_COMMAND = /^(npm|pnpm|yarn)\s+(run\s+)?(typecheck|lint|test)$/;
 const UNIT_TITLE_LIMIT = 120;
 export const NO_UPSTREAM = /^none:\s*\S*[A-Za-z]\S*\s+\S*[A-Za-z]/;
-const UPSTREAM_PATH_OR_COMMAND = /[\w./-]+\.[A-Za-z]\w*:\d+|`[^`\s]+\s[^`]*[-/.=]\w[^`]*`/;
+const UPSTREAM_PATH_OR_COMMAND = /[\w./-]+\.[A-Za-z]\w*:\d+|`[^`\s]+\s[^`]*[-/.=]\w[^`]*`|https?:\/\/[\w-]+(?:\.[\w-]+)+/;
 const HEX_RUN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
 const SHA_SHAPE = /^(?=.*\d)(?=.*[a-f])/;
 const COMMIT_LOOKUP_TIMEOUT_MS = 2000;
-const CITATION_FORMS = "path:line, the sha of a commit in repoRoot, or a backticked command with its arguments";
+const CITATION_FORMS = "path:line, the sha of a commit in repoRoot, a fetched page's URL, or a backticked command with its arguments";
 
 export function oneLine(text: string): string {
   return text.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, " ").trim();
@@ -263,8 +263,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     const evidence = typeof value.evidence === "string" ? value.evidence : "";
     const isEvidenceCited = /^\S(?:.*\S)?:[1-9]\d*$/.test(evidence) || citesSource(evidence, commitsCited, false);
     if (value.source === "read" && !isEvidenceCited) addError(errors, 1, `${subject}.evidence`, `cite what you read for a read decision: ${CITATION_FORMS}`);
-    const isAssumptionCited = isEvidenceCited || citesSource(evidence, commitsCited, true);
-    if (value.source === "assumed" && !isAssumptionCited) addError(errors, 1, `${subject}.evidence`, `research before assuming: find an outside source with WebSearch, read it with WebFetch (load both through ToolSearch where they are deferred), and cite the page as \`WebFetch <url>\`, or cite ${CITATION_FORMS}; or write 'none: <why no source applies>'`);
+    if (value.source === "assumed" && !isEvidenceCited) addError(errors, 1, `${subject}.evidence`, `research before assuming: find an outside source with WebSearch, read it with WebFetch (load both through ToolSearch where they are deferred), and cite ${CITATION_FORMS}`);
     return;
   }
   if (nodeKind === "branch") {

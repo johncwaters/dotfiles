@@ -287,7 +287,7 @@ test("a goal or branch upstream and a read or assumed decision's evidence are re
       edges: [],
     };
   };
-  const unevidencedCitations = [undefined, "", "a guess with no evidence", "none", "none:  ", "unknown `?`", "defaced guess", "(<path:line>, <commit sha>, or the `command` that showed it)", "`no idea`", "`TBD later`", "a guess, see ticket 1234567", "guess at 10.30:00", "none: ?"];
+  const unevidencedCitations = [undefined, "", "a guess with no evidence", "none", "none:  ", "unknown `?`", "defaced guess", "(<path:line>, <commit sha>, or the `command` that showed it)", "`no idea`", "`TBD later`", "a guess, see ticket 1234567", "guess at 10.30:00", "none: ?", "http://TBD", "a guess https://?"];
   for (const citingNodeId of Object.keys(citingFields)) {
     for (const unevidencedCitation of unevidencedCitations) {
       assert.match(denialReason(writeSpec(sketchCiting(unevidencedCitation, citingNodeId))), new RegExp(`Rule 1: node ${citingNodeId}\\.${citingFields[citingNodeId]}: `), `${citingNodeId} ${unevidencedCitation}`);
@@ -298,8 +298,8 @@ test("a goal or branch upstream and a read or assumed decision's evidence are re
   }
   assertAllowed(writeSpec(sketchCiting("none: the name is new", "G1")));
   assertAllowed(writeSpec(sketchCiting("none: the name is new", "B1")));
-  assertAllowed(writeSpec(sketchCiting("none: the fade is new", "D2")));
-  assert.match(denialReason(writeSpec(sketchCiting(undefined, "D2"))), /Rule 1: node D2\.evidence: research before assuming: .*ToolSearch.*`WebFetch <url>`/);
+  assertAllowed(writeSpec(sketchCiting("WebFetch https://m3.material.io/styles/motion", "D2")));
+  assert.match(denialReason(writeSpec(sketchCiting("none: the fade is new", "D2"))), /Rule 1: node D2\.evidence: research before assuming: .*ToolSearch.*a fetched page's URL/);
   assert.match(denialReason(writeSpec(sketchCiting("none: the name is new", "D1"))), /Rule 1: node D1\.evidence: cite what you read/);
   const grilledWithoutGoalUpstream = sketchCiting(undefined, "G1");
   grilledWithoutGoalUpstream.status = "grilled";
