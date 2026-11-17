@@ -218,7 +218,7 @@ test('the router only adds an unpicked lane naming a changed file, even as a dif
   const addingResponse = await runWorkflow(baseWorkflowArgs, addingRuntime)
 
   assert.deepEqual(spawnedLabels.sort(), ['Code review', 'Red-team review'])
-  assert.match(addingResponse, /Lanes run: code, redteam\. Lanes skipped: security, boundary\./)
+  assert.match(addingResponse, /Lanes run: code, redteam\. Lanes skipped: security, boundary, architecture\./)
 
   const deadRouterResponse = await runWorkflow(baseWorkflowArgs, workflowRuntimeReturning(() => laneResponse, null))
   const loggedLines = []
@@ -231,7 +231,7 @@ test('the router only adds an unpicked lane naming a changed file, even as a dif
 test('route-lanes picks the same lanes from a pinned diff on every run, docs alone getting only code', (context) => {
   const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'route-lanes-'))
   context.after(() => fs.rmSync(repoPath, { recursive: true, force: true }))
-  const git = (...gitArguments) => execFileSync('git', ['-C', repoPath, '-c', 'user.name=t', '-c', 'user.email=t@t', ...gitArguments], { encoding: 'utf8' }).trim()
+  const git = (...gitArguments) => execFileSync('git', ['-C', repoPath, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...gitArguments], { encoding: 'utf8' }).trim()
   git('init', '-q')
   fs.mkdirSync(path.join(repoPath, 'src'))
   fs.writeFileSync(path.join(repoPath, 'README.md'), 'start\n')
@@ -253,8 +253,8 @@ test('route-lanes picks the same lanes from a pinned diff on every run, docs alo
   assert.deepEqual(codeChange.filesByLane.redteam, ['src/quota-gate.js'])
   assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md']).lanes, ['code'])
   const allLanes = routeLanes(`git diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js'], ['--all-lanes'])
-  assert.deepEqual(allLanes.filesByLane, { code: ['README.md', 'src/quota-gate.js'], security: ['README.md', 'src/quota-gate.js'], redteam: ['src/quota-gate.js'], boundary: ['src/quota-gate.js'] })
-  assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md'], ['--all-lanes']).lanes, ['code', 'security'])
+  assert.deepEqual(allLanes.filesByLane, { code: ['README.md', 'src/quota-gate.js'], security: ['README.md', 'src/quota-gate.js'], redteam: ['src/quota-gate.js'], boundary: ['src/quota-gate.js'], architecture: ['README.md', 'src/quota-gate.js'] })
+  assert.deepEqual(routeLanes(`git diff ${baseCommit} HEAD -- README.md`, ['README.md'], ['--all-lanes']).lanes, ['code', 'security', 'architecture'])
   assert.deepEqual(routeLanes(`git -C ${repoPath} diff ${baseCommit} HEAD`, ['README.md', 'src/quota-gate.js']), codeChange)
 })
 
@@ -276,7 +276,7 @@ test('route-lanes runs no diff driver from the repo it is pointed at and refuses
   const scratchPath = fs.mkdtempSync(path.join(os.tmpdir(), 'route-lanes-driver-'))
   context.after(() => fs.rmSync(scratchPath, { recursive: true, force: true }))
   const sourcePath = path.join(scratchPath, 'source')
-  const git = (repoPath, ...gitArguments) => execFileSync('git', ['-C', repoPath, '-c', 'user.name=t', '-c', 'user.email=t@t', ...gitArguments], { encoding: 'utf8' }).trim()
+  const git = (repoPath, ...gitArguments) => execFileSync('git', ['-C', repoPath, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...gitArguments], { encoding: 'utf8' }).trim()
   fs.mkdirSync(sourcePath)
   git(sourcePath, 'init', '-q')
   fs.writeFileSync(path.join(sourcePath, 'f'), 'one\n')

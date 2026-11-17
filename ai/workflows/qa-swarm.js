@@ -20,6 +20,11 @@ const laneDefinitions = [
     name: 'boundary',
     trigger: 'a changed code file reads from or writes to a peer, worker, cache, shared file, tool, or the environment',
     spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Boundary review', phase: 'Review', agentType: 'boundary-reviewer' })
+  },
+  {
+    name: 'architecture',
+    trigger: 'a changed file makes or reads what another repo or release reads (an id, name pattern, schema, menu, manifest, generator, version check, compat test, shared folder), or writes a status, mode, or phase field',
+    spawn: (lanePrompt) => agent(lanePrompt, { model: 'opus', label: 'Architecture review', phase: 'Review', agentType: 'architecture-reviewer' })
   }
 ]
 
@@ -266,17 +271,13 @@ function findingIdentitiesOf(parsedResponse) {
   return parsedResponse.findings.map(findingIdentityOf).sort().join('\n')
 }
 
-function isCleanlyParsed(parsedResponse) {
-  return parsedResponse.hasParseableBlock && !parsedResponse.hasUnparseableRow
-}
-
 function responseAgreedAcrossRepeatedBlocks(laneText, bareFindingsHeaders) {
   const repeatedBlockTexts = bareFindingsHeaders.map((findingsHeader, headerIndex) => {
     const nextHeader = bareFindingsHeaders[headerIndex + 1]
     return laneText.slice(findingsHeader.index, nextHeader ? nextHeader.index : undefined)
   })
   const uncappedResponses = repeatedBlockTexts.map((blockText) => parseSingleBlockResponse(blockText, Infinity))
-  if (!uncappedResponses.every(isCleanlyParsed)) {
+  if (uncappedResponses.some(isDeadLaneResponse)) {
     return deadLaneResponse()
   }
   const lastIdentities = findingIdentitiesOf(uncappedResponses[uncappedResponses.length - 1])
@@ -335,10 +336,6 @@ function carriesProof(parsedFinding) {
   return /(?<![a-z0-9])proof[*_]{0,3}\s*:/i.test(parsedFinding.fields.body)
 }
 
-function startsFindingRow(blockLine) {
-  return blockLine.replace(/^- /, '').startsWith('file: ')
-}
-
 function withJudgmentRowsFolded(judgmentText) {
   if (typeof judgmentText !== 'string') {
     return judgmentText
@@ -349,7 +346,7 @@ function withJudgmentRowsFolded(judgmentText) {
   }
   const foldedRows = []
   for (const blockLine of splitJudgment.blockText.split('\n').map((line) => line.trim()).filter((line) => line !== '' && !isStrayHeaderLine(line))) {
-    if (foldedRows.length === 0 || startsFindingRow(blockLine)) {
+    if (foldedRows.length === 0 || findingRowStart.test(blockLine)) {
       foldedRows.push(blockLine)
       continue
     }
@@ -383,10 +380,6 @@ function findConvergenceValidationFailure(rawJudgmentText, cappedLaneNames, revi
     return 'the missing `truncated lanes:` phrase naming every required lane'
   }
   return null
-}
-
-function isConvergedBlock(rawJudgmentText, cappedLaneNames, reviewedFileNameSet) {
-  return findConvergenceValidationFailure(rawJudgmentText, cappedLaneNames, reviewedFileNameSet) === null
 }
 
 function buildRouterPrompt(unpickedLaneNames, filesToClassify) {
@@ -457,7 +450,7 @@ Exact REVIEW_CMD: ${reviewCmd}
 Caller context, verbatim:
 ${args.context}
 
-Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped, so a suspicion you could not prove gets one summary sentence naming what would prove it. Design, placement, naming, duplication, and style concerns are not findings; put at most one summary sentence on them.
+Proof bar: a finding is a defect you made happen or can show on the page, on a path an existing caller, test, or documented command reaches. Its body carries the literal label Proof: followed by the command you ran and the output showing the defect, or, where nothing executes (docs, config, prompts), the quoted lines with file:line that contradict each other, or the zero-hit search for something the text prescribes. ${proofRunClauseFor(reviewCmd)} A row without Proof: is dropped, so a suspicion you could not prove gets one summary sentence naming what would prove it.${laneName === 'architecture' ? '' : ' Design, placement, naming, duplication, and style concerns are not findings; put at most one summary sentence on them.'}
 
 Files matched for this lane: ${formatLines(matchedFiles)}
 
@@ -486,11 +479,7 @@ function describeLaneDeath(laneText) {
 }
 
 function spawnLane(laneName, lanePrompt) {
-  const laneDefinition = laneDefinitionsByName.get(laneName)
-  if (!laneDefinition) {
-    return null
-  }
-  return laneDefinition.spawn(lanePrompt)
+  return laneDefinitionsByName.get(laneName).spawn(lanePrompt)
 }
 
 function formatTagList(tagValues) {
@@ -675,7 +664,7 @@ phase('Converge')
 const convergenceFacts = buildConvergenceFacts(laneNames, skippedLaneNames, degradationNotes, droppedFindingCount, droppedBelowMediumCount, droppedUnprovenCount, droppedOutOfLaneCount, [...droppedOutOfLaneTags], cappedLaneNames)
 if (canConvergeMechanically(survivingFindings, laneSummaries)) {
   const mechanicalConvergence = buildMechanicalConvergence(survivingFindings, convergenceFacts)
-  if (!isConvergedBlock(mechanicalConvergence, cappedLaneNames, reviewedFileNameSet)) {
+  if (findConvergenceValidationFailure(mechanicalConvergence, cappedLaneNames, reviewedFileNameSet)) {
     return 'LANE_DEATH: judgment'
   }
   return mechanicalConvergence
@@ -689,7 +678,7 @@ if (!firstValidationFailure) {
 }
 const retryJudgmentPrompt = `Retry attempt id: ${resumeSafeRetryId}\n\nValidation failure reason: ${firstValidationFailure}\n\n${judgmentPrompt}`
 const retriedConvergedFindings = withJudgmentRowsFolded(await agent(retryJudgmentPrompt, { model: 'opus', label: 'Retry converge findings', phase: 'Converge' }))
-if (!isConvergedBlock(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {
+if (findConvergenceValidationFailure(retriedConvergedFindings, cappedLaneNames, reviewedFileNameSet)) {
   return 'LANE_DEATH: judgment'
 }
 return retriedConvergedFindings

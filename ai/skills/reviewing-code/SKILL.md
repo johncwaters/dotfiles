@@ -46,14 +46,14 @@ Remove a finding whose line the diff did not change and whose body describes a p
 
 | Disposition | Assign when | What the caller does with it |
 |---|---|---|
-| `ACTIONABLE` | The body's `Proof:` is one the writer can run again (a command with the output it produced, or quoted lines with file:line), it shows the defect on a path the change's own callers, tests, or documented commands reach, or, for `boundary/`, on an input `boundary-reviewer.md`'s proof bar admits, and the fix is bounded | Hands it to a writer, who re-runs that proof before and after the edit. The only disposition a writer ever sees |
+| `ACTIONABLE` | The body's `Proof:` is one the writer can run again (a command with the output it produced, or quoted lines with file:line), it shows the defect on a path the change's own callers, tests, or documented commands reach, or, for `boundary/` or `architecture/`, on an input or change its lane file's proof bar admits, and the fix is bounded | Hands it to a writer, who re-runs that proof before and after the edit. The only disposition a writer ever sees |
 | `NIT` | Style, preference, a duplicate of another finding, plainly out of the change's scope, or a `Proof:` that is a scenario rather than a run or a quote | Records it; leaves it unfixed and nonblocking |
 | `AMBIGUOUS` | Contested between lanes, cross-cutting enough that the fix is a design decision, or the intent behind the code is unclear | Stops and asks the carbon unit, with both readings stated |
 
 Rules that decide the hard cases:
 
 - qa-swarm drops every row without a `Proof:` label, so the label's presence is settled before triage and its content is what triage reads. A proof that narrates what a caller could do, with no command output and no quoted lines, is a `NIT` below HIGH and `AMBIGUOUS` at HIGH or CRITICAL: the writer needs a run or quote to recheck the defect.
-- A finding whose `body` carries `Confidence: low` is ineligible for `ACTIONABLE`. Only a `contested:` merge carries it now. It is `AMBIGUOUS` if it would block, `NIT` if it would not.
+- A finding whose `body` carries `Confidence: low` is ineligible for `ACTIONABLE`. It is `AMBIGUOUS` if it would block, `NIT` if it would not.
 - A `convergent:` finding is `ACTIONABLE` if its fix is bounded and one of its parts carries a re-runnable proof. Agreement between lanes confirms a proof; it requires one.
 - A CRITICAL or HIGH finding is ineligible for `NIT`. If it cannot be `ACTIONABLE`, it is `AMBIGUOUS`.
 - A CRITICAL finding needing an architecture call is `AMBIGUOUS`.

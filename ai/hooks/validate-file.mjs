@@ -37,6 +37,7 @@ const REVIEW_LADDER_PATH_SUFFIXES = [
   "skills/landing/subskills/recovery.md",
   "agents/qa-code-reviewer.md",
   "agents/boundary-reviewer.md",
+  "agents/architecture-reviewer.md",
   "agents/redteam-reviewer.md",
   "agents/security-reviewer.md",
   "agents/plan-challenger.md",

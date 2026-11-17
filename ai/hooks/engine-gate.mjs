@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { allow, readPayload } from "./hook-io.mjs";
 import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
 
-const LANE_AGENT_TYPES = new Set(["qa-code-reviewer", "security-reviewer", "redteam-reviewer", "boundary-reviewer"]);
+const LANE_AGENT_TYPES = new Set(["qa-code-reviewer", "security-reviewer", "redteam-reviewer", "boundary-reviewer", "architecture-reviewer"]);
 const ENGINE_WORKFLOW_NAME = "qa-swarm";
 
 function isEngineLaunch(event) {
