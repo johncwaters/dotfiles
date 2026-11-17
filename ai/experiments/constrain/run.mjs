@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { commentLinesOnlyInAfter, scanUseStateLines } from "./guard.mjs";
 
 const EXPERIMENT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const RESULTS_DIRECTORY = path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), ".local", "state"), "dotfiles", "constrain", "round-2");
+const RESULTS_DIRECTORY = path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), ".local", "state"), "dotfiles", "constrain", "round-3");
 const GUARD_PATH = path.join(EXPERIMENT_DIRECTORY, "guard.mjs");
 const TARGET_REPOSITORY = path.join(os.homedir(), "Projects", "card-harbor");
 const DEPENDENCY_CACHE_DIRECTORY = path.join(os.homedir(), ".cache", "dotfiles-constrain");
@@ -19,9 +19,9 @@ const SOURCE_FILE_RE = /\.(?:[cm]?[jt]sx?)$/;
 const TEST_FILE_RE = /(?:\.test\.|\.spec\.|\/test\/|\/tests\/|\/e2e\/)/;
 
 const TASKS = [
-  { id: "expand-listing-row", referenceCommit: "6268e006" },
-  { id: "held-back-copies", referenceCommit: "2944cb07" },
-  { id: "card-match-dialog", referenceCommit: "12f784f7" },
+  { id: "inventory-tab-merge", referenceCommit: "671045c5" },
+  { id: "remove-and-delist", referenceCommit: "15f99761" },
+  { id: "regrade-held-copies", referenceCommit: "8040d1fe" },
 ];
 
 const SHARED_INSTRUCTIONS = [
