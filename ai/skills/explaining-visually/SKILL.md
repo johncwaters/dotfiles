@@ -17,17 +17,17 @@ A board section per issue that the carbon unit can read top to bottom without th
 
 ## Step 1: Lay out one section per issue
 
-Give each issue its own band of the board: a title box with the issue in plain words and a one-line subtitle, then frames for the parts the issue needs, in reading order: the contract or setup, before, after (what breaks), fix, proof. Keep each box to a title and at most three short lines; the picture carries the rest. Wire the flow left to right inside a band.
+Give each issue its own band of the board: a title box with the issue in plain words and a one-line subtitle, borderless at text size L with no icon or tone, then the parts the issue needs, in reading order: the contract or setup, before, after (what breaks), fix, proof. Frame a part only when it holds more than one box. For a break that only a future change causes, draw today's working contract as before and title the after part with the change that triggers it, such as "once the next release is latest". Keep each box to a title and at most three short lines; the picture carries the rest. Wire the flow left to right inside a band.
 
 ## Step 2: Give every box its role's icon and tone
 
-Read `visual-language.json` and give each box the `boardIcon` and `boardTone` of its role (contract, proof, fix, failure, ghost, external, agent, system), so the same picture and color mean the same thing on every board. The board draws these icons itself.
+Read `visual-language.json` and give each box but the section title the `boardIcon` and `boardTone` of its role (contract, proof, fix, failure, caveat, ghost, external, agent, system), so the same picture and color mean the same thing on every board. The board draws these icons itself. A change that triggers the break (a PR, a release) takes the system role, and a box with a picture keeps its role icon.
 
-Only for a metaphor no built-in icon covers (a socket and plug for a contract, a folder moving while its id stays, a factory for CI, a trash can for a folder something deletes), draw a 320x180 SVG, starting from `examples/contract-socket.svg` or `examples/fix-declared-field.svg`. Keep text inside the picture to labels; the box title and lines carry the sentence. Run `node scripts/check-palette.ts <file.svg>` and fix every color or font it names, then attach the file with `whiteboard attach` and set the returned media on its box.
+Only for a metaphor no built-in icon covers (a socket and plug for a contract, a folder moving while its id stays, a factory for CI, a trash can for a folder something deletes), draw a 320x180 SVG, starting from `examples/contract-socket.svg` or `examples/fix-declared-field.svg`. Keep text inside the picture to labels; the box title and lines carry the sentence. Run `node <skill-dir>/scripts/check-palette.ts <file.svg>` and fix every color or font it names, then attach the file with `whiteboard attach`, which takes only `path`, and set the returned media on its box.
 
 ## Step 3: Mark proof and fix
 
-Put the proof in its own proof-role box holding the command and its real output, wired dashed with the label "proves" to the box it proves. Title fix-role boxes with the upstream change (a declared field, a versioned name), not the test that would catch the break.
+Put the proof in its own proof-role box holding either the command and its real output or the quoted lines with their file:line, placed under the box it proves and wired dashed with the label "proves". Quote the line verbatim, reading it from the source when the input only paraphrases it. Put a caveat-role box under the box it qualifies, wired dashed with no label. Title fix-role boxes with the upstream change (a declared field, a versioned name), not the test that would catch the break.
 
 ## Step 4: Check what the carbon unit sees
 
@@ -43,4 +43,4 @@ When the carbon unit wants the explanation on a pull request, `whiteboard view` 
 
 ## Check
 
-Each issue has its own section, every box carries its role's icon or a checked picture, every claim has a proof-role box with real output, and `whiteboard view` shows no clipped text.
+Each issue has its own section, every box but the section title carries its role's icon or a checked picture, every claim has a proof-role box with real output or quoted lines, and `whiteboard view` shows no clipped text.

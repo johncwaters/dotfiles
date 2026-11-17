@@ -4,6 +4,7 @@
     "proof": { "boardTone": "pink", "boardIcon": "terminal", "hex": "#f28bb6" },
     "fix": { "boardTone": "green", "boardIcon": "check", "hex": "#7fd49a" },
     "failure": { "boardTone": "pink", "boardIcon": "error", "hex": "#f28bb6" },
+    "caveat": { "boardTone": null, "boardIcon": "alert", "hex": "#c4c8ce" },
     "ghost": { "boardTone": null, "boardIcon": "eye-off", "hex": "#7d8591" },
     "external": { "boardTone": null, "boardIcon": "globe", "hex": "#a7adb6" },
     "agent": { "boardTone": "violet", "boardIcon": "bot", "hex": "#b49cf5" },
