@@ -404,7 +404,7 @@ writeStub bash_completion <<'STUB'
 :
 STUB
 
-for recordingOnlyCommand in dpkg systemctl update-desktop-database gtk-update-icon-cache; do
+for recordingOnlyCommand in dpkg systemctl update-desktop-database gtk-update-icon-cache unattended-upgrade; do
   writeStub "$recordingOnlyCommand" <<STUB
 #!/usr/bin/env bash
 printf '$recordingOnlyCommand %s\n' "\$*" >> "\$DOTFILES_TEST_LOG"
@@ -422,6 +422,7 @@ mapPackageToCommands ripgrep "rg"
 mapPackageToCommands ffmpeg "ffmpeg"
 mapPackageToCommands bash-completion "bash_completion"
 mapPackageToCommands gh "gh"
+mapPackageToCommands unattended-upgrades "unattended-upgrade"
 mapPackageToCommands nodejs "node npm"
 mapPackageToCommands npm "npm"
 mapPackageToCommands python3 "python3"
@@ -628,6 +629,8 @@ check "ripgrep is installed through the package manager" logHas "install -y ripg
 check "bash completion is installed through the package manager" logHas "install -y bash-completion"
 check "gh comes only from GitHub's pinned repository" \
   grep -qx 'Pin: release o=gh' "$sandbox/etc/apt/preferences.d/github-cli"
+check "apt upgrades every origin unattended without rebooting" \
+  cmp -s "$topicDir/apt/52dotfiles-unattended-upgrades" "$sandbox/etc/apt/apt.conf.d/52dotfiles-unattended-upgrades"
 check "the GitHub CLI is installed" logHas "install -y gh"
 check "python arrives with pip" logHas "install -y python3 python3-pip"
 check "every package manager call goes through sudo" \

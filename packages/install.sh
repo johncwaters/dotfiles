@@ -679,6 +679,28 @@ installPythonTools() {
   done < <(readPackageList "$packagesDirectory/python-tools.txt")
 }
 
+# The nightly converge has no sudo, so apt upgrades run from the root apt-daily-upgrade timer through unattended-upgrades.
+ensureUnattendedUpgrades() {
+  local manager
+  local stagedPath
+  local writeStatus=0
+  if ! manager="$(detectPackageManager)" || [[ "$manager" != "apt-get" ]]; then
+    return 0
+  fi
+  installPackageTool "unattended-upgrades" "unattended-upgrade" "unattended-upgrades"
+  stagedPath="$(mktemp "${TMPDIR:-/tmp}/dotfiles-apt-conf.XXXXXX")"
+  cp -- "$packagesDirectory/apt/52dotfiles-unattended-upgrades" "$stagedPath"
+  installRootFileIfChanged "apt auto-upgrades" "$stagedPath" \
+    "$(aptConfDirectory)/52dotfiles-unattended-upgrades" || writeStatus=$?
+  if ((writeStatus == 2)); then
+    noteApplied "apt auto-upgrades" "every origin, no reboot"
+    return 0
+  fi
+  if ((writeStatus == 0)); then
+    notePresent "apt auto-upgrades" "up to date"
+  fi
+}
+
 if ! readEnabledPackageGroups; then
   finishTopic
 fi
@@ -694,6 +716,7 @@ if packageGroupEnabled "system-tools"; then
     github-cli.sources https://cli.github.com/packages stable main gh gh
   installPackageTool "GitHub CLI" "gh" "gh" "https://cli.github.com"
   installPackageTool "Python" "python3" "python"
+  ensureUnattendedUpgrades
   reportGithubAuthStatus
 fi
 

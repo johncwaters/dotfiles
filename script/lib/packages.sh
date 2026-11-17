@@ -611,6 +611,10 @@ packageNamesForTool() {
       printf 'solaar\n'
       return 0
       ;;
+    unattended-upgrades:apt-get)
+      printf 'unattended-upgrades\n'
+      return 0
+      ;;
     ratbagd:apt-get)
       printf 'ratbagd\n'
       return 0
