@@ -19,13 +19,15 @@ A board section per issue that the carbon unit can read top to bottom without th
 
 Give each issue its own band of the board: a title box with the issue in plain words and a one-line subtitle, then frames for the parts the issue needs, in reading order: the contract or setup, before, after (what breaks), fix, proof. Keep each box to a title and at most three short lines; the picture carries the rest. Wire the flow left to right inside a band.
 
-## Step 2: Draw one picture per box
+## Step 2: Give every box its role's icon and tone
 
-Draw a 320x180 SVG for each box, as a metaphor rather than a screenshot: a socket and plug for a contract, a factory for CI, a form with blanks for a template, a shelf and a trash can for a folder something deletes, a terminal for real output. Start from `examples/contract-socket.svg`, `examples/fix-declared-field.svg`, and `examples/proof-terminal.svg`. Keep text inside the picture to labels; the box title and lines carry the sentence, so a caption inside the SVG only repeats it. Attach each file with `whiteboard attach` and set the returned media on its box.
+Read `visual-language.json` and give each box the `boardIcon` and `boardTone` of its role (contract, proof, fix, failure, ghost, external, agent, system), so the same picture and color mean the same thing on every board. The board draws these icons itself.
+
+Only for a metaphor no built-in icon covers (a socket and plug for a contract, a folder moving while its id stays, a factory for CI, a trash can for a folder something deletes), draw a 320x180 SVG, starting from `examples/contract-socket.svg` or `examples/fix-declared-field.svg`. Keep text inside the picture to labels; the box title and lines carry the sentence. Run `node scripts/check-palette.ts <file.svg>` and fix every color or font it names, then attach the file with `whiteboard attach` and set the returned media on its box.
 
 ## Step 3: Mark proof and fix
 
-Put the proof in its own pink box holding the command and its real output, wired dashed with the label "proves" to the box it proves. Make fix boxes green and title them with the upstream change (a declared field, a versioned name), not the test that would catch the break.
+Put the proof in its own proof-role box holding the command and its real output, wired dashed with the label "proves" to the box it proves. Title fix-role boxes with the upstream change (a declared field, a versioned name), not the test that would catch the break.
 
 ## Step 4: Check what the carbon unit sees
 
@@ -35,6 +37,10 @@ Run `whiteboard view` on each section's region and look for clipped or overlappi
 
 When the carbon unit wants the explanation on a pull request, `whiteboard view` each section by region and keep the saved PNG. Image hosts for PR comments are public and permanent, so ask before uploading, then upload with the image uploader the profile's `opening-prs` extension names and put the image above the comment's details block.
 
+## Scripts
+
+- `scripts/check-palette.ts`: fails an SVG using a color or font outside the `drawing-whiteboards` palette and the role colors in `visual-language.json`; run in Step 2 before attaching.
+
 ## Check
 
-Each issue has its own section, every box has a picture, every claim has a pink proof box with real output, and `whiteboard view` shows no clipped text.
+Each issue has its own section, every box carries its role's icon or a checked picture, every claim has a proof-role box with real output, and `whiteboard view` shows no clipped text.
