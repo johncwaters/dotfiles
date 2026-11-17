@@ -1,0 +1,6 @@
+{
+  "name": "explaining-visually",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" }
+}

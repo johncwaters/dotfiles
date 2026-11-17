@@ -1,0 +1,13 @@
+{
+  "roles": {
+    "contract": { "boardTone": "yellow", "boardIcon": "api", "hex": "#f5d565" },
+    "proof": { "boardTone": "pink", "boardIcon": "terminal", "hex": "#f28bb6" },
+    "fix": { "boardTone": "green", "boardIcon": "check", "hex": "#7fd49a" },
+    "failure": { "boardTone": "pink", "boardIcon": "error", "hex": "#f28bb6" },
+    "ghost": { "boardTone": null, "boardIcon": "eye-off", "hex": "#7d8591" },
+    "external": { "boardTone": null, "boardIcon": "globe", "hex": "#a7adb6" },
+    "agent": { "boardTone": "violet", "boardIcon": "bot", "hex": "#b49cf5" },
+    "system": { "boardTone": "blue", "boardIcon": "server", "hex": "#7cb4f2" }
+  },
+  "fonts": ["kalam", "inter", "ui-monospace", "menlo", "monospace", "system-ui", "sans-serif", "cursive"]
+}
