@@ -35,7 +35,7 @@ Run `whiteboard view` on each section's region and look for clipped or overlappi
 
 ## Step 5: Export for a PR comment
 
-When the carbon unit wants the explanation on a pull request, `whiteboard view` each section by region and keep the saved PNG. Image hosts for PR comments are public and permanent, so ask before uploading, then upload with the image uploader the profile's `opening-prs` extension names and put the image above the comment's details block.
+When the carbon unit wants the explanation on a pull request, first write the comment and each exported section's box titles and lines with `writing-in-voice` on its published path until its lint exits 0, passing proof-role box text to the lint as `>` quotes so it stays verbatim, re-viewing the section as Step 4 does after any box changes. Then `whiteboard view` each section by region and keep the saved PNG. Image hosts for PR comments are public and permanent, so ask before uploading, then upload with the image uploader the profile's `opening-prs` extension names and put the image above the comment's details block.
 
 ## Scripts
 
