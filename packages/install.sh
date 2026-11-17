@@ -701,6 +701,23 @@ ensureUnattendedUpgrades() {
   fi
 }
 
+# Per-user flatpaks need no root, so the nightly converge owns their upgrade; it runs before the launcher copies so they take the new exports.
+upgradeUserFlatpaks() {
+  [[ -n "${DOTFILES_UPGRADE:-}" ]] || return 0
+  command -v flatpak >/dev/null 2>&1 || return 0
+  local activeCommitsBefore
+  activeCommitsBefore="$(flatpak list --user --columns=application,active 2>/dev/null || true)"
+  if ! flatpak update --user -y --noninteractive </dev/null >/dev/null 2>&1; then
+    recordFailedUpgrade flatpak user unknown unknown
+    return 0
+  fi
+  if [[ "$(flatpak list --user --columns=application,active 2>/dev/null || true)" == "$activeCommitsBefore" ]]; then
+    notePresent "flatpaks" "up to date"
+    return 0
+  fi
+  noteInstalled "flatpaks" "updated"
+}
+
 if ! readEnabledPackageGroups; then
   finishTopic
 fi
@@ -730,6 +747,7 @@ fi
 
 if packageGroupEnabled "flatpaks"; then
   writeSection "Desktop apps"
+  upgradeUserFlatpaks
   installProfileFlatpaks
 fi
 

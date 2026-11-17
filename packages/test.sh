@@ -362,6 +362,9 @@ if [[ "${1:-}" == "info" ]]; then
   [[ -f "$installedDir/$2" ]]
   exit $?
 fi
+if [[ "${1:-}" == "update" && -f "$DOTFILES_TEST_STATE/flatpak-update-fails" ]]; then
+  exit 1
+fi
 if [[ "${1:-}" == "install" ]]; then
   appId="${*: -1}"
   touch "$installedDir/$appId"
@@ -680,6 +683,15 @@ check "second run installs no system package" logLacks "install -y"
 check "second run installs no npm package" logLacks "npm install -g"
 check "second run uninstalls nothing" logLacks "npm uninstall"
 check "second run installs no flatpak" logLacks "flatpak install"
+: > "$commandLog"
+DOTFILES_UPGRADE=1 runInstall > /dev/null || true
+check "an upgrade converge updates every user flatpak in one call" \
+  test "$(countLogLines '^flatpak update --user -y --noninteractive$')" -eq 1
+touch "$stubState/flatpak-update-fails"
+DOTFILES_UPGRADE=1 runInstall > /dev/null || true
+check "a failed flatpak update leaves a pending record" \
+  grep -qx 'flatpak user unknown unknown' "$sandbox/.local/state/dotfiles/upgrades-failed-packages-pending"
+rm -f "$stubState/flatpak-update-fails"
 check "second run installs no pip package" logLacks "pip install"
 check "second run downloads no installer" \
   bash -c '! grep "^curl " "$1" | grep -qv githubcli-archive-keyring' _ "$commandLog"
