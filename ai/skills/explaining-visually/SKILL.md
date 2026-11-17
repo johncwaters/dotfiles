@@ -17,7 +17,7 @@ A board section per issue that the carbon unit can read top to bottom without th
 
 ## Step 1: Lay out one section per issue
 
-Give each issue its own band of the board: a title box with the issue in plain words and a one-line subtitle, borderless at text size L with no icon or tone, then the parts the issue needs, in reading order: the contract or setup, before, after (what breaks), fix, proof. Frame a part only when it holds more than one box. For a break that only a future change causes, draw today's working contract as before and title the after part with the change that triggers it, such as "once the next release is latest". Keep each box to a title and at most three short lines; the picture carries the rest. Wire the flow left to right inside a band.
+Give each issue its own band of the board: a title box with the issue in plain words and a one-line subtitle, borderless at text size L with no icon or tone, then the parts the issue needs, in reading order: the contract or setup, before, after (what breaks), fix, proof. Frame a part only when it holds more than one box. For a break that only a future change causes, draw today's working contract as before and title the after part with the change that triggers it, such as "once the next release is latest". Give each box that does something (contract, fix, system, and agent roles) a title and three `kv` lines: `Purpose` (what it does), `How` (the mechanism that does it), and `Why` (the concrete harm it prevents, never a restated goal), in that order; the picture carries the rest; failure, before, caveat, and proof boxes keep a title and at most three short lines, since they show a harm rather than prevent one. A Why the carbon unit cannot picture going wrong is too abstract: name what breaks without the box. Wire the flow left to right inside a band.
 
 ## Step 2: Give every box its role's icon and tone
 
@@ -43,4 +43,4 @@ When the carbon unit wants the explanation on a pull request, first write the co
 
 ## Check
 
-Each issue has its own section, every box but the section title carries its role's icon or a checked picture, every claim has a proof-role box with real output or quoted lines, and `whiteboard view` shows no clipped text.
+Each issue has its own section, every box but the section title carries its role's icon or a checked picture and every contract, fix, system, and agent box carries `Purpose`, `How`, and `Why` in that order, every claim has a proof-role box with real output or quoted lines, and `whiteboard view` shows no clipped text.
