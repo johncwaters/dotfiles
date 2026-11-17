@@ -27,8 +27,8 @@ cp -R "$repoRoot/." "$stagedRepo"
 rm -rf "$stagedRepo/.git" "$stagedRepo"/ai/skills/*/node_modules "$stagedRepo"/profiles/*/skills/*/node_modules "$stagedRepo/profiles/personal/mcp-servers.json"
 stagedTopicDir="$stagedRepo/ai"
 workSkillNames=()
-for workSkillPath in "$repoRoot"/profiles/work/skills/*/; do
-  workSkillNames+=("$(basename -- "$workSkillPath")")
+for workSkillManifestPath in "$repoRoot"/profiles/work/skills/*/SKILL.md; do
+  workSkillNames+=("$(basename -- "$(dirname -- "$workSkillManifestPath")")")
 done
 profileDependencySkillPath="$stagedRepo/profiles/work/skills/locked-profile-skill-test"
 mkdir -p "$profileDependencySkillPath"
@@ -602,8 +602,8 @@ check "a missing profile keeps shared skills linked" \
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "skills is a plain directory, never a whole-directory link" \
   bash -c '[[ -d "$1" && ! -L "$1" ]]' _ "$skillsPath"
-for repoSkillPath in "$stagedTopicDir"/skills/*; do
-  skillName="$(basename -- "$repoSkillPath")"
+for repoSkillManifestPath in "$stagedTopicDir"/skills/*/SKILL.md; do
+  skillName="$(basename -- "$(dirname -- "$repoSkillManifestPath")")"
   installedSkillPath="$skillsPath/$skillName"
   check "skill $skillName is linked through the alias" \
     bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \

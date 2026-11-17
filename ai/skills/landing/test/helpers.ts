@@ -95,6 +95,7 @@ export function makeRepo(initialBranch = "main"): string {
   runGit(repo, ["config", "user.name", "Test User"]);
   runGit(repo, ["config", "user.email", "test@example.com"]);
   runGit(repo, ["config", "commit.gpgsign", "false"]);
+  runGit(repo, ["config", "tag.gpgsign", "false"]);
   return repo;
 }
 
@@ -116,6 +117,7 @@ export function cloneRepo(origin: string): string {
   runGit(dest, ["config", "user.name", "Test User"]);
   runGit(dest, ["config", "user.email", "test@example.com"]);
   runGit(dest, ["config", "commit.gpgsign", "false"]);
+  runGit(dest, ["config", "tag.gpgsign", "false"]);
   return dest;
 }
 

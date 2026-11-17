@@ -6,7 +6,7 @@
 node <skill-dir>/scripts/frames.mjs sheet --page <page.html> --times 1,2.6,4.7,6.6,9.5,11.3,13.3,16.8 --columns 4 --out sheet.png
 ```
 
-Read every sheet. Pick times inside each beat and at each transition. `--times` takes story times, so a sheet never shows a title-card hold; check holds from real-time frames of the rendered MP4, such as `ffmpeg -i <video.mp4> -vf fps=2,scale=480:-1,tile=6x4 holds-%02d.png`. Check for:
+Read every sheet. Pick times inside each beat and at each transition. `--times` takes story times, so a sheet skips title-card holds; check them from real-time frames of the rendered MP4, such as `ffmpeg -i <video.mp4> -vf fps=2,scale=480:-1,tile=6x4 holds-%02d.png`. Check for:
 
 - more than one caption line per panel in a beat, or more than one hero number per panel;
 - jargon, raw units or version ids where the audience needs plain words;
