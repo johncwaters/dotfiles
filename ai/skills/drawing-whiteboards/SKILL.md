@@ -1,6 +1,6 @@
 ---
 name: drawing-whiteboards
-description: Draws architecture and flow whiteboards as hand-placed diagrams from a small board file, with arrows routed and checked so none run through boxes or over text, then publishes the page as an artifact. Use for "whiteboard this", "draw the architecture", "diagram how X flows", or a design doc that needs a system map.
+description: Draws architecture and flow whiteboards as hand-placed diagrams from a small board file, with arrows routed and checked so none run through boxes or over text, then publishes the page as an artifact. Use for "whiteboard this", "draw the architecture", "diagram how X flows", or a design doc that needs a system map. Explaining findings on the live Glimmervoid board belongs to explaining-visually.
 ---
 
 # Whiteboards
