@@ -6,8 +6,8 @@ if [[ -z "${dotfilesRepo:-}" ]]; then
 fi
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
-# shellcheck source=./apt.sh
-source "$dotfilesRepo/terminal/apt.sh"
+# shellcheck source=../script/lib/apt.sh
+source "$dotfilesRepo/script/lib/apt.sh"
 
 # Ubuntu 24.04 ships no ghostty, so the noble builds come from this community PPA.
 ghosttyPpaName="ppa:mkasberg/ghostty-ubuntu"

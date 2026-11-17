@@ -35,6 +35,15 @@ writeAptStubThatInstallsMappedCommands
 
 writeContainedSudoStub
 
+writeStub install <<'STUB'
+#!/usr/bin/env bash
+printf 'install %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+destinationPath="${*: -1}"
+sourcePath="${*: -2:1}"
+mkdir -p "$(dirname -- "$destinationPath")"
+cp -f -- "$sourcePath" "$destinationPath"
+STUB
+
 writeStub curl <<'STUB'
 #!/usr/bin/env bash
 printf 'curl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -55,6 +64,9 @@ emitBody() {
   case "$requestedUrl" in
     *nodesource.com*)
       printf ':\n'
+      ;;
+    *cli.github.com/packages/githubcli-archive-keyring.gpg)
+      printf 'github keyring\n'
       ;;
     *claude.ai/install.sh)
       printf 'mkdir -p "$HOME/.local/bin"\n'
@@ -400,7 +412,7 @@ exit 0
 STUB
 done
 
-for presentFromTheStart in apt-get sudo curl flatpak dpkg systemctl \
+for presentFromTheStart in apt-get sudo curl install flatpak dpkg systemctl \
   update-desktop-database gtk-update-icon-cache; do
   provideCommand "$presentFromTheStart"
 done
@@ -427,6 +439,10 @@ printf 'token\n' > "$sandbox/.grok/auth.json"
 runInstall() {
   runInStubbedSandbox "$sandbox" \
     TMPDIR="$sandboxTemp" \
+    DOTFILES_APT_SOURCES_PATH="$sandbox/etc/apt/sources.list.d" \
+    DOTFILES_APT_PREFERENCES_PATH="$sandbox/etc/apt/preferences.d" \
+    DOTFILES_APT_CONF_PATH="$sandbox/etc/apt/apt.conf.d" \
+    DOTFILES_APT_KEYRINGS_PATH="$sandbox/etc/apt/keyrings" \
     DOTFILES_PROFILE="${1:-personal}" \
     DOTFILES_TEST_BASH_COMPLETION_PATH="$stubBin/bash_completion" \
     NO_COLOR=1 \
@@ -610,12 +626,14 @@ check "install says what it did" test -n "$firstRunOutput"
 check "git is installed through the package manager" logHas "apt-get -o DPkg::Lock::Timeout=180 install -y git"
 check "ripgrep is installed through the package manager" logHas "install -y ripgrep"
 check "bash completion is installed through the package manager" logHas "install -y bash-completion"
+check "gh comes only from GitHub's pinned repository" \
+  grep -qx 'Pin: release o=gh' "$sandbox/etc/apt/preferences.d/github-cli"
 check "the GitHub CLI is installed" logHas "install -y gh"
 check "python arrives with pip" logHas "install -y python3 python3-pip"
 check "every package manager call goes through sudo" \
   test "$(countLogLines '^sudo -n [^ ]*/apt-get ')" -eq "$(countLogLines '^apt-get ')"
 check "the package index is refreshed once per repository change" \
-  test "$(countLogLines '^apt-get .* update$')" -eq 2
+  test "$(countLogLines '^apt-get .* update$')" -eq 3
 check "a third party installer gets the dpkg lock first" logHas "apt-get -o DPkg::Lock::Timeout=180 check"
 check "node comes from NodeSource" logHas "https://deb.nodesource.com/setup_22.x"
 check "the NodeSource package is installed" logHas "install -y nodejs"
@@ -660,7 +678,8 @@ check "second run installs no npm package" logLacks "npm install -g"
 check "second run uninstalls nothing" logLacks "npm uninstall"
 check "second run installs no flatpak" logLacks "flatpak install"
 check "second run installs no pip package" logLacks "pip install"
-check "second run downloads no installer" logLacks "curl"
+check "second run downloads no installer" \
+  bash -c '! grep "^curl " "$1" | grep -qv githubcli-archive-keyring' _ "$commandLog"
 check "a current Claude Code runs no update" logLacks "claude update"
 
 printf '@openai/codex\n0.158.0\n' > "$stubState/npm-installed/@openai%codex"

@@ -7,6 +7,8 @@ if [[ -z "${dotfilesRepo:-}" ]]; then
 fi
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
+# shellcheck source=../script/lib/apt.sh
+source "$dotfilesRepo/script/lib/apt.sh"
 # shellcheck source=./flatpak.sh
 source "$dotfilesRepo/packages/flatpak.sh"
 
@@ -687,6 +689,9 @@ if packageGroupEnabled "system-tools"; then
   installPackageTool "ripgrep" "rg" "ripgrep"
   installPackageTool "ffmpeg" "ffmpeg" "ffmpeg"
   installPackageTool "Bash completion" "bash_completion" "bash-completion"
+  ensureAptKeyedRepository "GitHub CLI repo" \
+    https://cli.github.com/packages/githubcli-archive-keyring.gpg githubcli-archive-keyring.gpg \
+    github-cli.sources https://cli.github.com/packages stable main gh gh
   installPackageTool "GitHub CLI" "gh" "gh" "https://cli.github.com"
   installPackageTool "Python" "python3" "python"
   reportGithubAuthStatus
