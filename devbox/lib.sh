@@ -153,6 +153,29 @@ startDevbox() {
   provisionDevbox
 }
 
+rebuildOrStartDevbox() {
+  if [[ "$devboxWorkspaceIsOutdated" == 1 ]]; then
+    "$devboxCoderPath" update "$devboxWorkspaceName"
+    return
+  fi
+  case "$devboxWorkspaceStatus" in
+    stopped | failed) "$devboxCoderPath" start "$devboxWorkspaceName" --yes; return ;;
+    running | starting) return 0 ;;
+  esac
+  printf 'devbox: workspace is %s; cannot update\n' "$devboxWorkspaceStatus" >&2
+  return 1
+}
+
+# dot exits 0 when its devbox topic only warned or skipped a starting box, so update provisions itself before restarting.
+updateDevbox() {
+  rebuildOrStartDevbox || return
+  "$dotfilesCheckout/bin/dot" || return
+  local provisionStatus=0
+  provisionDevbox || provisionStatus=$?
+  ((provisionStatus == 0 || provisionStatus == devboxFallbackReleaseStatus)) || return "$provisionStatus"
+  pushDevboxScript restart
+}
+
 holdDevboxAgentForward() {
   local forwardedAgentSocket
   forwardedAgentSocket="$(devboxForwardedAgentSocket)"
@@ -370,14 +393,16 @@ dispatchDevboxCommand() {
         return 1
       fi
       ;;
-    restart-glimmervoid)
+    restart-glimmervoid | update)
       if (($# > 1)) || [[ -n "${1:-}" && "$1" != --yes ]]; then
-        printf 'Usage: devbox restart-glimmervoid [--yes]\n' >&2
+        printf 'Usage: devbox %s [--yes]\n' "$subcommand" >&2
         return 1
       fi
       if [[ "${1:-}" != --yes ]]; then
         local confirmation=""
-        printf 'Restart glimmervoid and end all agent sessions? [y/N] ' >&2
+        local confirmationPrompt='Restart glimmervoid and end all agent sessions? [y/N] '
+        [[ "$subcommand" != update ]] || confirmationPrompt='Rebuild an outdated devbox, converge dotfiles, restart glimmervoid, and end all agent sessions? [y/N] '
+        printf '%s' "$confirmationPrompt" >&2
         if ! IFS= read -r confirmation; then
           printf '\ndevbox: restart cancelled\n' >&2
           return 1
@@ -388,7 +413,7 @@ dispatchDevboxCommand() {
         esac
       fi
       ;;
-    *) printf 'Usage: devbox {up|pair [label]|restart-glimmervoid [--yes]|status|ensure|forward-agent|collect [--diff|--accept <hash>]}\n' >&2; return 1 ;;
+    *) printf 'Usage: devbox {up|update [--yes]|pair [label]|restart-glimmervoid [--yes]|status|ensure|forward-agent|collect [--diff|--accept <hash>]}\n' >&2; return 1 ;;
   esac
   # Overnight DarkWakes reconnecting here bump Coder activity, so the devbox never autostops.
   if [[ "$subcommand" == ensure || "$subcommand" == forward-agent ]] && ! isDevboxForwardHour; then
@@ -433,6 +458,10 @@ dispatchDevboxCommand() {
         *) printf 'devbox: workspace is %s; cannot provision\n' "$devboxWorkspaceStatus" >&2; return 1 ;;
       esac
       provisionDevbox
+      return
+      ;;
+    update)
+      updateDevbox
       return
       ;;
     status)
