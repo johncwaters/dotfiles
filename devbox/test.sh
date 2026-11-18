@@ -908,7 +908,16 @@ commitDotfilesOrigin update
 updatedOutput="$(runDevbox ensure)"
 check "a new mainline commit is pulled and converged" outputHas "$updatedOutput" '[installed] dotfiles'
 check "the pulled commit is live through the alias" grep -qx 'updated hook' "$remoteHome/.claude/hooks/converge-probe.mjs"
+"$testGitPath" -C "$remoteClone" checkout -q -b box-stray
+: > "$commandLog"
+strayBranchOutput="$(runDevbox ensure 2>&1)"
+check "a clean clone off mainline with no unique commits returns to main" \
+  test "$("$testGitPath" -C "$remoteClone" branch --show-current)" = main
+check "returning to main names the branch it left" outputHas "$strayBranchOutput" '[installed] dotfiles: left box-stray for main'
+check "returning to main keeps the left branch" "$testGitPath" -C "$remoteClone" rev-parse -q --verify refs/heads/box-stray
 "$testGitPath" -C "$remoteClone" checkout -q -b box-feature
+"$testGitPath" -C "$remoteClone" -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false \
+  commit -q --allow-empty -m 'box-only work'
 : > "$commandLog"
 featureBranchOutput="$(runDevbox ensure 2>&1)"
 check "a clone off mainline reports dotfiles warned" outputHas "$featureBranchOutput" '[warned] dotfiles'

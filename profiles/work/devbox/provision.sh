@@ -217,6 +217,18 @@ devboxPathsResolveAlike() {
   [[ "$firstResolvedPath" == "$secondResolvedPath" ]]
 }
 
+returnDevboxCheckoutToMain() {
+  local clonePath="$1" strayBranch
+  strayBranch="$(git -C "$clonePath" branch --show-current 2>/dev/null)" || return 0
+  [[ -n "$strayBranch" && "$strayBranch" != main ]] || return 0
+  [[ -z "$(git -C "$clonePath" status --porcelain 2>/dev/null)" ]] || return 0
+  # bin/dot fetches only after its mainline guard, so a merged branch would otherwise stay stuck behind a stale origin/main.
+  git -C "$clonePath" fetch --quiet origin 2>/dev/null || true
+  git -C "$clonePath" merge-base --is-ancestor HEAD origin/main 2>/dev/null || return 0
+  git -C "$clonePath" switch --quiet main 2>/dev/null || return 0
+  reportDevboxItem installed dotfiles "left $strayBranch for main; it held no commits beyond origin/main"
+}
+
 removeRetiredDevboxSnapshot() {
   local retiredPath
   for retiredPath in "$HOME/dotfiles-snapshot" "$HOME/dotfiles-snapshot.new" "$HOME/dotfiles-snapshot.old"; do
@@ -247,6 +259,7 @@ installDevboxDotfiles() (
     mkdir -p -- "${clonePath%/*}"
     git clone --quiet -- https://github.com/johncwaters/dotfiles.git "$clonePath" >> "$bootstrapLog" 2>&1 < /dev/null
   fi
+  returnDevboxCheckoutToMain "$clonePath" < /dev/null
   if devboxPathsResolveAlike "$dotfilesAlias" "$clonePath" && bash "$clonePath/bin/dot" status > /dev/null 2>&1 < /dev/null; then
     reportDevboxItem present dotfiles "$(git -C "$clonePath" rev-parse HEAD)"
     removeRetiredDevboxSnapshot
