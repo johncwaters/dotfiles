@@ -431,7 +431,63 @@ function scanUseEffectLines(content, syntax) {
   return found;
 }
 
+const TEST_PATH_RE = /(?:^|\/)(?:tests?|__tests__)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
+const FIXED_DELAY = String.raw`(?:\d[\d_]*|[A-Z][A-Z0-9_]*)`;
+const RESOLVER_CALLBACK = String.raw`(?:\k<resolver>|\(\s*\)\s*=>\s*\k<resolver>\(\s*\))`;
+const PROMISED_TIMEOUT = String.raw`new\s+Promise(?:<[^<>()]{0,80}>)?\(\s*\(?\s*(?<resolver>\w+)\s*\)?\s*=>\s*\{?\s*(?:\w+\.)?setTimeout\(\s*${RESOLVER_CALLBACK}\s*,\s*${FIXED_DELAY}\s*\)`;
+const FIXED_SLEEP_RE = new RegExp(
+  String.raw`\bawait\s+(?:${PROMISED_TIMEOUT}|(?:\w+\.)?(?:setTimeout|sleep|delay)\(\s*${FIXED_DELAY}\s*[,)])`,
+);
+const SLEEP_HELPER_RE = new RegExp(String.raw`\b(?:const|let|var|function)\s+(?<helperName>\w+)\b[^;{}]{0,120}?${PROMISED_TIMEOUT}`);
+const HELPER_OPENER_RE = /\b(?:function\s+(?<functionName>\w+)\s*\([^)]{0,120}\)|(?:const|let|var)\s+(?<arrowName>\w+)\s*=\s*(?:async\s*)?\([^)]{0,120}\)\s*=>)\s*\{\s*$/;
+const LOOP_HEADER_RE = /\b(?:while|for)\s*\(/;
+const ASSERTION_RE = /^\s*\)?\s*;?\s*(?:await\s+)?(?:t\.)?(?:assert|expect)\b/;
+
+function sleepHelperName(code, previousCode) {
+  if (!code.includes("setTimeout") || LOOP_HEADER_RE.test(code)) return [];
+  const oneLineHelper = SLEEP_HELPER_RE.exec(code)?.groups.helperName;
+  if (oneLineHelper) return [oneLineHelper];
+  if (!FIXED_SLEEP_RE.test(code)) return [];
+  const opener = HELPER_OPENER_RE.exec(previousCode)?.groups;
+  return [opener?.functionName ?? opener?.arrowName ?? []].flat();
+}
+
+function sleepHelperCallPattern(codeLines) {
+  const helperNames = codeLines.flatMap(({ code }, index) => sleepHelperName(code, codeLines[index - 1]?.code ?? ""));
+  if (helperNames.length === 0) return null;
+  return new RegExp(String.raw`\bawait\s+(?:${helperNames.join("|")})\(\s*\)`);
+}
+
+function codeAfterFixedSleep(code, helperCallRe) {
+  const sleepMatch = FIXED_SLEEP_RE.exec(code) ?? helperCallRe?.exec(code);
+  if (!sleepMatch) return null;
+  return code.slice(sleepMatch.index + sleepMatch[0].length);
+}
+
+function fixedSleepSyntaxFor(filePath) {
+  if (!EFFECT_HOOK_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return null;
+  if (!TEST_PATH_RE.test(filePath)) return null;
+  return syntaxFor(filePath);
+}
+
+function opensLoopBody(code) {
+  return LOOP_HEADER_RE.test(code) && /\{\s*$/.test(code);
+}
+
+function scanFixedSleepLines(content, syntax) {
+  const codeLines = [...codeLinesOf(content, syntax)];
+  const helperCallRe = sleepHelperCallPattern(codeLines);
+  return codeLines.flatMap(({ line, code }, index) => {
+    const restOfLine = codeAfterFixedSleep(code, helperCallRe);
+    if (restOfLine === null || LOOP_HEADER_RE.test(code)) return [];
+    if (opensLoopBody(codeLines[index - 1]?.code ?? "")) return [];
+    const isAssertedRightAfter = ASSERTION_RE.test(restOfLine) || ASSERTION_RE.test(codeLines[index + 1]?.code ?? "");
+    if (!isAssertedRightAfter) return [];
+    return [line.trim()];
+  });
+}
+
 export {
   commentLinesOnlyInAfter, scanCommentLines, syntaxFor, elseSyntaxFor, scanElseLines,
-  useEffectSyntaxFor, scanUseEffectLines,
+  useEffectSyntaxFor, scanUseEffectLines, fixedSleepSyntaxFor, scanFixedSleepLines,
 };
