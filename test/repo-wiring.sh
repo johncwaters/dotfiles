@@ -330,4 +330,109 @@ everyCitedGlossaryTermIsDefined() {
 }
 check "every glossary term a doc cites is defined in GLOSSARY.md" everyCitedGlossaryTermIsDefined
 
+check "every AGENTS.md rule names its enforcer in rule-enforcement.json" \
+  node - "$repoRoot" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const root = process.argv[2];
+const registry = JSON.parse(fs.readFileSync(path.join(root, 'rule-enforcement.json'), 'utf8'));
+const listedPaths = execFileSync('git', ['-C', root, 'ls-files', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+const existingListedPaths = new Set(listedPaths.filter((listedPath) => fs.existsSync(path.join(root, listedPath))));
+const slugOf = (text) => (text.replace(/`/g, '').toLowerCase().match(/[a-z0-9]+/g) ?? []).slice(0, 6).join('-');
+const listItemMarker = /^([-*+]|\d+[.)])\s+/;
+const tagLine = /^<\/?([a-z0-9_-]+)>$/;
+function taggedRuleKeysIn(lines) {
+  const ruleKeys = [];
+  let openTagName = null;
+  let isInsideBlock = false;
+  for (const line of lines) {
+    const tagMatch = line.match(tagLine);
+    if (tagMatch && !line.startsWith('</') && openTagName === null) {
+      ruleKeys.push(tagMatch[1]);
+      openTagName = tagMatch[1];
+      continue;
+    }
+    if (tagMatch && line === `</${openTagName}>`) {
+      openTagName = null;
+      isInsideBlock = false;
+      continue;
+    }
+    if (openTagName !== null) continue;
+    if (line.trim() === '') {
+      isInsideBlock = false;
+      continue;
+    }
+    if (isInsideBlock && !listItemMarker.test(line)) continue;
+    ruleKeys.push(slugOf(line.replace(listItemMarker, '')));
+    isInsideBlock = true;
+  }
+  return ruleKeys;
+}
+function markdownRuleKeysIn(lines) {
+  const ruleKeys = [];
+  let isUnderMap = false;
+  let isInsideBlock = false;
+  for (const line of lines) {
+    if (line.startsWith('#')) {
+      isUnderMap = /^##\s+Map\s*$/.test(line);
+      isInsideBlock = false;
+      continue;
+    }
+    if (line.trim() === '') {
+      isInsideBlock = false;
+      continue;
+    }
+    if (isUnderMap || line.startsWith('|')) continue;
+    if (isInsideBlock && !listItemMarker.test(line)) continue;
+    ruleKeys.push(slugOf(line.replace(listItemMarker, '')));
+    isInsideBlock = true;
+  }
+  return ruleKeys;
+}
+function ruleKeysIn(text) {
+  const lines = text.split('\n');
+  return lines.some((line) => tagLine.test(line)) ? taggedRuleKeysIn(lines) : markdownRuleKeysIn(lines);
+}
+const isEnforcerFile = (enforcerPath) => existingListedPaths.has(enforcerPath)
+  && path.basename(enforcerPath) !== 'AGENTS.md'
+  && fs.statSync(path.join(root, enforcerPath)).isFile();
+const problems = [];
+const agentsPaths = [...existingListedPaths].filter((listedPath) => path.basename(listedPath) === 'AGENTS.md');
+for (const agentsPath of agentsPaths) {
+  if (!registry.files[agentsPath]) problems.push(`${agentsPath}: no entry in rule-enforcement.json`);
+}
+let proseRuleCount = 0;
+for (const [agentsPath, entriesByRuleKey] of Object.entries(registry.files)) {
+  if (!agentsPaths.includes(agentsPath)) {
+    problems.push(`${agentsPath}: listed but missing; drop its entry`);
+    continue;
+  }
+  const ruleKeys = ruleKeysIn(fs.readFileSync(path.join(root, agentsPath), 'utf8'));
+  const duplicateRuleKeys = new Set(ruleKeys.filter((ruleKey, index) => ruleKeys.indexOf(ruleKey) !== index));
+  for (const ruleKey of duplicateRuleKeys) problems.push(`${agentsPath} ${ruleKey}: two rules share this key; reword one's first six words`);
+  for (const ruleKey of ruleKeys) {
+    if (!entriesByRuleKey[ruleKey]) problems.push(`${agentsPath} ${ruleKey}: classify it as check, review, or prose`);
+  }
+  for (const [ruleKey, entry] of Object.entries(entriesByRuleKey)) {
+    if (!ruleKeys.includes(ruleKey)) problems.push(`${agentsPath} ${ruleKey}: no such rule; rename or drop the entry`);
+    if (entry.kind === 'prose') {
+      proseRuleCount += 1;
+      if (!entry.reason) problems.push(`${agentsPath} ${ruleKey}: a prose rule needs a reason`);
+      continue;
+    }
+    if (!['check', 'review'].includes(entry.kind) || !(entry.by?.length > 0)) {
+      problems.push(`${agentsPath} ${ruleKey}: kind must be check, review, or prose, and check or review needs by`);
+      continue;
+    }
+    for (const enforcerPath of entry.by) {
+      if (!isEnforcerFile(enforcerPath)) problems.push(`${agentsPath} ${ruleKey}: enforcer ${enforcerPath} is not a repo file other than an AGENTS.md`);
+    }
+  }
+}
+if (proseRuleCount !== registry.proseCeiling) problems.push(`${proseRuleCount} prose rules but proseCeiling is ${registry.proseCeiling}; set it in the same commit`);
+for (const problem of problems) console.error(problem);
+process.exit(problems.length > 0 ? 1 : 0);
+NODE
+
 reportTopicResults "repo wiring"

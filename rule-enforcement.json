@@ -1,0 +1,267 @@
+{
+  "proseCeiling": 16,
+  "files": {
+    "AGENTS.md": {
+      "personal-machine-setup-linux-for-the": {
+        "kind": "check",
+        "by": [
+          "test/bootstrap.sh"
+        ]
+      },
+      "no-secrets-in-tracked-files-config": {
+        "kind": "prose",
+        "reason": "No secret scan runs on commit.",
+        "candidate": true
+      },
+      "symlink-do-not-copy-a-copy": {
+        "kind": "check",
+        "by": [
+          "ai/test.sh",
+          "shell/test.sh"
+        ]
+      },
+      "agent-rules-live-in-agents-md": {
+        "kind": "check",
+        "by": [
+          "ai/test.sh"
+        ]
+      },
+      "installers-are-idempotent-a-machine-is": {
+        "kind": "check",
+        "by": [
+          "ai/test.sh"
+        ]
+      },
+      "removals-converge-too-retiring-a-tool": {
+        "kind": "check",
+        "by": [
+          "ai/test.sh",
+          "test/bootstrap.sh"
+        ]
+      },
+      "a-topic-owns-its-concern-completely": {
+        "kind": "prose",
+        "reason": "No check pairs each topic's install.sh with its test.sh.",
+        "candidate": true
+      },
+      "machine-specific-values-are-rendered-or": {
+        "kind": "prose",
+        "reason": "Whether a value is machine-specific is judgment."
+      },
+      "platform-branches-go-through-script-lib": {
+        "kind": "prose",
+        "reason": "No check refuses uname outside script/lib/platform.sh.",
+        "candidate": true
+      },
+      "a-profile-may-pin-its-platform": {
+        "kind": "check",
+        "by": [
+          "test/bootstrap.sh"
+        ]
+      },
+      "bash-4-is-the-floor-bootstrap": {
+        "kind": "check",
+        "by": [
+          "test/bootstrap.sh"
+        ]
+      },
+      "link-targets-are-written-as-dotfiles": {
+        "kind": "prose",
+        "reason": "No check refuses a clone-path link target.",
+        "candidate": true
+      },
+      "what-a-converge-still-owes-is": {
+        "kind": "check",
+        "by": [
+          "test/bootstrap.sh",
+          "test/packages-lib.sh"
+        ]
+      },
+      "the-checkout-is-the-live-config": {
+        "kind": "check",
+        "by": [
+          "test/dot.sh"
+        ]
+      },
+      "claude-holds-runtime-state-projects-sessions": {
+        "kind": "check",
+        "by": [
+          "ai/test.sh"
+        ]
+      }
+    },
+    "ai/AGENTS.md": {
+      "output_style": {
+        "kind": "prose",
+        "reason": "No hook reads replies for the banned words.",
+        "candidate": true
+      },
+      "scope": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/enforce-spawn-model.mjs"
+        ]
+      },
+      "scope_boundary": {
+        "kind": "prose",
+        "reason": "Edits outside the stated surface are not compared to the task."
+      },
+      "execution": {
+        "kind": "prose",
+        "reason": "Safety Net covers rm -rf only; background runs and script hand-offs are unchecked.",
+        "candidate": true
+      },
+      "spec_first": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/guard-workflow.mjs"
+        ]
+      },
+      "verification": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/guard-workflow.mjs",
+          "ai/skills/landing/land.ts"
+        ]
+      },
+      "tests": {
+        "kind": "prose",
+        "reason": "Whether a test earns its place is judgment; qa-code-reviewer skips style."
+      },
+      "land_when_done": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/require-commit-on-stop.mjs"
+        ]
+      },
+      "reuse_before_create": {
+        "kind": "prose",
+        "reason": "Finding prior art by behavior is judgment."
+      },
+      "code_style_no_else": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/block-else.mjs",
+          "ai/hooks/ratchet.mjs"
+        ]
+      },
+      "code_style_no_use_effect": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/block-use-effect.mjs",
+          "ai/hooks/ratchet.mjs"
+        ]
+      },
+      "code_style_comments": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/block-comments.mjs",
+          "ai/hooks/ratchet.mjs"
+        ]
+      },
+      "code_style_naming": {
+        "kind": "prose",
+        "reason": "Name quality is judgment; no review lane takes it."
+      },
+      "ui_button_labels": {
+        "kind": "prose",
+        "reason": "No lint reads button labels for progress words or counts.",
+        "candidate": true
+      },
+      "research_not_assume": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/validate-spec.mjs",
+          "ai/hooks/guard-workflow.mjs"
+        ]
+      },
+      "docs_must_be_enforceable": {
+        "kind": "check",
+        "by": [
+          "test/repo-wiring.sh"
+        ]
+      },
+      "doc_style_why_only": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/validate-file.mjs"
+        ]
+      },
+      "writing_as_me": {
+        "kind": "prose",
+        "reason": "No hook requires writing-in-voice before a gh post.",
+        "candidate": true
+      }
+    },
+    "ai/hooks/AGENTS.md": {
+      "these-hooks-affect-every-claude-code": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs",
+          "ai/hooks/test/guard-workflow.test.mjs",
+          "ai/hooks/test/enforce-spawn-model.test.mjs"
+        ]
+      },
+      "keep-decisions-in-pretooluse-because-posttooluse": {
+        "kind": "prose",
+        "reason": "No check reads which event a deciding hook is wired to.",
+        "candidate": true
+      },
+      "keep-source-ascii-and-character-detection": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs"
+        ]
+      },
+      "keep-validation-synchronous-and-limited-to": {
+        "kind": "prose",
+        "reason": "No check refuses async or non-built-in imports in validate-file.mjs.",
+        "candidate": true
+      },
+      "gate-syntax-with-formatters-never-lint": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs"
+        ]
+      },
+      "compile-workflow-bodies-without-calling-them": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs"
+        ]
+      },
+      "preserve-real-basenames-for-parser-input": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs"
+        ]
+      },
+      "deny-instruction-file-growth-rather-than": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs"
+        ]
+      },
+      "deny-only-skill-writes-that-add": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs"
+        ]
+      },
+      "test-validate-file-test-mjs-pins": {
+        "kind": "check",
+        "by": [
+          "ai/hooks/test/validate-file.test.mjs"
+        ]
+      }
+    },
+    "profiles/work/AGENTS.md": {
+      "worktree": {
+        "kind": "prose",
+        "reason": "Nothing refuses an edit outside a worktree.",
+        "candidate": true
+      }
+    },
+    "profiles/work/hooks/AGENTS.md": {}
+  }
+}
