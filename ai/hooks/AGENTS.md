@@ -28,6 +28,7 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
 | `repo-ownership.mjs` | Owned or foreign for a path, from the profile's `owned-repos.txt`; unknown is foreign | `test/repo-ownership.test.mjs` |
+| `ratchet.mjs` | Fails a committed `.agents/ratchet.json` on growth and lowers it on a fall; `init` only in owned code; run by `/gating-reviews` | `test/ratchet.test.mjs` |
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local

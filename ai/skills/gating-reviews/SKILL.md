@@ -32,6 +32,8 @@ For `commits`, skip Preflight and the working-tree review. Invoke `/reviewing-co
 Run `node "$HOME/.claude/skills/landing/preflight.ts" [--paths <file-or-dir> ...] [--no-fetch]`, with `--paths` when you know exactly which files this session
 changed. Its `paths` is the scope of every step here.
 
+**Ratchet.** Run `node "$HOME/.claude/hooks/ratchet.mjs" check <repo root> --paths <preflight paths>`. It checks each `.agents/ratchet.json`, which exists only where an owned repo adopted one, against its HEAD copy, counting files outside `--paths` at HEAD. Exit 1 names each rule that grew and its fix: remove the added violations before review. A lowered baseline joins `--paths`, and preflight reruns so the stamp covers it. Start a baseline only on request, with `init <owned root>`.
+
 **Branch guard.** `branchAllowed: false` means the profile or resolved mainline forbids
 committing on this branch. `policy.commitBranches.onForbidden` permits only
 `create-feature-branch`: create
