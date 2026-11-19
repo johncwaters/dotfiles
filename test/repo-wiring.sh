@@ -330,6 +330,150 @@ everyCitedGlossaryTermIsDefined() {
 }
 check "every glossary term a doc cites is defined in GLOSSARY.md" everyCitedGlossaryTermIsDefined
 
+sourceRuleScanner="$(cat <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const [root, ruleName] = process.argv.slice(1);
+const repoPaths = execFileSync('git', ['-C', root, 'ls-files', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' })
+  .split('\n').filter((repoPath) => repoPath && fs.existsSync(path.join(root, repoPath)) && fs.statSync(path.join(root, repoPath)).isFile());
+const isTestPath = (repoPath) => /(^|\/)test(\/|\.sh$)/.test(repoPath);
+const readRepoFile = (repoPath) => fs.readFileSync(path.join(root, repoPath), 'utf8');
+const isShellScript = (repoPath) => /\.(?:sh|bash)$/.test(repoPath) || repoPath.startsWith('bin/') || /^#!.*\b(?:ba)?sh\b/.test(readRepoFile(repoPath).split('\n', 1)[0]);
+const shellScripts = repoPaths.filter((repoPath) => !isTestPath(repoPath) && isShellScript(repoPath));
+const topicInstallers = repoPaths.filter((repoPath) => /^[^/]+\/install\.sh$/.test(repoPath));
+const COMMAND_SEPARATORS = new Set([';', '&&', '||', '|', '&']);
+const COMMAND_PREFIXES = new Set(['if', '!', 'then', 'do', 'elif', 'else', 'while', 'until', '{', '(']);
+function shellWordsOf(line) {
+  const words = [];
+  let currentWord = '';
+  let quote = null;
+  let substitutionDepth = 0;
+  const finishWord = () => {
+    if (currentWord) words.push(currentWord);
+    currentWord = '';
+  };
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '#' && quote === null && substitutionDepth === 0 && currentWord === '') break;
+    if (character === '$' && line[index + 1] === '(') substitutionDepth += 1;
+    if (character === ')' && substitutionDepth > 0) substitutionDepth -= 1;
+    if (substitutionDepth === 0 && (character === '"' || character === "'")) quote = quote === character ? null : quote ?? character;
+    const isOutsideQuotes = quote === null && substitutionDepth === 0;
+    if (isOutsideQuotes && /\s/.test(character)) {
+      finishWord();
+      continue;
+    }
+    if (isOutsideQuotes && /[;&|]/.test(character)) {
+      finishWord();
+      const operator = line.slice(index, index + 2) === character.repeat(2) ? character.repeat(2) : character;
+      words.push(operator);
+      index += operator.length - 1;
+      continue;
+    }
+    currentWord += character;
+  }
+  finishWord();
+  return words;
+}
+function commandsOf(line) {
+  const commands = [[]];
+  for (const word of shellWordsOf(line)) {
+    if (COMMAND_SEPARATORS.has(word)) {
+      commands.push([]);
+      continue;
+    }
+    const currentCommand = commands[commands.length - 1];
+    if (currentCommand.length === 0 && COMMAND_PREFIXES.has(word)) continue;
+    currentCommand.push(word);
+  }
+  return commands.filter((command) => command.length > 0);
+}
+function violationsBy(repoPathsToScan, isViolatingCommand) {
+  return repoPathsToScan.flatMap((repoPath) => readRepoFile(repoPath).split('\n')
+    .flatMap((line, index) => commandsOf(line).some(isViolatingCommand) ? [`${repoPath}:${index + 1}: ${line.trim()}`] : []));
+}
+function localImportClosure(entryPaths) {
+  const visitedModulePaths = new Set();
+  const modulePathsToVisit = [...entryPaths];
+  while (modulePathsToVisit.length > 0) {
+    const modulePath = modulePathsToVisit.pop();
+    if (visitedModulePaths.has(modulePath) || !fs.existsSync(path.join(root, modulePath))) continue;
+    visitedModulePaths.add(modulePath);
+    for (const [, specifier] of readRepoFile(modulePath).matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"](\.\/[^'"]+)['"]/g)) {
+      modulePathsToVisit.push(path.posix.join(path.posix.dirname(modulePath), specifier));
+    }
+  }
+  return [...visitedModulePaths];
+}
+const PLATFORM_PROBE = /\buname\b|\$\{?OSTYPE\b|\bsw_vers\b/;
+const isSymlinkFlag = (word) => word === '--symbolic' || /^-[A-Za-z]*s[A-Za-z]*$/.test(word);
+function decidingPostToolUseHooks() {
+  const settingsPaths = ['ai/settings.base.json', 'ai/codex-hooks.base.json', ...fs.readdirSync(path.join(root, 'profiles'))
+    .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`])]
+    .filter((settingsPath) => fs.existsSync(path.join(root, settingsPath)));
+  return settingsPaths.flatMap((settingsPath) => {
+    const postToolUseEntries = JSON.parse(readRepoFile(settingsPath)).hooks?.PostToolUse ?? [];
+    const profileHooksDirectory = path.posix.join(path.posix.dirname(settingsPath), 'hooks');
+    return postToolUseEntries.flatMap((entry) => entry.hooks ?? []).flatMap(({ command = '' }) => {
+      const installedHook = command.match(/\.claude\/(hooks|profile-hooks)\/([\w.-]+\.mjs)/);
+      if (!installedHook) return [];
+      const hookPath = path.posix.join(installedHook[1] === 'hooks' ? 'ai/hooks' : profileHooksDirectory, installedHook[2]);
+      const decidingModules = localImportClosure([hookPath])
+        .filter((modulePath) => !modulePath.endsWith('/hook-io.mjs') && /\b(?:denyPreToolUse|askPreToolUse)\s*\(|permissionDecision\s*:/.test(readRepoFile(modulePath)));
+      return decidingModules.map((modulePath) => `${settingsPath}: ${hookPath} decides in PostToolUse through ${modulePath}; move the decision to PreToolUse`);
+    });
+  });
+}
+const violationsByRule = {
+  platform: () => violationsBy(shellScripts.filter((repoPath) => repoPath !== 'script/lib/platform.sh'),
+    (command) => PLATFORM_PROBE.test(command.join(' ').replace(/\buname\s+-m\b/g, ''))),
+  'raw-symlink': () => violationsBy(topicInstallers, (command) => command[0] === 'ln' && command.slice(1).some(isSymlinkFlag)),
+  'link-target': () => violationsBy(topicInstallers.filter((repoPath) => repoPath !== 'git/install.sh'),
+    (command) => command[0] === 'linkEntry' && command.length > 5),
+  'post-tool-use-decision': decidingPostToolUseHooks,
+};
+const violations = violationsByRule[ruleName]();
+for (const violation of violations) console.error(violation);
+process.exit(violations.length > 0 ? 1 : 0);
+NODE
+)"
+check "platform branches go through script/lib/platform.sh; uname -m reads only the architecture" \
+  node -e "$sourceRuleScanner" "$repoRoot" platform
+check "topic installers link through linkEntry, never a raw ln -s" \
+  node -e "$sourceRuleScanner" "$repoRoot" raw-symlink
+check "only git/install.sh overrides linkEntry's ~/.dotfiles alias target" \
+  node -e "$sourceRuleScanner" "$repoRoot" link-target
+check "no PostToolUse hook makes a permission decision, since the bytes are already written" \
+  node -e "$sourceRuleScanner" "$repoRoot" post-tool-use-decision
+
+check "validate-file.mjs and its helpers stay synchronous and import only node built-ins or hook helpers" \
+  node - "$repoRoot" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.argv[2];
+const problems = [];
+const visitedModulePaths = new Set();
+const modulePathsToVisit = ['ai/hooks/validate-file.mjs'];
+while (modulePathsToVisit.length > 0) {
+  const modulePath = modulePathsToVisit.pop();
+  if (visitedModulePaths.has(modulePath)) continue;
+  visitedModulePaths.add(modulePath);
+  const moduleSource = fs.readFileSync(path.join(root, modulePath), 'utf8');
+  if (/\bawait\b|\.then\s*\(|\bcreateRequire\b/.test(moduleSource)) problems.push(`${modulePath}: awaits or defers; validation runs on every write and must stay synchronous`);
+  for (const [, specifier] of moduleSource.matchAll(/(?:^\s*(?:import|export)\b[^'"]*?\bfrom\s*|^\s*import\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/gm)) {
+    if (specifier.startsWith('node:')) continue;
+    if (!specifier.startsWith('./')) {
+      problems.push(`${modulePath}: imports ${specifier}; use node built-ins or ./ hook helpers`);
+      continue;
+    }
+    modulePathsToVisit.push(path.posix.join(path.posix.dirname(modulePath), specifier));
+  }
+}
+for (const problem of problems) console.error(problem);
+process.exit(problems.length > 0 ? 1 : 0);
+NODE
+
 check "every AGENTS.md rule names its enforcer in rule-enforcement.json" \
   node - "$repoRoot" <<'NODE'
 const fs = require('node:fs');

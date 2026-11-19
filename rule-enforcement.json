@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 16,
+  "proseCeiling": 11,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -40,18 +40,20 @@
         ]
       },
       "a-topic-owns-its-concern-completely": {
-        "kind": "prose",
-        "reason": "No check pairs each topic's install.sh with its test.sh.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "test/repo-wiring.sh"
+        ]
       },
       "machine-specific-values-are-rendered-or": {
         "kind": "prose",
         "reason": "Whether a value is machine-specific is judgment."
       },
       "platform-branches-go-through-script-lib": {
-        "kind": "prose",
-        "reason": "No check refuses uname outside script/lib/platform.sh.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "test/repo-wiring.sh"
+        ]
       },
       "a-profile-may-pin-its-platform": {
         "kind": "check",
@@ -66,9 +68,10 @@
         ]
       },
       "link-targets-are-written-as-dotfiles": {
-        "kind": "prose",
-        "reason": "No check refuses a clone-path link target.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "test/repo-wiring.sh"
+        ]
       },
       "what-a-converge-still-owes-is": {
         "kind": "check",
@@ -203,9 +206,10 @@
         ]
       },
       "keep-decisions-in-pretooluse-because-posttooluse": {
-        "kind": "prose",
-        "reason": "No check reads which event a deciding hook is wired to.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "test/repo-wiring.sh"
+        ]
       },
       "keep-source-ascii-and-character-detection": {
         "kind": "check",
@@ -214,9 +218,10 @@
         ]
       },
       "keep-validation-synchronous-and-limited-to": {
-        "kind": "prose",
-        "reason": "No check refuses async or non-built-in imports in validate-file.mjs.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "test/repo-wiring.sh"
+        ]
       },
       "gate-syntax-with-formatters-never-lint": {
         "kind": "check",
