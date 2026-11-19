@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 11,
+  "proseCeiling": 10,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -191,9 +191,11 @@
         ]
       },
       "writing_as_me": {
-        "kind": "prose",
-        "reason": "No hook requires writing-in-voice before a gh post.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "ai/hooks/guard-workflow.mjs",
+          "ai/hooks/test/guard-workflow.test.mjs"
+        ]
       }
     },
     "ai/hooks/AGENTS.md": {

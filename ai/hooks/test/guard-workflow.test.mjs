@@ -401,3 +401,49 @@ test("a /specifying question round stays gated through its own challenge, utilit
   assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), archiveCall(archiveCommand), toolResult('{"outcome":"REFUSED"}', { toolUseId: "tool-Bash" })]), "deny");
   assert.equal(roundAfter([prompt("spec this"), ...skillRun("specifying"), archiveCall("cat ~/.claude/skills/specifying/archive.ts"), toolResult("source", { toolUseId: "tool-Bash", isError: false })]), "deny");
 });
+
+test("posting prose with gh is denied until writing-in-voice has run in the session, attended or not", () => {
+  const withoutVoice = writeTranscript([prompt("open a PR")]);
+  const publishingCommands = [
+    'gh pr create --title "Fix" --body-file body.md',
+    "gh issue comment 12 --body-file reply.md",
+    "gh pr review 7 --comment --body-file review.md",
+    "cd repo && gh pr edit 7 --body-file body.md",
+    "gh -R o/r pr create --title T --body-file b.md",
+    "gh --repo=o/r issue comment 1 -b x",
+    '"gh" pr create -b x',
+    "\\gh pr create -b x",
+    "gh api repos/o/r/issues/7/comments \\\n  -f body=hi",
+    "gh pr edit 7 \\\n  --body-file b.md",
+    "gh api repos/o/r/pulls/7/comments -fbody=hi",
+    "gh api -X POST repos/o/r/pulls/7/reviews --input review.json",
+    "gh api -X PATCH repos/o/r/pulls/7 -F body=@b.md",
+    "gh api repos/o/r/issues -f title=x -f body=y",
+    "gh api graphql -f query='mutation{addComment}'",
+    'gh issue close 7 --comment "done"',
+    "gh pr merge 7 --body hi",
+    "gh release create v1 --notes hi",
+    "bash -c 'gh pr comment 1 -b x'",
+    'sh -c "gh pr comment 1 -b x"',
+    "eval 'gh pr comment 1 -b x'",
+  ];
+  for (const command of publishingCommands) {
+    assert.equal(decisionFor(bashCall(command, withoutVoice)).decision, "deny", command);
+    assert.equal(decisionFor(bashCall(command, withoutVoice), { CLAUDE_CODE_SESSION_ATTENDED: "0", HOME: sandboxHome }).decision, "deny", `unattended: ${command}`);
+  }
+  assert.match(decisionFor(bashCall(publishingCommands[0], withoutVoice)).reason, /writing-in-voice/);
+  const readingCommands = [
+    "gh pr view 7 --comments",
+    "gh -R o/r pr list --state open",
+    "gh api repos/o/r/pulls/7/comments",
+    "gh api -X GET repos/o/r/pulls/7/comments -f per_page=100",
+    "gh api --method GET repos/o/r/issues/7/comments -F since=2026-01-01",
+    "gh auth status",
+    "gh search prs --author @me",
+    "rg 'gh pr create' docs",
+    "cat <<'EOF'\ngh pr create --body x\nEOF",
+  ];
+  for (const command of readingCommands) assert.equal(decisionFor(bashCall(command, withoutVoice)).decision, "allow", command);
+  const withVoice = writeTranscript([prompt("open a PR"), ...skillRun("writing-in-voice"), prompt("now post it")]);
+  for (const command of publishingCommands) assert.equal(decisionFor(bashCall(command, withVoice)).decision, "allow", command);
+});

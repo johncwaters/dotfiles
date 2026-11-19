@@ -20,6 +20,21 @@ const GIT_COMMIT_OR_PUSH = new RegExp(
   "m",
 );
 const LANDING_SKILLS = ["landing", "opening-prs"];
+const GH_CALL = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?gh['"]?(?=\s|$)([^;&|\n]*)`, "gm");
+const GH_GLOBAL_OPTION_TAKING_VALUE = /^(?:-R|--repo|--hostname)$/;
+const GH_PROSELESS_ACTIONS_BY_COMMAND = new Map([
+  ["pr", new Set(["view", "list", "status", "diff", "checks", "checkout", "ready"])],
+  ["issue", new Set(["view", "list", "status"])],
+  ["repo", new Set(["view", "list", "clone", "fork", "sync"])],
+  ["release", new Set(["view", "list", "download"])],
+  ["label", new Set(["list"])],
+]);
+const GH_PROSELESS_COMMANDS = new Set(["auth", "browse", "config", "extension", "help", "run", "search", "stack", "workflow", "--version", "--help"]);
+const GH_API_WRITE_FLAG = /^(?:-[fF]|--field|--raw-field|--input)/;
+const GH_API_METHOD_FLAG = /^(?:-X|--method)(?:=?(.*))$/;
+
+const VOICE_REASON =
+  "Posting prose to GitHub as the carbon unit (a PR, issue, comment, or review) needs the writing-in-voice skill loaded first: run /writing-in-voice, draft the body to its rules and lint, then post. ai/AGENTS.md <writing_as_me>.";
 const UPSTREAM_CLAUSE = /\bUpstream:[ \t]*(.*)$/gm;
 const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)/i;
 const SKILLS_ENDING_SPECIFYING = [...LANDING_SKILLS, "gating-reviews", "reviewing-prs"];
@@ -420,6 +435,45 @@ function isEveryCommitOrPushThrowaway(command) {
   return wordsOfEachStatement.every((words) => words[0] === "git" && words.every((word) => INERT_WORD.test(word)) && isThrowawayGitCall(words));
 }
 
+async function hasSkillRunInSession(transcriptPath, skillName) {
+  for await (const event of sessionEvents(transcriptPath)) {
+    if (isSkillRun(event, skillName)) return true;
+  }
+  return false;
+}
+
+function ghApiMethodOf(words) {
+  const methodFlagIndex = words.findIndex((word) => GH_API_METHOD_FLAG.test(word));
+  if (methodFlagIndex === -1) return words.some((word) => GH_API_WRITE_FLAG.test(word)) ? "POST" : "GET";
+  const attachedMethod = words[methodFlagIndex].match(GH_API_METHOD_FLAG)[1];
+  return (attachedMethod || words[methodFlagIndex + 1] || "").replace(/['"]/g, "").toUpperCase();
+}
+
+function ghCallMayPostProse(argumentText) {
+  const words = (argumentText.match(QUOTE_AWARE_WORD) ?? []).map((word) => word.replace(/^['"]|['"]$/g, ""));
+  const positionalWords = [];
+  for (let index = 0; index < words.length; index += 1) {
+    if (GH_GLOBAL_OPTION_TAKING_VALUE.test(words[index]) && positionalWords.length === 0) {
+      index += 1;
+      continue;
+    }
+    if (words[index].startsWith("-") && positionalWords.length === 0 && !GH_PROSELESS_COMMANDS.has(words[index])) continue;
+    positionalWords.push(words[index]);
+  }
+  const [command = "", action = ""] = positionalWords;
+  if (command === "" || GH_PROSELESS_COMMANDS.has(command)) return false;
+  if (command === "api") return ghApiMethodOf(words) !== "GET";
+  return !GH_PROSELESS_ACTIONS_BY_COMMAND.get(command)?.has(action);
+}
+
+async function guardProsePost(command, transcriptPath) {
+  const scannedCommand = maskSingleQuotedText(maskLiteralHeredocBodies(command.replace(/\\\r?\n/g, " ")));
+  const ghArgumentTexts = [...scannedCommand.matchAll(GH_CALL)].map((match) => match[1]);
+  if (!ghArgumentTexts.some(ghCallMayPostProse)) return;
+  if (!fs.existsSync(transcriptPath) || (await hasSkillRunInSession(transcriptPath, "writing-in-voice"))) return;
+  denyPreToolUse(VOICE_REASON);
+}
+
 async function guardRawCommit(command, transcriptPath) {
   if (!GIT_COMMIT_OR_PUSH.test(maskSingleQuotedText(maskLiteralHeredocBodies(command)))) return;
   if (isEveryCommitOrPushThrowaway(command)) return;
@@ -630,6 +684,7 @@ async function main() {
   if (typeof payload.transcript_path !== "string") allow();
   const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
   if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
+  if (payload.tool_name === "Bash") await guardProsePost(String(toolInput.command || ""), payload.transcript_path);
   if (!isAttendedMainLoopCall(payload) || !fs.existsSync(payload.transcript_path)) allow();
   const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
   if (payload.tool_name === "Bash") guardKillSelfMatch(String(toolInput.command || ""));
