@@ -85,6 +85,7 @@ mkdir -p "${wallpaperStorePath%/*}"
 : > "$wallpaperStorePath"
 idleChoiceState="$stubState/plutil/AllSpacesAndDisplays.Idle.Content.Choices.0"
 writeContainedSudoStub
+writeDarwinDirectoryServiceStub "$stubBin"
 printf '10\n' > "$stubState/ac-displaysleep"
 printf '0\n' > "$stubState/ac-sleep"
 mkdir -p "$stubState/defaults/com.apple.loginwindow"

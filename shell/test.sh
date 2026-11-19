@@ -80,10 +80,10 @@ rerunStatus=0
 runInstall > /dev/null || rerunStatus=$?
 check "a rerun over the link exits clean" test "$rerunStatus" -eq 0
 
-pathStartsWithDotfilesBin() {
-  [[ "$(interactiveShell 'printf %s "$PATH"')" == "$sandbox/.dotfiles/bin:"* ]]
+dotfilesBinPrecedesSystemDirectories() {
+  [[ "$(interactiveShell 'printf %s "$PATH"')" == *"$sandbox/.dotfiles/bin:"*"/usr/bin:/bin" ]]
 }
-check "bin is on PATH" pathStartsWithDotfilesBin
+check "bin is on PATH ahead of the system directories" dotfilesBinPrecedesSystemDirectories
 check "dot resolves on PATH" test "$(interactiveShell 'command -v dot')" = "$sandbox/.dotfiles/bin/dot"
 check "a second load leaves one copy of bin on PATH" \
   test "$(interactiveShell 'source "$HOME/.bashrc"; printf %s "$PATH"' | grep -o -F "$sandbox/.dotfiles/bin" | wc -l)" -eq 1
@@ -217,6 +217,7 @@ check "the symlinked topics file was replaced by a plain file" \
   bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$sandbox/.config/dotfiles/topics"
 
 startSandboxHome "shell-darwin"
+touch "$sandbox/.hushlogin"
 darwinHomebrewPrefix="$sandbox/homebrew"
 darwinPythonToolsBinDirectory="$sandbox/.local/share/dotfiles/python-tools/bin"
 darwinApplicationsDirectory="$sandbox/Applications"
@@ -342,8 +343,8 @@ darwinInteractiveShell() {
 }
 
 darwinPath="$(darwinInteractiveShell 'printf %s "$PATH"')"
-check "darwin puts its Python tools environment first on PATH" \
-  bash -c '[[ "$1" == "$2:"* ]]' _ "$darwinPath" "$darwinPythonToolsBinDirectory"
+check "darwin puts its Python tools environment ahead of Homebrew on PATH" \
+  bash -c '[[ "$1" == *"$2:"*"$3/bin:"* ]]' _ "$darwinPath" "$darwinPythonToolsBinDirectory" "$darwinHomebrewPrefix"
 check "darwin resolves python3 from its Python tools environment" \
   test "$(darwinInteractiveShell 'command -v python3')" = "$darwinPythonToolsBinDirectory/python3"
 check "darwin resolves ruff from its Python tools environment" \
