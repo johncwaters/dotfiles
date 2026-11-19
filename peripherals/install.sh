@@ -8,47 +8,6 @@ fi
 # shellcheck source=../script/lib/packages.sh
 source "$dotfilesRepo/script/lib/packages.sh"
 
-retireLinearMouseLaunchAgent() {
-  local agentLabel="dev.dotfiles.linearmouse"
-  local plistPath="$HOME/Library/LaunchAgents/$agentLabel.plist"
-  local domain
-  domain="gui/$(id -u)"
-  if launchAgentIsLoaded "$domain" "$agentLabel" \
-    && ! launchctl bootout "$domain" "$plistPath" >/dev/null 2>&1; then
-    noteWarned "LinearMouse launch agent" "launchctl bootout failed"
-    return 1
-  fi
-  [[ -f "$plistPath" ]] || return 0
-  rm -f -- "$plistPath"
-  noteApplied "LinearMouse launch agent" "retired"
-}
-
-retireLinearMouseConfigLink() {
-  local configPath="$HOME/.config/linearmouse/linearmouse.json"
-  pathIsLinkIntoThisRepo "$configPath" || return 0
-  rm -f -- "$configPath"
-  noteApplied "LinearMouse config" "retired link removed"
-}
-
-retireLinearMouseCask() {
-  local brewCommand
-  brewCommand="$(brewCommandPath || true)"
-  [[ -n "$brewCommand" ]] || return 0
-  "$brewCommand" list --cask linearmouse >/dev/null 2>&1 || return 0
-  osascript -e 'quit app "LinearMouse"' >/dev/null 2>&1 || true
-  if ! "$brewCommand" uninstall --cask linearmouse >/dev/null 2>&1; then
-    noteWarned "LinearMouse" "Homebrew uninstall failed"
-    return 1
-  fi
-  noteApplied "LinearMouse" "uninstalled (retired)"
-}
-
-installDarwinMouseSupport() {
-  retireLinearMouseLaunchAgent
-  retireLinearMouseConfigLink
-  retireLinearMouseCask
-}
-
 applyKinesisModifierSwap() {
   local noteLabel="Adv360 Pro modifiers"
   if liveDefaultsValueMatches currentHost -g "$kinesisModifierMappingKey" "$kinesisModifierMappingPath"; then
@@ -131,11 +90,8 @@ applyAltTabShortcuts() {
 }
 
 if isDarwin; then
-  # shellcheck source=../script/lib/launchd.sh
-  source "$dotfilesRepo/script/lib/launchd.sh"
   # shellcheck source=./keyboard.sh
   source "$dotfilesRepo/peripherals/keyboard.sh"
-  installDarwinMouseSupport
   applyKinesisModifierSwap
   applyAltTabShortcuts
   linkEntry "Hammerspoon config" "peripherals/hammerspoon/init.lua" "$HOME/.hammerspoon/init.lua"

@@ -71,8 +71,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `repo
 - `work`: Claude and Codex only, no other model CLIs; work integrations originate here.
 - `work-server`: Linux devbox; `ai.json` extends work agent additions without inheriting laptop topics.
 
-`ai.json` keeps exclusive tool ownership beside its profile so another profile can retire
-those tools without shared code knowing their names. AI inheritance uses `extends` in `ai.json`;
+AI inheritance uses `extends` in `ai.json`;
 `ai/test.sh` pins inherited additions, file fallback, confinement, profile isolation,
 foreign-entry preservation, quiet reruns, and no-profile preservation; `test/repo-wiring.sh`
 pins the shared boundary. Shared npm entries apply everywhere; profile lists contain only additions.

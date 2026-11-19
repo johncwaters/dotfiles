@@ -21,6 +21,3 @@ node_modules/
 .credentials.json
 repos/repos.txt
 glimmervoid/config.json
-# Retired name: a machine that converged before the rename still holds these untracked
-glissa/config.json
-.glissa/

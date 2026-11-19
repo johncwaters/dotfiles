@@ -7,7 +7,7 @@ repoRoot="$(cd -- "$topicDir/.." && pwd)"
 # shellcheck source=../test/harness.sh
 source "$repoRoot/test/harness.sh"
 
-for skillWithDependenciesDirectory in "$topicDir/skills/rendering-skill-tree" "$topicDir/skills/auditing-brand" "$topicDir/skills/designing-ui"; do
+for skillWithDependenciesDirectory in "$topicDir/skills/auditing-brand" "$topicDir/skills/designing-ui"; do
   if [[ ! -d "$skillWithDependenciesDirectory/node_modules" ]]; then
     (cd -- "$skillWithDependenciesDirectory" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund > /dev/null)
   fi
@@ -134,47 +134,38 @@ countMcpCommands() {
   grep -cF "[\"mcp\",\"$1\"" "$mcpCommandLog" || true
 }
 
-mkdir -p "$sandbox/.codex" "$sandbox/.agents/skills/backchannels" "$sandbox/.agents/skills/foreign" "$sandbox/.claude/skills/backchannels"
+mkdir -p "$sandbox/.codex" "$sandbox/.agents/skills/foreign"
 printf 'foreign skill\n' > "$sandbox/.agents/skills/foreign/SKILL.md"
-printf 'backchannels skill\n' > "$sandbox/.agents/skills/backchannels/SKILL.md"
-printf 'backchannels skill\n' > "$sandbox/.claude/skills/backchannels/SKILL.md"
 cat > "$sandbox/.codex/config.toml" <<'TOML'
 model = "keep-model"
 [hooks.state]
 foreign = { enabled = true, trusted_hash = "keep-trust" }
 [mcp_servers.foreign]
 url = "https://foreign.invalid/mcp"
-[mcp_servers.backchannels]
-url = "https://api.backchannels.dev/mcp"
 TOML
 node - "$sandbox/.codex/hooks.json" "$sandbox/.claude.json" <<'NODE'
 const fs = require('node:fs');
 const [hooksPath, runtimePath] = process.argv.slice(2);
 const foreignHandler = {type:'command', command:'printf foreign-context', timeout:3};
-const backchannelsHandler = {type:'command', command:"node '$HOME/.agents/skills/backchannels/session-start.mjs' 2>/dev/null || cat '$HOME/.agents/skills/backchannels/session-start.txt' 2>/dev/null || true", timeout:5};
-fs.writeFileSync(hooksPath, JSON.stringify({description:'foreign metadata', hooks:{SessionStart:[{matcher:'startup|resume|clear', hooks:[foreignHandler, backchannelsHandler]}], Stop:[{hooks:[foreignHandler]}]}}));
+fs.writeFileSync(hooksPath, JSON.stringify({description:'foreign metadata', hooks:{SessionStart:[{matcher:'startup|resume|clear', hooks:[foreignHandler]}], Stop:[{hooks:[foreignHandler]}]}}));
 const runtimeSettings = JSON.parse(fs.readFileSync(runtimePath,'utf8'));
 runtimeSettings.mcpServers.backchannels = {type:'http', url:'https://api.backchannels.dev/mcp'};
 fs.writeFileSync(runtimePath,JSON.stringify(runtimeSettings));
 NODE
 mkdir -p "$XDG_STATE_HOME/dotfiles"
 printf 'backchannels\n' > "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
-printf 'backchannels\n' > "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
 
-backchannelsArtifactsAreAbsent() {
+retiredManagedServerIsAbsent() {
   node - "$sandbox" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
 const homeDirectory = process.argv[2];
-const hooks = JSON.parse(fs.readFileSync(path.join(homeDirectory, '.codex/hooks.json'), 'utf8'));
 const runtime = JSON.parse(fs.readFileSync(path.join(homeDirectory, '.claude.json'), 'utf8'));
-const config = fs.readFileSync(path.join(homeDirectory, '.codex/config.toml'), 'utf8');
-const skillPaths = ['.claude/skills/backchannels', '.agents/skills/backchannels', '.claude/profile-hooks'];
-process.exit(!runtime.mcpServers.backchannels && !config.includes('mcp_servers.backchannels') && !JSON.stringify(hooks).includes('backchannels') && skillPaths.every(skillPath => !fs.existsSync(path.join(homeDirectory, skillPath))) ? 0 : 1);
+process.exit(!runtime.mcpServers.backchannels && !fs.existsSync(path.join(homeDirectory, '.claude/profile-hooks')) ? 0 : 1);
 NODE
 }
 
-foreignBackchannelsNeighboursArePreserved() {
+foreignCodexConfigIsPreserved() {
   node - "$sandbox" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -188,22 +179,11 @@ NODE
 
 printf '\nai topic\n'
 
-renderFixtureDirectory="$sandbox/render-codex-hooks-fixture"
-mkdir -p "$renderFixtureDirectory"
-node - "$renderFixtureDirectory/hooks.json" <<'NODE'
-const fs = require('node:fs');
-const handler = command => ({type:'command', command});
-fs.writeFileSync(process.argv[2], JSON.stringify({hooks:{SessionStart:[{hooks:[handler('node /srv/backchannels/audit.mjs'), handler("node '$HOME/.agents/skills/backchannels/session-start.mjs' || true")]}]}}));
-NODE
-node "$stagedRepo/ai/render-codex-hooks.mjs" "$stagedRepo/ai/codex-hooks.base.json" "$renderFixtureDirectory/hooks.json" "$renderFixtureDirectory/rendered.json" > /dev/null
-check "Codex hook render keeps a foreign hook under another backchannels path and drops the old-installer hook" \
-  node -e 'const commands = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks.SessionStart.flatMap(entry => entry.hooks.map(handler => handler.command)); process.exit(JSON.stringify(commands) === JSON.stringify(["node /srv/backchannels/audit.mjs"]) ? 0 : 1)' "$renderFixtureDirectory/rendered.json"
-
 installStatus=0
 firstRunOutput="$(runTopicInstall "$stagedTopicDir")" || installStatus=$?
 check "install exits clean" test "$installStatus" -eq 0
-check "personal converge removes installer-owned backchannels artifacts" backchannelsArtifactsAreAbsent
-check "personal cleanup preserves foreign hooks, MCP config, skills, and hook trust" foreignBackchannelsNeighboursArePreserved
+check "personal converge removes a retired managed MCP server" retiredManagedServerIsAbsent
+check "personal cleanup preserves foreign hooks, MCP config, skills, and hook trust" foreignCodexConfigIsPreserved
 check "install says what it did" test -n "$firstRunOutput"
 mkdir -p "$sandbox/npm-global/lib/node_modules/@biomejs/biome"
 printf '{"version":"2.6.5"}\n' > "$sandbox/npm-global/lib/node_modules/@biomejs/biome/package.json"
@@ -349,20 +329,14 @@ check "approval updates an unversioned path-sourced plugin successfully" \
 cp "$sandbox/settings-before-plugin-tests.json" "$stagedRepo/ai/settings.base.json"
 : > "$mcpCommandLog"
 
-mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
-printf 'external Claude skill\n' > "$sandbox/.claude/skills/backchannels/SKILL.md"
-printf 'external Codex skill\n' > "$sandbox/.agents/skills/backchannels/SKILL.md"
-printf 'process.stdout.write("backchannels startup context");\n' > "$sandbox/.agents/skills/backchannels/session-start.mjs"
 firstWorkStatus=0
 workMcpOutput="$(runTopicInstall "$stagedTopicDir" work)" || firstWorkStatus=$?
 check "a first work converge exits clean" test "$firstWorkStatus" -eq 0
-check "work retires the backchannels installer's skills" \
-  bash -c '[[ ! -e "$1" && ! -e "$2" ]]' _ "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backchannels"
 check "work links profile hooks through the alias" \
   bash -c '[[ -L "$1" && "$(readlink "$1")" == "$2" ]]' _ "$sandbox/.claude/profile-hooks" "$sandbox/.dotfiles/profiles/work/hooks"
 check "the shared installed hooks contain none of the work hooks" \
   bash -c '[[ ! -e "$1/gate-posthog-exec-write.mjs" ]]' _ "$sandbox/.claude/hooks"
-check "work preserves foreign hooks and Codex trust" foreignBackchannelsNeighboursArePreserved
+check "work preserves foreign hooks and Codex trust" foreignCodexConfigIsPreserved
 check "all work hooks resolve imports through the installed symlink" \
   env HOME="$sandbox" node "$sandbox/.claude/profile-hooks/gate-posthog-exec-write.mjs" <<< '{"tool_name":"unrelated","tool_input":{}}'
 for skillName in "${workSkillNames[@]}"; do
@@ -398,8 +372,8 @@ check "a failed removal retains ownership for retry" \
 rm -f "$sandbox/.fail-mcp-remove"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "switching to personal removes only the managed servers" mcpRuntimeMatches ""
-check "work to personal removes all backchannels artifacts" backchannelsArtifactsAreAbsent
-check "work to personal preserves foreign hooks, skills, MCP config, and trust" foreignBackchannelsNeighboursArePreserved
+check "work to personal removes the work-only artifacts" retiredManagedServerIsAbsent
+check "work to personal preserves foreign hooks, skills, MCP config, and trust" foreignCodexConfigIsPreserved
 quietPersonalOutput="$(runTopicInstall "$stagedTopicDir" personal)"
 check "a personal rerun reports no changes" reportsNoChanges "$quietPersonalOutput"
 check "successful retirement clears the ownership record" \
@@ -649,29 +623,6 @@ env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
 mv "$sandbox/runtime-settings-aside.json" "$sandbox/.claude.json"
 check "an absent claude CLI keeps managed ownership when the runtime file is missing" \
   grep -qx posthog "$XDG_STATE_HOME/dotfiles/ai-managed-mcp-servers"
-seedRetiredCodexServer() {
-  printf '\n[mcp_servers.backchannels]\nurl = "https://api.backchannels.dev/mcp"\n' >> "$sandbox/.codex/config.toml"
-  printf 'backchannels\n' > "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
-}
-seedRetiredCodexServer
-absentCodexRetiredServerOutput="$(env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
-  bash "$stagedTopicDir/install.sh")" || true
-check "an absent Codex CLI warns when config.toml still declares a retired server" \
-  bash -c 'grep -qE "\[warn\] +Codex MCP backchannels" <<< "$1"' _ "$absentCodexRetiredServerOutput"
-runTopicInstall "$stagedTopicDir" personal > /dev/null
-check "retirement after an absent CLI preserves the unmanaged server" mcpRuntimeMatches ""
-seedRetiredCodexServer
-: > "$sandbox/.fail-codex-mcp-remove"
-failedCodexRemovalStatus=0
-runTopicInstall "$stagedTopicDir" personal > /dev/null || failedCodexRemovalStatus=$?
-check "a failed Codex removal follows the topic warning convention" test "$failedCodexRemovalStatus" -eq 1
-check "a failed Codex removal preserves the server for the next converge" grep -qxF '[mcp_servers.backchannels]' "$sandbox/.codex/config.toml"
-check "a failed Codex removal keeps ownership for retry" grep -qx backchannels "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
-rm -f "$sandbox/.fail-codex-mcp-remove"
-runTopicInstall "$stagedTopicDir" personal > /dev/null
-check "a failed Codex removal converges once the CLI can remove it" backchannelsArtifactsAreAbsent
-check "a retired Codex server clears its ownership record" test ! -e "$XDG_STATE_HOME/dotfiles/ai-managed-codex-mcp-servers"
-check "a retired Codex server preserves foreign config and trust" foreignBackchannelsNeighboursArePreserved
 cp "$sandbox/.codex/hooks.json" "$sandbox/codex-valid-hooks.json"
 printf 'not json\n' > "$sandbox/.codex/hooks.json"
 invalidCodexHooksStatus=0
@@ -733,7 +684,7 @@ check "work-server inherits the review checklist" \
   test "$(readlink "$reviewChecklistPath")" = "$sandbox/.dotfiles/profiles/work/review-checklist.md"
 checkRerunIsQuiet "work-server rerun is quiet" "$(runTopicInstall "$stagedTopicDir" work-server)"
 runTopicInstall "$stagedTopicDir" server > /dev/null
-check "server removes inherited work-only artifacts" backchannelsArtifactsAreAbsent
+check "server removes inherited work-only artifacts" retiredManagedServerIsAbsent
 check "server retires the child profile addition" test ! -L "$sandbox/.claude/skills/child-fixture"
 check "server keeps shared house style" test -L "$sandbox/.claude/skills/applying-house-style"
 rm -r "$stagedRepo/profiles/work-server/skills/child-fixture" "$stagedRepo/profiles/personal/skills/personal-fixture"
@@ -779,6 +730,8 @@ assert.deepEqual(profileLineage('inherited-fixture'), ['work', 'work-server', 'i
 fs.rmSync(inheritedDirectory, {recursive: true});
 NODE
 
+renderFixtureDirectory="$sandbox/render-codex-hooks-fixture"
+mkdir -p "$renderFixtureDirectory"
 check "Codex combines shared and profile hooks, reruns quietly, and retires deleted declarations" \
   env HOME="$sandbox" node --input-type=module - "$stagedRepo" "$renderFixtureDirectory" <<'NODE'
 import assert from 'node:assert/strict';
@@ -881,8 +834,8 @@ mkdir -p "$sandbox/.claude/skills/backchannels" "$sandbox/.agents/skills/backcha
 serverStatus=0
 runTopicInstall "$stagedTopicDir" server > /dev/null || serverStatus=$?
 check "server converge follows topic warning convention" test "$serverStatus" -eq 0
-check "server converge removes all backchannels artifacts" backchannelsArtifactsAreAbsent
-check "server cleanup preserves foreign entries" foreignBackchannelsNeighboursArePreserved
+check "server converge removes the work-only artifacts" retiredManagedServerIsAbsent
+check "server cleanup preserves foreign entries" foreignCodexConfigIsPreserved
 serverRerunStatus=0
 serverRerunOutput="$(runTopicInstall "$stagedTopicDir" server)" || serverRerunStatus=$?
 check "server rerun keeps the expected exit status" test "$serverRerunStatus" -eq 0
@@ -1191,15 +1144,14 @@ specTestFiles=("$topicDir"/skills/specifying/test/*.test.ts)
 capturingUiTestFiles=("$topicDir"/skills/capturing-ui/test/*.test.mjs)
 socialImagesTestFiles=("$topicDir"/skills/composing-social-images/test/*.test.mjs)
 animatingTestFiles=("$topicDir"/skills/animating/test/*.test.mjs)
-skillTreeTestFiles=("$topicDir"/skills/rendering-skill-tree/test/*.test.ts)
 whiteboardTestFiles=("$topicDir"/skills/drawing-whiteboards/test/*.test.ts)
 hudTestFiles=("$topicDir"/hud/test/*.test.mjs)
 workSkillTestFiles=("$repoRoot"/profiles/work/skills/*/test/*.test.ts)
 shopt -u nullglob
 check "all behavior test groups are present" \
-  test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#animatingTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0 && ${#workSkillTestFiles[@]} > 0))" -eq 1
-if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#animatingTestFiles[@]} > 0 && ${#skillTreeTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
-  check "hook, workflow, landing, running-retros, releasing, capturing-ui, composing-social-images, animating, rendering-skill-tree, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${animatingTestFiles[@]}" "${skillTreeTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
+  test "$((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#specTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#animatingTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0 && ${#workSkillTestFiles[@]} > 0))" -eq 1
+if ((${#hookTestFiles[@]} > 0 && ${#workflowTestFiles[@]} > 0 && ${#commitTestFiles[@]} > 0 && ${#retroTestFiles[@]} > 0 && ${#releaseTestFiles[@]} > 0 && ${#capturingUiTestFiles[@]} > 0 && ${#socialImagesTestFiles[@]} > 0 && ${#animatingTestFiles[@]} > 0 && ${#whiteboardTestFiles[@]} > 0 && ${#hudTestFiles[@]} > 0)); then
+  check "hook, workflow, landing, running-retros, releasing, capturing-ui, composing-social-images, animating, drawing-whiteboards, and hud behavior tests pass" node --test "${hookTestFiles[@]}" "${workflowTestFiles[@]}" "${commitTestFiles[@]}" "${retroTestFiles[@]}" "${releaseTestFiles[@]}" "${capturingUiTestFiles[@]}" "${socialImagesTestFiles[@]}" "${animatingTestFiles[@]}" "${whiteboardTestFiles[@]}" "${hudTestFiles[@]}"
 fi
 check "auditing-brand census tests pass" node --test "$topicDir/skills/auditing-brand/test/census.test.ts"
 check "securing-browser-code check tests pass" node --test "$topicDir/skills/securing-browser-code/test/check.test.ts"

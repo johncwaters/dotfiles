@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import os from "node:os";
-import { readProfilePolicies } from "./profile-config.mjs";
 
 const [declarationPath, runtimePath, destinationPath, ownedCommandsPath] = process.argv.slice(2);
 
@@ -17,14 +16,10 @@ function readHookConfiguration(configurationPath) {
   return configuration;
 }
 
-const retiredCommandPatterns = readProfilePolicies().flatMap((policy) =>
-  (policy.retiredCodexHookCommands ?? []).map((pattern) => new RegExp(pattern, "i")),
-);
-
 let ownedCommands = new Set();
 
 function isOwnedHook(handler) {
-  return ownedCommands.has(handler.command) || retiredCommandPatterns.some((pattern) => pattern.test(String(handler.command || "")));
+  return ownedCommands.has(handler.command);
 }
 
 try {

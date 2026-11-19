@@ -262,30 +262,6 @@ linkEntry "types" "ai/types" "$claudeHome/types"
 linkEntry "hooks" "ai/hooks" "$claudeHome/hooks"
 linkEntry "hud" "ai/hud" "$claudeHome/hud"
 
-migrateSpecStore() {
-  local storeName legacyStoreDirectory agentStoreDirectory legacyFilePath relativeFilePath movedFileCount
-  for storeName in specs spec-archive; do
-    legacyStoreDirectory="$claudeHome/$storeName"
-    agentStoreDirectory="$HOME/.agents/$storeName"
-    [[ -d "$legacyStoreDirectory" && ! -L "$legacyStoreDirectory" ]] || continue
-    movedFileCount=0
-    while IFS= read -r -d '' legacyFilePath; do
-      relativeFilePath="${legacyFilePath#"$legacyStoreDirectory/"}"
-      if [[ -e "$agentStoreDirectory/$relativeFilePath" || -L "$agentStoreDirectory/$relativeFilePath" ]]; then
-        noteWarned "spec store $storeName" "$agentStoreDirectory/$relativeFilePath exists, left $legacyFilePath"
-        continue
-      fi
-      mkdir -p -- "$(dirname -- "$agentStoreDirectory/$relativeFilePath")"
-      mv -- "$legacyFilePath" "$agentStoreDirectory/$relativeFilePath"
-      movedFileCount=$((movedFileCount + 1))
-    done < <(find "$legacyStoreDirectory" -type f -print0)
-    find "$legacyStoreDirectory" -depth -type d -empty -delete
-    ((movedFileCount == 0)) || noteApplied "spec store $storeName" "moved $movedFileCount files to $agentStoreDirectory"
-  done
-}
-
-migrateSpecStore
-
 if [[ -z "${profileName:-}" ]]; then
   noteWarned "profile files" "no profile resolved, profile-dependent convergence skipped"
   finishTopic
@@ -519,21 +495,6 @@ NODE
   noteApplied "Kimi MCP servers" "converged"
 }
 
-removeRetiredSkills() {
-  local skillName skillPath
-  while IFS= read -r skillName; do
-    [[ -n "$skillName" ]] || continue
-    for skillPath in "$claudeSkillsDirectory/$skillName" "$HOME/.agents/skills/$skillName"; do
-      [[ -e "$skillPath" || -L "$skillPath" ]] || continue
-      if rm -rf -- "$skillPath"; then
-        noteApplied "skill $skillName" "removed $skillPath"
-        continue
-      fi
-      noteWarned "skill $skillName" "could not remove $skillPath"
-    done
-  done < "$dotfilesRepo/ai/skills-remove.txt"
-}
-
 renderCodexHooks() {
   local declarationPath="$dotfilesRepo/ai/codex-hooks.base.json"
   local hooksPath="$codexHome/hooks.json"
@@ -561,36 +522,6 @@ renderCodexHooks() {
   clearDotfilesState ai-codex-hook-trust-baseline
 }
 
-codexConfigDeclaresServer() {
-  [[ -f "$codexHome/config.toml" ]] || return 1
-  grep -qE "^[[:space:]]*\[[[:space:]]*mcp_servers[[:space:]]*\.[[:space:]]*[\"']?$1[\"']?[[:space:]]*[].]" "$codexHome/config.toml"
-}
-
-retireCodexServer() {
-  local serverName="$1"
-  if ! command -v codex > /dev/null 2>&1; then
-    if codexConfigDeclaresServer "$serverName"; then
-      noteWarned "Codex MCP $serverName" "codex not on PATH, config.toml still declares this server"
-    fi
-    return 0
-  fi
-  if ! CODEX_HOME="$codexHome" codex mcp get "$serverName" --json > /dev/null 2>&1; then
-    if ! CODEX_HOME="$codexHome" codex mcp list --json > /dev/null 2>&1; then
-      noteWarned "Codex MCP $serverName" "could not read configuration, convergence skipped"
-      return 0
-    fi
-    codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
-    return 0
-  fi
-  if ! CODEX_HOME="$codexHome" codex mcp remove "$serverName" > /dev/null 2>&1; then
-    noteWarned "Codex MCP $serverName" "remove failed"
-    return 0
-  fi
-  noteApplied "Codex MCP $serverName" "removed"
-  codexManagedNames="$(grep -vxF "$serverName" <<< "$codexManagedNames" || true)"
-}
-
-# Codex servers were only ever added by the retired confinement path, so every recorded name is retired.
 syntaxEngineProbeStatus() {
   local probeStatus=0
   node "$dotfilesRepo/ai/hooks/validate-file.mjs" --probe-engine > /dev/null 2>&1 || probeStatus=$?
@@ -615,22 +546,6 @@ repairSyntaxEngine() {
   noteWarned "syntax engine" "biome cannot start; the format guard checks JSON only"
 }
 
-retireCodexServers() {
-  local serverName
-  local codexManagedNames
-  codexManagedNames="$(readDotfilesState ai-managed-codex-mcp-servers || true)"
-  [[ -n "$codexManagedNames" ]] || return 0
-  while IFS= read -r serverName; do
-    [[ -n "$serverName" ]] || continue
-    retireCodexServer "$serverName"
-  done <<< "$codexManagedNames"
-  if [[ -z "$codexManagedNames" ]]; then
-    clearDotfilesState ai-managed-codex-mcp-servers
-    return 0
-  fi
-  writeDotfilesState ai-managed-codex-mcp-servers "$codexManagedNames"
-}
-
 # CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
 profileClaudeSource="$(profilePlanNames source-CLAUDE.md)"
 copyEntry "CLAUDE.md" "${profileClaudeSource#"$dotfilesRepo/"}" "$claudeHome/CLAUDE.md"
@@ -648,10 +563,8 @@ renderJsonTemplate "settings.json" \
   "$dotfilesRepo/ai/settings.base.json" \
   "$profileSettingsOverlayPath" \
   "$claudeHome/settings.json"
-removeRetiredSkills
 renderCodexHooks
 repairSyntaxEngine
-retireCodexServers
 convergeMcpServers
 if command -v kimi > /dev/null 2>&1; then
   convergeKimiMcpServers

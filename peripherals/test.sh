@@ -326,32 +326,6 @@ check "a moved tag is never built" logLacks "cmake --build"
 check "a moved tag is never installed as root" logLacks "cmake --install"
 check "a moved tag makes the topic exit non-zero" test "$unpinnedStatus" -eq 1
 
-writeStub brew <<'STUB'
-#!/usr/bin/env bash
-printf 'brew %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-caskMarker="$DOTFILES_TEST_STATE/cask-${3:-}-installed"
-case "${1:-} ${2:-}" in
-  "list --cask") [[ -f "$caskMarker" ]] ;;
-  "uninstall --cask") rm -f "$caskMarker" ;;
-esac
-STUB
-writeStub id <<'STUB'
-#!/usr/bin/env bash
-printf 'id %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-if [[ "${1:-}" == "-u" ]]; then
-  printf '501\n'
-fi
-STUB
-writeStub launchctl <<'STUB'
-#!/usr/bin/env bash
-printf 'launchctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
-loadedMarker="$DOTFILES_TEST_STATE/linearmouse-agent-loaded"
-case "${1:-}" in
-  print) [[ -f "$loadedMarker" ]] ;;
-  bootout) rm -f "$loadedMarker" ;;
-  bootstrap) touch "$loadedMarker" ;;
-esac
-STUB
 writeStub defaults <<'STUB'
 #!/usr/bin/env bash
 printf 'defaults %s\n' "$*" >> "$DOTFILES_TEST_LOG"
@@ -389,9 +363,6 @@ writeStub open <<'STUB'
 printf 'open %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 touch "$DOTFILES_TEST_STATE/alt-tab-running"
 STUB
-provideCommand brew
-provideCommand id
-provideCommand launchctl
 for keyboardCommand in defaults pgrep osascript open; do
   provideCommand "$keyboardCommand"
 done
@@ -399,13 +370,6 @@ touch "$stubState/alt-tab-running"
 writeDarwinDirectoryServiceStub "$stubBin"
 
 darwinHomebrewPrefix="$sandbox/homebrew"
-linearmouseConfigPath="$sandbox/.config/linearmouse/linearmouse.json"
-linearmouseAgentPath="$sandbox/Library/LaunchAgents/dev.dotfiles.linearmouse.plist"
-mkdir -p "$(dirname -- "$linearmouseConfigPath")" \
-  "$(dirname -- "$linearmouseAgentPath")"
-ln -s "$sandbox/.dotfiles/peripherals/linearmouse.json" "$linearmouseConfigPath"
-printf 'rendered agent\n' > "$linearmouseAgentPath"
-touch "$stubState/linearmouse-agent-loaded" "$stubState/cask-linearmouse-installed"
 
 runDarwinInstall() {
   runInStubbedSandbox "$sandbox" DOTFILES_PLATFORM=darwin DOTFILES_PROFILE=work \
@@ -420,12 +384,6 @@ printf '\nperipherals topic on darwin\n'
 darwinFirstStatus=0
 darwinFirstOutput="$(runDarwinInstall)" || darwinFirstStatus=$?
 check "darwin install exits clean" test "$darwinFirstStatus" -eq 0
-check "darwin boots out the retired LinearMouse agent" \
-  logHas "launchctl bootout gui/501 $linearmouseAgentPath"
-check "darwin deletes the retired LinearMouse agent" test ! -e "$linearmouseAgentPath"
-check "darwin removes the retired LinearMouse config link" \
-  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$linearmouseConfigPath"
-check "darwin uninstalls the retired LinearMouse cask" logHas 'brew uninstall --cask linearmouse'
 check "darwin skips Solaar" outputLacks "$darwinFirstOutput" 'Solaar'
 check "darwin skips ratbagd" outputLacks "$darwinFirstOutput" 'ratbagd'
 check "darwin skips Piper" outputLacks "$darwinFirstOutput" 'Piper'
@@ -456,16 +414,7 @@ darwinSecondStatus=0
 darwinSecondOutput="$(runDarwinInstall)" || darwinSecondStatus=$?
 check "darwin second run exits clean" test "$darwinSecondStatus" -eq 0
 check "darwin second run reports no changes" reportsNoChanges "$darwinSecondOutput"
-check "darwin second run does not reinstall the cask" logLacks 'brew install --cask'
-check "darwin second run uninstalls nothing" logLacks 'brew uninstall'
-check "darwin second run does not boot out an agent" logLacks 'launchctl bootout'
 check "darwin second run writes no defaults" logLacks ' write '
 check "darwin second run leaves AltTab running" logLacks 'osascript '
-
-printf 'local settings\n' > "$linearmouseConfigPath"
-: > "$commandLog"
-runDarwinInstall >/dev/null
-check "darwin leaves a LinearMouse config it did not link" \
-  grep -qx 'local settings' "$linearmouseConfigPath"
 
 reportTopicResults "peripherals"

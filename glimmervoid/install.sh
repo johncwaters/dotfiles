@@ -531,31 +531,6 @@ installGlimmervoidBinary() {
   noteInstalled "$label" "$("$glimmervoidBinaryPath" --version 2>/dev/null || printf 'installed')"
 }
 
-isDotfilesGlimmervoidShim() {
-  local shimPath="$1"
-  [[ -f "$shimPath" && ! -L "$shimPath" ]] || return 1
-  [[ "$(wc -l < "$shimPath")" -eq 2 ]] || return 1
-  [[ "$(head -n 1 "$shimPath")" == "#!/usr/bin/env bash" ]] || return 1
-  tail -n 1 "$shimPath" | grep -qE '^exec [^ ]+ [^ ]+/dist/bin/glimmervoid\.js "\$@"$'
-}
-
-retireGlimmervoidCliShim() {
-  local label="glimmervoid cli shim"
-  local shimPath="$HOME/.local/bin/glimmervoid"
-  if [[ ! -e "$shimPath" && ! -L "$shimPath" ]]; then
-    return 0
-  fi
-  if ! isDotfilesGlimmervoidShim "$shimPath"; then
-    noteWarned "$label" "~/.local/bin/glimmervoid is not the dotfiles shim, left in place; remove it if it is an old Glimmervoid install"
-    return 0
-  fi
-  if ! rm -f -- "$shimPath"; then
-    noteWarned "$label" "cannot remove $shimPath"
-    return 0
-  fi
-  noteApplied "$label" "removed, glimmervoid now runs ~/.glimmervoid/bin/glimmervoid"
-}
-
 applyGlimmervoidSharedSettings() {
   local label="glimmervoid settings"
   local nodePath settingsSyncOutput settingsSyncErrorPath settingsSyncReason=""
@@ -603,7 +578,6 @@ protectGlimmervoidConfig
 glimmervoidBinaryIsInstalled=0
 if installGlimmervoidBinary; then
   glimmervoidBinaryIsInstalled=1
-  retireGlimmervoidCliShim
 fi
 
 if ! profileServesGlimmervoid "$profileName"; then

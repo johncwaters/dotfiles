@@ -435,10 +435,7 @@ printf 'ruff\n' > "$stubState/pip-modules/ruff"
 printf 'yaml\n' > "$stubState/pip-modules/pyyaml"
 printf 'uv\n' > "$stubState/pip-modules/uv"
 
-printf '@xai-official/grok\n' > "$stubState/npm-installed/@xai-official%grok"
 printf 'glissa\n' > "$stubState/npm-installed/glissa"
-mkdir -p "$sandbox/.grok"
-printf 'token\n' > "$sandbox/.grok/auth.json"
 
 runInstall() {
   runInStubbedSandbox "$sandbox" \
@@ -661,8 +658,6 @@ for wantedNpmPackage in @ast-grep/napi @biomejs/biome @earendil-works/pi-coding-
   @openai/codex mcp-remote postiz typescript typescript-language-server; do
   check "$wantedNpmPackage is installed globally" logHas "npm install -g $wantedNpmPackage"
 done
-check "the retired Grok CLI is uninstalled" logHas "npm uninstall -g @xai-official/grok"
-check "the retired Grok CLI login state is removed" test ! -e "$sandbox/.grok"
 check "the installed glissa runtime is never uninstalled" logLacks "uninstall -g glissa"
 
 check "ruff is installed with noninteractive pip" logHas "pip install --quiet --no-input ruff"

@@ -1,6 +1,0 @@
-{
-  "retiredCodexHookCommands": [
-    "confine-backchannels\\.mjs",
-    "\\.agents[\\\\/]skills[\\\\/]backchannels[\\\\/]session-start"
-  ]
-}

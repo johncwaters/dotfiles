@@ -6,9 +6,6 @@ mkdir -p "$personalHome/.glimmervoid"
 printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=placeholder\nGLIMMERVOID_POSTHOG_API_KEY=placeholder\n' \
   > "$personalHome/.glimmervoid/secrets.env"
 chmod 644 "$personalHome/.glimmervoid/secrets.env"
-printf '#!/usr/bin/env bash\nexec %s %s "$@"\n' "$personalHome/.local/bin/node" "$personalHome/Projects/glimmervoid/dist/bin/glimmervoid.js" \
-  > "$personalHome/.local/bin/glimmervoid"
-chmod 755 "$personalHome/.local/bin/glimmervoid"
 : > "$commandLog"
 personalStatus=0
 personalOutput="$(runInstall "$personalHome" personal)" || personalStatus=$?
@@ -31,7 +28,6 @@ check "a secrets file carrying every variable draws no warning" \
   outputLacks "$personalOutput" "write GLIMMERVOID_"
 check "a personal machine installs the release binary" test -x "$personalHome/.glimmervoid/bin/glimmervoid"
 check "the release installer runs with shell rc edits turned off" logHas "glimmervoid installer GLIMMERVOID_NO_MODIFY_PATH=1"
-check "the dotfiles node shim is retired once the binary is installed" test ! -e "$personalHome/.local/bin/glimmervoid"
 check "a personal machine installs the unit" test -f "$personalHome/.config/systemd/user/glimmervoid.service"
 check "the unit loads the secrets file without requiring it" \
   grep -qxF 'EnvironmentFile=-%h/.glimmervoid/secrets.env' "$personalHome/.config/systemd/user/glimmervoid.service"
@@ -74,14 +70,6 @@ check "an unreachable updater is warned about" \
   outputMatches "$updateOfflineOutput" '\[warn\].*glimmervoid binary.*update check failed, keeping 0\.55\.0'
 check "an unreachable updater keeps the installed binary" test "$("$personalHome/.glimmervoid/bin/glimmervoid")" = "0.55.0"
 rm -f "$personalState/update-unreachable" "$personalState/latest-release"
-
-printf '#!/bin/sh\necho hand-written\n' > "$personalHome/.local/bin/glimmervoid"
-foreignShimOutput="$(runInstall "$personalHome" personal)" || true
-check "a glimmervoid in ~/.local/bin that is not the dotfiles shim is kept" \
-  grep -q hand-written "$personalHome/.local/bin/glimmervoid"
-check "a kept foreign glimmervoid is warned about" \
-  outputMatches "$foreignShimOutput" '\[warn\].*not the dotfiles shim'
-rm -f "$personalHome/.local/bin/glimmervoid"
 
 printf 'GLIMMERVOID_TELEGRAM_BOT_TOKEN=\nGLIMMERVOID_POSTHOG_API_KEY=placeholder\n' \
   > "$personalHome/.glimmervoid/secrets.env"
@@ -130,9 +118,6 @@ offlineHome="$sandbox"
 mkdir -p "$offlineHome/.local/bin" "$offlineHome/.glimmervoid" "$stubState/$(basename -- "$offlineHome")"
 ln -sf "$stubBin/node" "$offlineHome/.local/bin/node"
 printf '{"port":%s}\n' "$isolatedWorkPort" > "$offlineHome/.glimmervoid/config.json"
-printf '#!/usr/bin/env bash\nexec %s %s "$@"\n' "$offlineHome/.local/bin/node" "$offlineHome/Projects/glimmervoid/dist/bin/glimmervoid.js" \
-  > "$offlineHome/.local/bin/glimmervoid"
-cp "$offlineHome/.local/bin/glimmervoid" "$sandboxTemp/offline-shim-before-install"
 makeGlimmervoidApp "$offlineHome"
 mkdir -p "$offlineHome/.config/systemd/user"
 printf '[Service]\nExecStart=old checkout unit\n' > "$offlineHome/.config/systemd/user/glimmervoid.service"
@@ -141,8 +126,6 @@ touch "$stubState/$(basename -- "$offlineHome")/installer-unreachable"
 offlineOutput="$(runInstall "$offlineHome" server)" || true
 check "an unreachable installer is warned about" \
   outputMatches "$offlineOutput" '\[warn\].*glimmervoid binary.*installer download failed'
-check "an unreachable installer leaves the shim byte-identical" \
-  cmp -s "$sandboxTemp/offline-shim-before-install" "$offlineHome/.local/bin/glimmervoid"
 check "an unreachable installer leaves the old unit in place" \
   grep -qx "ExecStart=old checkout unit" "$offlineHome/.config/systemd/user/glimmervoid.service"
 check "an unreachable installer touches no running service" logLacks "systemctl "
