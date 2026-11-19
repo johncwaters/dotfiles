@@ -546,9 +546,12 @@ repairSyntaxEngine() {
   noteWarned "syntax engine" "biome cannot start; the format guard checks JSON only"
 }
 
-# CLAUDE.md must be a copy for Claude Code to follow its @AGENTS.md import (AGENTS.md).
-profileClaudeSource="$(profilePlanNames source-CLAUDE.md)"
-copyEntry "CLAUDE.md" "${profileClaudeSource#"$dotfilesRepo/"}" "$claudeHome/CLAUDE.md"
+# CLAUDE.md must be a plain file for Claude Code to follow its imports (AGENTS.md).
+claudeImports=("@AGENTS.md")
+if [[ -n "$(profilePlanNames source-AGENTS.md)" ]]; then
+  claudeImports+=("@AGENTS.profile.md")
+fi
+writePlainFile "CLAUDE.md" "$claudeHome/CLAUDE.md" rendered printf '%s\n' "${claudeImports[@]}"
 
 convergeAiProfileLink "AGENTS.profile.md" "AGENTS.md" "$claudeHome/AGENTS.profile.md"
 convergeAiProfileLink "review-checklist.md" "review-checklist.md" "$claudeHome/review-checklist.md"

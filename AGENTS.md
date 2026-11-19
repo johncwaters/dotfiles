@@ -12,14 +12,12 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   small stubs including the repo copy, since a link there makes `git config --global` and
   installer hooks write into the tracked file. Git's repo copy is instead linked
   at `~/.config/git/config` by its physical checkout path, since sandboxes that allow the
-  standard git config paths deny an include outside them and the `~/.dotfiles` hop. `~/.claude/CLAUDE.md` is copied verbatim
+  standard git config paths deny an include outside them and the `~/.dotfiles` hop. `~/.claude/CLAUDE.md` is a rendered plain file
   instead: Claude Code drops every `@import` in a memory file that is itself a symlink, and
-  a stub cannot serve because the nested `@AGENTS.md` must resolve in `~/.claude`, beside
-  the AGENTS.md link, not beside the profile file; the copy converges by rerunning the
-  installer. The desktop wallpaper HEIC is copied too: macOS ignores a symlinked HEIC's
+  its `@AGENTS.md` must resolve in `~/.claude`, beside the AGENTS.md link. The desktop wallpaper HEIC is copied too: macOS ignores a symlinked HEIC's
   time-of-day schedule.
-- Agent rules live in AGENTS.md files, never in a profile `CLAUDE.md`, which only imports
-  them (`ai/test.sh` pins this), so Codex gets every rule too. Profile-only rules go in
+- Agent rules live in AGENTS.md files, never in a `CLAUDE.md`, which `ai/install.sh` renders
+  as imports alone (`ai/test.sh` pins this), so Codex gets every rule too. Profile-only rules go in
   `profiles/<name>/AGENTS.md` and reach only that profile or its declared AI descendants
   (`ai/test.sh` pins isolation); Codex reads one global
   file with no imports, so `ai/install.sh` renders shared plus profile rules into it.

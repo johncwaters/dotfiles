@@ -39,7 +39,7 @@ if (process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process
   }
   const plan = [];
   for (const sourceProfile of profileLineage(profileName)) plan.push(["include-profile", sourceProfile]);
-  for (const relativePath of ["CLAUDE.md", "AGENTS.md", "review-checklist.md", "owned-repos.txt", "hooks", "settings.overlay.json", "codex-hooks.json", "mcp-servers.json"]) {
+  for (const relativePath of ["AGENTS.md", "review-checklist.md", "owned-repos.txt", "hooks", "settings.overlay.json", "codex-hooks.json", "mcp-servers.json"]) {
     const sourcePath = profileSource(profileName, relativePath);
     if (sourcePath) plan.push([`source-${relativePath}`, path.relative(fileURLToPath(new URL("../", import.meta.url)), sourcePath)]);
   }

@@ -52,11 +52,6 @@ checkProfileClaudeSettings() {
   local profileName="$1"
   local profileOverlayPath
   profileOverlayPath="$(node "$repoRoot/ai/profile-config.mjs" "$profileName" settings.overlay.json)"
-  if [[ ! -f "$profileOverlayPath" ]]; then
-    fail "$profileName has Claude settings for its ai topic"
-    return
-  fi
-  pass "$profileName has Claude settings for its ai topic"
   local renderedProfileSettingsPath="$sandbox/rendered-ai-settings.$profileName.json"
   HOME="$sandbox" node "$repoRoot/ai/render-settings.mjs" \
     "$repoRoot/ai/settings.base.json" "$profileOverlayPath" \
@@ -88,19 +83,19 @@ for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
   fi
 done
 
-check "work-server runs only ai and git on Linux, leaving glimmervoid and repos to the devbox provisioner" \
+check "work-server runs only packages, ai and git on Linux, leaving glimmervoid and repos to the devbox provisioner" \
   node - "$repoRoot/profiles/work-server" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const profileDirectory = process.argv[2];
 const readProfileJson = name => JSON.parse(fs.readFileSync(`${profileDirectory}/${name}`, "utf8"));
-assert.deepEqual(readProfileJson("profile.json"), { platform: "linux", topics: ["ai", "git"] });
-for (const excludedFile of ["glimmervoid.overlay.json", "mcp-servers.json", "packages.txt"]) {
+assert.deepEqual(readProfileJson("profile.json"), { platform: "linux", topics: ["packages", "ai", "git"] });
+for (const excludedFile of ["glimmervoid.overlay.json", "mcp-servers.json"]) {
   assert.equal(fs.existsSync(`${profileDirectory}/${excludedFile}`), false);
 }
 JS
 
-for sharedWorkFile in CLAUDE.md AGENTS.md settings.overlay.json hooks skills; do
+for sharedWorkFile in AGENTS.md settings.overlay.json hooks skills; do
   check "work-server inherits work $sharedWorkFile without copying agent additions" \
     test "$(node "$repoRoot/ai/profile-config.mjs" work-server "$sharedWorkFile")" = \
     "$repoRoot/profiles/work/$sharedWorkFile"
@@ -219,7 +214,7 @@ check "glimmervoid creates no temporary empty overlay" \
   bash -c '! grep -q "glimmervoid-empty-overlay" "$1/glimmervoid/install.sh"' _ "$repoRoot"
 
 check "no profile or ai file mandates an /org-* plugin command" \
-  bash -c '! grep -rq "/org-" "$1"/profiles/*/CLAUDE.md "$1"/ai' _ "$repoRoot"
+  bash -c '! grep -rq "/org-" "$1"/profiles/*/AGENTS.md "$1"/ai' _ "$repoRoot"
 check "no profile overlay enables the retired example-org plugin" \
   bash -c '! grep -qil example-org "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the work overlay gates exec writes on every declared MCP server because the plugin that carried the gate is off" \

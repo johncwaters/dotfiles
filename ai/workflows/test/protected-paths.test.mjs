@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { protectedPaths } from "../../protected-paths.mjs";
 
 const aiDirectory = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
-const repoRoot = path.dirname(aiDirectory);
 const expectedClaudeRules = protectedPaths.map((protectedPath) => `Read(${protectedPath.path}${protectedPath.kind === "directory" ? "/**" : ""})`);
 const glimmervoidFileEntries = ["~/.glimmervoid/config.json*", "~/.glimmervoid/secrets.env"];
 const wholeGlimmervoidOrTeamReviewPattern = /~\/\.glimmervoid(\/?\*{0,2}["')\\]|\/team-review-)/;
@@ -29,7 +28,7 @@ test("rendered Claude denies match the shared paths and scope Glimmervoid to its
     const renderProcess = spawnSync("node", [
       path.join(aiDirectory, "render-settings.mjs"),
       path.join(aiDirectory, "settings.base.json"),
-      path.join(repoRoot, "profiles/personal/settings.overlay.json"),
+      "",
       settingsPath,
       renderDirectory,
     ], { encoding: "utf8" });

@@ -110,6 +110,14 @@ copyEntry() {
     noteWarned "$label" "not in repo: $repoRelativeSource"
     return 0
   fi
+  writePlainFile "$label" "$destination" copied cat -- "$sourcePath"
+}
+
+writePlainFile() {
+  local label="$1"
+  local destination="$2"
+  local appliedVerb="$3"
+  shift 3
   mkdir -p -- "$(dirname -- "$destination")"
   if pathIsLinkIntoThisRepo "$destination"; then
     rm -f -- "$destination"
@@ -119,8 +127,8 @@ copyEntry() {
   fi
   local stagedPath
   stagedPath="$(mktemp "$(dirname -- "$destination")/.dotfiles-copy.XXXXXX")"
-  cp -f -- "$sourcePath" "$stagedPath"
-  commitStagedFile "$label" "$stagedPath" "$destination" "copied"
+  "$@" > "$stagedPath"
+  commitStagedFile "$label" "$stagedPath" "$destination" "$appliedVerb"
 }
 
 renderJsonTemplate() {

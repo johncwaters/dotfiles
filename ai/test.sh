@@ -619,8 +619,8 @@ check "an absent claude CLI warns when a server needs replacing" outputHas "$mis
 check "an absent Codex CLI with no Codex config is skipped quietly" \
   bash -c '! grep -qE "\[warn\] +Codex (hooks|MCP)" <<< "$1"' _ "$missingClaudeOutput"
 check "an absent claude CLI marks the topic warned" test "$missingClaudeStatus" -eq 1
-check "an absent claude CLI still renders work settings" \
-  cmp -s "$sandbox/.claude/CLAUDE.md" "$stagedRepo/profiles/work/CLAUDE.md"
+check "an absent claude CLI still renders work CLAUDE.md with the profile import" \
+  test "$(cat "$sandbox/.claude/CLAUDE.md")" = $'@AGENTS.md\n@AGENTS.profile.md'
 check "an absent claude CLI preserves managed and unmanaged servers" mcpRuntimeMatches https://drifted.invalid/mcp
 mv "$sandbox/.claude.json" "$sandbox/runtime-settings-aside.json"
 env HOME="$sandbox" DOTFILES_PROFILE=personal NO_COLOR=1 PATH="$gitlessBin" \
@@ -774,7 +774,6 @@ try {
 NODE
 
 mkdir -p "$stagedRepo/profiles/minimal"
-printf '@AGENTS.md\n' > "$stagedRepo/profiles/minimal/CLAUDE.md"
 runTopicInstall "$stagedTopicDir" minimal > /dev/null
 check "a profile without an overlay still gets shared hooks" \
   grep -q load-agents-md.mjs "$sandbox/.claude/settings.json"
@@ -932,23 +931,10 @@ check "every script main guard resolves argv[1] through symlinks" mainGuardsReso
 claudeMdPath="$sandbox/.claude/CLAUDE.md"
 check "CLAUDE.md is a plain file, never a symlink" \
   bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$claudeMdPath"
-check "CLAUDE.md matches the profile copy" \
-  cmp -s "$claudeMdPath" "$repoRoot/profiles/personal/CLAUDE.md"
-
-profileClaudeMdImportsOnlyAgentsFiles() {
-  local profileDirectory="$1"
-  local expectedImports="@AGENTS.md"
-  if [[ -n "$(node "$repoRoot/ai/profile-config.mjs" "$(basename -- "$profileDirectory")" AGENTS.md)" ]]; then
-    expectedImports+=$'\n@AGENTS.profile.md'
-  fi
-  [[ "$(cat -- "$(node "$repoRoot/ai/profile-config.mjs" "$(basename -- "$profileDirectory")" CLAUDE.md)")" == "$expectedImports" ]]
-}
-
-for profileDirectory in "$repoRoot"/profiles/*/; do
-  profileName="$(basename -- "$profileDirectory")"
-  check "$profileName CLAUDE.md only imports its AGENTS files, so profile rules live in AGENTS.md" \
-    profileClaudeMdImportsOnlyAgentsFiles "$profileDirectory"
-done
+check "a profile without its own AGENTS.md gets a CLAUDE.md importing only the shared rules" \
+  test "$(cat "$claudeMdPath")" = "@AGENTS.md"
+check "no profile carries a CLAUDE.md, so profile rules live in AGENTS.md" \
+  bash -c '! compgen -G "$1/profiles/*/CLAUDE.md" > /dev/null' _ "$repoRoot"
 
 check "runtime project state survives" test -f "$sandbox/.claude/projects/live-work/state.json"
 check "credentials survive" test -f "$sandbox/.claude/.credentials.json"
@@ -977,6 +963,9 @@ renderKeepsEveryBasePermission() {
 }
 
 overlayDefinesNoDenyList() {
+  if [[ -z "$1" ]]; then
+    return 0
+  fi
   node -e 'const overlaySettings=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlaySettings.permissions&&overlaySettings.permissions.deny?1:0)' "$1"
 }
 
@@ -1014,7 +1003,7 @@ check "the later backup holds the later content" grep -q 'later hand written not
 check "the first backup is untouched" grep -q 'pre-existing user notes' "$sandbox/.claude/AGENTS.md.pre-dotfiles.bak"
 
 rm -f "$claudeMdPath"
-ln -s "$sandbox/.dotfiles/profiles/personal/CLAUDE.md" "$claudeMdPath"
+ln -s "$sandbox/.dotfiles/ai/AGENTS.md" "$claudeMdPath"
 runTopicInstall "$stagedTopicDir" > /dev/null
 check "an old CLAUDE.md symlink converges to a plain file" \
   bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$claudeMdPath"
@@ -1023,10 +1012,10 @@ check "converging the old symlink leaves no backup" \
 
 printf 'hand edited claude memory\n' > "$claudeMdPath"
 runTopicInstall "$stagedTopicDir" > /dev/null
-check "a hand edited CLAUDE.md is backed up before the copy returns" \
+check "a hand edited CLAUDE.md is backed up before the rendered file returns" \
   grep -qs 'hand edited claude memory' "$claudeMdPath".pre-dotfiles.bak*
-check "the copy wins over the hand edit" \
-  cmp -s "$claudeMdPath" "$repoRoot/profiles/personal/CLAUDE.md"
+check "the rendered file wins over the hand edit" \
+  test "$(cat "$claudeMdPath")" = "@AGENTS.md"
 
 checkRerunIsQuiet "second run reports no changes" "$(runTopicInstall "$stagedTopicDir")"
 
