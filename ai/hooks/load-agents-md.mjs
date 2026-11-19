@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { allow, readPayload } from "./hook-io.mjs";
+import { describeSessionOwnership } from "./repo-ownership.mjs";
 
 const MAX_HOOK_OUTPUT_BYTES_BELOW_PREVIEW_CUTOFF = 9000;
 const MAX_IMPORT_HOPS = 5;
@@ -294,16 +295,34 @@ function readUnclaimedFiles(claimDirectory, agentsPaths) {
     .filter((readableFile) => readableFile.agentsContent !== null);
 }
 
-function emitContext(hookEventName, framing, claimDirectory, agentsPaths) {
+function emitContext(hookEventName, framing, claimDirectory, agentsPaths, ownershipLine = "") {
+  const framingWithOwnership = ownershipLine ? { ...framing, lead: `${ownershipLine}\n\n${framing.lead}` } : framing;
   const readableFiles = readUnclaimedFiles(claimDirectory, agentsPaths);
-  const layout = layoutWithinBudget(hookEventName, framing, readableFiles);
+  const layout = layoutWithinBudget(hookEventName, framingWithOwnership, readableFiles);
   const inlineFiles = layout.inlineFiles.filter((inlineFile) => claimOnce(claimDirectory, inlineFile.agentsPath));
   const pointerPaths = layout.pointerPaths.filter((pointerPath) => claimOnce(claimDirectory, pointerPath));
-  if (inlineFiles.length === 0 && pointerPaths.length === 0) {
+  if (inlineFiles.length > 0 || pointerPaths.length > 0) {
+    process.stdout.write(serializeHookOutput(hookEventName, framingWithOwnership, inlineFiles, pointerPaths));
+    process.exit(0);
+  }
+  if (!ownershipLine) {
     allow();
   }
-  process.stdout.write(serializeHookOutput(hookEventName, framing, inlineFiles, pointerPaths));
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: ownershipLine } }));
   process.exit(0);
+}
+
+function ownershipLineFor(workingDirectory) {
+  const sessionOwnership = describeSessionOwnership(workingDirectory);
+  if (!sessionOwnership) return "";
+  const foreignRule = "no repo-level enforcement, lint adoption, comment purge, or refactor of existing code beyond the task there; your code_style rules still bind every line you write.";
+  if (sessionOwnership.ownership === "owned") {
+    return "Repo ownership: owned by the carbon unit. Repo-level enforcement (ratchet baselines, comment audits, retro-driven checks) and refactors of existing code are on here.";
+  }
+  if (sessionOwnership.ownedPaths.length === 0) {
+    return `Repo ownership: foreign, owned by another team: ${foreignRule}`;
+  }
+  return `Repo ownership: foreign except ${sessionOwnership.ownedPaths.join(", ")}, which the carbon unit owns and where repo-level enforcement is on. Outside those paths: ${foreignRule}`;
 }
 
 function trustedRepositoryRootFor(payload) {
@@ -324,7 +343,7 @@ function handleSessionStart(payload) {
   }
   const startDirectory = realPathOrGiven(path.resolve(payload.cwd || process.cwd()));
   const { repositoryRoot, agentsPaths } = agentsFilesShadowedByClaudeMemory(startDirectory);
-  emitContext("SessionStart", framingFor(payload, repositoryRoot), claimDirectory, agentsPaths);
+  emitContext("SessionStart", framingFor(payload, repositoryRoot), claimDirectory, agentsPaths, ownershipLineFor(startDirectory));
 }
 
 function isWholeFileRead(toolInput) {

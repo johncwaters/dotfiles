@@ -102,6 +102,7 @@ export function isPathOwned(absolutePath, entries = readOwnedEntries()) {
 }
 
 export function describeSessionOwnership(workingDirectory, entries = readOwnedEntries()) {
+  if (runGit(workingDirectory, ["rev-parse", "--show-toplevel"]) === null) return null;
   const repository = readRepository(workingDirectory);
   if (!repository) return { ownership: "foreign", ownedPaths: [] };
   const matchingEntries = entries.filter((entry) => remoteMatches(entry.remote, repository.remote));

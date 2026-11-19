@@ -53,9 +53,18 @@ function readAbsolutePathHook(absolutePath, options) {
   return injectedContext(readHookOutput(absolutePath, options));
 }
 
-function sessionStartHook(source) {
+function sessionStartHook(source, environment = {}) {
   const payload = { hook_event_name: "SessionStart", source, session_id: `session-${sessionCounter}`, cwd: workspace };
-  return injectedContext(runHook("load-agents-md.mjs", payload, { XDG_STATE_HOME: stateHomeDirectory }));
+  return injectedContext(runHook("load-agents-md.mjs", payload, { XDG_STATE_HOME: stateHomeDirectory, ...environment }));
+}
+
+function sessionStartInCloneOf(remoteUrl) {
+  fs.rmSync(path.join(workspace, ".git"), { recursive: true, force: true });
+  spawnSync("git", ["init", "-q", workspace]);
+  spawnSync("git", ["-C", workspace, "remote", "add", "origin", remoteUrl]);
+  const ownedListPath = path.join(stateHomeDirectory, "owned-repos.txt");
+  fs.writeFileSync(ownedListPath, "github.com/me/*\ngithub.com/team/mono:apps/mine/**\n");
+  return sessionStartHook("startup", { DOTFILES_OWNED_REPOS_FILE: ownedListPath });
 }
 
 function readHookWithDeadline(relativePath, deadlineMs) {
@@ -317,4 +326,10 @@ test("oversized import target is skipped so imports inside it do not count", () 
   writeRepoFile("code.go", "package main\n");
 
   assert.match(readHook("code.go"), /ROOT-RULE/);
+});
+
+test("session start names an owned repo, a foreign repo, and the owned paths inside a foreign monorepo", () => {
+  assert.match(sessionStartInCloneOf("git@github.com:me/project.git"), /^Repo ownership: owned by the carbon unit\./);
+  assert.match(sessionStartInCloneOf("https://github.com/other/project.git"), /^Repo ownership: foreign, owned by another team: no repo-level enforcement.*code_style rules still bind/);
+  assert.match(sessionStartInCloneOf("https://github.com/team/mono.git"), /^Repo ownership: foreign except apps\/mine\/\*\*, which the carbon unit owns/);
 });
