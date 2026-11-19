@@ -215,6 +215,7 @@ node -e '
   const settingsPath = process.argv[1];
   const settings = JSON.parse(filesystem.readFileSync(settingsPath, "utf8"));
   settings.enabledPlugins["companion@caveman"] = true;
+  settings.enabledPlugins["folder-mod@dotfiles"] = true;
   settings.enabledPlugins["disabled@other"] = false;
   filesystem.writeFileSync(settingsPath, JSON.stringify(settings));
 ' "$stagedRepo/ai/settings.base.json"
@@ -228,7 +229,7 @@ writePluginMarketplace() {
   printf '{"name":"caveman","version":"%s"}\n' "$1" > "$pluginMarketplacePath/.claude-plugin/plugin.json"
 }
 writeInstalledPlugins() {
-  printf '{"installed":[{"id":"caveman@caveman","version":"%s"},{"id":"disabled@other","version":"1.0.0"},{"id":"companion@caveman","version":"%s"}],"available":[{"pluginId":"disabled@other","name":"disabled","marketplaceName":"other"}]}\n' \
+  printf '{"installed":[{"id":"caveman@caveman","version":"%s"},{"id":"disabled@other","version":"1.0.0"},{"id":"companion@caveman","version":"%s"},{"id":"folder-mod@dotfiles","version":"0.1.0","readFromFolder":"/folder/mods/folder-mod","folderVersion":"0.1.0"}],"available":[{"pluginId":"disabled@other","name":"disabled","marketplaceName":"other"}]}\n' \
     "$1" "$2" > "$sandbox/.plugin-list.json"
 }
 writeInstalledPlugins 2.1.0 2.1.0
@@ -240,6 +241,7 @@ check "same-major plugin resolved from the marketplace entry applies" grep -qxF 
 check "same-major plugins are never held" test ! -e "$pluginHeldPath"
 check "disabled plugin never updates nightly" bash -c '! grep -qF disabled "$1"' _ "$mcpCommandLog"
 check "disabled plugin records no failure" test ! -e "$pluginFailedPath"
+check "a plugin read from its folder refreshes its marketplace and is neither updated nor failed" bash -c 'grep -qxF "$3" "$1" && ! grep -qF "$4" "$1" && ! grep -qsF folder-mod "$2"' _ "$mcpCommandLog" "$pluginFailedPath" '["plugin","marketplace","update","dotfiles"]' '["plugin","update","folder-mod@dotfiles"]'
 check "plugin marketplace refreshes once" test "$(grep -cxF '["plugin","marketplace","update","caveman"]' "$mcpCommandLog")" -eq 1
 check "plugins are listed once with available versions" test "$(grep -cxF '["plugin","list","--json","--available"]' "$mcpCommandLog")" -eq 1
 writeInstalledPlugins 11ddc0c9813c 2.1.0

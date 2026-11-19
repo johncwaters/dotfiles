@@ -639,6 +639,7 @@ upgradeEnabledClaudePlugins() {
       return pluginManifest?.version;
     };
     for (const entry of listing.installed) {
+      if (entry.readFromFolder) continue;
       console.log([entry.id, entry.version || "unknown", resolveAvailableVersion(entry.id) || "unknown"].join("\t"));
     }
   ' "$claudeHome/plugins/marketplaces" <<< "$pluginListing")"; then

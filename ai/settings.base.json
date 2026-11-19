@@ -14,6 +14,7 @@
   },
   "enabledPlugins": {
     "caveman@caveman": true,
+    "subagent-hud@dotfiles": true,
     "cc-plugin-diff@builtin": false
   },
   "extraKnownMarketplaces": {
@@ -21,6 +22,12 @@
       "source": {
         "source": "github",
         "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "dotfiles": {
+      "source": {
+        "source": "directory",
+        "path": "{{HOME}}/.dotfiles/ai/mods"
       }
     }
   },
@@ -192,10 +199,6 @@
   "statusLine": {
     "type": "command",
     "command": "node {{HOME}}/.claude/hud/hud.mjs"
-  },
-  "subagentStatusLine": {
-    "type": "command",
-    "command": "node {{HOME}}/.claude/hud/subagent-hud.mjs"
   },
   "autoCompactWindow": 300000,
   "modelSettings": {
