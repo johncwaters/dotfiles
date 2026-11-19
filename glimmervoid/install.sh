@@ -31,36 +31,6 @@ selectedGlimmervoidOverlayPath=""
 selectedGlimmervoidSeedDescription=""
 selectedGlimmervoidWarningDescription=""
 
-glimmervoidProfileSettingsPathFor() {
-  printf '%s/profiles/%s/glimmervoid.json\n' "$dotfilesRepo" "$1"
-}
-
-profileServesGlimmervoid() {
-  local servesSetting
-  servesSetting="$(readProfileSetting "$(glimmervoidProfileSettingsPathFor "$1")" serves)" || return 1
-  [[ "$servesSetting" == "true" ]]
-}
-
-glimmervoidProfileSettingsAreUsable() {
-  local settingsPath
-  local servesSetting
-  if [[ -z "${profileName:-}" ]]; then
-    noteWarned "glimmervoid profile" "no profile resolved, config and service skipped"
-    return 1
-  fi
-  settingsPath="$(glimmervoidProfileSettingsPathFor "$profileName")"
-  if [[ ! -f "$settingsPath" ]]; then
-    noteWarned "glimmervoid profile" "no $settingsPath, config and service skipped"
-    return 1
-  fi
-  servesSetting="$(readProfileSetting "$settingsPath" serves)" || servesSetting=""
-  case "$servesSetting" in
-    true | false) return 0 ;;
-  esac
-  noteWarned "glimmervoid profile" "profiles/$profileName/glimmervoid.json has no usable serves setting"
-  return 1
-}
-
 # A symlinked ~/.glimmervoid points chmod and every write at a path this topic never chose.
 glimmervoidConfigDirectoryIsUsable() {
   if [[ -L "$glimmervoidConfigDirectory" ]]; then
@@ -558,7 +528,8 @@ applyGlimmervoidSharedSettings() {
   fi
 }
 
-if ! glimmervoidProfileSettingsAreUsable; then
+if [[ -z "${profileName:-}" ]]; then
+  noteWarned "glimmervoid profile" "no profile resolved, config and service skipped"
   finishTopic
 fi
 
@@ -578,11 +549,6 @@ protectGlimmervoidConfig
 glimmervoidBinaryIsInstalled=0
 if installGlimmervoidBinary; then
   glimmervoidBinaryIsInstalled=1
-fi
-
-if ! profileServesGlimmervoid "$profileName"; then
-  notePresent "glimmervoid service" "skipped, profile does not serve glimmervoid"
-  finishTopic
 fi
 
 reportGlimmervoidSecrets

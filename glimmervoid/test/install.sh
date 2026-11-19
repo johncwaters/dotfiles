@@ -201,10 +201,6 @@ check "an unresolved profile warns instead of choosing a seed" \
 check "an unresolved profile seeds no config" test ! -e "$unresolvedProfileHome/.glimmervoid/config.json"
 check "an unresolved profile exits non-zero" test "$unresolvedProfileStatus" -eq 1
 
-missingProfileOutput="$(runInstall "$unresolvedProfileHome" missingprofile)" || true
-check "a missing profile settings warning prints the checkout path" \
-  outputHas "$missingProfileOutput" "$repoRoot/profiles/missingprofile/glimmervoid.json"
-
 localSeedPath="$toolingHome/machine-local-glimmervoid-seed.json"
 printf '{ "port": 4100, "repoRoots": ["{{HOME}}/LocalProjects"], "projects": [] }\n' \
   > "$localSeedPath"
