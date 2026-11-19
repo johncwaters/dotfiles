@@ -8,7 +8,6 @@ export PATH="$HOME/.glimmervoid/bin:$HOME/.local/bin:$PATH"
 glimmervoidDirectory="$HOME/.glimmervoid"
 glimmervoidBinaryPath="$glimmervoidDirectory/bin/glimmervoid"
 glimmervoidReleasesUrl="https://github.com/johncwaters/glimmervoid/releases"
-npmGlimmervoidDirectory="$HOME/.local/lib/node_modules/glimmervoid"
 hasUpdatedApt=0
 hasFailedGlimmervoidInstall=0
 devboxFallbackReleaseStatus=75
@@ -229,14 +228,6 @@ returnDevboxCheckoutToMain() {
   reportDevboxItem installed dotfiles "left $strayBranch for main; it held no commits beyond origin/main"
 }
 
-removeRetiredDevboxSnapshot() {
-  local retiredPath
-  for retiredPath in "$HOME/dotfiles-snapshot" "$HOME/dotfiles-snapshot.new" "$HOME/dotfiles-snapshot.old"; do
-    [[ -e "$retiredPath" || -L "$retiredPath" ]] || continue
-    rm -rf -- "$retiredPath"
-    reportDevboxItem installed "dotfiles snapshot" "removed ~/${retiredPath##*/}"
-  done
-}
 
 installDevboxDotfiles() (
   clonePath="$HOME/Projects/dotfiles"
@@ -262,7 +253,6 @@ installDevboxDotfiles() (
   returnDevboxCheckoutToMain "$clonePath" < /dev/null
   if devboxPathsResolveAlike "$dotfilesAlias" "$clonePath" && bash "$clonePath/bin/dot" status > /dev/null 2>&1 < /dev/null; then
     reportDevboxItem present dotfiles "$(git -C "$clonePath" rev-parse HEAD)"
-    removeRetiredDevboxSnapshot
     return 0
   fi
   if [[ -L "$dotfilesAlias" ]] && ! devboxPathsResolveAlike "$dotfilesAlias" "$clonePath"; then
@@ -271,7 +261,9 @@ installDevboxDotfiles() (
   linkDevboxTemplateRepository
   local recordBeforeConverge recordAfterConverge convergeOutcome
   recordBeforeConverge="$(cat "$convergedRecord" 2>/dev/null || true)"
-  PATH="/tmp/coder-script-data/bin:$HOME/.local/bin:$PATH" DOTFILES_REQUIRE_ORIGIN=1 \
+  mkdir -p -- "$HOME/.local/lib/node_modules"
+  # The server launch PATH carries ~/.local/bin, not ~/.npm-global/bin, so npm globals install there.
+  PATH="/tmp/coder-script-data/bin:$HOME/.local/bin:$PATH" DOTFILES_REQUIRE_ORIGIN=1 NPM_CONFIG_PREFIX="$HOME/.local" \
     bash "$clonePath/bin/dot" --profile work-server >> "$bootstrapLog" 2>&1 < /dev/null 9>&-
   recordAfterConverge="$(cat "$convergedRecord" 2>/dev/null || true)"
   convergeOutcome="$(awk '{ print $4 }' <<< "$recordAfterConverge")"
@@ -283,7 +275,6 @@ installDevboxDotfiles() (
     return 0
   fi
   reportDevboxItem installed dotfiles "$(git -C "$clonePath" rev-parse HEAD); work-server converged"
-  removeRetiredDevboxSnapshot
 )
 
 devboxPortListens() {
@@ -377,20 +368,6 @@ devboxListenerRunsReleaseBinary() {
 }
 
 # A live npm server's hook relays resolve into its package directory, so it is only removed once no server runs from it.
-retireDevboxNpmGlimmervoid() {
-  if [[ ! -e "$npmGlimmervoidDirectory" ]] || [[ -z "$(installedDevboxGlimmervoidVersion)" ]]; then
-    return 0
-  fi
-  if devboxPortListens 3456 && ! devboxListenerRunsReleaseBinary; then
-    reportDevboxItem warned "glimmervoid npm package" "still serving; run devbox restart-glimmervoid to retire it"
-    return 0
-  fi
-  if npm uninstall -g --prefix "$HOME/.local" glimmervoid >> "$glimmervoidDirectory/provision.log" 2>&1 < /dev/null 9>&-; then
-    reportDevboxItem installed "glimmervoid npm package" "removed from ~/.local"
-    return 0
-  fi
-  reportDevboxItem warned "glimmervoid npm package" "uninstall failed; see ~/.glimmervoid/provision.log"
-}
 
 installDevboxGlimmervoid() {
   local installedVersion keptVersion
@@ -406,7 +383,6 @@ installDevboxGlimmervoid() {
   fi
   if devboxGlimmervoidMeetsMinimum "$installedVersion"; then
     reportDevboxItem present glimmervoid "$installedVersion"
-    retireDevboxNpmGlimmervoid
     return 0
   fi
   if [[ -n "$installedVersion" ]] && devboxPortListens 3456; then
@@ -415,7 +391,6 @@ installDevboxGlimmervoid() {
   fi
   if installDevboxGlimmervoidRelease && [[ "$(installedDevboxGlimmervoidVersion)" == "$glimmervoidVersion" ]]; then
     reportDevboxItem installed glimmervoid "$glimmervoidVersion"
-    retireDevboxNpmGlimmervoid
     return 0
   fi
   hasFailedGlimmervoidInstall=1
@@ -428,74 +403,10 @@ installDevboxGlimmervoid() {
   reportDevboxItem warned glimmervoid "install of $glimmervoidVersion failed; keeping installed $fallbackVersion instead; see ~/.glimmervoid/provision.log"
 }
 
-installDevboxGlobals() {
-  installDevboxGlimmervoid
-  if command -v codex >/dev/null 2>&1; then
-    reportDevboxItem present Codex "on PATH"
-    return 0
-  fi
-  npm install -g --prefix "$HOME/.local" @openai/codex >> "$glimmervoidDirectory/provision.log" 2>&1
-  reportDevboxItem installed Codex "on PATH"
-}
 
-installDevboxSandboxTools() {
-  local toolName
-  local packageName
-  for toolName in bwrap socat; do
-    if command -v "$toolName" >/dev/null 2>&1; then
-      reportDevboxItem present "$toolName" "on PATH"
-      continue
-    fi
-    packageName="$toolName"
-    if [[ "$toolName" == bwrap ]]; then packageName=bubblewrap; fi
-    if installDevboxAptPackages "$packageName"; then
-      reportDevboxItem installed "$toolName" "on PATH"
-      continue
-    fi
-    reportDevboxItem warned "$toolName" "optional sandbox tool unavailable; see ~/.glimmervoid/provision.log"
-  done
-}
 
-installDevboxWorkToolchain() {
-  local -A aptPackageByCommand=([ruby]=ruby-full [java]=openjdk-21-jdk-headless [mvn]=maven [sqlite3]=sqlite3)
-  local -A npmPackageByCommand=([biome]=@biomejs/biome [tsc]=typescript [typescript-language-server]=typescript-language-server)
-  local commandName
-  local missingAptPackages=()
-  local missingNpmPackages=()
-  for commandName in "${!aptPackageByCommand[@]}"; do
-    command -v "$commandName" >/dev/null 2>&1 || missingAptPackages+=("${aptPackageByCommand[$commandName]}")
-  done
-  python3 -c 'import yaml' >/dev/null 2>&1 || missingAptPackages+=(python3-yaml)
-  for commandName in "${!npmPackageByCommand[@]}"; do
-    command -v "$commandName" >/dev/null 2>&1 || missingNpmPackages+=("${npmPackageByCommand[$commandName]}")
-  done
-  reportDevboxToolchainBatch apt "${missingAptPackages[@]}"
-  reportDevboxToolchainBatch npm "${missingNpmPackages[@]}"
-}
 
-reportDevboxToolchainBatch() {
-  local packageManager="$1"
-  shift
-  if (($# == 0)); then
-    reportDevboxItem present "work toolchain ($packageManager)" "on PATH"
-    return 0
-  fi
-  if installDevboxToolchainPackages "$packageManager" "$@"; then
-    reportDevboxItem installed "work toolchain ($packageManager)" "$*"
-    return 0
-  fi
-  reportDevboxItem warned "work toolchain ($packageManager)" "install of $* failed; retried next run; see ~/.glimmervoid/provision.log"
-}
 
-installDevboxToolchainPackages() {
-  local packageManager="$1"
-  shift
-  if [[ "$packageManager" == apt ]]; then
-    installDevboxAptPackages "$@"
-    return
-  fi
-  npm install -g --prefix "$HOME/.local" "$@" >> "$glimmervoidDirectory/provision.log" 2>&1 < /dev/null 9>&-
-}
 
 installDevboxGhWrapper() {
   if [[ ! -x /usr/bin/gh ]]; then
@@ -666,9 +577,7 @@ installDevboxPrerequisites() {
   touch "$glimmervoidDirectory/provision.log"
   chmod 600 "$glimmervoidDirectory/provision.log"
   installDevboxNode
-  installDevboxGlobals
-  installDevboxSandboxTools
-  installDevboxWorkToolchain
+  installDevboxGlimmervoid
   installDevboxGhWrapper
   installDevboxPersonalGitAuth
   installDevboxModernGit

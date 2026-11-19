@@ -28,6 +28,7 @@ knownPackageGroups=(
   dmgs
   npm-globals
   python-tools
+  apt-packages
 )
 
 packageGroupIsKnown() {
@@ -545,6 +546,40 @@ ensureNpmGlobals() {
   done
 }
 
+installProfileAptPackages() {
+  local manager
+  local packageName
+  local installedPackageName
+  local installedPackageStatus
+  local -A installedAptPackages=()
+  local missingPackageNames=()
+  manager="$(detectPackageManager)" || manager=""
+  if [[ "$manager" != apt-get ]]; then
+    notePresent "apt packages" "skipped, requires apt"
+    return 0
+  fi
+  while IFS=$'\t' read -r installedPackageName installedPackageStatus; do
+    [[ "$installedPackageStatus" == "install ok installed" ]] && installedAptPackages["$installedPackageName"]=1
+  done < <(dpkg-query -W -f='${Package}\t${Status}\n' 2>/dev/null)
+  while read -r packageName; do
+    [[ -n "${installedAptPackages[$packageName]:-}" ]] || missingPackageNames+=("$packageName")
+  done < <(readProfilePackageList apt-packages.txt)
+  if ((${#missingPackageNames[@]} == 0)); then
+    notePresent "apt packages" "already installed"
+    return 0
+  fi
+  if ! canInstallSystemPackages; then
+    noteWarned "apt packages" "apt-get needs root or sudo for ${missingPackageNames[*]}"
+    return 0
+  fi
+  noteStarting "apt packages" "installing ${missingPackageNames[*]}"
+  if installSystemPackagesLogged apt-get "${missingPackageNames[@]}"; then
+    noteInstalled "apt packages" "${missingPackageNames[*]}"
+    return 0
+  fi
+  noteWarned "apt packages" "install of ${missingPackageNames[*]} failed: ${lastPackageInstallFailure:-see apt output}"
+}
+
 readProfilePackageList() {
   local listName="$1"
   readPackageList "$packagesDirectory/$listName"
@@ -773,6 +808,11 @@ fi
 if packageGroupEnabled "python-tools"; then
   writeSection "Python tools"
   installPythonTools
+fi
+
+if packageGroupEnabled "apt-packages"; then
+  writeSection "apt packages"
+  installProfileAptPackages
 fi
 
 finishTopic

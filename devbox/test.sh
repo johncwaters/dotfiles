@@ -669,8 +669,7 @@ esac
 exec "$DOTFILES_TEST_NODE_PATH" "$@"
 STUB
 glimmervoidBinaryStubPath="$sandbox/.glimmervoid/bin/glimmervoid"
-npmGlimmervoidPackageDirectory="$sandbox/.local/lib/node_modules/glimmervoid"
-mkdir -p "${glimmervoidBinaryStubPath%/*}" "$npmGlimmervoidPackageDirectory"
+mkdir -p "${glimmervoidBinaryStubPath%/*}"
 cat > "$glimmervoidBinaryStubPath" <<'JS'
 #!/usr/bin/env node
 const fs = require("node:fs");
@@ -692,28 +691,10 @@ writeStub codex <<'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
-writeStub bwrap <<'STUB'
-#!/usr/bin/env bash
-exit 0
-STUB
-writeStub socat <<'STUB'
-#!/usr/bin/env bash
-exit 0
-STUB
-for toolchainCommand in ruby java mvn sqlite3 python3 biome tsc typescript-language-server; do
-  printf '#!/usr/bin/env bash\nexit 0\n' | writeStub "$toolchainCommand"
-done
 writeStub npm <<'STUB'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 case "$*" in
-  "uninstall -g --prefix $HOME/.local glimmervoid") rm -rf "$HOME/.local/lib/node_modules/glimmervoid" ;;
-  *@openai/codex*) cp "$DOTFILES_TEST_STATE/available/codex" "$DOTFILES_TEST_STUB_BIN/codex" ;;
-  *typescript-language-server*)
-    for npmCommand in biome tsc typescript-language-server; do
-      cp "$DOTFILES_TEST_STATE/available/$npmCommand" "$DOTFILES_TEST_STUB_BIN/$npmCommand"
-    done
-    ;;
   *) exit 1 ;;
 esac
 STUB
@@ -736,16 +717,6 @@ writeStub apt-get <<'STUB'
 #!/usr/bin/env bash
 printf 'apt-get %s\n' "$*" >> "$DOTFILES_TEST_LOG"
 case "$*" in
-  *bubblewrap*)
-    [[ ! -f "$DOTFILES_TEST_STATE/sandbox-install-failed" ]] || exit 1
-    cp "$DOTFILES_TEST_STATE/available/bwrap" "$DOTFILES_TEST_STUB_BIN/bwrap"
-    ;;
-  *socat*) cp "$DOTFILES_TEST_STATE/available/socat" "$DOTFILES_TEST_STUB_BIN/socat" ;;
-  *maven*)
-    for aptCommand in ruby java mvn sqlite3 python3; do
-      cp "$DOTFILES_TEST_STATE/available/$aptCommand" "$DOTFILES_TEST_STUB_BIN/$aptCommand"
-    done
-    ;;
   *" git") printf '2.55.0\n' > "$DOTFILES_TEST_STATE/git-version" ;;
 esac
 STUB
@@ -855,19 +826,17 @@ check "the ensure after a failed first converge bootstraps again" logHas 'bootst
 check "the ensure after a failed first converge reuses the clone" logLacks 'git clone --quiet -- https://github.com/johncwaters/dotfiles.git'
 
 startEmptyRemoteHome
-mkdir -p "$remoteHome/dotfiles-snapshot/script" "$remoteHome/dotfiles-snapshot.old" "$remoteHome/dotfiles-snapshot.new" "${remoteConvergedRecord%/*}"
-touch "$remoteHome/dotfiles-snapshot/script/bootstrap"
-ln -s "$remoteHome/dotfiles-snapshot" "$remoteHome/.dotfiles"
+mkdir -p "$remoteHome/stale-dotfiles/script" "${remoteConvergedRecord%/*}"
+touch "$remoteHome/stale-dotfiles/script/bootstrap"
+ln -s "$remoteHome/stale-dotfiles" "$remoteHome/.dotfiles"
 printf 'unknown work-server 2026-10-08T00:00:00Z clean\n' > "$remoteConvergedRecord"
 printf 'Coder PATH setup\n' > "$remoteHome/.bashrc"
 : > "$commandLog"
-failedSnapshotBoxStatus=0
-failedSnapshotBoxOutput="$(runDevbox ensure 2>&1)" || failedSnapshotBoxStatus=$?
-check "a failed converge over a snapshot box leaves ensure succeeding" test "$failedSnapshotBoxStatus" -eq 0
-check "a failed converge over a snapshot box reports dotfiles warned" outputHas "$failedSnapshotBoxOutput" '[warned] dotfiles'
-check "a snapshot box repoints the dotfiles alias at the clone" remoteAliasResolvesToClone
-check "a failed converge keeps every retired snapshot directory" \
-  bash -c '[[ -d "$1/dotfiles-snapshot" && -d "$1/dotfiles-snapshot.new" && -d "$1/dotfiles-snapshot.old" ]]' _ "$remoteHome"
+failedStaleAliasBoxStatus=0
+failedStaleAliasBoxOutput="$(runDevbox ensure 2>&1)" || failedStaleAliasBoxStatus=$?
+check "a failed converge over a stale alias box leaves ensure succeeding" test "$failedStaleAliasBoxStatus" -eq 0
+check "a failed converge over a stale alias box reports dotfiles warned" outputHas "$failedStaleAliasBoxOutput" '[warned] dotfiles'
+check "a stale alias box repoints the dotfiles alias at the clone" remoteAliasResolvesToClone
 check "the box converge holds the provision lock" logHas 'flock -w 120 9'
 check "bootstrap failure evidence is in the private log" grep -q 'converge-probe.*install.sh exited 1' "$remoteBootstrapLog"
 check "bootstrap log has mode 0600" test "$(fileModeOf "$remoteBootstrapLog")" = 600
@@ -886,12 +855,9 @@ rm -rf "$remoteClone"
 : > "$commandLog"
 convergedOutput="$(runDevbox ensure)"
 check "a clean converge reports dotfiles installed" outputHas "$convergedOutput" '[installed] dotfiles'
-check "a snapshot box clones, bootstraps, then syncs repositories before provision" \
+check "a stale alias box clones, bootstraps, then syncs repositories before provision" \
   linesAppearInOrder '^git clone .*johncwaters/dotfiles\.git' '^bootstrap work-server$' \
     "^coder ssh .* sync-repos $workspaceDomain$" "^coder ssh .* provision $workspaceDomain$"
-check "a clean converge removes every retired snapshot directory" \
-  bash -c '[[ ! -e "$1/dotfiles-snapshot" && ! -e "$1/dotfiles-snapshot.new" && ! -e "$1/dotfiles-snapshot.old" ]]' _ "$remoteHome"
-check "a clean converge reports the retired snapshot removed" outputHas "$convergedOutput" '[installed] dotfiles snapshot: removed ~/dotfiles-snapshot'
 check "the converge records the clone HEAD as clean" \
   remoteConvergeRecordIsCleanAt "$("$testGitPath" -C "$dotfilesOriginRepo" rev-parse HEAD)"
 check "the converge makes lasting links through the alias" grep -qx 'committed hook' "$remoteHome/.claude/hooks/converge-probe.mjs"
@@ -961,7 +927,13 @@ printf '{}\n' > node_modules/.package-lock.json
 printf '#!/usr/bin/env bash\nprintf "playwright-core %%s\\n" "$*" >> "$DOTFILES_TEST_LOG"\n' > node_modules/.bin/playwright-core
 chmod +x node_modules/.bin/playwright-core
 STUB
-chmod +x "$remoteLocalBin/claude" "$remoteLocalBin/npm"
+cat > "$remoteLocalBin/dpkg-query" <<'STUB'
+#!/usr/bin/env bash
+while read -r aptPackageName; do
+  printf '%s\tinstall ok installed\n' "$aptPackageName"
+done < "$HOME/.dotfiles/profiles/work-server/apt-packages.txt"
+STUB
+chmod +x "$remoteLocalBin/claude" "$remoteLocalBin/npm" "$remoteLocalBin/dpkg-query"
 cat > "$remoteHome/.gitconfig" <<'GITCONFIG'
 [user]
 	name = Devbox Author
@@ -1170,10 +1142,6 @@ rm -f "$stubState/listening-3456" "$stubState/listening-3457" "$sandbox/.glimmer
 remoteOutput="$( (umask 022; runRemoteProvision) )"
 check "remote provision installs the latest release binary without touching rc files" \
   logHas "glimmervoid-installer 0.29.1 NO_MODIFY_PATH=1"
-check "remote provision retires the npm package once the binary answers" \
-  logHas "npm uninstall -g --prefix $sandbox/.local glimmervoid"
-check "remote provision installs missing Codex under the box home" logHas "npm install -g --prefix $sandbox/.local @openai/codex"
-check "remote provision installs both sandbox packages" bash -c 'grep -q bubblewrap "$1" && grep -q socat "$1"' _ "$commandLog"
 check "remote provision detaches the CLI with nohup and its explicit config" \
   logHas "setsid nohup $glimmervoidBinaryStubPath --config $sandbox/.glimmervoid/config.json"
 check "remote provision without a flox environment never calls flox" logLacks 'flox activate'
@@ -1250,7 +1218,6 @@ cp "$sandbox/.local/bin/gh" "$stubState/original-wrapper"
 : > "$commandLog"
 rerunRemoteOutput="$(runRemoteProvision)"
 check "remote rerun installs no npm package" logLacks 'glimmervoid-installer'
-check "remote rerun installs no sandbox package" logLacks 'bubblewrap'
 check "remote rerun preserves the gh wrapper" cmp -s "$sandbox/.local/bin/gh" "$stubState/original-wrapper"
 check "remote rerun leaves the running server untouched" logLacks 'setsid'
 check "remote rerun reports the running version rather than the upgraded CLI" outputHas "$rerunRemoteOutput" 'already running; 0.28.0; left running'
@@ -1275,12 +1242,6 @@ rm -f "$stubState/listening-3457"
 missingRemoteOutput="$(runRemoteProvision)"
 check "a running server without its remote listener warns without restarting" outputHas "$missingRemoteOutput" 'run devbox restart-glimmervoid'
 check "a running server without its remote listener stays running" logLacks 'setsid'
-
-withdrawCommand bwrap
-touch "$stubState/sandbox-install-failed"
-optionalFailureOutput="$(runRemoteProvision)"
-check "optional sandbox failure does not fail provision" outputHas "$optionalFailureOutput" '[warned] bwrap'
-rm -f "$stubState/sandbox-install-failed"
 
 printf '2.43.0\n' > "$stubState/git-version"
 : > "$commandLog"
@@ -1372,7 +1333,6 @@ startFixtureGlimmervoidServer() {
 }
 
 startFixtureGlimmervoidServer
-mkdir -p "$npmGlimmervoidPackageDirectory"
 : > "$commandLog"
 glimmervoidRestartStatus=0
 glimmervoidRestartOutput="$(runRemoteProvision restart)" || glimmervoidRestartStatus=$?
@@ -1385,20 +1345,9 @@ check "restart installs the latest release after the server stops" \
   test "$(firstLogLineOf 'fixture server stopped')" -lt "$(firstLogLineOf "glimmervoid-installer 0.29.1")"
 check "restart installs the latest release before the server starts" \
   test "$(firstLogLineOf "glimmervoid-installer 0.29.1")" -lt "$(firstLogLineOf 'setsid nohup')"
-check "restart retires the npm package only after the server stops" \
-  test "$(firstLogLineOf 'fixture server stopped')" -lt "$(firstLogLineOf "npm uninstall -g --prefix $sandbox/.local glimmervoid")"
 check "restart leaves the config unmerged while the server runs" grep -q '"port":3000' "$stubState/config-at-stop"
 check "restart merges the config before the server starts" \
   "$testNodePath" -e 'process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).port === 3456 ? 0 : 1)' "$stubState/config-at-start"
-
-startFixtureGlimmervoidServer
-mkdir -p "$npmGlimmervoidPackageDirectory"
-awk '$0 == "case \"$devboxAction\" in" { exit } { print }' "$instrumentedProvisionPath" > "$stubState/instrumented-functions.sh"
-: > "$commandLog"
-liveNpmRetireOutput="$(runInStubbedSandbox "$sandbox" bash -c 'source "$1" prepare coder.dev.posthog.dev; retireDevboxNpmGlimmervoid' _ "$stubState/instrumented-functions.sh")"
-check "a live server run by node keeps its npm package" test -d "$npmGlimmervoidPackageDirectory"
-check "a live server run by node is named as still serving" outputHas "$liveNpmRetireOutput" '[warned] glimmervoid npm package: still serving'
-kill -TERM "$glimmervoidListenerPid" 2>/dev/null || true
 
 startFixtureGlimmervoidServer
 cp "$sandbox/.glimmervoid/config.json" "$stubState/config-before-missing-host-restart"

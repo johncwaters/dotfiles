@@ -80,7 +80,7 @@ The [repository invariants and map](AGENTS.md) cover checkout safety and link ow
 
 ## Profiles
 
-Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `repos.txt`, `npm-globals.txt`, `AGENTS.md`, `CLAUDE.md`,
+Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `apt-packages.txt`, `repos.txt`, `npm-globals.txt`, `AGENTS.md`,
 `skills/`, `hooks/`, `lib/`, `ai.json`, `codex-hooks.json`, `review-checklist.md`, `mcp-servers.json`,
 `settings.overlay.json`, `npm-globals-remove.txt`, `coder.json`, `devbox/`, `vscodium-mcp.json`,
 `glimmervoid.overlay.json`, `vscodium.json`.
@@ -88,7 +88,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `repo
 - `personal`: this workstation
 - `server`: headless, no editor or desktop topics
 - `work`: Claude and Codex only, no other model CLIs; work integrations originate here.
-- `work-server`: Linux devbox; `ai.json` extends work agent additions without inheriting laptop topics.
+- `work-server`: Linux devbox; `ai.json` extends work agent additions without inheriting laptop topics, and `apt-packages.txt` lists the work toolchain.
 
 AI inheritance uses `extends` in `ai.json`;
 `ai/test.sh` pins inherited additions, file fallback, confinement, profile isolation,
