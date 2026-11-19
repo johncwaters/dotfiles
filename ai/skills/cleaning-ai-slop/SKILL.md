@@ -57,6 +57,7 @@ The pass can be bounded to an explicit file list or changed-file scope when the 
    - **Boundary violations**: hidden coupling, misplaced responsibilities, wrong-layer imports or side effects
    - **Bolted-on shape**: a feature layered onto code built before it, such as an `if (newKind)` branch in code that already dispatches on kind, a near-copy file or component for one variant, a flag repeating what a type already says, an optional parameter only one caller passes, or a second system beside one that already owns the concern. This class covers feature code; a bug fix stays the smallest change that fixes it.
    - **Low-value tests**: the kinds `~/.claude/AGENTS.md`'s `<tests>` rules out
+   - **Comments**, in code the session-start `Repo ownership:` line marks owned, when the carbon unit asks for a comment audit: sort each existing comment into delete (it restates the code), redesign (it explains a workaround, so reshape the code and drop it), or record (a real decision, moved to an ADR or the nearest AGENTS.md). Code marked foreign keeps its comments.
 
 4. **Run one smell-focused pass at a time**
    - **Pass 1: Dead code deletion**. Before deleting a path that production could still reach, check the repo's telemetry read-only when a tool for it is connected (PostHog, logs, error tracking), and keep that data out of the diff and commit message.
