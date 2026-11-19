@@ -8,7 +8,7 @@ Close every branch.
 4. Ask each round through `ask.md`. Once zero branches remain, rate the goal's `risk` yourself from the work at the highest level any signal reaches: `critical` touches secrets, auth, irreversible data or machine operations, or the review and landing gates; `high` changes hooks, installers, or shared libraries every session or machine runs; `medium` changes behavior across files, or adds a skill, agent, or config; any other change is `low`. Then write the goal's `criteria` yourself, 1 to 12 observable success criteria drawn from the goal and the decisions; the hand off lists them. Word each criterion from the seat of whoever observes it: when an agent gains a capability, the criterion says that agent exercises it from its own lane, not only that the mechanism works when called directly.
 5. Add the branches each answer opened, plus every fork these probes reveal:
    - Problem: who hits it today, and what they do instead.
-   - Behavior: the desired flow step by step, with an ASCII mockup in a preview for a UI.
+   - Behavior: the desired flow step by step; for a UI, the HTML board mockups of `design.md` step 1, drawn here at risk `low` too.
    - Scope: the nearest thing left out, and what the change makes dead, deleted in the same units.
    - Input: empty, huge, malformed, duplicate.
    - Numbers: each cap, page size, budget, or threshold closes as a tunable a bench unit measures, with no guessed value offered as an option; on an upgrade request, today's limits and code are inputs, not constraints.

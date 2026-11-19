@@ -31,9 +31,9 @@ here.
   challenge may overturn a `decided` one; it then reads `assumed` and keeps the displaced
   answer in its reason, so the hand off lists both.
 - **design node**: A settled piece of a feature's design written as code rather than prose,
-  in one of three layers: behavior (a walkthrough or ASCII mockup), architecture
-  (components, contracts, data model), or program (types, signatures, call graph,
-  pseudocode). It is settled before slicing, because a design is cheapest to change
+  in one of three layers: behavior (a walkthrough, or HTML mockups on a whiteboard for a
+  UI), architecture (components, contracts, data model), or program (types, signatures,
+  call graph, pseudocode). It is settled before slicing, because a design is cheapest to change
   before code exists; every design spec at medium risk or above carries one, and each
   ticket carries the design nodes its unit builds.
 - **open question**: A branch deliberately left open, recorded with what would settle it.

@@ -89,6 +89,30 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   assertAllowed(writeSpec(spec));
 });
 
+test("a sliced spec changing a UI file is refused at any risk until a behavior design holds its HTML board mockups or a decision says it has none", () => {
+  const mockupPage = path.join(temporaryHome, ".agents", "specs", "repo", "graph.mockups", "list.html");
+  fs.mkdirSync(path.dirname(mockupPage), { recursive: true });
+  fs.writeFileSync(mockupPage, "<!DOCTYPE html>");
+  fs.mkdirSync(path.join(repoRoot, "views"), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, "views", "index.html.erb"), "");
+  const uiSpec = (designBoard, decisionFields = {}, changedPath = "DeckList.tsx") => {
+    const spec = slicedSpec();
+    spec.nodes.find((node) => node.id === "U1").changes = [changedPath];
+    Object.assign(spec.nodes[1], decisionFields);
+    if (designBoard === undefined) return spec;
+    spec.nodes.push({ id: "I1", kind: "design", layer: "behavior", title: "Deck list", code: "list, then detail", board: designBoard });
+    spec.edges.push({ from: "U1", kind: "implements", to: "I1" });
+    return spec;
+  };
+  assert.match(denialReason(writeSpec(uiSpec(undefined))), /Rule 18: spec\.nodes: add a behavior design with board \{ id, boxes, pages \}/);
+  for (const changedPath of ["views/", "views/index.html.erb", "src/App.tsx/"]) {
+    assert.match(denialReason(writeSpec(uiSpec(undefined, {}, changedPath))), /Rule 18: spec\.nodes: add a behavior design with board/);
+  }
+  assertAllowed(writeSpec(uiSpec(undefined, { mockup: "none" })));
+  assertAllowed(writeSpec(uiSpec({ id: "board-1", boxes: ["b1"], pages: [mockupPage] })));
+  assert.match(denialReason(writeSpec(uiSpec({ id: "board-1", boxes: ["b1"], pages: [mockupPage.replace(".html", ".svg")] }))), /node I1\.board\.pages\[0\]: save the mockup as an absolute path to an existing \.html file/);
+});
+
 test("a sliced spec above low risk is refused until it settles each lifecycle as a valid owned machine or says it has none", () => {
   const uploadMachine = { id: "I1", kind: "design", layer: "machine", title: "Upload lifecycle", at: "graph.ts", states: ["sending", "paused", "done"], transitions: [["sending", "pause", "paused"], ["paused", "resume", "sending"], ["sending", "finish", "done"]] };
   const mediumRiskSpec = (designNodes, decisionFields = {}) => {

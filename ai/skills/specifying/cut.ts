@@ -32,7 +32,7 @@ function renderIntent(spec: DesignSpec, specPath: string) {
       const design = edge.kind === "implements" ? nodesById.get(edge.to) : undefined;
       return design?.kind === "design" ? [design] : [];
     });
-    const designBlock = designs.map((design) => `${oneLine(design.title)}${design.at ? ` (${oneLine(design.at)})` : ""}:\n${design.layer === "machine" ? machineText(design) : design.code}`).join("\n\n");
+    const designBlock = designs.map((design) => `${oneLine(design.title)}${design.at ? ` (${oneLine(design.at)})` : ""}:\n${design.layer === "machine" ? machineText(design) : design.code}${design.board ? `\nMockups on board ${design.board.id} (boxes ${design.board.boxes.join(", ")}); build from the HTML: ${design.board.pages.join(", ")}` : ""}`).join("\n\n");
     const decisions = outgoingEdges.flatMap((edge) => {
       if (edge.kind !== "implements") return [];
       const decision = nodesById.get(edge.to);

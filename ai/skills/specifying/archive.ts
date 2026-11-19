@@ -26,6 +26,18 @@ function findUnlandedUnitErrors(spec: { repoRoot: string; nodes?: { id: string; 
     .map((unit) => `${unit.id}: no pushed commit carries trailer Ticket: ${slug}/${unit.id}; land it or archive abandoned`);
 }
 
+type SpecWithBoards = { nodes?: { board?: { pages?: string[] } }[] };
+
+function withMockupPagesMoved<T extends SpecWithBoards>(spec: T, fromDirectory: string, toDirectory: string): T {
+  const movePage = (page: string) => {
+    const relativePage = path.relative(fromDirectory, path.resolve(page));
+    const isInsideMockups = relativePage !== "" && !relativePage.startsWith("..") && !path.isAbsolute(relativePage);
+    return isInsideMockups ? path.join(toDirectory, relativePage) : page;
+  };
+  const nodes = (spec.nodes ?? []).map((node) => node.board?.pages ? { ...node, board: { ...node.board, pages: node.board.pages.map(movePage) } } : node);
+  return { ...spec, nodes };
+}
+
 export function archiveSpec(specArgument: string | undefined, outcome: string | undefined, now = new Date()): ArchiveReport {
   const errors: string[] = [];
   if (!specArgument?.endsWith(".json") || specArgument.endsWith(".intent.json")) {
@@ -48,6 +60,7 @@ export function archiveSpec(specArgument: string | undefined, outcome: string | 
     const repo = path.basename(path.dirname(specPath));
     const slug = path.basename(specPath, ".json");
     const intentPath = path.join(path.dirname(specPath), `${slug}.intent.json`);
+    const mockupsPath = path.join(path.dirname(specPath), `${slug}.mockups`);
     const intentBytes = fs.existsSync(intentPath) ? fs.readFileSync(intentPath) : null;
     const archiveDirectory = path.join(specArchiveDirectory(), repo);
     const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -63,15 +76,20 @@ export function archiveSpec(specArgument: string | undefined, outcome: string | 
       const archiveStem = `${slug}.${outcome}.${localDate}${suffix}`;
       const archivedSpecPath = path.join(archiveDirectory, `${archiveStem}.json`);
       const archivedIntentPath = path.join(archiveDirectory, `${archiveStem}.intent.json`);
-      if (fs.existsSync(archivedSpecPath) || fs.existsSync(archivedIntentPath)) continue;
+      const archivedMockupsPath = path.join(archiveDirectory, `${archiveStem}.mockups`);
+      if (fs.existsSync(archivedSpecPath) || fs.existsSync(archivedIntentPath) || fs.existsSync(archivedMockupsPath)) continue;
+      const hasMockups = fs.existsSync(mockupsPath);
+      const archivedSpec = hasMockups ? withMockupPagesMoved(spec, mockupsPath, archivedMockupsPath) : spec;
 
+      if (hasMockups) fs.renameSync(mockupsPath, archivedMockupsPath);
       let hasWrittenSpec = false;
       try {
-        fs.writeFileSync(archivedSpecPath, `${JSON.stringify(spec, null, 2)}\n`, { flag: "wx" });
+        fs.writeFileSync(archivedSpecPath, `${JSON.stringify(archivedSpec, null, 2)}\n`, { flag: "wx" });
         hasWrittenSpec = true;
         if (intentBytes !== null) fs.writeFileSync(archivedIntentPath, intentBytes, { flag: "wx" });
       } catch (error) {
         if (hasWrittenSpec) fs.unlinkSync(archivedSpecPath);
+        if (hasMockups) fs.renameSync(archivedMockupsPath, mockupsPath);
         if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
         throw error;
       }

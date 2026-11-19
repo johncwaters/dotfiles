@@ -23,6 +23,7 @@ export type Decision = {
   evidence?: string;
   isConstraint?: boolean;
   lifecycle?: "none";
+  mockup?: "none";
 };
 export type OpenQuestion = { id: `Q${number}`; kind: "openQuestion"; question: string; settledBy: string };
 export type Unit = {
@@ -45,7 +46,9 @@ export type Design = {
   at?: string;
   states?: string[];
   transitions?: [string, string, string][];
+  board?: MockupBoard;
 };
+export type MockupBoard = { id: string; boxes: string[]; pages: string[] };
 export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit | Design;
 export type EdgeKind = "blocks" | "implements" | "dependsOn" | "deferredBy";
 export type Edge = { from: Node["id"]; kind: EdgeKind; to: Node["id"] };
@@ -84,14 +87,16 @@ export function unitTicketCriteria(unit: Unit, goalCriteria: string[]): string[]
   ])];
 }
 
+const UI_FILE_EXTENSIONS = new Set(["tsx", "jsx", "vue", "svelte", "astro", "html", "htm", "css", "scss", "sass", "less", "mdx", "erb", "hbs", "ejs", "pug", "njk", "liquid", "twig", "jinja"]);
+const SKIPPED_DIRECTORIES = new Set(["node_modules", ".git"]);
 const NODE_FIELDS = {
   goal: ["id", "kind", "text", "risk", "criteria", "upstream", "problem"],
   nonGoal: ["id", "kind", "text"],
   branch: ["id", "kind", "question", "leaning", "upstream"],
-  decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint", "lifecycle"],
+  decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint", "lifecycle", "mockup"],
   openQuestion: ["id", "kind", "question", "settledBy"],
   unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver", "splits"],
-  design: ["id", "kind", "layer", "title", "code", "at", "states", "transitions"],
+  design: ["id", "kind", "layer", "title", "code", "at", "states", "transitions", "board"],
 } satisfies Record<Node["kind"], string[]>;
 const NODE_ID_PATTERNS = {
   goal: /^G1$/,
@@ -184,6 +189,55 @@ function listUnreachableStates(states: string[], transitions: [string, string, s
   return states.filter((state) => !reachedStates.has(state));
 }
 
+function isUiFileName(fileName: string): boolean {
+  return fileName.toLowerCase().split(".").slice(1).some((extension) => UI_FILE_EXTENSIONS.has(extension));
+}
+
+function directoryHoldsUiFile(directory: string): boolean {
+  const pendingDirectories = [directory];
+  for (let index = 0; index < pendingDirectories.length; index++) {
+    for (const entry of fs.readdirSync(pendingDirectories[index], { withFileTypes: true })) {
+      if (entry.isDirectory() && !SKIPPED_DIRECTORIES.has(entry.name)) pendingDirectories.push(path.join(pendingDirectories[index], entry.name));
+      if (entry.isFile() && isUiFileName(entry.name)) return true;
+    }
+  }
+  return false;
+}
+
+function changesUiPath(repoRoot: string, changedPath: string): boolean {
+  const trimmedPath = changedPath.trim().replace(/[\\/]+$/, "");
+  if (isUiFileName(path.basename(trimmedPath))) return true;
+  const resolvedPath = path.resolve(repoRoot, trimmedPath);
+  if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isDirectory()) return false;
+  return directoryHoldsUiFile(resolvedPath);
+}
+
+function validateMockupBoard(value: Record<string, unknown>, subject: string, errors: string[]): void {
+  const boardSubject = `${subject}.board`;
+  if (value.layer !== "behavior") addError(errors, 1, boardSubject, "remove board, which only a behavior layer design carries");
+  const board = value.board;
+  if (!isRecord(board)) {
+    addError(errors, 1, boardSubject, "supply board as { id, boxes, pages }");
+    return;
+  }
+  rejectUnknownFields(board, ["id", "boxes", "pages"], boardSubject, errors);
+  requireString(board.id, `${boardSubject}.id`, errors);
+  for (const listField of ["boxes", "pages"] as const) {
+    const entries = board[listField];
+    if (!Array.isArray(entries) || entries.length === 0) {
+      addError(errors, 1, `${boardSubject}.${listField}`, `supply ${listField} as a non-empty array of strings`);
+      continue;
+    }
+    entries.forEach((entry: unknown, entryIndex: number) => requireString(entry, `${boardSubject}.${listField}[${entryIndex}]`, errors));
+  }
+  if (!Array.isArray(board.pages)) return;
+  for (const [pageIndex, page] of board.pages.entries()) {
+    if (typeof page !== "string") continue;
+    const isHtmlFile = path.isAbsolute(page) && page.endsWith(".html") && fs.existsSync(page);
+    if (!isHtmlFile) addError(errors, 1, `${boardSubject}.pages[${pageIndex}]`, `save the mockup as an absolute path to an existing .html file beside the spec, not an image or SVG (got ${page})`);
+  }
+}
+
 function validateMachineShape(value: Record<string, unknown>, subject: string, errors: string[]): void {
   if (!Object.hasOwn(value, "at")) addError(errors, 1, `${subject}.at`, "supply at, the one module that owns writes to this machine");
   if (Object.hasOwn(value, "code")) requireString(value.code, `${subject}.code`, errors);
@@ -232,7 +286,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream", "problem", "lifecycle", "code", "states", "transitions"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream", "problem", "lifecycle", "mockup", "code", "states", "transitions", "board"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -260,6 +314,9 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     if (Object.hasOwn(value, "lifecycle") && value.lifecycle !== "none") {
       addError(errors, 1, `${subject}.lifecycle`, "set lifecycle to none, on a decision saying why the feature adds or changes no lifecycle, or omit it");
     }
+    if (Object.hasOwn(value, "mockup") && value.mockup !== "none") {
+      addError(errors, 1, `${subject}.mockup`, "set mockup to none, on a decision saying why a UI change has no board mockup, or omit it");
+    }
     const evidence = typeof value.evidence === "string" ? value.evidence : "";
     const isEvidenceCited = /^\S(?:.*\S)?:[1-9]\d*$/.test(evidence) || citesSource(evidence, commitsCited, false);
     if (value.source === "read" && !isEvidenceCited) addError(errors, 1, `${subject}.evidence`, `cite what you read for a read decision: ${CITATION_FORMS}`);
@@ -278,6 +335,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     }
     if (Object.hasOwn(value, "at")) requireString(value.at, `${subject}.at`, errors);
     if (value.layer === "program" && !Object.hasOwn(value, "at")) addError(errors, 1, `${subject}.at`, "supply at, the path a program design lands in");
+    if (Object.hasOwn(value, "board")) validateMockupBoard(value, subject, errors);
     if (value.layer === "machine") {
       validateMachineShape(value, subject, errors);
       return;
@@ -691,6 +749,12 @@ export function validateGraph(value: unknown): string[] {
   const hasNoLifecycleDecision = spec.nodes.some((node) => node.kind === "decision" && node.lifecycle === "none");
   if (isSliced && needsDesign && !hasMachine && !hasNoLifecycleDecision) {
     addError(errors, 18, "spec.nodes", "add a design node with layer machine (states, transitions, at) for each lifecycle the feature adds or changes, or a decision with lifecycle: none saying why it adds or changes none");
+  }
+  const changesUi = isSliced && units.some((unit) => unit.changes.some((changedPath) => changesUiPath(spec.repoRoot, changedPath)));
+  const hasBoardMockup = spec.nodes.some((node) => node.kind === "design" && node.layer === "behavior" && node.board !== undefined);
+  const hasNoMockupDecision = spec.nodes.some((node) => node.kind === "decision" && node.mockup === "none");
+  if (isSliced && changesUi && !hasBoardMockup && !hasNoMockupDecision) {
+    addError(errors, 18, "spec.nodes", "add a behavior design with board { id, boxes, pages } holding the HTML mockups shown on the Glimmervoid whiteboard, as subskills/design.md says, or a decision with mockup: none saying why this UI change has none");
   }
   for (const machine of spec.nodes) {
     if (!isSliced || machine.kind !== "design" || machine.layer !== "machine" || machine.at === undefined) continue;
