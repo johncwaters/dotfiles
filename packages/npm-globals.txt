@@ -1,5 +1,6 @@
 @ast-grep/napi
 @biomejs/biome
+@moonshot-ai/kimi-code
 @openai/codex>=0.159.0
 postiz
 typescript

@@ -1,2 +1,1 @@
 pnpm
-@moonshot-ai/kimi-code
