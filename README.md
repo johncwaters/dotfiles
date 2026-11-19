@@ -8,9 +8,9 @@ No Windows.
 
 ## Install
 
-This repository is private, so unauthenticated GitHub raw URLs return 404. Clone it through
-`gh`, which follows its configured Git protocol, including SSH at work, then run `dot`
-from the clone, which finds it in place and skips its own clone. Both blocks below are for
+Clone the repository through `gh`, which follows its configured Git protocol, including SSH
+at work, then run `dot` from the clone, which finds it in place and skips its own clone.
+Both blocks below are for
 a fresh machine, since the clone step aborts on a path that already exists; a machine that
 has already converged reruns plain `dot`.
 
@@ -39,8 +39,8 @@ gh repo clone johncwaters/dotfiles ~/Projects/dotfiles
 ~/Projects/dotfiles/bin/dot --profile work
 ```
 
-Homebrew comes first by hand because `gh` has to exist before the private repository
-can be cloned, and `bootstrap` then finds it already installed. A Mac that already has
+Homebrew comes first by hand because `gh` has to exist before the repository
+is cloned, and `bootstrap` then finds it already installed. A Mac that already has
 Homebrew and an authenticated `gh` (`gh auth status`) starts at `gh repo clone`. Choose
 SSH when `gh auth login` asks for the Git protocol on the work Mac.
 

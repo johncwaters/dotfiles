@@ -1,7 +1,7 @@
 # Third-party content
 
-Most of this repo is original work. The paths below are vendored from upstream
-projects and remain under their upstream licenses, not this repo's.
+Most of this repo is original work under the MIT license in `LICENSE`. The paths below
+are vendored from upstream projects and remain under their upstream licenses, not this repo's.
 
 | Path | Upstream | License |
 |---|---|---|
@@ -9,8 +9,8 @@ projects and remain under their upstream licenses, not this repo's.
 | `fonts/` | [CommitMono](https://commitmono.com) | SIL Open Font License 1.1, text in `fonts/OFL.txt` |
 | `glimmervoid/sounds/` | two RuneScape Wiki audio clips (Jagex game audio) | private use only |
 
-The first two permit redistribution with attribution; the sounds do not, so this repo stays
-private while it carries them. Required notices follow.
+The first two permit redistribution with attribution. The sounds stay under Jagex's
+terms, private use only, and are not covered by `LICENSE`. Required notices follow.
 
 `profiles/work/skills/triaging-posthog-errors/` is original to this repo. It is not vendored. It
 names PostHog MCP tools and PostHog skill slugs so it interoperates with them, and
