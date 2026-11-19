@@ -1,18 +1,37 @@
 # dotfiles
 
-Personal machine setup: Claude Code, editor, shell tooling, fonts, and services.
+How I set up my Linux workstation, my home server, my work Mac, and my work devbox: shell, git,
+editor, fonts, services, and a big Claude Code and Codex setup. One command, `dot`, brings a
+machine in line with this repo, and a nightly timer runs it again so no machine drifts.
 
-The `personal`, `server`, and `work-server` profiles are Linux-only; `work` is macOS-only. Bootstrap
-refuses a mismatch because a partial cross-platform converge leaves the machine inconsistent.
-No Windows.
+It's public so you can read it and take pieces, but running it as is installs my profiles, my
+repos, and my agent rules. Fork it and write your own profile first.
 
-## Install
+## What's worth borrowing
 
-Clone the repository through `gh`, which follows its configured Git protocol, including SSH
-at work, then run `dot` from the clone, which finds it in place and skips its own clone.
-Both blocks below are for
-a fresh machine, since the clone step aborts on a path that already exists; a machine that
-has already converged reruns plain `dot`.
+- **`ai/`, the agent setup.** Shared rules live in [`ai/AGENTS.md`](ai/AGENTS.md), and 23 skills in
+  `ai/skills/` cover the loop I work in: [`specifying`](ai/skills/specifying/SKILL.md) plans a change
+  before any edit, [`reviewing-code`](ai/skills/reviewing-code/SKILL.md) runs a multi-lane review
+  through [`ai/workflows/qa-swarm.js`](ai/workflows/qa-swarm.js), and
+  [`landing`](ai/skills/landing/SKILL.md) commits only a tree that review stamped. The hooks in
+  `ai/hooks/` enforce the rules instead of asking nicely, so an `else`, a `useEffect`, or an edit
+  before a spec gets denied at the tool call.
+- **The converge model.** [`AGENTS.md`](AGENTS.md) holds the invariants: symlink instead of copy,
+  installers safe to rerun, retired tools listed so machines that have them drop them, and work a run
+  still owes recorded as state under `$XDG_STATE_HOME/dotfiles`.
+- **The test harness.** [`test/harness.sh`](test/harness.sh) runs every installer in a sandboxed home
+  with stubbed commands, so the Linux and macOS paths both get tested on one machine without
+  touching the real one.
+
+## Set up a machine
+
+The `personal`, `server`, and `work-server` profiles are Linux only, and `work` is macOS only.
+Bootstrap refuses a mismatch, because a converge on the wrong OS would half apply before failing.
+
+Clone the repository through `gh`, which follows its configured Git protocol, including SSH at
+work, then run `dot` from the clone, which finds it in place and skips its own clone. Both blocks
+below are for a fresh machine, since the clone step aborts on a path that already exists; a machine
+that has already converged reruns plain `dot`.
 
 ```sh
 sudo apt-get update
@@ -116,3 +135,8 @@ profile's `settings.overlay.json`. `.machine-profile` is written by `script/boot
 `vscodium/extensions.txt` cannot name it. Install it by hand with
 `codium --install-extension <path>.vsix`; exact sync keeps it, because an extension whose
 manifest says `private` is never pruned.
+
+## License
+
+MIT, in [LICENSE](LICENSE). The vendored skill, the CommitMono font, and two Glimmervoid sound
+clips keep their own terms, listed in [NOTICE.md](NOTICE.md).
