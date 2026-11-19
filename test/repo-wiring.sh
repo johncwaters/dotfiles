@@ -78,10 +78,6 @@ for profileJsonPath in "$repoRoot"/profiles/*/profile.json; do
     check "$(basename -- "$profileDirectoryPath") has package groups for its packages topic" \
       test -f "$profileDirectoryPath/packages.txt"
   fi
-  if grep -qx glimmervoid <<< "$profileTopics"; then
-    check "$(basename -- "$profileDirectoryPath") has glimmervoid settings for its glimmervoid topic" \
-      test -f "$profileDirectoryPath/glimmervoid.json"
-  fi
   if grep -qx vscodium <<< "$profileTopics"; then
     check "$(basename -- "$profileDirectoryPath") has vscodium settings for its vscodium topic" \
       test -f "$profileDirectoryPath/vscodium.json"
@@ -99,15 +95,15 @@ const fs = require("node:fs");
 const profileDirectory = process.argv[2];
 const readProfileJson = name => JSON.parse(fs.readFileSync(`${profileDirectory}/${name}`, "utf8"));
 assert.deepEqual(readProfileJson("profile.json"), { platform: "linux", topics: ["ai", "git"] });
-for (const excludedFile of ["glimmervoid.json", "glimmervoid.overlay.json", "mcp-servers.json", "packages.txt"]) {
+for (const excludedFile of ["glimmervoid.overlay.json", "mcp-servers.json", "packages.txt"]) {
   assert.equal(fs.existsSync(`${profileDirectory}/${excludedFile}`), false);
 }
 JS
 
-for sharedWorkFile in CLAUDE.md AGENTS.md commit-policy.json settings.overlay.json hooks skills; do
+for sharedWorkFile in CLAUDE.md AGENTS.md settings.overlay.json hooks skills; do
   check "work-server inherits work $sharedWorkFile without copying agent additions" \
     test "$(node "$repoRoot/ai/profile-config.mjs" work-server "$sharedWorkFile")" = \
-    "$repoRoot/profiles/$(case "$sharedWorkFile" in commit-policy.json) printf work-server ;; *) printf work ;; esac)/$sharedWorkFile"
+    "$repoRoot/profiles/work/$sharedWorkFile"
 done
 
 check "work-server settings equal work settings" \
@@ -179,8 +175,6 @@ check "the glimmervoid seed has one shared home token" \
   _ "$repoRoot"
 check "glimmervoid has no seed kind selector" \
   bash -c '! grep -q "glimmervoidSeedInputsFor" "$1/glimmervoid/install.sh"' _ "$repoRoot"
-check "profile glimmervoid settings have no seed key" \
-  bash -c '! grep -q '"'"'"seed"'"'"' "$1"/profiles/*/glimmervoid.json' _ "$repoRoot"
 check "the server profile owns its glimmervoid overlay" \
   test -f "$repoRoot/profiles/server/glimmervoid.overlay.json"
 check "the glimmervoid topic owns no server overlay" \

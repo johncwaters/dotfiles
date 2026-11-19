@@ -36,8 +36,12 @@ export function readCommitPolicy(root: string = policyRoot()): PolicyLookup {
   }
 
   const policyPath = path.join(root, "profiles", profile, "commit-policy.json");
-  if (!fs.existsSync(policyPath)) {
-    return { profile, policyPath, warning: `no commit policy at ${policyPath}` };
+  const isPolicyFileMissing = !fs.existsSync(policyPath);
+  if (isPolicyFileMissing && !fs.existsSync(path.join(root, "profiles", profile, "profile.json"))) {
+    return { profile, warning: `machine profile marker names unknown profile ${JSON.stringify(profile)}` };
+  }
+  if (isPolicyFileMissing) {
+    return { profile, policy: {} };
   }
 
   try {

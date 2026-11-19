@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  configuredMainline,
   forbiddenBranches,
   isBranchAllowed,
   policyValidationErrors,
@@ -112,15 +113,29 @@ test("a policy file that does not parse warns instead of throwing", () => {
   }
 });
 
-test("the profiles shipped in this repo all parse and name a forbid list", () => {
-  const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..", "..");
-  for (const profile of ["personal", "server", "work"]) {
-    const policyPath = path.join(repoRoot, "profiles", profile, "commit-policy.json");
-    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8")) as Record<string, unknown>;
-    assert.ok(forbiddenBranches(policy).includes("master"), `${profile} must guard master`);
-    assert.ok(forbiddenBranches(policy).includes("main"), `${profile} must guard main`);
-    assert.equal(Object.hasOwn(policy, "afterCommit"), false, `${profile} must resolve ownership at runtime`);
-    assert.ok(["auto", "main", "master"].includes(policy.mainline as string));
-    assert.deepEqual(policyValidationErrors(policy, policyPath), []);
+test("a profile with no commit-policy.json guards main and master and resolves mainline auto, without a warning", () => {
+  const root = makePolicyRoot("personal", PERSONAL_POLICY);
+  try {
+    fs.rmSync(path.join(root, "profiles", "personal", "commit-policy.json"));
+    fs.writeFileSync(path.join(root, "profiles", "personal", "profile.json"), "{}\n");
+    const { policy, warning } = readCommitPolicy(root);
+    assert.equal(warning, undefined);
+    assert.deepEqual(forbiddenBranches(policy), ["main", "master"]);
+    assert.equal(configuredMainline(policy), "auto");
+    assert.deepEqual(policyValidationErrors(policy, undefined), []);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("a marker naming a profile the repo does not have warns instead of applying defaults", () => {
+  const root = makePolicyRoot("persnal", PERSONAL_POLICY);
+  try {
+    fs.rmSync(path.join(root, "profiles", "persnal", "commit-policy.json"));
+    const { policy, warning } = readCommitPolicy(root);
+    assert.equal(policy, undefined);
+    assert.match(warning ?? "", /unknown profile "persnal"/);
+  } finally {
+    cleanup(root);
   }
 });
