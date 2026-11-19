@@ -10,7 +10,7 @@ const scriptPath = join(import.meta.dirname, "../digest.ts");
 const fixturesDir = join(import.meta.dirname, "fixtures");
 const fixturePath = join(fixturesDir, "synthetic-project/synthetic-session.jsonl");
 
-test("CLI collects only touched spec graphs, deduplicates expanded paths, and counts no rework for a gate run after a landing", (context) => {
+test("CLI collects only touched spec graphs, deduplicates expanded paths, counts no rework for a gate run after a landing, and drops recovered hook denials and lookup misses", (context) => {
   const transcriptDirectory = mkdtempSync(join(tmpdir(), "retro-digest-"));
   context.after(() => rmSync(transcriptDirectory, { recursive: true, force: true }));
   const livePath = join(homedir(), ".agents/specs/dotfiles/session-spec.json");
@@ -32,16 +32,34 @@ test("CLI collects only touched spec graphs, deduplicates expanded paths, and co
     { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "land-1", content: '{"outcome":"COMMITTED","commit":"abc"}' }] } },
     { type: "assistant", message: { content: [{ type: "tool_use", id: "gate-2", name: "Skill", input: { skill: "gating-reviews" } }] } },
   ];
+  const setupWorkingResults = [
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "denied-edit", name: "Edit", input: { file_path: "/repo/row.css" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "denied-edit", is_error: true, content: "PreToolUse:Edit hook error: [spec-gate] run /specifying first" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "retried-edit", name: "Edit", input: { file_path: "/repo/row.css" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "retried-edit", content: "The file has been updated" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "which-miss", name: "Bash", input: { command: "ls ~/.cache; which chromium google-chrome 2>/dev/null" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "which-miss", is_error: true, content: "Exit code 1\nms-playwright" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "test-then-grep", name: "Bash", input: { command: "npm test && grep -c PASS out.log" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "test-then-grep", is_error: true, content: "Exit code 1\nnpm ERR! Test failed" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "grep-line-then-test", name: "Bash", input: { command: "grep -q foo package.json\nnpm test" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "grep-line-then-test", is_error: true, content: "Exit code 1\nnot ok 3" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "denied-agent", name: "Agent", input: { prompt: "review" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "denied-agent", is_error: true, content: "PreToolUse:Agent hook error: model must be set" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "other-agent", name: "Agent", input: { prompt: "research", model: "opus" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "other-agent", content: "done" }] } },
+  ];
   writeFileSync(transcriptPath, [{
     type: "assistant", message: { content: toolUses.map((toolUse) => ({ type: "tool_use", ...toolUse })) },
-  }, ...gateRunsAroundALanding].map((entry) => JSON.stringify(entry)).join("\n"));
+  }, ...gateRunsAroundALanding, ...setupWorkingResults].map((entry) => JSON.stringify(entry)).join("\n"));
   const digestProcess = spawnSync(process.execPath, [scriptPath, transcriptPath, "--no-git"], {
     encoding: "utf8", timeout: 5000,
   });
   equal(digestProcess.status, 0, digestProcess.stderr);
   const digest = JSON.parse(digestProcess.stdout) as SessionDigest;
   deepEqual(digest.specPaths, [livePath.replace("session-spec", "written-spec"), archivePath, livePath]);
-  deepEqual(digest.incidents, []);
+  deepEqual(digest.incidents.map((incident) => [incident.kind, incident.toolName]), [
+    ["tool-error", "Bash"], ["tool-error", "Bash"], ["hook-denial", "PreToolUse:Agent"],
+  ]);
 });
 
 test("CLI reduces a synthetic session to ordered incidents without counting metadata as prompts", (context) => {

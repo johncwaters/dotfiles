@@ -48,7 +48,16 @@ export type SessionDigest = {
 export type DigestOptions = { includeGit?: boolean };
 
 type JsonObject = Record<string, unknown>;
-type ToolUse = { name: string; command: string };
+type ToolUse = { name: string; command: string; script: string; target: string };
+const LOOKUP_COMMAND = /^(which|command -v|type|grep)\b/;
+
+function isLookupMiss(tool: ToolUse | undefined, resultText: string): boolean {
+  if (tool?.name !== "Bash" || !/^Exit code 1(\n|$)/.test(resultText)) return false;
+  const segmentsAndSeparators = tool.script.trim().split(/(\n|;|&&|\|\||\|)/);
+  const separatorBeforeLastCommand = segmentsAndSeparators.at(-2);
+  if (separatorBeforeLastCommand === "&&") return false;
+  return LOOKUP_COMMAND.test(segmentsAndSeparators.at(-1)?.trim() ?? "");
+}
 const REVIEW_GATE_SKILLS = new Set(["gating-reviews", "converging-reviews"]);
 
 export function asObject(value: unknown): JsonObject | null {
@@ -215,6 +224,8 @@ export async function digestTranscript(
   };
   const toolsById = new Map<string, ToolUse>();
   const failuresByCommand = new Map<string, { count: number; incident?: Incident }>();
+  const pendingDenialByToolTarget = new Map<string, Incident>();
+  const droppedIncidents = new Set<Incident>();
   let hasGateRunSinceLanding = false;
   let hasPendingInterrupt = false;
 
@@ -284,10 +295,25 @@ export async function digestTranscript(
         recordSpecPath(invocation[1] ?? invocation[2] ?? invocation[3] ?? "");
       }
     }
-    if (typeof block.id === "string") toolsById.set(block.id, { name, command });
+    const target = asText(input?.file_path) || command;
+    if (typeof block.id === "string") toolsById.set(block.id, { name, command, script: asText(input?.command), target });
     if (name !== "Skill" || !REVIEW_GATE_SKILLS.has(asText(input?.skill))) return;
     if (hasGateRunSinceLanding) addIncident("review-rework", asText(input?.skill), { toolName: name });
     hasGateRunSinceLanding = true;
+  }
+
+  function dropRecoveredDenial(denial: Incident, tool: ToolUse | undefined): void {
+    droppedIncidents.add(denial);
+    digest.counts["hook-denial"] -= 1;
+    const failures = tool?.name === "Bash" ? failuresByCommand.get(tool.command) : undefined;
+    if (!failures) return;
+    failures.count -= 1;
+    if (!failures.incident) return;
+    failures.incident.count = failures.count;
+    if (failures.count >= 2) return;
+    droppedIncidents.add(failures.incident);
+    digest.counts["repeated-failure"] -= 1;
+    failures.incident = undefined;
   }
 
   function recordToolResult(block: JsonObject, toolUseResult: JsonObject | null): void {
@@ -299,12 +325,18 @@ export async function digestTranscript(
     if ((tool?.name === "Agent" || tool?.name === "Task" || typeof toolUseResult?.agentType === "string") && typeof toolUseResult?.totalTokens === "number" && toolUseResult.totalTokens >= 150000) {
       addIncident("costly-subagent", text, { ...toolFields, count: toolUseResult.totalTokens });
     }
+    const toolTargetKey = tool?.target ? `${tool.name}\u0000${tool.target}` : "";
+    const pendingDenial = pendingDenialByToolTarget.get(toolTargetKey);
+    pendingDenialByToolTarget.delete(toolTargetKey);
+    if (pendingDenial && block.is_error !== true) dropRecoveredDenial(pendingDenial, tool);
     if (block.is_error !== true) return;
     const trimmed = text.trim();
+    if (isLookupMiss(tool, trimmed)) return;
     const hookLabel = trimmed.match(/^([^\s<>]+) hook error/)?.[1];
     const isPermissionDenial = /^(Permission to use .* has been denied|The user doesn't want to proceed|This command requires approval|Claude requested permissions to)/.test(trimmed);
     const kind = isPermissionDenial ? "permission-denial" : hookLabel ? "hook-denial" : "tool-error";
-    addIncident(kind, text, hookLabel ? { toolName: hookLabel } : toolFields);
+    const incident = addIncident(kind, text, hookLabel ? { toolName: hookLabel } : toolFields);
+    if (kind === "hook-denial" && toolTargetKey) pendingDenialByToolTarget.set(toolTargetKey, incident);
     if (tool?.name !== "Bash" || !tool.command) return;
     const failures = failuresByCommand.get(tool.command) ?? { count: 0 };
     failures.count += 1;
@@ -357,6 +389,7 @@ export async function digestTranscript(
   } catch (error) {
     throw new Error(`Cannot read transcript ${transcriptPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
+  digest.incidents = digest.incidents.filter((incident) => !droppedIncidents.has(incident));
   if (options.includeGit !== false) appendGitIncidents(digest);
   return digest;
 }
