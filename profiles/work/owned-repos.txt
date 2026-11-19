@@ -1,0 +1,4 @@
+github.com/johncwaters/*
+github.com/PostHog/wizard
+github.com/PostHog/wizard-workbench
+github.com/PostHog/posthog:products/knowledge_writer/**

@@ -552,6 +552,7 @@ copyEntry "CLAUDE.md" "${profileClaudeSource#"$dotfilesRepo/"}" "$claudeHome/CLA
 
 convergeAiProfileLink "AGENTS.profile.md" "AGENTS.md" "$claudeHome/AGENTS.profile.md"
 convergeAiProfileLink "review-checklist.md" "review-checklist.md" "$claudeHome/review-checklist.md"
+convergeAiProfileLink "owned-repos.txt" "owned-repos.txt" "$claudeHome/owned-repos.txt"
 
 convergeAiProfileLink "profile hooks" "hooks" "$claudeHome/profile-hooks"
 profileSettingsOverlayPath="$(profilePlanNames source-settings.overlay.json)"

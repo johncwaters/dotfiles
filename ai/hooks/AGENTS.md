@@ -27,6 +27,7 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `comment-scanner.mjs` | Shared comment, else, useEffect, and fixed-sleep scanners with string tracking | `test/block-comments.test.mjs`, `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs` |
 | `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
+| `repo-ownership.mjs` | Owned or foreign for a path, from the profile's `owned-repos.txt`; unknown is foreign | `test/repo-ownership.test.mjs` |
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local

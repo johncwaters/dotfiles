@@ -204,6 +204,7 @@ check "converge installs the headless browser for a skill shipping playwright-co
 check "converge runs no sudo browser library install when no headless shell lacks a library" \
   bash -c '! grep -qF "install-deps" "$1"' _ "$skillDependencyLog"
 reviewChecklistPath="$sandbox/.claude/review-checklist.md"
+ownedReposPath="$sandbox/.claude/owned-repos.txt"
 check "personal profile leaves the review checklist absent" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"
 
@@ -403,9 +404,13 @@ check "a failed addition is retried on the next converge" mcpRuntimeMatches http
 check "work profile links the review checklist through the alias" \
   bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \
   "$reviewChecklistPath" "$sandbox/.dotfiles/profiles/work/review-checklist.md"
+check "work profile links its owned repo list" \
+  test "$(readlink "$ownedReposPath")" = "$sandbox/.dotfiles/profiles/work/owned-repos.txt"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile removes the stale work review checklist link" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$reviewChecklistPath"
+check "personal profile drops the work owned repo list" \
+  bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$ownedReposPath"
 printf 'local review notes\n' > "$reviewChecklistPath"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile preserves a non-repo review checklist" \
@@ -682,6 +687,8 @@ for skillName in "${workSkillNames[@]}"; do
 done
 check "work-server inherits the review checklist" \
   test "$(readlink "$reviewChecklistPath")" = "$sandbox/.dotfiles/profiles/work/review-checklist.md"
+check "work-server inherits the work owned repo list" \
+  test "$(readlink "$ownedReposPath")" = "$sandbox/.dotfiles/profiles/work/owned-repos.txt"
 checkRerunIsQuiet "work-server rerun is quiet" "$(runTopicInstall "$stagedTopicDir" work-server)"
 runTopicInstall "$stagedTopicDir" server > /dev/null
 check "server removes inherited work-only artifacts" retiredManagedServerIsAbsent
