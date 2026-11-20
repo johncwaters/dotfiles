@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { declaredAgent, normalizePayload } from "./agent-payload.mjs";
-import { isCodexSessionAttended } from "./session-transcript.mjs";
+import { declaredAgent, isCodexSessionAttended, normalizePayload } from "./agent-payload.mjs";
 
 export const SPAWN_TOOLS = new Set(["Agent", "Task"]);
 

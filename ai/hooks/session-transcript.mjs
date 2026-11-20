@@ -60,7 +60,6 @@ const SKILL_FILE_PATH = /[\\/]skills[\\/]([\w.-]+)[\\/]SKILL\.md\b/;
 const CODEX_SKILL_MESSAGE = /^<skill>\s*<name>([^<]+)<\/name>/;
 const CODEX_SYNTHETIC_PROMPT = /^(?:# AGENTS\.md instructions|<environment_context>|<skill>|<user_instructions>|<turn_aborted>)/;
 const CODEX_INNER_TOOL_CALL = /\btools\.(exec_command|apply_patch)\(/g;
-const CODEX_UNATTENDED_LAUNCHES = new Set(["codex_exec", "exec"]);
 const JS_STRING_ESCAPES = { n: "\n", t: "\t", r: "\r", b: "\b", f: "\f", v: "\v", 0: "\0" };
 
 function readStringLiteral(source, startIndex) {
@@ -108,18 +107,6 @@ function* codexInnerToolCalls(script) {
     const command = commandKey ? readStringArgument(script, argumentsStart + commandKey[0].length) : null;
     if (command !== null) yield { name: "exec_command", input: { cmd: command } };
   }
-}
-
-export function isCodexSessionAttended(transcriptPath) {
-  if (typeof transcriptPath !== "string" || !fs.existsSync(transcriptPath)) return false;
-  const firstLine = fs.readFileSync(transcriptPath, "utf8").split("\n", 1)[0];
-  let sessionMeta = null;
-  try {
-    sessionMeta = asObject(asObject(JSON.parse(firstLine))?.payload);
-  } catch {
-    return true;
-  }
-  return !CODEX_UNATTENDED_LAUNCHES.has(asText(sessionMeta?.originator)) && !CODEX_UNATTENDED_LAUNCHES.has(asText(sessionMeta?.source));
 }
 
 function skillNameAt(skillFilePath) {

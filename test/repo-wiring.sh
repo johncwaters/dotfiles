@@ -221,21 +221,49 @@ check "the work overlay gates exec writes on every declared MCP server because t
   node -e 'const fs=require("fs");const overlay=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const serverNames=Object.keys(JSON.parse(fs.readFileSync(process.argv[2],"utf8")));const gateEntries=(overlay.hooks?.PreToolUse||[]).filter((entry)=>entry.hooks.some((hook)=>hook.command.includes("gate-posthog-exec-write.mjs")));process.exit(serverNames.length>0&&serverNames.every((serverName)=>gateEntries.some((entry)=>new RegExp(entry.matcher).test(`mcp__${serverName}__exec`)))?0:1)' "$repoRoot/profiles/work/settings.overlay.json" "$repoRoot/profiles/work/mcp-servers.json"
 check "the work overlay disables the Cloudflare plugin because its skills went unused, keeping its marketplace known" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins?.["cloudflare@cloudflare"]===false&&overlay.extraKnownMarketplaces?.cloudflare?.source?.repo==="cloudflare/skills"?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
-check "block-comments is wired only for Glimmervoid sessions and the shared growth guards for every Claude and Codex" \
-  node -e '
-    const fs = require("fs");
-    const path = require("path");
+check "block-comments is wired only for Glimmervoid sessions, and every shared Claude hook is wired for Codex and agy on the same events and tools with its agent declared" \
+  node --input-type=module -e '
+    import fs from "node:fs";
+    import path from "node:path";
     const root = process.argv[1];
+    const { AGENT_TOOL_NAMES, fileChangesOf, normalizePayload } = await import(path.join(root, "ai/hooks/agent-payload.mjs"));
     const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
-    const sharedWiringPaths = ["ai/settings.base.json", "ai/codex-hooks.base.json"];
+    const agentWiringPaths = { codex: "ai/codex-hooks.base.json", agy: "ai/agy-hooks.base.json" };
+    const sharedWiringPaths = ["ai/settings.base.json", ...Object.values(agentWiringPaths)];
     const profileWiringPaths = fs.readdirSync(path.join(root, "profiles"))
       .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`])
       .filter((relativePath) => fs.existsSync(path.join(root, relativePath)));
     const isGlimmervoidOnly = read("glimmervoid/settings.json").includes("hooks/block-comments.mjs")
       && [...sharedWiringPaths, ...profileWiringPaths].every((relativePath) => !read(relativePath).includes("block-comments"));
-    const sharedGuards = ["block-else.mjs", "block-use-effect.mjs", "block-fixed-sleep.mjs", "block-button-labels.mjs"];
-    const areGuardsShared = sharedWiringPaths.every((relativePath) => sharedGuards.every((guardName) => read(relativePath).includes(`hooks/${guardName}`)));
-    process.exit(isGlimmervoidOnly && areGuardsShared ? 0 : 1);
+    const CLAUDE_ONLY_HOOKS = new Set(["check-finding-scope.mjs", "load-agents-md.mjs", "report-parked-branches.mjs", "retro-reminder.mjs"]);
+    const CLAUDE_TOOL_NAMES = ["Bash", "Write", "Edit", "MultiEdit", "AskUserQuestion", "Agent", "Task", "Read", "Skill"];
+    const TOOL_CLASS_BY_CLAUDE_NAME = { Write: "file-edit", Edit: "file-edit", MultiEdit: "file-edit", Agent: "spawn", Task: "spawn" };
+    const toolClassOf = (claudeToolName) => TOOL_CLASS_BY_CLAUDE_NAME[claudeToolName] ?? claudeToolName;
+    const agentToolClass = (agent, toolName) => {
+      const rawPayload = agent === "agy" ? { toolCall: { name: toolName, args: {} } } : { tool_name: toolName, tool_input: { command: "*** Begin Patch\n*** Add File: x\n+x\n*** End Patch" } };
+      const payload = normalizePayload(rawPayload, agent);
+      return fileChangesOf(payload).length > 0 ? "file-edit" : toolClassOf(payload.tool_name);
+    };
+    const hookEntries = (relativePath) => Object.entries(JSON.parse(read(relativePath)).hooks).flatMap(([event, entries]) =>
+      entries.flatMap((entry) => (entry.hooks ?? [entry]).map((handler) => ({ event, matcher: entry.matcher, command: handler.command }))));
+    const hookNameOf = (command) => command.match(/hooks\/([\w-]+\.mjs)/)?.[1];
+    const matchedTools = (matcher, toolNames) => (matcher ? toolNames.filter((toolName) => new RegExp(matcher).test(toolName)) : [null]);
+    const claudeEntries = hookEntries("ai/settings.base.json").filter((entry) => !CLAUDE_ONLY_HOOKS.has(hookNameOf(entry.command)));
+    const requiredPairs = new Set(claudeEntries.flatMap((entry) => matchedTools(entry.matcher, CLAUDE_TOOL_NAMES)
+      .map((toolName) => `${hookNameOf(entry.command)} ${entry.event} ${toolName === null ? "-" : toolClassOf(toolName)}`)));
+    const gaps = Object.entries(agentWiringPaths).flatMap(([agent, relativePath]) => {
+      const entries = hookEntries(relativePath);
+      const undeclared = entries.filter((entry) => !entry.command.split(/\s+/).includes(`--agent=${agent}`)).map((entry) => `${relativePath}: ${entry.command} lacks --agent=${agent}`);
+      const missing = [...requiredPairs].flatMap((pair) => {
+        const [hookName, event, toolClass] = pair.split(" ");
+        const toolsOfClass = toolClass === "-" ? [null] : AGENT_TOOL_NAMES[agent].filter((toolName) => agentToolClass(agent, toolName) === toolClass);
+        const wiredTools = entries.filter((entry) => hookNameOf(entry.command) === hookName && entry.event === event).flatMap((entry) => matchedTools(entry.matcher, toolsOfClass));
+        return toolsOfClass.filter((toolName) => !wiredTools.includes(toolName)).map((toolName) => `${relativePath} lacks ${hookName} on ${event} ${toolName ?? ""}`);
+      });
+      return [...undeclared, ...missing];
+    });
+    for (const gap of gaps) console.error(gap);
+    process.exit(isGlimmervoidOnly && requiredPairs.size > 0 && gaps.length === 0 ? 0 : 1);
   ' "$repoRoot"
 check "the work hooks and their tests live only under the work profile" \
   bash -c 'for hookName in gate-posthog-exec-write; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
@@ -425,7 +453,7 @@ function localImportClosure(entryPaths) {
 const PLATFORM_PROBE = /\buname\b|\$\{?OSTYPE\b|\bsw_vers\b/;
 const isSymlinkFlag = (word) => word === '--symbolic' || /^-[A-Za-z]*s[A-Za-z]*$/.test(word);
 function decidingPostToolUseHooks() {
-  const settingsPaths = ['ai/settings.base.json', 'ai/codex-hooks.base.json', ...fs.readdirSync(path.join(root, 'profiles'))
+  const settingsPaths = ['ai/settings.base.json', 'ai/codex-hooks.base.json', 'ai/agy-hooks.base.json', ...fs.readdirSync(path.join(root, 'profiles'))
     .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`])]
     .filter((settingsPath) => fs.existsSync(path.join(root, settingsPath)));
   return settingsPaths.flatMap((settingsPath) => {

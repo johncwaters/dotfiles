@@ -15,10 +15,10 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `validate-spec.mjs` | PreToolUse design graph contract guard | `test/validate-spec.test.mjs` |
 | `enforce-spawn-model.mjs` | PreToolUse model and scope guard | `test/enforce-spawn-model.test.mjs` |
 | `guard-workflow.mjs` | PreToolUse gate: for every agent, a foreground run-all.sh, package install, bootstrap, or `dot` converge without run_in_background, unless background tasks are disabled; main loop: raw git commit/push outside /landing and any `gh` call other than a known read before writing-in-voice in every session, pointing at the review gate first (quoted and literal heredoc text masked; a dry-run push and a `git -C <system-temp repo root> commit` pass only as a command of nothing but such literal calls); attended only: self-matching `pkill -f`, first repo edit without /specifying, a /specifying question, until its spec is archived, with no Upstream clause or change-at-the-source option, or whose change-at-the-source option is not first | `test/guard-workflow.test.mjs` |
-| `require-commit-on-stop.mjs` | Stop hook: blocks once a turn ending with uncommitted session edits and no /landing, pointing at the review gate then /landing, unless a background launch has not reported back | `test/require-commit-on-stop.test.mjs` |
+| `require-commit-on-stop.mjs` | Stop hook: blocks once a turn ending with uncommitted session edits and no /landing, pointing at the review gate then /landing, unless a Claude background launch has not reported back | `test/require-commit-on-stop.test.mjs` |
 | `require-carbon-unit.mjs` | Stop hook: blocks once per turn, tracked by its own feedback in the transcript since `stop_hook_active` is shared by every Stop hook, a reply whose prose, outside code and quotes, says human, person, people, developer, engineer, or user, naming each word | `test/require-carbon-unit.test.mjs` |
 | `engine-gate.mjs` | Stop hook that reviewing-prs registers from its frontmatter: blocks once a run that stops before launching qa-swarm or a lane agent | `test/engine-gate.test.mjs` |
-| `session-transcript.mjs` | Shared transcript event stream for the workflow gates | `test/guard-workflow.test.mjs` |
+| `session-transcript.mjs` | Shared event stream over Claude, Codex rollout, and agy transcripts for the workflow and Stop gates | `test/guard-workflow.test.mjs` |
 | `check-finding-scope.mjs` | PostToolUse finding anchors | `test/check-finding-scope.test.mjs` |
 | `load-agents-md.mjs` | SessionStart and PostToolUse(Read) injection of AGENTS.md files a CLAUDE.md shadows (Claude Code 2.1.287 loads AGENTS.md only when no CLAUDE.md sits between it and the repo root) | `test/load-agents-md.test.mjs` |
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
@@ -34,8 +34,8 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/settings.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, and `block-button-labels.mjs` bind every agent, so they
-are wired in `ai/settings.base.json` for every Claude, `ai/codex-hooks.base.json` for every Codex, and `ai/agy-hooks.base.json` for every agy. Profile-only hooks and their evidence belong in
+to Glimmervoid sessions. Every hook in `ai/settings.base.json` binds every agent unless `test/repo-wiring.sh` lists it Claude-only,
+so it is also wired in `ai/codex-hooks.base.json` and `ai/agy-hooks.base.json` on the same events and tools, with its `--agent=`. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.
 `ai/test.sh` pins the installed paths; shared event wiring lives in `ai/settings.base.json`.

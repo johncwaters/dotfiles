@@ -239,6 +239,8 @@ function codexCommandInput(toolInput) {
   return { ...input, run_in_background: true };
 }
 
+export const AGENT_TOOL_NAMES = { codex: ["Bash", "apply_patch", "spawn_agent"], agy: Object.keys(AGY_TOOL_MAPPERS) };
+
 function normalizeCodex(rawPayload) {
   if (rawPayload.tool_name === "Bash") return { ...rawPayload, tool_input: codexCommandInput(rawPayload.tool_input), agent: "codex" };
   if (rawPayload.tool_name !== "spawn_agent") return { ...rawPayload, agent: "codex" };
@@ -260,4 +262,18 @@ export function normalizePayload(rawPayload, agent = "claude") {
   if (agent === "agy") return normalizeAgy(rawPayload);
   if (agent === "codex") return normalizeCodex(rawPayload);
   return { ...rawPayload, agent };
+}
+
+const CODEX_UNATTENDED_LAUNCHES = new Set(["codex_exec", "exec"]);
+
+export function isCodexSessionAttended(transcriptPath) {
+  if (typeof transcriptPath !== "string" || !fs.existsSync(transcriptPath)) return false;
+  const firstLine = fs.readFileSync(transcriptPath, "utf8").split("\n", 1)[0];
+  let sessionMeta = null;
+  try {
+    sessionMeta = JSON.parse(firstLine)?.payload;
+  } catch {
+    return true;
+  }
+  return !CODEX_UNATTENDED_LAUNCHES.has(sessionMeta?.originator) && !CODEX_UNATTENDED_LAUNCHES.has(sessionMeta?.source);
 }

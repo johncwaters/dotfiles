@@ -213,7 +213,8 @@
         "by": [
           "ai/hooks/test/validate-file.test.mjs",
           "ai/hooks/test/guard-workflow.test.mjs",
-          "ai/hooks/test/enforce-spawn-model.test.mjs"
+          "ai/hooks/test/enforce-spawn-model.test.mjs",
+          "test/repo-wiring.sh"
         ]
       },
       "keep-decisions-in-pretooluse-because-posttooluse": {
