@@ -221,6 +221,22 @@ check "the work overlay gates exec writes on every declared MCP server because t
   node -e 'const fs=require("fs");const overlay=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const serverNames=Object.keys(JSON.parse(fs.readFileSync(process.argv[2],"utf8")));const gateEntries=(overlay.hooks?.PreToolUse||[]).filter((entry)=>entry.hooks.some((hook)=>hook.command.includes("gate-posthog-exec-write.mjs")));process.exit(serverNames.length>0&&serverNames.every((serverName)=>gateEntries.some((entry)=>new RegExp(entry.matcher).test(`mcp__${serverName}__exec`)))?0:1)' "$repoRoot/profiles/work/settings.overlay.json" "$repoRoot/profiles/work/mcp-servers.json"
 check "the work overlay disables the Cloudflare plugin because its skills went unused, keeping its marketplace known" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins?.["cloudflare@cloudflare"]===false&&overlay.extraKnownMarketplaces?.cloudflare?.source?.repo==="cloudflare/skills"?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+check "block-comments is wired only for Glimmervoid sessions and the shared growth guards for every Claude and Codex" \
+  node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const root = process.argv[1];
+    const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
+    const sharedWiringPaths = ["ai/settings.base.json", "ai/codex-hooks.base.json"];
+    const profileWiringPaths = fs.readdirSync(path.join(root, "profiles"))
+      .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`])
+      .filter((relativePath) => fs.existsSync(path.join(root, relativePath)));
+    const isGlimmervoidOnly = read("glimmervoid/settings.json").includes("hooks/block-comments.mjs")
+      && [...sharedWiringPaths, ...profileWiringPaths].every((relativePath) => !read(relativePath).includes("block-comments"));
+    const sharedGuards = ["block-else.mjs", "block-use-effect.mjs", "block-fixed-sleep.mjs", "block-button-labels.mjs"];
+    const areGuardsShared = sharedWiringPaths.every((relativePath) => sharedGuards.every((guardName) => read(relativePath).includes(`hooks/${guardName}`)));
+    process.exit(isGlimmervoidOnly && areGuardsShared ? 0 : 1);
+  ' "$repoRoot"
 check "the work hooks and their tests live only under the work profile" \
   bash -c 'for hookName in gate-posthog-exec-write; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
 check "work Claude hook commands use the profile hook link" \
@@ -527,10 +543,12 @@ function markdownRuleKeysIn(lines) {
       isInsideBlock = false;
       continue;
     }
-    if (isUnderMap || line.startsWith('|')) continue;
-    if (isInsideBlock && !listItemMarker.test(line)) continue;
-    ruleKeys.push(slugOf(line.replace(listItemMarker, '')));
+    if (line.startsWith('|')) continue;
+    const isMapEntry = isUnderMap && listItemMarker.test(line);
+    if (isInsideBlock && (isUnderMap || !listItemMarker.test(line))) continue;
     isInsideBlock = true;
+    if (isMapEntry) continue;
+    ruleKeys.push(slugOf(line.replace(listItemMarker, '')));
   }
   return ruleKeys;
 }

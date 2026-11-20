@@ -32,7 +32,7 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `ratchet.mjs` | Fails a committed `.agents/ratchet.json` on growth and lowers it on a fall; `init` only in owned code; run by `/gating-reviews` | `test/ratchet.test.mjs` |
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
-`glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
+`glimmervoid/settings.json`, not `ai/settings.base.json`, so its scope stays local
 to Glimmervoid sessions. `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, and `block-button-labels.mjs` bind every agent, so they
 are wired in `ai/settings.base.json` for every Claude and `ai/codex-hooks.base.json` for every Codex. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and

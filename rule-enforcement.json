@@ -268,6 +268,13 @@
         "by": [
           "ai/hooks/test/validate-file.test.mjs"
         ]
+      },
+      "block-comments-mjs-belongs-to-glimmervoid": {
+        "kind": "check",
+        "by": [
+          "test/repo-wiring.sh",
+          "glimmervoid/test/install.sh"
+        ]
       }
     },
     "profiles/work/AGENTS.md": {
