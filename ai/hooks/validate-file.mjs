@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileChangesOf } from "./agent-payload.mjs";
 import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
 import { reconstruct } from "./edit-replay.mjs";
 import { addedViolations, lintSkillFile, skillDirectoryOf } from "./skill-lint.mjs";
@@ -486,15 +487,15 @@ if (process.argv[2] === "--probe-engine") {
 try {
   const payload = readPayload();
   if (!payload || typeof payload !== "object") allow();
-  const toolInput = payload.tool_input || {};
-  const filePath = toolInput.file_path || toolInput.filePath;
-  if (!filePath) allow();
-
-  const content = reconstruct(toolInput, filePath);
-  if (content === undefined) allow();
-
-  const diagnostic = validate(filePath, content);
-  if (diagnostic) deny(filePath, diagnostic);
+  for (const change of fileChangesOf(payload)) {
+    const toolInput = change.tool_input || {};
+    const filePath = toolInput.file_path || toolInput.filePath;
+    if (!filePath) continue;
+    const content = reconstruct(toolInput, filePath);
+    if (content === undefined) continue;
+    const diagnostic = validate(filePath, content);
+    if (diagnostic) deny(filePath, diagnostic);
+  }
   allow();
 } catch {
   allow();

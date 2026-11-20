@@ -1,6 +1,6 @@
 # Hook invariants
 
-These hooks affect every Claude Code session. Preserve fail-open behavior: malformed
+These hooks affect every Claude Code, Codex, and agy session. Preserve fail-open behavior: malformed
 payloads, unreadable files, and unavailable decision engines must allow silently.
 A guard failure must never wedge a session; catches that allow are intentional.
 Fork spawns stay exempt from model pinning because the harness ignores their
@@ -24,17 +24,18 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `retro-reminder.mjs` | SessionEnd incident count and nudge; SessionStart unreviewed-retro report | `test/retro-reminder.test.mjs` |
 | `block-comments.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
-| `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, `block-button-labels.mjs`, `edit-judge.mjs` | PreToolUse else-, useEffect-, test sleep-then-assert and stateful button-label growth guards; shared Write/Edit/MultiEdit/apply_patch growth runner | `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs`, `test/block-button-labels.test.mjs` |
+| `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, `block-button-labels.mjs`, `edit-judge.mjs` | PreToolUse else-, useEffect-, test sleep-then-assert and stateful button-label growth guards; shared growth runner over `fileChangesOf` | `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs`, `test/block-button-labels.test.mjs` |
 | `comment-scanner.mjs` | Shared comment, else, useEffect, fixed-sleep, and button-label scanners | `test/block-comments.test.mjs`, `test/block-button-labels.test.mjs`, `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs` |
 | `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
+| `agent-payload.mjs` | Maps Codex and agy payloads to Claude's tool names and inputs, and every file-changing call to `fileChangesOf`; a Codex patch is applied by Codex's own matching rules, since any other placement judges a file Codex never writes. The agent comes from the wiring's `--agent=` argument, never the payload shape, which a harness release can change | `test/block-else.test.mjs`, `test/validate-spec.test.mjs`, `test/validate-file.test.mjs` |
 | `repo-ownership.mjs` | Owned or foreign for a path, from the profile's `owned-repos.txt`; unknown is foreign | `test/repo-ownership.test.mjs` |
 | `ratchet.mjs` | Fails a committed `.agents/ratchet.json` on growth and lowers it on a fall; `init` only in owned code; run by `/gating-reviews` | `test/ratchet.test.mjs` |
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/settings.json`, not `ai/settings.base.json`, so its scope stays local
 to Glimmervoid sessions. `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, and `block-button-labels.mjs` bind every agent, so they
-are wired in `ai/settings.base.json` for every Claude and `ai/codex-hooks.base.json` for every Codex. Profile-only hooks and their evidence belong in
+are wired in `ai/settings.base.json` for every Claude, `ai/codex-hooks.base.json` for every Codex, and `ai/agy-hooks.base.json` for every agy. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.
 `ai/test.sh` pins the installed paths; shared event wiring lives in `ai/settings.base.json`.

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { declaredAgent, normalizePayload } from "./agent-payload.mjs";
 
 export const SPAWN_TOOLS = new Set(["Agent", "Task"]);
 
@@ -20,15 +21,23 @@ export function allow() {
   process.exit(0);
 }
 
+let payloadAgent = "claude";
+
 export function readPayload() {
   try {
-    return JSON.parse(fs.readFileSync(0, "utf8"));
+    const payload = normalizePayload(JSON.parse(fs.readFileSync(0, "utf8")), declaredAgent());
+    payloadAgent = payload?.agent ?? "claude";
+    return payload;
   } catch {
     return null;
   }
 }
 
 function decidePreToolUse(permissionDecision, reason) {
+  if (payloadAgent === "agy") {
+    process.stdout.write(JSON.stringify({ decision: "deny", reason }));
+    process.exit(0);
+  }
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {

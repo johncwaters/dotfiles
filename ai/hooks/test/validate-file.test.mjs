@@ -357,3 +357,23 @@ process.exit(checkStatus);
     assert.match(readDenialReason(validateWrite(deniedWrite, engineEnvironment)), /invalid JS syntax/);
   }
 });
+
+test("a Codex apply_patch adding invalid JSON is denied", () => {
+  const patch = ["*** Begin Patch", "*** Add File: broken.json", "+{bad}", "*** End Patch"].join("\n");
+  const hookProcess = runHook("validate-file.mjs", { turn_id: "codex-turn", tool_name: "apply_patch", cwd: validatorHome, tool_input: { command: patch } }, validatorEnvironment);
+  assert.match(readDenialReason(hookProcess), /invalid JSON/);
+});
+
+test("a Codex apply_patch is judged on the file Codex would write", () => {
+  const codexPatch = (target, ...hunkLines) => runHook("validate-file.mjs", {
+    tool_name: "apply_patch",
+    cwd: validatorHome,
+    tool_input: { command: ["*** Begin Patch", `*** Update File: ${target}`, ...hunkLines, "*** End Patch"].join("\n") },
+  }, validatorEnvironment, process.cwd(), ["--agent=codex"]);
+  fs.writeFileSync(path.join(validatorHome, "append.json"), '{\n  "a": 1\n');
+  assert.equal(codexPatch("append.json", "@@", "+}").stdout, "");
+  fs.writeFileSync(path.join(validatorHome, "spaced.json"), '{\n  "a": 1,   \n  "b": 2\n}\n');
+  assert.match(readDenialReason(codexPatch("spaced.json", "@@", '-  "a": 1,', '+  "a": 1,,', '   "b": 2')), /invalid JSON/);
+  const heredocPatch = ["<<'EOF'", "*** Begin Patch", "*** Add File: heredoc.json", "+{bad}", "*** End Patch", "EOF"].join("\n");
+  assert.match(readDenialReason(runHook("validate-file.mjs", { tool_name: "apply_patch", cwd: validatorHome, tool_input: { command: heredocPatch } }, validatorEnvironment)), /invalid JSON/);
+});

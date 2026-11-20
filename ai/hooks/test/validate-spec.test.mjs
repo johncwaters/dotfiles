@@ -364,3 +364,30 @@ test("unrelated writes and malformed or unreadable inputs allow silently", () =>
     assertAllowed(runHook("validate-spec.mjs", payload, { HOME: temporaryHome }));
   }
 });
+
+test("a Codex apply_patch and an agy write_file of an invalid spec are both denied", () => {
+  const spec = slicedSpec();
+  spec.nodes.find((node) => node.id === "G1").risk = "urgent";
+  const specText = JSON.stringify(spec);
+  const codexPatch = ["*** Begin Patch", `*** Add File: ${specPath}`, `+${specText}`, "*** End Patch"].join("\n");
+  const codexProcess = runHook("validate-spec.mjs", { turn_id: "codex-turn", tool_name: "apply_patch", tool_input: { command: codexPatch } }, { HOME: temporaryHome });
+  assert.match(denialReason(codexProcess), /Rule 1: node G1\.risk/);
+  const agyProcess = runHook("validate-spec.mjs", {
+    hookEventName: "PreToolUse",
+    conversationId: "agy-conversation",
+    toolCall: { name: "write_file", args: { Path: specPath, Content: specText } },
+  }, { HOME: temporaryHome }, process.cwd(), ["--agent=agy"]);
+  const agyDecision = JSON.parse(agyProcess.stdout);
+  assert.equal(agyDecision.decision, "deny");
+  assert.match(agyDecision.reason, /Rule 1: node G1\.risk/);
+});
+
+test("a Codex apply_patch moving a spec to a new name is judged on the moved content", () => {
+  const spec = slicedSpec();
+  fs.mkdirSync(path.dirname(specPath), { recursive: true });
+  fs.writeFileSync(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+  const riskLine = `      "risk": "${spec.nodes.find((node) => node.id === "G1").risk}",`;
+  const movePatch = ["*** Begin Patch", `*** Update File: ${specPath}`, `*** Move to: ${path.join(path.dirname(specPath), "moved.json")}`, "@@", `-${riskLine}`, `+${riskLine.replace(/"risk": "[a-z]+"/, '"risk": "urgent"')}`, "*** End Patch"].join("\n");
+  const hookProcess = runHook("validate-spec.mjs", { tool_name: "apply_patch", tool_input: { command: movePatch } }, { HOME: temporaryHome }, process.cwd(), ["--agent=codex"]);
+  assert.match(denialReason(hookProcess), /Rule 1: node G1\.risk/);
+});

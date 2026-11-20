@@ -27,8 +27,9 @@ function main() {
   if (!input || typeof input !== "object") allow();
 
   if (input.subagent_type === "fork") allow();
+  if (typeof input.prompt !== "string") allow();
 
-  const prompt = typeof input.prompt === "string" ? input.prompt : "";
+  const prompt = input.prompt;
   const missingMarkers = REQUIRED_PROMPT_MARKERS.filter(
     ({ pattern }) => !pattern.test(prompt)
   ).map(({ label }) => label);
@@ -41,7 +42,7 @@ function main() {
 
   const model =
     typeof input.model === "string" ? input.model.trim().toLowerCase() : "";
-  if (model === "")
+  if (model === "" && payload.agent === "claude")
     denialReasons.push(
       "Subagent spawn without an explicit model pin: omitting `model` " +
         "inherits the session model, so the tier becomes an accident " +

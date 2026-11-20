@@ -216,3 +216,18 @@ for (const scenario of replayScenarios) {
   });
 }
 
+
+test("an agy replace_file_content adding an else is denied in agy's reply shape", () => {
+  const hookProcess = runHook("block-else.mjs", {
+    hookEventName: "PreToolUse",
+    conversationId: "agy-conversation",
+    toolCall: {
+      name: "replace_file_content",
+      args: { TargetFile: "/nonexistent/branch.ts", ReplacementChunks: [{ TargetContent: "start();", ReplacementContent: branch }] },
+    },
+  }, {}, process.cwd(), ["--agent=agy"]);
+  assert.equal(hookProcess.status, 0, hookProcess.stderr);
+  const decision = JSON.parse(hookProcess.stdout);
+  assert.equal(decision.decision, "deny");
+  assert.ok(decision.reason.includes(branch));
+});

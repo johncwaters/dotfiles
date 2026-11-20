@@ -8,8 +8,8 @@ export { cleanup as removeAll } from "../../skills/landing/test/helpers.ts";
 
 export const HOOKS_DIRECTORY = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-export function runHook(scriptName, payload, env = {}, cwd = process.cwd()) {
-  return spawnSync("node", [path.resolve(HOOKS_DIRECTORY, scriptName)], {
+export function runHook(scriptName, payload, env = {}, cwd = process.cwd(), hookArguments = []) {
+  return spawnSync("node", [path.resolve(HOOKS_DIRECTORY, scriptName), ...hookArguments], {
     cwd,
     input: JSON.stringify(payload),
     encoding: "utf8",

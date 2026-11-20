@@ -1,0 +1,51 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(write_file|create_file|replace_file_content|multi_replace_file_content)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/validate-file.mjs\" --agent=agy",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/validate-spec.mjs\" --agent=agy",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-else.mjs\" --agent=agy",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-use-effect.mjs\" --agent=agy",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-button-labels.mjs\" --agent=agy",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-fixed-sleep.mjs\" --agent=agy",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^invoke_subagent$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/enforce-spawn-model.mjs\" --agent=agy",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

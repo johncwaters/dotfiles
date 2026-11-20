@@ -56,3 +56,25 @@ test("spawn prompt with scope markers still requires a model", () => {
   assert.equal(output.hookSpecificOutput.permissionDecision, "deny");
   assert.match(output.hookSpecificOutput.permissionDecisionReason, /explicit model pin/);
 });
+
+test("an agy invoke_subagent is held to the scope markers but not to a model pin", () => {
+  const agySpawn = (prompt) => runHook("enforce-spawn-model.mjs", {
+    hookEventName: "PreToolUse",
+    conversationId: "agy-conversation",
+    toolCall: { name: "invoke_subagent", args: { Prompt: prompt, Role: "Lister", TypeName: "self" } },
+  }, {}, process.cwd(), ["--agent=agy"]);
+  const deniedProcess = agySpawn("Run ls.");
+  const decision = JSON.parse(deniedProcess.stdout);
+  assert.equal(decision.decision, "deny");
+  assert.match(decision.reason, /missing required scope markers/);
+  const allowedProcess = agySpawn("Scope:\nls\nOut of scope:\nedits\nDefinition of done:\nnames listed.");
+  assert.equal(allowedProcess.stdout, "");
+});
+
+test("a Codex spawn_agent carrying its task in items is held to the scope markers", () => {
+  const hookProcess = runHook("enforce-spawn-model.mjs", {
+    tool_name: "spawn_agent",
+    tool_input: { items: [{ type: "text", text: "Run ls." }] },
+  }, {}, process.cwd(), ["--agent=codex"]);
+  assert.match(JSON.parse(hookProcess.stdout).hookSpecificOutput.permissionDecisionReason, /missing required scope markers/);
+});

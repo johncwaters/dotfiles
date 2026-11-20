@@ -14,6 +14,7 @@ fi
 claudeHome="$HOME/.claude"
 codexHome="$HOME/.codex"
 kimiHome="$HOME/.kimi-code"
+agyHome="$HOME/.gemini"
 claudeSkillsDirectory="$claudeHome/skills"
 repoSkillsDirectory="$dotfilesRepo/ai/skills"
 profilePlanNames() {
@@ -495,31 +496,42 @@ NODE
   noteApplied "Kimi MCP servers" "converged"
 }
 
-renderCodexHooks() {
-  local declarationPath="$dotfilesRepo/ai/codex-hooks.base.json"
-  local hooksPath="$codexHome/hooks.json"
+renderAgentHooks() {
+  local label="$1" basePath="$2" declarationPath="$3" hooksPath="$4" stateName="$5" groupName="${6:-}"
   local stagedPath
   if ! command -v node > /dev/null 2>&1; then
-    noteWarned "Codex hooks" "node not on PATH"
+    noteWarned "$label" "node not on PATH"
     return 0
   fi
+  dotfilesStatePath "$stateName" || return 0
+  mkdir -p -- "$(dirname -- "$hooksPath")"
+  stagedPath="$(mktemp "$(dirname -- "$hooksPath")/.dotfiles-hooks.XXXXXX")"
+  if ! node "$dotfilesRepo/ai/render-hooks.mjs" "$basePath" "$declarationPath" "$hooksPath" "$stagedPath" "$dotfilesStatePathValue" $groupName; then
+    rm -f -- "$stagedPath"
+    noteWarned "$label" "could not render hooks, convergence skipped"
+    return 0
+  fi
+  if ! clearDestinationIfNotPlainFile "$label" "$hooksPath"; then
+    rm -f -- "$stagedPath"
+    return 0
+  fi
+  commitStagedFile "$label" "$stagedPath" "$hooksPath" "rendered"
+}
+
+renderCodexHooks() {
+  local basePath="$dotfilesRepo/ai/codex-hooks.base.json"
+  local declarationPath="$basePath"
   if [[ -f "$profileCodexHooksSource" ]]; then
     declarationPath="$profileCodexHooksSource"
   fi
-  dotfilesStatePath ai-codex-owned-hook-commands || return 0
-  stagedPath="$(mktemp "$codexHome/.dotfiles-hooks.XXXXXX")"
-  if ! node "$dotfilesRepo/ai/render-codex-hooks.mjs" "$declarationPath" "$hooksPath" "$stagedPath" "$dotfilesStatePathValue"; then
-    rm -f -- "$stagedPath"
-    noteWarned "Codex hooks" "could not render hooks, convergence skipped"
-    return 0
-  fi
-  if ! clearDestinationIfNotPlainFile "Codex hooks" "$hooksPath"; then
-    rm -f -- "$stagedPath"
-    return 0
-  fi
-  commitStagedFile "Codex hooks" "$stagedPath" "$hooksPath" "rendered"
+  renderAgentHooks "Codex hooks" "$basePath" "$declarationPath" "$codexHome/hooks.json" ai-codex-owned-hook-commands
   clearDotfilesState ai-codex-hook-trust-epoch
   clearDotfilesState ai-codex-hook-trust-baseline
+}
+
+renderAgyHooks() {
+  local basePath="$dotfilesRepo/ai/agy-hooks.base.json"
+  renderAgentHooks "agy hooks" "$basePath" "$basePath" "$agyHome/config/hooks.json" ai-agy-owned-hook-commands dotfiles
 }
 
 syntaxEngineProbeStatus() {
@@ -568,6 +580,7 @@ renderJsonTemplate "settings.json" \
   "$profileSettingsOverlayPath" \
   "$claudeHome/settings.json"
 renderCodexHooks
+renderAgyHooks
 repairSyntaxEngine
 convergeMcpServers
 if command -v kimi > /dev/null 2>&1; then

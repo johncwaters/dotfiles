@@ -739,7 +739,7 @@ assert.deepEqual(profileLineage('inherited-fixture'), ['work', 'work-server', 'i
 fs.rmSync(inheritedDirectory, {recursive: true});
 NODE
 
-renderFixtureDirectory="$sandbox/render-codex-hooks-fixture"
+renderFixtureDirectory="$sandbox/render-hooks-fixture"
 mkdir -p "$renderFixtureDirectory"
 check "Codex combines shared and profile hooks, reruns quietly, and retires deleted declarations" \
   env HOME="$sandbox" node --input-type=module - "$stagedRepo" "$renderFixtureDirectory" <<'NODE'
@@ -758,7 +758,7 @@ fs.writeFileSync(basePath, JSON.stringify(declaration('printf shared-hook')));
 fs.writeFileSync(overlayPath, JSON.stringify(declaration('printf profile-hook')));
 fs.writeFileSync(runtimePath, JSON.stringify(declaration('printf foreign-hook')));
 const render = () => {
-  const processOutput = spawnSync(process.execPath, [`${repository}/ai/render-codex-hooks.mjs`, overlayPath, runtimePath, destinationPath, ownedPath], {encoding:'utf8'});
+  const processOutput = spawnSync(process.execPath, [`${repository}/ai/render-hooks.mjs`, basePath, overlayPath, runtimePath, destinationPath, ownedPath], {encoding:'utf8'});
   assert.equal(processOutput.status, 0, processOutput.stderr);
   fs.copyFileSync(destinationPath, runtimePath);
   return fs.readFileSync(runtimePath, 'utf8');
@@ -773,6 +773,32 @@ try {
 } finally {
   fs.writeFileSync(basePath, originalBase);
 }
+NODE
+
+check "agy hooks render under the dotfiles group beside a foreign group and plain Stop handlers" \
+  env HOME="$sandbox" node --input-type=module - "$stagedRepo" "$renderFixtureDirectory" <<'NODE'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+const [repository, fixture] = process.argv.slice(2);
+const basePath = `${fixture}/agy-base.json`;
+const runtimePath = `${fixture}/agy-hooks.json`;
+const destinationPath = `${fixture}/agy-rendered.json`;
+const ownedPath = `${fixture}/agy-owned.json`;
+fs.writeFileSync(basePath, JSON.stringify({hooks:{Stop:[{type:'command',command:'node {{HOME}}/stop.mjs'}],PreToolUse:[{matcher:'^run_command$',hooks:[{type:'command',command:'node {{HOME}}/guard.mjs'}]}]}}));
+fs.writeFileSync(runtimePath, JSON.stringify({mine:{Stop:[{type:'command',command:'printf foreign'}]}}));
+const render = () => {
+  const processOutput = spawnSync(process.execPath, [`${repository}/ai/render-hooks.mjs`, basePath, basePath, runtimePath, destinationPath, ownedPath, 'dotfiles'], {encoding:'utf8'});
+  assert.equal(processOutput.status, 0, processOutput.stderr);
+  fs.copyFileSync(destinationPath, runtimePath);
+  return JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
+};
+const rendered = render();
+assert.deepEqual(rendered.mine, {Stop:[{type:'command',command:'printf foreign'}]});
+assert.deepEqual(rendered.dotfiles.Stop, [{type:'command',command:`node ${process.env.HOME}/stop.mjs`}]);
+assert.equal(rendered.dotfiles.PreToolUse[0].hooks[0].command, `node ${process.env.HOME}/guard.mjs`);
+assert.equal(rendered.hooks, undefined);
+assert.deepEqual(render(), rendered);
 NODE
 
 mkdir -p "$stagedRepo/profiles/minimal"

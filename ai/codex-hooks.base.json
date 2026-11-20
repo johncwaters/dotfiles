@@ -6,22 +6,42 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"{{HOME}}/.claude/hooks/block-else.mjs\"",
+            "command": "node \"{{HOME}}/.claude/hooks/validate-file.mjs\" --agent=codex",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "node \"{{HOME}}/.claude/hooks/block-use-effect.mjs\"",
+            "command": "node \"{{HOME}}/.claude/hooks/validate-spec.mjs\" --agent=codex",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "node \"{{HOME}}/.claude/hooks/block-button-labels.mjs\"",
+            "command": "node \"{{HOME}}/.claude/hooks/block-else.mjs\" --agent=codex",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "node \"{{HOME}}/.claude/hooks/block-fixed-sleep.mjs\"",
+            "command": "node \"{{HOME}}/.claude/hooks/block-use-effect.mjs\" --agent=codex",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-button-labels.mjs\" --agent=codex",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-fixed-sleep.mjs\" --agent=codex",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^spawn_agent$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/enforce-spawn-model.mjs\" --agent=codex",
             "timeout": 10
           }
         ]
