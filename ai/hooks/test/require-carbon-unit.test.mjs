@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { runHook } from "./harness.mjs";
+import { agyStep, runHook } from "./harness.mjs";
 
 function stopDecision(lastAssistantMessage, extraPayload = {}) {
   const hookProcess = runHook("require-carbon-unit.mjs", { last_assistant_message: lastAssistantMessage, ...extraPayload });
@@ -29,6 +29,16 @@ test("the hook blocks once per turn on its own feedback, not on another Stop hoo
   assert.equal(stopDecision(reply, { stop_hook_active: true, transcript_path: afterOwnBlock }).decision, "allow");
   const nextTurn = transcriptOf(prompt("ship it"), ownFeedback, prompt("and again"));
   assert.equal(stopDecision(reply, { transcript_path: nextTurn }).decision, "block");
+});
+
+test("Codex and agy replies are judged once per turn, agy's read from its transcript", () => {
+  const codexStop = (extraPayload) => runHook("require-carbon-unit.mjs", { last_assistant_message: "The user can rerun dot.", ...extraPayload }, {}, process.cwd(), ["--agent=codex"]).stdout;
+  assert.equal(JSON.parse(codexStop({ transcript_path: transcriptOf(prompt("ship it"), ownFeedback) })).decision, "block");
+  assert.equal(codexStop({ stop_hook_active: true }), "");
+  const agyTranscript = transcriptOf(agyStep(0, "USER_INPUT", "<USER_REQUEST>\nship it\n</USER_REQUEST>"), agyStep(1, "PLANNER_RESPONSE", "Landed. The user can rerun dot."));
+  const agyStop = (extraPayload) => runHook("require-carbon-unit.mjs", { transcriptPath: agyTranscript, ...extraPayload }, {}, process.cwd(), ["--agent=agy"]).stdout;
+  assert.equal(JSON.parse(agyStop({})).decision, "continue");
+  assert.equal(agyStop({ continuationActive: true }), "");
 });
 
 test("a reply naming people in prose is blocked once with each word named", () => {

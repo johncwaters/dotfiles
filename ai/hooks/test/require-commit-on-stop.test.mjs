@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { makeRepository, removeAll, runHook } from "./harness.mjs";
+import { agyStep, codexPatchCall, codexRolloutLines, makeRepository, removeAll, runHook } from "./harness.mjs";
 
 const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), "require-commit-home-"));
 const dirtyRepository = makeRepository("one\n", "two\n");
@@ -79,6 +79,25 @@ test("a background launch that has not reported back lets the turn end until its
   assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...bashRun("npm test", "# pass 12")]).decision, "block");
   const foregroundGrep = bashRun("grep -n BACKGROUND ai/hooks/require-commit-on-stop.mjs", "12:const BACKGROUND_LAUNCH_RESULT = /running in background|launched in background|Async agent launched/i;");
   assert.equal(stopDecision([prompt("fix it"), editDirtyFile, ...foregroundGrep]).decision, "block");
+});
+
+test("Codex and agy turns ending with uncommitted session edits are blocked in their own reply shape", () => {
+  const agentStop = (agent, entries, extra = {}) => {
+    const transcriptPath = writeTranscript(entries);
+    return runHook("require-commit-on-stop.mjs", { transcript_path: transcriptPath, transcriptPath, ...extra }, { HOME: sandboxHome }, process.cwd(), [`--agent=${agent}`]).stdout;
+  };
+  const patch = "*** Begin Patch\n*** Update File: a.txt\n@@\n-one\n+two\n*** End Patch";
+  const turnContext = { type: "turn_context", payload: { cwd: dirtyRepository } };
+  const codexEdit = [...codexRolloutLines("codex-tui", "fix it"), turnContext, codexPatchCall("c1", patch)];
+  assert.equal(JSON.parse(agentStop("codex", codexEdit)).decision, "block");
+  assert.equal(agentStop("codex", codexEdit, { stop_hook_active: true }), "");
+  assert.equal(agentStop("codex", [...codexRolloutLines("codex_exec", "fix it"), turnContext, codexPatchCall("c1", patch)]), "");
+  const agyEdit = [agyStep(0, "USER_INPUT", "<USER_REQUEST>\nfix it\n</USER_REQUEST>"), agyStep(1, "PLANNER_RESPONSE", "", [{ name: "write_file", args: { Path: path.join(dirtyRepository, "a.txt"), Content: "two\n" } }])];
+  assert.equal(JSON.parse(agentStop("agy", agyEdit)).decision, "continue");
+  const agyCommand = [agyStep(2, "PLANNER_RESPONSE", "", [{ name: "run_command", args: { CommandLine: "git status" } }]), agyStep(3, "RUN_COMMAND", "clean")];
+  assert.equal(JSON.parse(agentStop("agy", [...agyEdit, ...agyCommand])).decision, "continue");
+  const variablePatchCall = { type: "response_item", payload: { type: "custom_tool_call", name: "exec", call_id: "c2", input: `const patch = ${JSON.stringify(patch)};\ntext(await tools.apply_patch(patch))` } };
+  assert.equal(JSON.parse(agentStop("codex", [...codexRolloutLines("codex-tui", "fix it"), turnContext, variablePatchCall])).decision, "block");
 });
 
 test("unattended sessions and unreadable transcripts are never blocked", () => {

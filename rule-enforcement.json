@@ -116,6 +116,7 @@
       "execution": {
         "kind": "check",
         "by": [
+          "ai/hooks/agent-payload.mjs",
           "ai/hooks/guard-workflow.mjs",
           "ai/hooks/test/guard-workflow.test.mjs"
         ]

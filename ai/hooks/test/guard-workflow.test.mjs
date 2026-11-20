@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { makeRepository, removeAll, runHook } from "./harness.mjs";
+import { agyStep, codexPatchCall, codexRolloutLines, makeRepository, removeAll, runHook } from "./harness.mjs";
 
 const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), "guard-workflow-home-"));
 const repository = makeRepository();
@@ -355,6 +355,31 @@ test("the first repo edit of a session without /specifying is denied once", () =
     assert.equal(decisionFor(bashCall(command, fresh, { cwd: repository })).decision, "allow", command);
   }
   assert.equal(decisionFor(bashCall("sed -i s/one/two/ a.txt", afterDenial, { cwd: repository })).decision, "allow");
+});
+
+test("Codex and agy edits hit the spec gate once, and a codex exec turn is unattended", () => {
+  const repoFile = path.join(repository, "a.txt");
+  const patch = "*** Begin Patch\n*** Update File: a.txt\n@@\n-two\n+three\n*** End Patch";
+  const codexEdit = (transcriptPath) => ({ tool_name: "apply_patch", cwd: repository, tool_input: { command: patch }, transcript_path: transcriptPath });
+  const codexDecision = (transcriptPath) => {
+    const hookProcess = runHook("guard-workflow.mjs", codexEdit(transcriptPath), { HOME: sandboxHome }, process.cwd(), ["--agent=codex"]);
+    return hookProcess.stdout === "" ? "allow" : JSON.parse(hookProcess.stdout).hookSpecificOutput.permissionDecision;
+  };
+  const interactiveTurn = writeTranscript(codexRolloutLines("codex-tui", "add an export button"));
+  assert.equal(codexDecision(interactiveTurn), "deny");
+  assert.equal(codexDecision(writeTranscript(codexRolloutLines("codex_exec", "add an export button"))), "allow");
+  const reason = JSON.parse(runHook("guard-workflow.mjs", codexEdit(interactiveTurn), { HOME: sandboxHome }, process.cwd(), ["--agent=codex"]).stdout).hookSpecificOutput.permissionDecisionReason;
+  const denialOutput = { type: "response_item", payload: { type: "custom_tool_call_output", call_id: "c1", output: reason } };
+  assert.equal(codexDecision(writeTranscript([...codexRolloutLines("codex-tui", "add an export button"), codexPatchCall("c1", patch), denialOutput])), "allow");
+  const echoedDenial = { type: "response_item", payload: { type: "custom_tool_call", name: "exec", call_id: "c2", input: `text(await tools.exec_command({cmd:"echo denied"}))` } };
+  assert.equal(codexDecision(writeTranscript([...codexRolloutLines("codex-tui", "add an export button"), echoedDenial, { ...denialOutput, payload: { ...denialOutput.payload, call_id: "c2" } }])), "deny");
+  const outsideFirstPatch = `*** Begin Patch\n*** Add File: ${path.join(sandboxHome, "scratch.txt")}\n+x\n*** Update File: a.txt\n@@\n-two\n+three\n*** End Patch`;
+  const outsideFirstProcess = runHook("guard-workflow.mjs", { ...codexEdit(interactiveTurn), tool_input: { command: outsideFirstPatch } }, { HOME: sandboxHome }, process.cwd(), ["--agent=codex"]);
+  assert.equal(JSON.parse(outsideFirstProcess.stdout).hookSpecificOutput.permissionDecision, "deny");
+  const agyTranscript = writeTranscript([agyStep(0, "USER_INPUT", "<USER_REQUEST>\nadd an export button\n</USER_REQUEST>")]);
+  const agyPayload = { toolCall: { name: "write_file", args: { Path: repoFile, Content: "three\n" } }, transcriptPath: agyTranscript, conversationId: "agy-1" };
+  const agyProcess = runHook("guard-workflow.mjs", agyPayload, { HOME: sandboxHome }, process.cwd(), ["--agent=agy"]);
+  assert.equal(JSON.parse(agyProcess.stdout).decision, "deny");
 });
 
 test("running /specifying or a review gate or reading a design spec clears the spec gate", () => {

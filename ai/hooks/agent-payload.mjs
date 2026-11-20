@@ -233,7 +233,14 @@ function codexSpawnInput(toolInput) {
   return { ...input, prompt };
 }
 
+// Codex's exec_command yields after about 10 seconds, so no Codex command holds the loop.
+function codexCommandInput(toolInput) {
+  const input = toolInput && typeof toolInput === "object" ? toolInput : {};
+  return { ...input, run_in_background: true };
+}
+
 function normalizeCodex(rawPayload) {
+  if (rawPayload.tool_name === "Bash") return { ...rawPayload, tool_input: codexCommandInput(rawPayload.tool_input), agent: "codex" };
   if (rawPayload.tool_name !== "spawn_agent") return { ...rawPayload, agent: "codex" };
   return { ...rawPayload, tool_name: "Agent", tool_input: codexSpawnInput(rawPayload.tool_input), agent: "codex" };
 }

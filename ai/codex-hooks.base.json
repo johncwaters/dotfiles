@@ -33,6 +33,11 @@
             "type": "command",
             "command": "node \"{{HOME}}/.claude/hooks/block-fixed-sleep.mjs\" --agent=codex",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/guard-workflow.mjs\" --agent=codex",
+            "timeout": 30
           }
         ]
       },
@@ -43,6 +48,32 @@
             "type": "command",
             "command": "node \"{{HOME}}/.claude/hooks/enforce-spawn-model.mjs\" --agent=codex",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/guard-workflow.mjs\" --agent=codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/require-commit-on-stop.mjs\" --agent=codex",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/require-carbon-unit.mjs\" --agent=codex",
+            "timeout": 30
           }
         ]
       }

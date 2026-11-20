@@ -173,7 +173,7 @@ const homeDirectory = process.argv[2];
 const hooks = JSON.parse(fs.readFileSync(path.join(homeDirectory, '.codex/hooks.json'), 'utf8'));
 const config = fs.readFileSync(path.join(homeDirectory, '.codex/config.toml'), 'utf8');
 const foreignStartup = hooks.hooks.SessionStart.find(entry => entry.matcher === 'startup|resume|clear');
-process.exit(hooks.description === 'foreign metadata' && foreignStartup?.hooks.length === 1 && foreignStartup.hooks[0].command === 'printf foreign-context' && hooks.hooks.Stop[0].hooks[0].timeout === 3 && config.includes('model = "keep-model"') && config.includes('[hooks.state]\nforeign = { enabled = true, trusted_hash = "keep-trust" }') && config.includes('[mcp_servers.foreign]\nurl = "https://foreign.invalid/mcp"') && fs.existsSync(path.join(homeDirectory, '.agents/skills/foreign/SKILL.md')) ? 0 : 1);
+process.exit(hooks.description === 'foreign metadata' && foreignStartup?.hooks.length === 1 && foreignStartup.hooks[0].command === 'printf foreign-context' && hooks.hooks.Stop.some(entry => entry.hooks.some(handler => handler.command === 'printf foreign-context' && handler.timeout === 3)) && config.includes('model = "keep-model"') && config.includes('[hooks.state]\nforeign = { enabled = true, trusted_hash = "keep-trust" }') && config.includes('[mcp_servers.foreign]\nurl = "https://foreign.invalid/mcp"') && fs.existsSync(path.join(homeDirectory, '.agents/skills/foreign/SKILL.md')) ? 0 : 1);
 NODE
 }
 

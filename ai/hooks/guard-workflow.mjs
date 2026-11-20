@@ -6,13 +6,15 @@ import path from "node:path";
 import v8 from "node:v8";
 import { allow, COMMAND_START, COMMAND_WRAPPERS, denyPreToolUse, isAttendedMainLoopCall, nearestExistingDirectory, readPayload } from "./hook-io.mjs";
 import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
+import { declaredAgent, fileChangesOf } from "./agent-payload.mjs";
 import { NO_UPSTREAM } from "../skills/specifying/lib/graph.ts";
 import { specsDirectory } from "../skills/specifying/lib/spec-store.ts";
 
 v8.setFlagsFromString("--enable-experimental-regexp-engine");
 
-const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const SPEC_GATE_MARKER = "[spec-gate]";
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
+const SPEC_GATE_DENIAL_OPENING = `${SPEC_GATE_MARKER} This is the first repo edit`;
 const GIT_GLOBAL_OPTIONS = String.raw`(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|super-prefix|config-env)\s+\S+|--?[A-Za-z][\w-]*(?:=\S+)?))*`;
 const GIT_ALIAS_TO_COMMIT_OR_PUSH = String.raw`-c\s*(?:alias\.[^=\s]+=\S*|"alias\.[^"=]+=[^"]*|'alias\.[^'=]+=[^']*)\b(?:commit|push)\b`;
 const GIT_COMMIT_OR_PUSH = new RegExp(
@@ -211,14 +213,18 @@ function isInsideDirectory(filePath, directory) {
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
-function isSpecGateDenial(event) {
-  return event.kind === "toolResult" && event.isError && event.text.startsWith("PreToolUse:") && event.text.includes(SPEC_GATE_MARKER);
+function isSpecGateDenial(event, editToolUseIds) {
+  if (event.kind !== "toolResult" || !event.text.includes(SPEC_GATE_DENIAL_OPENING)) return false;
+  if (declaredAgent() !== "claude") return editToolUseIds.has(event.toolUseId);
+  return event.isError && event.text.startsWith("PreToolUse:");
 }
 
 async function hasSpecGateCleared(transcriptPath, specsDirectory) {
+  const editToolUseIds = new Set();
   for await (const event of sessionEvents(transcriptPath)) {
     if (["specifying", "gating-reviews"].some((skillName) => isSkillRun(event, skillName))) return true;
-    if (isSpecGateDenial(event)) return true;
+    if (event.kind === "toolUse" && EDIT_TOOLS.has(event.name)) editToolUseIds.add(event.id);
+    if (isSpecGateDenial(event, editToolUseIds)) return true;
     if (event.kind !== "toolUse" || event.name !== "Read") continue;
     const readPath = String(event.input.file_path || "");
     if (path.isAbsolute(readPath) && isInsideDirectory(readPath, specsDirectory)) return true;
@@ -492,12 +498,6 @@ async function denyUnlessSpecGateCleared(transcriptPath) {
   denyPreToolUse(SPEC_GATE_REASON);
 }
 
-async function guardSpecFirst(filePath, transcriptPath) {
-  if (!isSpecGatedPath(filePath)) allow();
-  await denyUnlessSpecGateCleared(transcriptPath);
-  allow();
-}
-
 function resolveShellPath(word, baseDirectory) {
   const unquotedWord = word.replace(/^(['"])(.*)\1$/, "$2");
   if (unquotedWord === "" || UNRESOLVABLE_PATH_CHARACTERS.test(unquotedWord)) return null;
@@ -700,7 +700,7 @@ function guardForegroundBuild(toolInput) {
   if (!longCommand) return;
   denyPreToolUse(
     `This runs \`${longCommand[0].trim()}\` in the foreground, which blocks the loop for minutes. ` +
-    "<execution> requires builds, full suites, installs, and converges to run with run_in_background: true; rerun the same command that way and wait for its completion notification.",
+    "<execution> requires builds, full suites, installs, and converges never to hold the loop past a short wait; rerun the same command in the background (run_in_background: true, or WaitMsBeforeAsync of 10000 or less) and wait for its completion notification.",
   );
 }
 
@@ -717,7 +717,8 @@ async function main() {
   const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
   if (payload.tool_name === "Bash") guardKillSelfMatch(String(toolInput.command || ""));
   if (payload.tool_name === "Bash") await guardSpecFirstForBash(String(toolInput.command || ""), sessionDirectory, payload.transcript_path);
-  if (EDIT_TOOLS.has(payload.tool_name)) await guardSpecFirst(String(toolInput.file_path || ""), payload.transcript_path);
+  const changedFilePaths = fileChangesOf(payload).map((change) => String(change.tool_input.file_path || ""));
+  if (changedFilePaths.some(isSpecGatedPath)) await denyUnlessSpecGateCleared(payload.transcript_path);
   if (payload.tool_name === "AskUserQuestion") await guardUpstreamQuestions(toolInput, payload.transcript_path);
   allow();
 }

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { allow, isAttendedMainLoopCall, nearestExistingDirectory, readPayload } from "./hook-io.mjs";
+import { allow, blockStop, isAttendedMainLoopCall, nearestExistingDirectory, readPayload } from "./hook-io.mjs";
 import { isSkillRun, sessionEvents } from "./session-transcript.mjs";
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
@@ -85,18 +85,15 @@ function uncommittedPaths(pathsByWorktree) {
   return dirtyPaths;
 }
 
-function blockStop(dirtyPaths) {
+function blockUncommittedStop(dirtyPaths) {
   const listedPaths = dirtyPaths.slice(0, MAX_LISTED_PATHS).join(", ");
   const unlistedCount = dirtyPaths.length - MAX_LISTED_PATHS;
   const moreSuffix = unlistedCount > 0 ? ` and ${unlistedCount} more` : "";
-  process.stdout.write(JSON.stringify({
-    decision: "block",
-    reason:
-      `This turn ends with uncommitted edits this session made and no /landing since: ${listedPaths}${moreSuffix}. ` +
-      "Run the review gate (the intent's gate, else /gating-reviews), then /landing, now. If <land_when_done> exempts this turn (the carbon unit said not to commit, " +
-      "the work was exploration, or it is one slice of a plan still in flight), say which in one line and stop again.",
-  }));
-  process.exit(0);
+  blockStop(
+    `This turn ends with uncommitted edits this session made and no /landing since: ${listedPaths}${moreSuffix}. ` +
+    "Run the review gate (the intent's gate, else /gating-reviews), then /landing, now. If <land_when_done> exempts this turn (the carbon unit said not to commit, " +
+    "the work was exploration, or it is one slice of a plan still in flight), say which in one line and stop again.",
+  );
 }
 
 async function main() {
@@ -108,8 +105,8 @@ async function main() {
   if (editedPaths.size === 0) allow();
   const dirtyPaths = uncommittedPaths(groupPathsByWorktree(editedPaths));
   if (dirtyPaths.length === 0) allow();
-  if (await hasBackgroundWorkPending(payload.transcript_path)) allow();
-  blockStop(dirtyPaths);
+  if (payload.agent === "claude" && await hasBackgroundWorkPending(payload.transcript_path)) allow();
+  blockUncommittedStop(dirtyPaths);
 }
 
 try {
