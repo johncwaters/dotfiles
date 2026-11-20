@@ -15,6 +15,8 @@ claudeHome="$HOME/.claude"
 codexHome="$HOME/.codex"
 kimiHome="$HOME/.kimi-code"
 agyHome="$HOME/.gemini"
+codexSkillsHome="$HOME/.agents"
+agySkillsHome="$agyHome/config"
 claudeSkillsDirectory="$claudeHome/skills"
 repoSkillsDirectory="$dotfilesRepo/ai/skills"
 profilePlanNames() {
@@ -62,9 +64,9 @@ linkTargetsCurrentProfileEntry() {
 }
 
 removeRetiredEntryLinks() {
-  local retiredLinkScope="$1" entryKind="$2" entryLabel="$3"
+  local retiredLinkScope="$1" entryKind="$2" entryLabel="$3" toolHome="${4:-$claudeHome}"
   local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
-  local installedEntriesDirectory="$claudeHome/$entryKind"
+  local installedEntriesDirectory="$toolHome/$entryKind"
   local installedEntryPath
   local entryName
   local linkedEntryTarget
@@ -91,6 +93,15 @@ removeRetiredEntryLinks() {
   shopt -u dotglob nullglob
 }
 
+# Codex and agy load every SKILL.md under their skill homes, so a backup beside a foreign skill would still load.
+isForeignEntryKept() {
+  local installedEntryPath="$1" entryName="$2"
+  [[ "$installedEntriesDirectory" != "$claudeHome/"* ]] || return 1
+  [[ -e "$installedEntryPath" || -L "$installedEntryPath" ]] || return 1
+  ! pathIsLinkIntoThisRepo "$installedEntryPath" || return 1
+  noteWarned "$entryLabel $entryName" "a foreign entry holds this name, keeping it and skipping the repo $entryLabel"
+}
+
 linkSharedEntries() {
   local repoEntryPath
   local entryName
@@ -98,6 +109,7 @@ linkSharedEntries() {
   for repoEntryPath in "$repoEntriesDirectory"/*; do
     entryIsLive "$entryKind" "$repoEntryPath" || continue
     entryName="$(basename -- "$repoEntryPath")"
+    ! isForeignEntryKept "$installedEntriesDirectory/$entryName" "$entryName" || continue
     linkEntry "$entryLabel $entryName" "${repoEntryPath#"$dotfilesRepo/"}" "$installedEntriesDirectory/$entryName"
   done
   shopt -u nullglob
@@ -123,6 +135,7 @@ linkProfileEntries() {
         noteWarned "$entryLabel $entryName" "profile $entryLabel conflicts with shared $entryLabel, keeping shared $entryLabel"
         continue
       fi
+      ! isForeignEntryKept "$installedEntriesDirectory/$entryName" "$entryName" || continue
       linkEntry "$entryLabel $entryName" "${repoEntryPath#"$dotfilesRepo/"}" "$installedEntriesDirectory/$entryName"
     done
   done
@@ -139,21 +152,23 @@ moveEntryDirectoryAsideUnlessPlain() {
 convergeSharedEntryDirectory() {
   local entryKind="$1"
   local entryLabel="$2"
+  local toolHome="${3:-$claudeHome}"
   local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
-  local installedEntriesDirectory="$claudeHome/$entryKind"
+  local installedEntriesDirectory="$toolHome/$entryKind"
   moveEntryDirectoryAsideUnlessPlain
   mkdir -p -- "$installedEntriesDirectory"
-  removeRetiredEntryLinks shared "$entryKind" "$entryLabel"
+  removeRetiredEntryLinks shared "$entryKind" "$entryLabel" "$toolHome"
   linkSharedEntries
 }
 
 convergeProfileEntryDirectory() {
   local entryKind="$1"
   local entryLabel="$2"
+  local toolHome="${3:-$claudeHome}"
   local repoEntriesDirectory="$dotfilesRepo/ai/$entryKind"
-  local installedEntriesDirectory="$claudeHome/$entryKind"
+  local installedEntriesDirectory="$toolHome/$entryKind"
   [[ -d "$installedEntriesDirectory" && ! -L "$installedEntriesDirectory" ]] || return 0
-  removeRetiredEntryLinks profile "$entryKind" "$entryLabel"
+  removeRetiredEntryLinks profile "$entryKind" "$entryLabel" "$toolHome"
   linkProfileEntries
 }
 
@@ -252,6 +267,8 @@ installProfileSkillDependencies() {
 }
 
 convergeSharedEntryDirectory skills skill
+convergeSharedEntryDirectory skills "Codex skill" "$codexSkillsHome"
+convergeSharedEntryDirectory skills "agy skill" "$agySkillsHome"
 convergeSharedEntryDirectory agents agent
 convergeSharedEntryDirectory workflows workflow
 installSharedSkillDependencies
@@ -278,9 +295,11 @@ profileCodexHooksSource="$(profilePlanNames source-codex-hooks.json)"
 profileMcpServersSource="$(profilePlanNames source-mcp-servers.json)"
 
 convergeProfileEntryDirectory skills skill
+convergeProfileEntryDirectory skills "Codex skill" "$codexSkillsHome"
+convergeProfileEntryDirectory skills "agy skill" "$agySkillsHome"
 installProfileSkillDependencies
 
-# Codex and Kimi read one global AGENTS.md with no imports, so the profile rules are rendered into it.
+# Codex, agy, and Kimi read one global AGENTS.md with no imports, so the profile rules are rendered into it.
 renderProfileAgents() {
   local label="$1"
   local toolHome="$2"
@@ -302,6 +321,7 @@ renderProfileAgents() {
 }
 
 renderProfileAgents "Codex AGENTS.md" "$codexHome"
+renderProfileAgents "agy AGENTS.md" "$agyHome"
 if command -v kimi > /dev/null 2>&1; then
   renderProfileAgents "Kimi AGENTS.md" "$kimiHome"
 fi

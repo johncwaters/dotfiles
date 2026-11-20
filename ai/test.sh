@@ -683,6 +683,14 @@ check "work-server inherits work rules for Claude" \
   test "$(readlink "$sandbox/.claude/AGENTS.profile.md")" = "$sandbox/.dotfiles/profiles/work/AGENTS.md"
 check "work-server inherits work rules for Codex" \
   grep -q 'Prefer working in a dedicated git worktree' "$sandbox/.codex/AGENTS.md"
+check "work-server renders shared and work rules for agy as a plain file" \
+  bash -c '[[ -f "$1" && ! -L "$1" ]] && grep -q "Prefer working in a dedicated git worktree" "$1" && grep -qF "$(head -1 "$2")" "$1"' _ "$sandbox/.gemini/AGENTS.md" "$stagedRepo/ai/AGENTS.md"
+for skillsHome in "$sandbox/.agents/skills" "$sandbox/.gemini/config/skills"; do
+  check "work-server links its own addition into $skillsHome" \
+    test "$(readlink "$skillsHome/child-fixture")" = "$sandbox/.dotfiles/profiles/work-server/skills/child-fixture"
+  check "work-server links the shared house style into $skillsHome" \
+    test "$(readlink "$skillsHome/applying-house-style")" = "$sandbox/.dotfiles/ai/skills/applying-house-style"
+done
 for skillName in "${workSkillNames[@]}"; do
   check "work-server inherits $skillName without a copy" \
     test "$(readlink "$sandbox/.claude/skills/$skillName")" = "$sandbox/.dotfiles/profiles/work/skills/$skillName"
@@ -692,9 +700,13 @@ check "work-server inherits the review checklist" \
 check "work-server inherits the work owned repo list" \
   test "$(readlink "$ownedReposPath")" = "$sandbox/.dotfiles/profiles/work/owned-repos.txt"
 checkRerunIsQuiet "work-server rerun is quiet" "$(runTopicInstall "$stagedTopicDir" work-server)"
+childFixtureLinkedForCodexAndAgy=no
+[[ -L "$sandbox/.agents/skills/child-fixture" && -L "$sandbox/.gemini/config/skills/child-fixture" ]] && childFixtureLinkedForCodexAndAgy=yes
 runTopicInstall "$stagedTopicDir" server > /dev/null
 check "server removes inherited work-only artifacts" retiredManagedServerIsAbsent
 check "server retires the child profile addition" test ! -L "$sandbox/.claude/skills/child-fixture"
+check "server retires the child profile addition for Codex and agy" \
+  bash -c '[[ "$3" == yes && ! -L "$1/child-fixture" && ! -L "$2/child-fixture" && -f "$1/foreign/SKILL.md" ]]' _ "$sandbox/.agents/skills" "$sandbox/.gemini/config/skills" "$childFixtureLinkedForCodexAndAgy"
 check "server keeps shared house style" test -L "$sandbox/.claude/skills/applying-house-style"
 rm -r "$stagedRepo/profiles/work-server/skills/child-fixture" "$stagedRepo/profiles/personal/skills/personal-fixture"
 overridingChildDirectory="$stagedRepo/profiles/overriding-child-fixture"
@@ -710,6 +722,13 @@ check "a child skill overriding its parent's skill names no duplicate" outputLac
 checkRerunIsQuiet "a child overriding a parent skill reruns quietly" "$(runTopicInstall "$stagedTopicDir" overriding-child-fixture)"
 rm -rf "$overridingChildDirectory"
 
+rm -f "$sandbox/.gemini/config/skills/applying-house-style"
+mkdir -p "$sandbox/.gemini/config/skills/applying-house-style"
+printf 'my own house style\n' > "$sandbox/.gemini/config/skills/applying-house-style/SKILL.md"
+runTopicInstall "$stagedTopicDir" personal > /dev/null || true
+check "an agy skill of the same name as a repo skill is kept in place with no backup beside it" \
+  bash -c '[[ ! -L "$1/applying-house-style" ]] && grep -qx "my own house style" "$1/applying-house-style/SKILL.md" && ! compgen -G "$1/applying-house-style.pre-dotfiles*" > /dev/null' _ "$sandbox/.gemini/config/skills"
+rm -rf "$sandbox/.gemini/config/skills/applying-house-style"
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 
 check "personal installs the shared house style" \

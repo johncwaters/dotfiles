@@ -17,10 +17,10 @@ Personal machine setup. Linux for the personal and server profiles, macOS for wo
   its `@AGENTS.md` must resolve in `~/.claude`, beside the AGENTS.md link. The desktop wallpaper HEIC is copied too: macOS ignores a symlinked HEIC's
   time-of-day schedule.
 - Agent rules live in AGENTS.md files, never in a `CLAUDE.md`, which `ai/install.sh` renders
-  as imports alone (`ai/test.sh` pins this), so Codex gets every rule too. Profile-only rules go in
+  as imports alone (`ai/test.sh` pins this), so Codex and agy get every rule too. Profile-only rules go in
   `profiles/<name>/AGENTS.md` and reach only that profile or its declared AI descendants
-  (`ai/test.sh` pins isolation); Codex reads one global
-  file with no imports, so `ai/install.sh` renders shared plus profile rules into it.
+  (`ai/test.sh` pins isolation); Codex and agy read one global
+  file with no imports, so `ai/install.sh` renders shared plus profile rules into each.
 - Installers are idempotent. A machine is converged by running everything, not by
   remembering what already ran.
 - Removals converge too. Retiring a tool means adding it to a removal list, so machines
