@@ -145,6 +145,15 @@
         ]
       },
       {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/block-vague-names.mjs"
+          }
+        ]
+      },
+      {
         "matcher": "^(Agent|Task)$",
         "hooks": [
           {

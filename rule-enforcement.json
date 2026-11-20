@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 6,
+  "proseCeiling": 5,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -170,8 +170,10 @@
         ]
       },
       "code_style_naming": {
-        "kind": "prose",
-        "reason": "Name quality is judgment; no review lane takes it."
+        "kind": "check",
+        "by": [
+          "ai/hooks/block-vague-names.mjs"
+        ]
       },
       "ui_button_labels": {
         "kind": "check",

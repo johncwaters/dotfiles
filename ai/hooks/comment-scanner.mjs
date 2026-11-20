@@ -681,5 +681,5 @@ function scanSuppressionLines(content, syntax) {
 export {
   commentLinesOnlyInAfter, scanCommentLines, syntaxFor, elseSyntaxFor, scanElseLines,
   useEffectSyntaxFor, scanUseEffectLines, fixedSleepSyntaxFor, scanFixedSleepLines,
-  buttonLabelSyntaxFor, scanStatefulButtonLines, statefulButtonReason, suppressionSyntaxFor, scanSuppressionLines,
+  buttonLabelSyntaxFor, scanStatefulButtonLines, statefulButtonReason, suppressionSyntaxFor, scanSuppressionLines, codeLinesOf,
 };

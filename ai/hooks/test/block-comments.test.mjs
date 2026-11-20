@@ -4,14 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
-import { runHook } from "./harness.mjs";
+import { makeOwnedRepository, runHook } from "./harness.mjs";
 
-const ownedRepository = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "block-comments-owned-")));
-spawnSync("git", ["init", "-q", ownedRepository]);
-spawnSync("git", ["-C", ownedRepository, "remote", "add", "origin", "https://github.com/carbon-unit/owned.git"]);
-const ownedListPath = `${ownedRepository}-owned-repos.txt`;
-fs.writeFileSync(ownedListPath, "github.com/carbon-unit/owned\n");
-process.env.DOTFILES_OWNED_REPOS_FILE = ownedListPath;
+const ownedRepository = makeOwnedRepository("block-comments-owned-");
 
 function canRead(filePath) {
   try {

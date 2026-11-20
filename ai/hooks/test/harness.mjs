@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { commitFile, makeRepo } from "../../skills/landing/test/helpers.ts";
@@ -22,6 +23,16 @@ export function makeRepository(committedContent = "one\n", workingContent = "two
   commitFile(repository, "a.txt", committedContent);
   fs.writeFileSync(path.join(repository, "a.txt"), workingContent, "utf8");
   return repository;
+}
+
+export function makeOwnedRepository(prefix) {
+  const ownedRepository = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  spawnSync("git", ["init", "-q", ownedRepository]);
+  spawnSync("git", ["-C", ownedRepository, "remote", "add", "origin", "https://github.com/carbon-unit/owned.git"]);
+  const ownedListPath = `${ownedRepository}-owned-repos.txt`;
+  fs.writeFileSync(ownedListPath, "github.com/carbon-unit/owned\n");
+  process.env.DOTFILES_OWNED_REPOS_FILE = ownedListPath;
+  return ownedRepository;
 }
 
 export function codexRolloutLines(originator, ...userTexts) {
