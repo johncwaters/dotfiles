@@ -678,9 +678,37 @@ async function guardSpecFirstForBash(command, sessionDirectory, transcriptPath) 
   await denyUnlessSpecGateCleared(transcriptPath);
 }
 
+const COMMAND_END = String.raw`(?=\s|$|[;&|)'"])`;
+const OPTION_WORDS = String.raw`(?:\s+-\S+(?:\s+[^-\s;&|]\S*)?)*`;
+const LONG_COMMANDS = [
+  String.raw`(?:\S*/)?run-all\.sh`,
+  String.raw`(?:\S*/)?script/bootstrap`,
+  String.raw`(?:\S*/)?dot(?!\s+(?:status|-h|--help)\b)${COMMAND_END}`,
+  String.raw`(?:npm|pnpm|yarn|bun)${OPTION_WORDS}\s+(?:install|i|ci|add|it|cit|install-clean|install-test)${COMMAND_END}`,
+  String.raw`yarn(?:\s+-\S+)*(?=\s*(?:$|[;&|)'"]))`,
+  String.raw`apt(?:-get)?${OPTION_WORDS}\s+install\b`,
+  String.raw`brew${OPTION_WORDS}\s+(?:install|bundle)\b`,
+];
+const FOREGROUND_LONG_COMMAND = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:(?:ba|z|da)?sh(?:\s+-\S+)*\s+)?['"\\]*(?:${LONG_COMMANDS.join("|")})`, "m");
+const BACKGROUND_TASKS_DISABLED_VARIABLES = ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "CLAUDE_CODE_SIMPLE"];
+
+function guardForegroundBuild(toolInput) {
+  if (toolInput.run_in_background === true) return;
+  if (BACKGROUND_TASKS_DISABLED_VARIABLES.some((variableName) => /^(?:1|true|yes)$/i.test(process.env[variableName] ?? ""))) return;
+  const scannedCommand = maskSingleQuotedText(maskLiteralHeredocBodies(String(toolInput.command || "").replace(/\\\r?\n/g, " ")));
+  const longCommand = FOREGROUND_LONG_COMMAND.exec(scannedCommand);
+  if (!longCommand) return;
+  denyPreToolUse(
+    `This runs \`${longCommand[0].trim()}\` in the foreground, which blocks the loop for minutes. ` +
+    "<execution> requires builds, full suites, installs, and converges to run with run_in_background: true; rerun the same command that way and wait for its completion notification.",
+  );
+}
+
 async function main() {
   const payload = readPayload();
-  if (!payload || typeof payload !== "object" || payload.agent_id) allow();
+  if (!payload || typeof payload !== "object") allow();
+  if (payload.tool_name === "Bash" && payload.tool_input && typeof payload.tool_input === "object") guardForegroundBuild(payload.tool_input);
+  if (payload.agent_id) allow();
   if (typeof payload.transcript_path !== "string") allow();
   const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
   if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);

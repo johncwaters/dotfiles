@@ -7,7 +7,8 @@ import { makeRepository, removeAll, runHook } from "./harness.mjs";
 
 const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), "guard-workflow-home-"));
 const repository = makeRepository();
-const ATTENDED = { CLAUDE_CODE_SESSION_ATTENDED: "1", HOME: sandboxHome };
+const BACKGROUND_TASKS_ENABLED = { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "", CLAUDE_CODE_SIMPLE: "" };
+const ATTENDED = { CLAUDE_CODE_SESSION_ATTENDED: "1", HOME: sandboxHome, ...BACKGROUND_TASKS_ENABLED };
 
 after(() => removeAll(sandboxHome, repository));
 
@@ -195,6 +196,39 @@ test("git commit or push inside quoted search text or a literal heredoc body is 
   ]) {
     assert.equal(decisionFor(bashCall(command, transcriptPath)).decision, "allow", command);
   }
+});
+
+test("a long build, suite, install, or converge in the foreground is denied for every agent and allowed in the background", () => {
+  const transcriptPath = writeTranscript([prompt("run the suite")]);
+  const longCommands = [
+    "bash test/run-all.sh",
+    "cd /repo && ./test/run-all.sh 2>&1 | tail",
+    "npm ci",
+    "timeout 600 pnpm install --frozen-lockfile",
+    "sudo apt-get install -y jq",
+    "brew bundle --file Brewfile",
+    "~/.dotfiles/script/bootstrap",
+    "dot",
+    "sudo apt-get -y install jq",
+    "pnpm -C web install",
+    "npm --prefix ui ci",
+    "yarn",
+    "npm it",
+    "sh -c 'npm ci'",
+    'bash -c "pnpm install"',
+    "bash -x test/run-all.sh",
+    "cd test && ./run-all.sh",
+  ];
+  for (const command of longCommands) {
+    assert.equal(decisionFor(bashCall(command, transcriptPath)).decision, "deny", command);
+    assert.equal(decisionFor(bashCall(command, transcriptPath, { agent_id: "agent-1" }), BACKGROUND_TASKS_ENABLED).decision, "deny", command);
+    const backgroundCall = { tool_name: "Bash", tool_input: { command, run_in_background: true }, transcript_path: transcriptPath };
+    assert.equal(decisionFor(backgroundCall).decision, "allow", command);
+  }
+  for (const command of ["dot status", "dot --help", "npm test -- export", "yarn test", "grep -n 'npm install' README.md", "bash ai/test.sh", "echo dotfiles", "cat ~/.dotfiles/AGENTS.md"]) {
+    assert.equal(decisionFor(bashCall(command, transcriptPath)).decision, "allow", command);
+  }
+  assert.equal(decisionFor(bashCall("npm ci", transcriptPath), { ...ATTENDED, CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1" }).decision, "allow");
 });
 
 test("a kill by a pattern that matches its own Bash call is denied", () => {

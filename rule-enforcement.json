@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 7,
+  "proseCeiling": 6,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -114,9 +114,11 @@
         "reason": "Edits outside the stated surface are not compared to the task."
       },
       "execution": {
-        "kind": "prose",
-        "reason": "Safety Net covers rm -rf only; background runs and script hand-offs are unchecked.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "ai/hooks/guard-workflow.mjs",
+          "ai/hooks/test/guard-workflow.test.mjs"
+        ]
       },
       "spec_first": {
         "kind": "check",
