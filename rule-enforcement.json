@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 5,
+  "proseCeiling": 4,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -283,9 +283,10 @@
     },
     "profiles/work/AGENTS.md": {
       "worktree": {
-        "kind": "prose",
-        "reason": "Nothing refuses an edit outside a worktree.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "profiles/work/hooks/require-worktree.mjs"
+        ]
       }
     },
     "profiles/work/hooks/AGENTS.md": {}

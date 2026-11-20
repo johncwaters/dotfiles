@@ -81,7 +81,7 @@ The [repository invariants and map](AGENTS.md) cover checkout safety and link ow
 ## Profiles
 
 Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `apt-packages.txt`, `repos.txt`, `npm-globals.txt`, `AGENTS.md`,
-`skills/`, `hooks/`, `lib/`, `ai.json`, `codex-hooks.json`, `review-checklist.md`, `mcp-servers.json`,
+`skills/`, `hooks/`, `lib/`, `ai.json`, `codex-hooks.json`, `agy-hooks.json`, `review-checklist.md`, `mcp-servers.json`,
 `settings.overlay.json`, `npm-globals-remove.txt`, `coder.json`, `devbox/`, `vscodium-mcp.json`,
 `glimmervoid.overlay.json`, `vscodium.json`.
 

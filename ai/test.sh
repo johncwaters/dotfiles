@@ -341,7 +341,9 @@ check "the shared installed hooks contain none of the work hooks" \
   bash -c '[[ ! -e "$1/gate-posthog-exec-write.mjs" ]]' _ "$sandbox/.claude/hooks"
 check "work preserves foreign hooks and Codex trust" foreignCodexConfigIsPreserved
 check "all work hooks resolve imports through the installed symlink" \
-  env HOME="$sandbox" node "$sandbox/.claude/profile-hooks/gate-posthog-exec-write.mjs" <<< '{"tool_name":"unrelated","tool_input":{}}'
+  bash -c 'for hookName in gate-posthog-exec-write require-worktree; do env HOME="$1" node "$1/.claude/profile-hooks/$hookName.mjs" <<< "{\"tool_name\":\"unrelated\",\"tool_input\":{}}" || exit 1; done' _ "$sandbox"
+check "work renders its worktree guard into agy's hooks beside the shared ones" \
+  bash -c 'grep -qF "profile-hooks/require-worktree.mjs\\\" --agent=agy" "$1" && grep -qF "hooks/block-else.mjs" "$1"' _ "$sandbox/.gemini/config/hooks.json"
 for skillName in "${workSkillNames[@]}"; do
   check "work profile links skill $skillName through the alias" \
     bash -c '[[ -L "$1" && "$(readlink -- "$1")" == "$2" ]]' _ \

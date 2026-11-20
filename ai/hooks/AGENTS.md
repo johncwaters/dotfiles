@@ -35,8 +35,8 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 
 Every hook in `ai/settings.base.json` binds every agent unless `test/repo-wiring.sh` lists it Claude-only,
 so it is also wired in `ai/codex-hooks.base.json` and `ai/agy-hooks.base.json` on the same events and tools, with its `--agent=`. Profile-only hooks and their evidence belong in
-`profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
-`codex-hooks.json`, so shared hooks cannot import another profile's policy.
+`profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json`,
+`codex-hooks.json` and `agy-hooks.json`, so shared hooks cannot import another profile's policy.
 `ai/test.sh` pins the installed paths; shared event wiring lives in `ai/settings.base.json`.
 
 ## Validator invariants

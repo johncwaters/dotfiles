@@ -292,6 +292,7 @@ fi
 mapfile -t aiProfileNames < <(profilePlanNames include-profile)
 profileHooksSource="$(profilePlanNames source-hooks)"
 profileCodexHooksSource="$(profilePlanNames source-codex-hooks.json)"
+profileAgyHooksSource="$(profilePlanNames source-agy-hooks.json)"
 profileMcpServersSource="$(profilePlanNames source-mcp-servers.json)"
 
 convergeProfileEntryDirectory skills skill
@@ -551,7 +552,11 @@ renderCodexHooks() {
 
 renderAgyHooks() {
   local basePath="$dotfilesRepo/ai/agy-hooks.base.json"
-  renderAgentHooks "agy hooks" "$basePath" "$basePath" "$agyHome/config/hooks.json" ai-agy-owned-hook-commands dotfiles
+  local declarationPath="$basePath"
+  if [[ -f "$profileAgyHooksSource" ]]; then
+    declarationPath="$profileAgyHooksSource"
+  fi
+  renderAgentHooks "agy hooks" "$basePath" "$declarationPath" "$agyHome/config/hooks.json" ai-agy-owned-hook-commands dotfiles
 }
 
 syntaxEngineProbeStatus() {

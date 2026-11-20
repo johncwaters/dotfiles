@@ -231,7 +231,7 @@ check "Glimmervoid wires no shared hook a second time, and every shared Claude h
     const agentWiringPaths = { codex: "ai/codex-hooks.base.json", agy: "ai/agy-hooks.base.json" };
     const sharedWiringPaths = ["ai/settings.base.json", ...Object.values(agentWiringPaths)];
     const profileWiringPaths = fs.readdirSync(path.join(root, "profiles"))
-      .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`])
+      .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`, `profiles/${profileName}/agy-hooks.json`])
       .filter((relativePath) => fs.existsSync(path.join(root, relativePath)));
     const CLAUDE_ONLY_HOOKS = new Set(["check-finding-scope.mjs", "load-agents-md.mjs", "report-parked-branches.mjs", "retro-reminder.mjs"]);
     const CLAUDE_TOOL_NAMES = ["Bash", "Write", "Edit", "MultiEdit", "AskUserQuestion", "Agent", "Task", "Read", "Skill"];
@@ -266,9 +266,9 @@ check "Glimmervoid wires no shared hook a second time, and every shared Claude h
     process.exit(isEverySharedHookWiredOnce && requiredPairs.size > 0 && gaps.length === 0 ? 0 : 1);
   ' "$repoRoot"
 check "the work hooks and their tests live only under the work profile" \
-  bash -c 'for hookName in gate-posthog-exec-write; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
-check "work Claude hook commands use the profile hook link" \
-  node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const commands=Object.values(overlay.hooks).flatMap(entries=>entries.flatMap(entry=>entry.hooks.map(hook=>hook.command)));process.exit(commands.every(command=>command.includes("/.claude/profile-hooks/"))?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
+  bash -c 'for hookName in gate-posthog-exec-write require-worktree; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
+check "work Claude and agy hook commands use the profile hook link, and the worktree guard runs for both" \
+  node -e 'const fs=require("fs");const commandsOf=(file)=>Object.values(JSON.parse(fs.readFileSync(file,"utf8")).hooks).flatMap(entries=>entries.flatMap(entry=>entry.hooks.map(hook=>hook.command)));const claudeCommands=commandsOf(process.argv[1]);const agyCommands=commandsOf(process.argv[2]);const all=[...claudeCommands,...agyCommands];process.exit(all.every(command=>command.includes("/.claude/profile-hooks/"))&&agyCommands.every(command=>command.endsWith("--agent=agy"))&&[claudeCommands,agyCommands].every(commands=>commands.some(command=>command.includes("require-worktree.mjs")))?0:1)' "$repoRoot/profiles/work/settings.overlay.json" "$repoRoot/profiles/work/agy-hooks.json"
 check "no profile overlay owns caveman" \
   bash -c '! grep -qil caveman "$1"/profiles/*/settings.overlay.json' _ "$repoRoot"
 check "the assistant scopes Telegram itself because a global enable lets any session kill its poller" \
@@ -454,7 +454,7 @@ const PLATFORM_PROBE = /\buname\b|\$\{?OSTYPE\b|\bsw_vers\b/;
 const isSymlinkFlag = (word) => word === '--symbolic' || /^-[A-Za-z]*s[A-Za-z]*$/.test(word);
 function decidingPostToolUseHooks() {
   const settingsPaths = ['ai/settings.base.json', 'ai/codex-hooks.base.json', 'ai/agy-hooks.base.json', ...fs.readdirSync(path.join(root, 'profiles'))
-    .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`])]
+    .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`, `profiles/${profileName}/agy-hooks.json`])]
     .filter((settingsPath) => fs.existsSync(path.join(root, settingsPath)));
   return settingsPaths.flatMap((settingsPath) => {
     const postToolUseEntries = JSON.parse(readRepoFile(settingsPath)).hooks?.PostToolUse ?? [];

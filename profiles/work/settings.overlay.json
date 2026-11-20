@@ -10,6 +10,10 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/require-worktree.mjs" }]
+      },
+      {
         "matcher": "^mcp__.*__exec$",
         "hooks": [{ "type": "command", "command": "node {{HOME}}/.claude/profile-hooks/gate-posthog-exec-write.mjs" }]
       }
