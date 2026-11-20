@@ -10,6 +10,18 @@ source "$repoRoot/test/harness.sh"
 startStubbedSandbox devbox
 printf 'work\n' > "$DOTFILES_MARKER_PATH"
 linkCoreUtilities basename bash env cat sed awk grep head tail tr mkdir rm cp mv ln readlink realpath dirname chmod cmp diff hostname touch mktemp stat wc sleep ps nohup cut od date cksum paste sh sort comm find
+# ensure skips outside weekday working hours (devbox/lib.sh isDevboxForwardHour), so every call sees a weekday noon unless a test stubs date.
+realDatePath="$(type -P date)"
+rm -f "$coreBin/date"
+cat > "$coreBin/date" <<SHIM
+#!/usr/bin/env bash
+if [[ "\${1:-}" == '+%u %H' ]]; then
+  printf '3 12\\n'
+  exit 0
+fi
+exec "$realDatePath" "\$@"
+SHIM
+chmod +x "$coreBin/date"
 testNodePath="$(type -P node || true)"
 if [[ -n "$testNodePath" ]]; then
   linkCoreUtilities node
