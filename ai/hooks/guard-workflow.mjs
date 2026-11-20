@@ -102,7 +102,7 @@ const PLAIN_ASSIGNMENT = /^(?:export\s+)?([A-Za-z_]\w*)=((?:'[^']*'|"[^"\\`$]*(?
 const CONDITIONAL_OR_SUBSHELL_CODE = /(?:^|[\s;&|])(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function|\{|\}|#\S*)(?=$|[\s;&|])|(?<!\$)\(|`|\bcoproc\b/;
 const RUNTIME_REBINDING = /(?:^|[\s;&|(])(?:source|\.|eval|(?:declare|typeset|local)\s+-\w*n\w*)(?=\s)|<\(/;
 const STATEMENT_SEPARATOR =/^(?:&&|\|\||;;|[;\n|&])/;
-const SHELL_RUNS_NEXT_WORD = /(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-c|\beval)\s*$/;
+const SHELL_RUNS_NEXT_WORD = /(?:\b(?:ba|z|da|k)?sh\s+(?:-\S+\s+)*-[A-Za-z]*c|\beval)\s*$/;
 const IN_PLACE_FLAG = /^(?:-[A-Za-z0-9]*i|--in-place)/;
 const SUFFIX_TAKING_IN_PLACE_FLAG = /^-[A-Za-z0-9]*i$/;
 const EMPTY_SINGLE_QUOTED_WORD = "''";
@@ -561,7 +561,9 @@ function closingQuoteIndex(command, openingIndex) {
 
 function maskedQuotedWord(quotedText, quotedWord, isRunByShell) {
   if (isRunByShell) return `;${maskQuotedTextForWriteScan(quotedText)};`;
-  return /\s/.test(quotedText) ? '""' : quotedWord;
+  if (/\s/.test(quotedText)) return '""';
+  const isLiteralText = quotedWord.startsWith("'") || !/\$\(|`/.test(quotedText);
+  return isLiteralText ? quotedWord.replace(/[<>]/g, "_") : quotedWord;
 }
 
 function maskQuotedTextForWriteScan(command) {
