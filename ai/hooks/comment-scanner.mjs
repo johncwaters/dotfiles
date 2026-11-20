@@ -487,7 +487,162 @@ function scanFixedSleepLines(content, syntax) {
   });
 }
 
+const BUTTON_LABEL_EXTENSIONS = new Set([".jsx", ".tsx", ".vue", ".svelte", ".html", ".htm", ".astro"]);
+const BUTTON_TAG_NAME = /(?:^|[.-]|[a-z])(?:Button|button|btn|Btn)$/;
+const BUTTON_ROLE = /^(?:"button"|'button'|\{\s*["'`]button["'`]\s*\})$/;
+const LABEL_ATTRIBUTE_NAMES = new Set(["label", "text", "children", "title", "content", ":label", "v-bind:label"]);
+const TAG_NAME_AT = /[A-Za-z][\w.:-]*/y;
+const STATEFUL_LABEL_CHECKS = [
+  { reason: "progress word", scope: "label", pattern: /\b(?:Loading|Saving|Submitting|Sending|Deleting|Updating|Creating|Publishing|Processing|Uploading|Analy[sz]ing|Generating|Exporting|Importing|Syncing|Connecting|Committing|Retrying|Fetching|Applying)\b|\b[A-Za-z]+ing\s*(?:\.\.\.|…)/ },
+  { reason: "label ternary", scope: "label", pattern: /\{[^{}]*\?\s*["'`][^{}]*:\s*["'`][^{}]*\}/ },
+  { reason: "count", scope: "label", pattern: /\{[^{}]*(?:\b\w*[cC]ount\b|\.length\b|\b\w*[tT]otal\w*\b|\.size\b)[^{}]*\}/ },
+  { reason: "spinner", scope: "element", pattern: /<(?:[A-Z][\w.]*)?(?:Spinner|Loader|CircularProgress|ProgressCircular|ProgressIndicator)\b|<[a-z]+-(?:spinner|loader|progress-circular)\b|\banimate-spin\b|\bspinner\b/i },
+];
+
+function readTag(content, openIndex) {
+  const isClosing = content[openIndex + 1] === "/";
+  TAG_NAME_AT.lastIndex = openIndex + (isClosing ? 2 : 1);
+  const tagName = TAG_NAME_AT.exec(content)?.[0];
+  if (!tagName) return { endIndex: openIndex + 1 };
+  const attributes = [];
+  let attributeStart = TAG_NAME_AT.lastIndex;
+  let quote = null;
+  let braceDepth = 0;
+  for (let index = attributeStart; index < content.length; index += 1) {
+    const character = content[index];
+    if (quote !== null) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+      continue;
+    }
+    if (character === "{") braceDepth += 1;
+    if (character === "}") braceDepth = Math.max(0, braceDepth - 1);
+    if (braceDepth > 0) continue;
+    if (character === "<") return { endIndex: index };
+    if (character !== ">") continue;
+    const attributeText = content.slice(attributeStart, index);
+    return {
+      tagName,
+      isClosing,
+      isSelfClosing: attributeText.trimEnd().endsWith("/"),
+      attributeText,
+      attributes: parseAttributes(attributeText),
+      endIndex: index + 1,
+    };
+  }
+  return { endIndex: content.length };
+}
+
+function parseAttributes(attributeText) {
+  const attributes = new Map();
+  const attributePattern = /([^\s=/>{}]+)(?:\s*=\s*)?/y;
+  let index = 0;
+  while (index < attributeText.length) {
+    if (/\s|\//.test(attributeText[index])) {
+      index += 1;
+      continue;
+    }
+    attributePattern.lastIndex = index;
+    const nameMatch = attributePattern.exec(attributeText);
+    if (!nameMatch) {
+      index = skipValue(attributeText, index);
+      continue;
+    }
+    index = attributePattern.lastIndex;
+    if (!nameMatch[0].includes("=")) {
+      attributes.set(nameMatch[1], "");
+      continue;
+    }
+    const valueEnd = skipValue(attributeText, index);
+    attributes.set(nameMatch[1], attributeText.slice(index, valueEnd));
+    index = valueEnd;
+  }
+  return attributes;
+}
+
+function skipValue(text, index) {
+  const opener = text[index];
+  const closerByOpener = { '"': '"', "'": "'", "`": "`" };
+  if (closerByOpener[opener]) {
+    const closeIndex = text.indexOf(closerByOpener[opener], index + 1);
+    return closeIndex === -1 ? text.length : closeIndex + 1;
+  }
+  if (opener !== "{") return Math.max(index + 1, text.slice(index).search(/\s|$/) + index);
+  let braceDepth = 0;
+  for (let cursor = index; cursor < text.length; cursor += 1) {
+    if (text[cursor] === "{") braceDepth += 1;
+    if (text[cursor] === "}") braceDepth -= 1;
+    if (braceDepth === 0) return cursor + 1;
+  }
+  return text.length;
+}
+
+function isButtonTag(tag) {
+  return BUTTON_TAG_NAME.test(tag.tagName) || BUTTON_ROLE.test(tag.attributes.get("role") ?? "");
+}
+
+function buttonElementsIn(content) {
+  const text = String(content);
+  const buttonElements = [];
+  const openElements = [];
+  let index = text.indexOf("<");
+  while (index !== -1) {
+    const tag = readTag(text, index);
+    if (tag.tagName && tag.isClosing) {
+      const openPosition = openElements.findLastIndex((openElement) => openElement.tag.tagName === tag.tagName);
+      if (openPosition !== -1) {
+        const [openElement] = openElements.splice(openPosition);
+        if (isButtonTag(openElement.tag)) buttonElements.push({ tag: openElement.tag, elementText: text.slice(openElement.startIndex, tag.endIndex), body: text.slice(openElement.tag.endIndex, index) });
+      }
+    }
+    if (tag.tagName && !tag.isClosing && tag.isSelfClosing && isButtonTag(tag)) buttonElements.push({ tag, elementText: text.slice(index, tag.endIndex), body: "" });
+    if (tag.tagName && !tag.isClosing && !tag.isSelfClosing) openElements.push({ tag, startIndex: index });
+    index = text.indexOf("<", tag.endIndex);
+  }
+  return buttonElements;
+}
+
+function textOutsideTags(markup) {
+  const textParts = [];
+  let textStart = 0;
+  let index = markup.indexOf("<");
+  while (index !== -1) {
+    const tag = readTag(markup, index);
+    if (tag.tagName) {
+      textParts.push(markup.slice(textStart, index));
+      textStart = tag.endIndex;
+    }
+    index = markup.indexOf("<", tag.endIndex);
+  }
+  textParts.push(markup.slice(textStart));
+  return textParts.join(" ");
+}
+
+function statefulReasonOf({ tag, elementText, body }) {
+  const labelProps = [...tag.attributes].filter(([attributeName]) => LABEL_ATTRIBUTE_NAMES.has(attributeName)).map(([, value]) => value);
+  const textByScope = { label: [textOutsideTags(body), ...labelProps].join("\n"), element: elementText };
+  return STATEFUL_LABEL_CHECKS.find(({ scope, pattern }) => pattern.test(textByScope[scope]))?.reason ?? null;
+}
+
+function buttonLabelSyntaxFor(filePath) {
+  if (!BUTTON_LABEL_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return null;
+  return { kind: "markup" };
+}
+
+function statefulButtonReason(elementText) {
+  const [firstButton] = buttonElementsIn(elementText);
+  return firstButton ? statefulReasonOf(firstButton) : null;
+}
+
+function scanStatefulButtonLines(content) {
+  return buttonElementsIn(content).filter((buttonElement) => statefulReasonOf(buttonElement) !== null).map(({ elementText }) => elementText);
+}
+
 export {
   commentLinesOnlyInAfter, scanCommentLines, syntaxFor, elseSyntaxFor, scanElseLines,
   useEffectSyntaxFor, scanUseEffectLines, fixedSleepSyntaxFor, scanFixedSleepLines,
+  buttonLabelSyntaxFor, scanStatefulButtonLines, statefulButtonReason,
 };

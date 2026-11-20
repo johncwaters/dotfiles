@@ -113,6 +113,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/block-button-labels.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
             "command": "node {{HOME}}/.claude/hooks/block-fixed-sleep.mjs"
           }
         ]

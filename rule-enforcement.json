@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 9,
+  "proseCeiling": 8,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -169,9 +169,11 @@
         "reason": "Name quality is judgment; no review lane takes it."
       },
       "ui_button_labels": {
-        "kind": "prose",
-        "reason": "No lint reads button labels for progress words or counts.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "ai/hooks/block-button-labels.mjs",
+          "ai/hooks/test/block-button-labels.test.mjs"
+        ]
       },
       "research_not_assume": {
         "kind": "check",

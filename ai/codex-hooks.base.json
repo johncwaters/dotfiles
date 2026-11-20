@@ -16,6 +16,11 @@
           },
           {
             "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-button-labels.mjs\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "node \"{{HOME}}/.claude/hooks/block-fixed-sleep.mjs\"",
             "timeout": 10
           }

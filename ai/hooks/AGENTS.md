@@ -23,8 +23,8 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `retro-reminder.mjs` | SessionEnd incident count and nudge; SessionStart unreviewed-retro report | `test/retro-reminder.test.mjs` |
 | `block-comments.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
-| `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, `edit-judge.mjs` | PreToolUse else-, useEffect- and test sleep-then-assert growth guards; shared Write/Edit/MultiEdit/apply_patch growth runner | `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs` |
-| `comment-scanner.mjs` | Shared comment, else, useEffect, and fixed-sleep scanners with string tracking | `test/block-comments.test.mjs`, `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs` |
+| `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, `block-button-labels.mjs`, `edit-judge.mjs` | PreToolUse else-, useEffect-, test sleep-then-assert and stateful button-label growth guards; shared Write/Edit/MultiEdit/apply_patch growth runner | `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs`, `test/block-button-labels.test.mjs` |
+| `comment-scanner.mjs` | Shared comment, else, useEffect, fixed-sleep, and button-label scanners | `test/block-comments.test.mjs`, `test/block-button-labels.test.mjs`, `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs` |
 | `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
 | `hook-io.mjs` | Shared payload and decision protocol | Guard tests above |
 | `repo-ownership.mjs` | Owned or foreign for a path, from the profile's `owned-repos.txt`; unknown is foreign | `test/repo-ownership.test.mjs` |
@@ -32,7 +32,7 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 
 `block-comments.mjs` belongs to Glimmervoid's per-session hooks in
 `glimmervoid/config.example.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. `block-else.mjs`, `block-use-effect.mjs`, and `block-fixed-sleep.mjs` bind every agent, so they
+to Glimmervoid sessions. `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, and `block-button-labels.mjs` bind every agent, so they
 are wired in `ai/settings.base.json` for every Claude and `ai/codex-hooks.base.json` for every Codex. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.
