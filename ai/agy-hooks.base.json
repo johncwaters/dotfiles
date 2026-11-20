@@ -36,6 +36,11 @@
           },
           {
             "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-suppressions.mjs\" --agent=agy",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "node \"{{HOME}}/.claude/hooks/guard-workflow.mjs\" --agent=agy",
             "timeout": 30
           }

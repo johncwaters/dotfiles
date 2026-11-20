@@ -184,7 +184,8 @@
         "kind": "check",
         "by": [
           "ai/hooks/validate-spec.mjs",
-          "ai/hooks/guard-workflow.mjs"
+          "ai/hooks/guard-workflow.mjs",
+          "ai/hooks/block-suppressions.mjs"
         ]
       },
       "docs_must_be_enforceable": {

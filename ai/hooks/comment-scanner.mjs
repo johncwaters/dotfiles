@@ -641,8 +641,45 @@ function scanStatefulButtonLines(content) {
   return buttonElementsIn(content).filter((buttonElement) => statefulReasonOf(buttonElement) !== null).map(({ elementText }) => elementText);
 }
 
+const SUPPRESSION_DIRECTIVE_RE = new RegExp(String.raw`@ts-(?:ignore|expect-error|nocheck)\b|\b(?:eslint|oxlint|tslint)-disable\b|\beslint\s+[\w/@-]+\s*:\s*(?:off|0)\b|\b(?:biome|deno-lint)-ignore\b|#\s*noqa\b|#\s*(?:type|pyright):\s*ignore\b|\bpylint:\s*disable\b|\/\/\s*nolint\b|\bshellcheck\s+disable=|\brubocop:\s*disable\b|@SuppressWarnings\b|#!?\[allow\(|#pragma\s+warning\s+disable\b`, "g");
+const FOCUSED_OR_SKIPPED_TEST_RE = new RegExp(String.raw`(?:^|[^\w$])(?:it|test|describe|context|suite)(?:\.\w+)*\.(?:only|skip|skipIf)\b|(?:^|[^\w$.])(?:x(?:it|test|describe)|f(?:it|describe))\s*\(|[{,]\s*(?:only|skip)\s*:(?!\s*false\b)|@pytest\.mark\.(?:skip|skipif|xfail)\b|@unittest\.skip\w*\b`, "g");
+const SUPPRESSION_TEST_PATH_RE = /(?:^|\/)(?:tests?|__tests__|spec)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)test_[^/]*\.py$|_test\.py$/;
+const ISSUE_LINK_RE = /https?:\/\/\S+/;
+
+function suppressionSyntaxFor(filePath) {
+  const syntax = syntaxFor(filePath);
+  if (!syntax) return null;
+  return { ...syntax, isTestFile: SUPPRESSION_TEST_PATH_RE.test(String(filePath)) };
+}
+
+function* linesOutsideStringsOf(content, syntax) {
+  const strings = (syntax.stringTracker ?? makeNoStringRegions)();
+  const state = {};
+  const commentKeepingSyntax = { ...syntax, blockOpen: null };
+  for (const line of String(content).split("\n")) {
+    if (strings.startsInsideString()) {
+      strings.advance(line);
+      if (!strings.startsInsideString()) state.openDelimiter = null;
+      continue;
+    }
+    const text = stripQuotedSpans(line, [], state, commentKeepingSyntax);
+    strings.advance(line);
+    if (text.trim()) yield { line, text };
+  }
+}
+
+function scanSuppressionLines(content, syntax) {
+  const found = [];
+  for (const { line, text } of linesOutsideStringsOf(content, syntax)) {
+    const directiveCount = ISSUE_LINK_RE.test(text) ? 0 : (text.match(SUPPRESSION_DIRECTIVE_RE) ?? []).length;
+    const focusedTestCount = syntax.isTestFile ? (text.match(FOCUSED_OR_SKIPPED_TEST_RE) ?? []).length : 0;
+    for (let i = 0; i < directiveCount + focusedTestCount; i++) found.push(line.trim());
+  }
+  return found;
+}
+
 export {
   commentLinesOnlyInAfter, scanCommentLines, syntaxFor, elseSyntaxFor, scanElseLines,
   useEffectSyntaxFor, scanUseEffectLines, fixedSleepSyntaxFor, scanFixedSleepLines,
-  buttonLabelSyntaxFor, scanStatefulButtonLines, statefulButtonReason,
+  buttonLabelSyntaxFor, scanStatefulButtonLines, statefulButtonReason, suppressionSyntaxFor, scanSuppressionLines,
 };

@@ -17,10 +17,17 @@ const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const SPEC_GATE_DENIAL_OPENING = `${SPEC_GATE_MARKER} This is the first repo edit`;
 const GIT_GLOBAL_OPTIONS = String.raw`(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|super-prefix|config-env)\s+\S+|--?[A-Za-z][\w-]*(?:=\S+)?))*`;
 const GIT_ALIAS_TO_COMMIT_OR_PUSH = String.raw`-c\s*(?:alias\.[^=\s]+=\S*|"alias\.[^"=]+=[^"]*|'alias\.[^'=]+=[^']*)\b(?:commit|push)\b`;
+const GIT_INVOCATION = String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?git['"]?${GIT_GLOBAL_OPTIONS}\s+`;
 const GIT_COMMIT_OR_PUSH = new RegExp(
-  String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?git['"]?${GIT_GLOBAL_OPTIONS}\s+(?:(?:commit|push)(?=\s|$|[;&|)'"])|${GIT_ALIAS_TO_COMMIT_OR_PUSH})`,
+  String.raw`${GIT_INVOCATION}(?:(?:commit|push)(?=\s|$|[;&|)'"])|${GIT_ALIAS_TO_COMMIT_OR_PUSH})`,
   "m",
 );
+const SAME_COMMAND_TEXT = String.raw`(?:[^;&|\n]|\\\n)*?`;
+const GIT_HOOK_BYPASS = new RegExp(
+  String.raw`${GIT_INVOCATION}(?:(?:commit|push)\b${SAME_COMMAND_TEXT}\s--no-veri(?:fy?)?|commit\b${SAME_COMMAND_TEXT}\s-[aqsv]*n[A-Za-z]*)(?=[\s=;&|)'"]|$)`,
+  "m",
+);
+const HOOKS_DISABLED_SETTING = /\bcore\.hooksPath\b|\bHUSKY=0\b/;
 const LANDING_SKILLS = ["landing", "opening-prs"];
 const GH_CALL = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?gh['"]?(?=\s|$)([^;&|\n]*)`, "gm");
 const GH_GLOBAL_OPTION_TAKING_VALUE = /^(?:-R|--repo|--hostname)$/;
@@ -115,6 +122,10 @@ const RAW_COMMIT_REASON =
   "Never commit a WIP set-aside to integrate mainline: uncommitted work proceeds behind mainline, land.ts --promote rebases the landed commit onto it, and a conflict there resolves through landing recovery; work that needs mainline's new code before it can be finished is set aside as a patch instead: `git diff --binary HEAD > <scratchpad>/set-aside.patch`, unstage with `git reset -q`, delete each file the patch adds (`git apply --summary` names them as create mode), restore each other changed file with `git show HEAD:./<path> > <path>`, integrate mainline, then `git apply --3way <scratchpad>/set-aside.patch`. " +
   "Commits already made (a mainline sync's merge) push through /landing's land.ts with no message, which withholds any commit no review recorded. " +
   "A carbon unit who wants a raw commit runs it themselves with `! git ...`.";
+
+const HOOK_BYPASS_REASON =
+  "`git commit` or `git push` with --no-verify, `git commit -n`, or hooks turned off through core.hooksPath or HUSKY=0 skips the repo's hooks, which silences a check instead of fixing it. " +
+  "Rerun without the flag and fix what the hook reports; a carbon unit who wants to skip hooks runs the command themselves with `! git ...`.";
 
 function upstreamQuestionReason(unweighedQuestions) {
   const defects = unweighedQuestions.map(({ header, defect }) => `${header} (${defect})`).join("; ");
@@ -481,10 +492,14 @@ async function guardProsePost(command, transcriptPath) {
 }
 
 async function guardRawCommit(command, transcriptPath) {
-  if (!GIT_COMMIT_OR_PUSH.test(maskSingleQuotedText(maskLiteralHeredocBodies(command)))) return;
+  const executedText = maskSingleQuotedText(maskLiteralHeredocBodies(command));
+  if (!GIT_COMMIT_OR_PUSH.test(executedText)) return;
   if (isEveryCommitOrPushThrowaway(command)) return;
-  if (fs.existsSync(transcriptPath) && (await hasLandingSkillRunSinceLastPrompt(transcriptPath))) return;
-  denyPreToolUse(RAW_COMMIT_REASON);
+  const hasLandingRun = fs.existsSync(transcriptPath) && (await hasLandingSkillRunSinceLastPrompt(transcriptPath));
+  if (!hasLandingRun) denyPreToolUse(RAW_COMMIT_REASON);
+  const executedTextOutsideQuotes = maskQuotedTextForWriteScan(maskLiteralHeredocBodies(command))
+    .replace(/(["'])([^"']*)\1/g, (quotedWord, quote, quotedText) => (/[;&|]/.test(quotedText) ? '""' : quotedWord));
+  if (GIT_HOOK_BYPASS.test(executedTextOutsideQuotes) || HOOKS_DISABLED_SETTING.test(executedTextOutsideQuotes)) denyPreToolUse(HOOK_BYPASS_REASON);
 }
 
 function isSpecGatedPath(filePath) {

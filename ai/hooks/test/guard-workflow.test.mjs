@@ -276,7 +276,7 @@ test("a kill by a pattern that matches its own Bash call is denied", () => {
   }
 });
 
-test("a /landing or /opening-prs run allows raw commits until the next carbon-unit prompt", () => {
+test("a /landing or /opening-prs run allows raw commits until the next carbon-unit prompt, except ones that skip the repo hooks", () => {
   const commitSkillRun = writeTranscript([prompt("ship it"), ...skillRun("landing")]);
   assert.equal(decisionFor(bashCall('git commit -m "WIP set-aside"', commitSkillRun)).decision, "allow");
   const slashRun = writeTranscript([prompt("<command-name>/landing</command-name>\n<command-message>landing</command-message>")]);
@@ -287,6 +287,26 @@ test("a /landing or /opening-prs run allows raw commits until the next carbon-un
   assert.equal(decisionFor(bashCall('git add -A && git commit -m "WIP set-aside"', openPullRequestRun)).decision, "allow");
   const rejectedRun = writeTranscript([prompt("ship it"), toolUse("Skill", { skill: "landing" }), toolResult("The tool use was rejected.", { toolUseId: "tool-Skill" })]);
   assert.equal(decisionFor(bashCall("git commit -m x", rejectedRun)).decision, "deny");
+  const hookBypasses = [
+    "git commit --no-verify -m x",
+    "git commit -nm x",
+    "git -C repo push --no-verify origin main",
+    "cd repo && git commit -an -m x",
+    "git commit -m \"$(cat <<'EOF'\nmsg\n\nbody\nEOF\n)\" --no-verify",
+    "git commit -m x \\\n  --no-verify",
+    "git commit -m \"a;b\" --no-verify",
+    "git push --no-verif origin main",
+    "git -c core.hooksPath=/dev/null commit -m x",
+    "HUSKY=0 git commit -m x",
+  ];
+  for (const hookBypass of hookBypasses) {
+    const { decision, reason } = decisionFor(bashCall(hookBypass, commitSkillRun));
+    assert.equal(decision, "deny", hookBypass);
+    assert.match(reason, /--no-verify/);
+  }
+  assert.equal(decisionFor(bashCall("git push -n origin main", commitSkillRun)).decision, "allow");
+  assert.equal(decisionFor(bashCall("git commit -m 'skip --no-verify talk'", commitSkillRun)).decision, "allow");
+  assert.equal(decisionFor(bashCall('git commit -m "feat: deny --no-verify and -n flags"', commitSkillRun)).decision, "allow");
 });
 
 test("subagents and malformed input are never gated, and unattended or transcriptless sessions are gated only on raw commits", () => {
