@@ -65,17 +65,7 @@
   "agentApi": {
     "enabled": true
   },
-  "hooks": [
-    {
-      "id": "a2ef51b3-f8f3-4d9a-ac4b-785965a85560",
-      "name": "Block new code comments",
-      "event": "PreToolUse",
-      "type": "command",
-      "enabled": true,
-      "matcher": "Write|Edit|MultiEdit",
-      "command": "node {{HOME}}/.claude/hooks/block-comments.mjs"
-    }
-  ],
+  "hooks": [],
   "projects": [
     {
       "id": "856a1950-c603-45a0-bc82-9ef7062cec98",

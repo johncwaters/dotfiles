@@ -41,6 +41,11 @@
           },
           {
             "type": "command",
+            "command": "node \"{{HOME}}/.claude/hooks/block-comments.mjs\" --agent=codex",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "node \"{{HOME}}/.claude/hooks/guard-workflow.mjs\" --agent=codex",
             "timeout": 30
           }

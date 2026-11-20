@@ -23,7 +23,7 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `load-agents-md.mjs` | SessionStart and PostToolUse(Read) injection of AGENTS.md files a CLAUDE.md shadows (Claude Code 2.1.287 loads AGENTS.md only when no CLAUDE.md sits between it and the repo root) | `test/load-agents-md.test.mjs` |
 | `report-parked-branches.mjs` | SessionStart commit-ledger report | `test/report-parked-branches.test.mjs` |
 | `retro-reminder.mjs` | SessionEnd incident count and nudge; SessionStart unreviewed-retro report | `test/retro-reminder.test.mjs` |
-| `block-comments.mjs` | PreToolUse comment-growth guard | `test/block-comments.test.mjs` |
+| `block-comments.mjs` | PreToolUse comment-growth guard, only for files `repo-ownership.mjs` calls owned, since foreign repos keep their own comment conventions | `test/block-comments.test.mjs` |
 | `block-else.mjs`, `block-use-effect.mjs`, `block-fixed-sleep.mjs`, `block-button-labels.mjs`, `block-suppressions.mjs`, `edit-judge.mjs` | PreToolUse else-, useEffect-, test sleep-then-assert, stateful button-label and check-suppression growth guards; shared growth runner over `fileChangesOf` | `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs`, `test/block-button-labels.test.mjs`, `test/block-suppressions.test.mjs` |
 | `comment-scanner.mjs` | Shared comment, else, useEffect, fixed-sleep, button-label, and suppression scanners | `test/block-comments.test.mjs`, `test/block-button-labels.test.mjs`, `test/block-else.test.mjs`, `test/block-use-effect.test.mjs`, `test/block-fixed-sleep.test.mjs`, `test/block-suppressions.test.mjs` |
 | `edit-replay.mjs` | Shared Edit and MultiEdit reconstruction | `test/validate-file.test.mjs`, `test/block-comments.test.mjs` |
@@ -32,9 +32,7 @@ model argument; `test/enforce-spawn-model.test.mjs` pins the exception.
 | `repo-ownership.mjs` | Owned or foreign for a path, from the profile's `owned-repos.txt`; unknown is foreign | `test/repo-ownership.test.mjs` |
 | `ratchet.mjs` | Fails a committed `.agents/ratchet.json` on growth and lowers it on a fall; `init` only in owned code; run by `/gating-reviews` | `test/ratchet.test.mjs` |
 
-`block-comments.mjs` belongs to Glimmervoid's per-session hooks in
-`glimmervoid/settings.json`, not `ai/settings.base.json`, so its scope stays local
-to Glimmervoid sessions. Every hook in `ai/settings.base.json` binds every agent unless `test/repo-wiring.sh` lists it Claude-only,
+Every hook in `ai/settings.base.json` binds every agent unless `test/repo-wiring.sh` lists it Claude-only,
 so it is also wired in `ai/codex-hooks.base.json` and `ai/agy-hooks.base.json` on the same events and tools, with its `--agent=`. Profile-only hooks and their evidence belong in
 `profiles/<name>/hooks/`, with wiring in that profile's `settings.overlay.json` and
 `codex-hooks.json`, so shared hooks cannot import another profile's policy.

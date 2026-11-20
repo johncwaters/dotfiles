@@ -88,7 +88,7 @@ function judgeChange(change, syntax, scanLines) {
   return judgeEdits(toolInput, syntax, scanLines) ?? judgeFragments(editsOf(toolInput), syntax, scanLines);
 }
 
-function runGrowthGuard({ syntaxFor, scanLines, deny }) {
+function runGrowthGuard({ syntaxFor, scanLines, deny, isPathInScope = () => true }) {
   try {
     const payload = readPayload();
     if (!payload || typeof payload !== "object") allow();
@@ -101,6 +101,7 @@ function runGrowthGuard({ syntaxFor, scanLines, deny }) {
       if (!syntax) continue;
       const judgement = judgeChange(change, syntax, scanLines);
       if (!judgement || judgement.added <= 0) continue;
+      if (!isPathInScope(change.tool_input.file_path)) continue;
       added += judgement.added;
       firstGrowingPath ||= change.tool_input.file_path;
       samples.push(...samplesSuppliedByCall(change.tool_input, judgement.samples));

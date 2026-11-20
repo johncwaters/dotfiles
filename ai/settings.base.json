@@ -136,6 +136,15 @@
         ]
       },
       {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/block-comments.mjs"
+          }
+        ]
+      },
+      {
         "matcher": "^(Agent|Task)$",
         "hooks": [
           {

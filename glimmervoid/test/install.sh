@@ -41,8 +41,8 @@ check "a personal machine never probes the remote listener" logLacks "http://127
 "$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=Number(process.argv[2]);fs.writeFileSync(process.argv[1], JSON.stringify(config))' \
   "$personalHome/.glimmervoid/config.json" "$isolatedWorkPort"
 runInstall "$personalHome" personal > /dev/null || true
-check "a personal machine converges the shared glimmervoid hooks" \
-  test "$(configValue "$personalHome" 'require(process.argv[1]).hooks.map(hook => hook.command).join(" ")')" = "node $personalHome/.claude/hooks/block-comments.mjs"
+check "a personal machine converges the shared glimmervoid hooks, which no longer carry the comment guard every agent session runs" \
+  test "$(configValue "$personalHome" 'require(process.argv[1]).hooks.length')" = "0"
 check "the shared settings resolve the home token to this home" \
   test "$(configValue "$personalHome" 'require(process.argv[1]).repoRoots[0]')" = "$personalHome/Projects"
 "$realNodePath" -e 'const fs=require("fs");const config=require(process.argv[1]);config.port=3000;fs.writeFileSync(process.argv[1], JSON.stringify(config))' \

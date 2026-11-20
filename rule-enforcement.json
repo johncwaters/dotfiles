@@ -272,11 +272,10 @@
           "ai/hooks/test/validate-file.test.mjs"
         ]
       },
-      "block-comments-mjs-belongs-to-glimmervoid": {
+      "every-hook-in-ai-settings-base": {
         "kind": "check",
         "by": [
-          "test/repo-wiring.sh",
-          "glimmervoid/test/install.sh"
+          "test/repo-wiring.sh"
         ]
       }
     },

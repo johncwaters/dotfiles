@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { judgeWrite, judgeEdits, samplesSuppliedByCall } from "./edit-judge.mjs";
-import { allow, denyPreToolUse, readPayload } from "./hook-io.mjs";
+import { runGrowthGuard } from "./edit-judge.mjs";
+import { denyPreToolUse } from "./hook-io.mjs";
 import { scanCommentLines, syntaxFor } from "./comment-scanner.mjs";
+import { isPathOwned } from "./repo-ownership.mjs";
 
 function deny(filePath, addedCount, samples) {
   const shown = samples.slice(0, 3).map((line) => `  ${line.slice(0, 100)}`);
@@ -19,22 +20,9 @@ function deny(filePath, addedCount, samples) {
   ].join("\n"));
 }
 
-try {
-  const payload = readPayload();
-  if (!payload || typeof payload !== "object") allow();
-  const toolName = payload.tool_name;
-  const toolInput =
-    payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
-  if (typeof toolInput.file_path !== "string") allow();
-  const syntax = syntaxFor(toolInput.file_path);
-  if (!syntax) allow();
-  if (toolName !== "Write" && toolName !== "Edit" && toolName !== "MultiEdit") allow();
-  const judge = toolName === "Write" ? judgeWrite : judgeEdits;
-  const judgement = judge(toolInput, syntax, scanCommentLines);
-  if (judgement && judgement.added > 0) {
-    deny(toolInput.file_path, judgement.added, samplesSuppliedByCall(toolInput, judgement.samples));
-  }
-  allow();
-} catch {
-  allow();
-}
+runGrowthGuard({
+  syntaxFor,
+  scanLines: scanCommentLines,
+  deny,
+  isPathInScope: (filePath) => isPathOwned(path.resolve(filePath)),
+});

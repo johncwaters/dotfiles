@@ -221,7 +221,7 @@ check "the work overlay gates exec writes on every declared MCP server because t
   node -e 'const fs=require("fs");const overlay=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const serverNames=Object.keys(JSON.parse(fs.readFileSync(process.argv[2],"utf8")));const gateEntries=(overlay.hooks?.PreToolUse||[]).filter((entry)=>entry.hooks.some((hook)=>hook.command.includes("gate-posthog-exec-write.mjs")));process.exit(serverNames.length>0&&serverNames.every((serverName)=>gateEntries.some((entry)=>new RegExp(entry.matcher).test(`mcp__${serverName}__exec`)))?0:1)' "$repoRoot/profiles/work/settings.overlay.json" "$repoRoot/profiles/work/mcp-servers.json"
 check "the work overlay disables the Cloudflare plugin because its skills went unused, keeping its marketplace known" \
   node -e 'const overlay=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(overlay.enabledPlugins?.["cloudflare@cloudflare"]===false&&overlay.extraKnownMarketplaces?.cloudflare?.source?.repo==="cloudflare/skills"?0:1)' "$repoRoot/profiles/work/settings.overlay.json"
-check "block-comments is wired only for Glimmervoid sessions, and every shared Claude hook is wired for Codex and agy on the same events and tools with its agent declared" \
+check "Glimmervoid wires no shared hook a second time, and every shared Claude hook is wired for Codex and agy on the same events and tools with its agent declared" \
   node --input-type=module -e '
     import fs from "node:fs";
     import path from "node:path";
@@ -233,8 +233,6 @@ check "block-comments is wired only for Glimmervoid sessions, and every shared C
     const profileWiringPaths = fs.readdirSync(path.join(root, "profiles"))
       .flatMap((profileName) => [`profiles/${profileName}/settings.overlay.json`, `profiles/${profileName}/codex-hooks.json`])
       .filter((relativePath) => fs.existsSync(path.join(root, relativePath)));
-    const isGlimmervoidOnly = read("glimmervoid/settings.json").includes("hooks/block-comments.mjs")
-      && [...sharedWiringPaths, ...profileWiringPaths].every((relativePath) => !read(relativePath).includes("block-comments"));
     const CLAUDE_ONLY_HOOKS = new Set(["check-finding-scope.mjs", "load-agents-md.mjs", "report-parked-branches.mjs", "retro-reminder.mjs"]);
     const CLAUDE_TOOL_NAMES = ["Bash", "Write", "Edit", "MultiEdit", "AskUserQuestion", "Agent", "Task", "Read", "Skill"];
     const TOOL_CLASS_BY_CLAUDE_NAME = { Write: "file-edit", Edit: "file-edit", MultiEdit: "file-edit", Agent: "spawn", Task: "spawn" };
@@ -247,6 +245,8 @@ check "block-comments is wired only for Glimmervoid sessions, and every shared C
     const hookEntries = (relativePath) => Object.entries(JSON.parse(read(relativePath)).hooks).flatMap(([event, entries]) =>
       entries.flatMap((entry) => (entry.hooks ?? [entry]).map((handler) => ({ event, matcher: entry.matcher, command: handler.command }))));
     const hookNameOf = (command) => command.match(/hooks\/([\w-]+\.mjs)/)?.[1];
+    const sharedHookNames = new Set([...sharedWiringPaths, ...profileWiringPaths].flatMap((relativePath) => hookEntries(relativePath).map(({ command }) => hookNameOf(command))).filter(Boolean));
+    const isEverySharedHookWiredOnce = JSON.parse(read("glimmervoid/settings.json")).hooks.every(({ command }) => !sharedHookNames.has(hookNameOf(command)));
     const matchedTools = (matcher, toolNames) => (matcher ? toolNames.filter((toolName) => new RegExp(matcher).test(toolName)) : [null]);
     const claudeEntries = hookEntries("ai/settings.base.json").filter((entry) => !CLAUDE_ONLY_HOOKS.has(hookNameOf(entry.command)));
     const requiredPairs = new Set(claudeEntries.flatMap((entry) => matchedTools(entry.matcher, CLAUDE_TOOL_NAMES)
@@ -263,7 +263,7 @@ check "block-comments is wired only for Glimmervoid sessions, and every shared C
       return [...undeclared, ...missing];
     });
     for (const gap of gaps) console.error(gap);
-    process.exit(isGlimmervoidOnly && requiredPairs.size > 0 && gaps.length === 0 ? 0 : 1);
+    process.exit(isEverySharedHookWiredOnce && requiredPairs.size > 0 && gaps.length === 0 ? 0 : 1);
   ' "$repoRoot"
 check "the work hooks and their tests live only under the work profile" \
   bash -c 'for hookName in gate-posthog-exec-write; do [[ -f "$1/profiles/work/hooks/$hookName.mjs" && -f "$1/profiles/work/hooks/test/$hookName.test.mjs" && ! -e "$1/ai/hooks/$hookName.mjs" && ! -e "$1/ai/hooks/test/$hookName.test.mjs" ]] || exit 1; done' _ "$repoRoot"
