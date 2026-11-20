@@ -143,7 +143,7 @@ test("Stripe, Clerk, Supabase, and Convex secrets fail when committed or given a
     "server/billing.ts": "const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);",
     "server/webhook.ts": `const signingSecret = "whsec_C2FVsBQIhrscChlQIMV+b5sSYspob7oD";`,
     "src/vue.ts": "const key = process.env.VUE_APP_STRIPE_SECRET_KEY;",
-    "docs/setup.md": "Set STRIPE_SECRET_KEY=rk_live_51HxYz9aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+    "docs/setup.md": "Set STRIPE_SECRET_KEY=rk_" + "live_51HxYz9aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
   });
   const { output } = runCheck(repoDirectory);
   assert.match(output, /SDK modules: stripe, clerk, supabase, convex/);

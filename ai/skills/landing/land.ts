@@ -19,6 +19,7 @@ import {
   denylistedFileStaged,
   emit,
   homePathStaged,
+  secretStaged,
   hookFailed,
   mainlineUnverified,
   messageInvalid,
@@ -69,6 +70,7 @@ import {
   isDenylisted,
   listedUsernames,
   localPathPrefixes,
+  secretMatches,
   resolveMainline,
   withNewJournalFiles,
 } from "./lib/workspace.ts";
@@ -80,6 +82,7 @@ type FailureOutcome =
   | "NOTHING_TO_COMMIT"
   | "DENYLISTED_FILE_STAGED"
   | "HOME_PATH_STAGED"
+  | "SECRET_STAGED"
   | "HOOK_FAILED"
   | "PUSH_FAILED"
   | "PROMOTE_CONFLICT"
@@ -170,6 +173,7 @@ class Landing {
   private commitsCarriedThroughConflicts: string[] = [];
   private denylistedStagedFiles: string[] = [];
   private homePathStagedLines: string[] = [];
+  private secretStagedLines: string[] = [];
   private conflicts: string[] = [];
   private mainline: string | null = null;
   private pushed = false;
@@ -344,6 +348,9 @@ class Landing {
     if (outcome === "HOME_PATH_STAGED") {
       return homePathStaged({ matches: this.homePathStagedLines, warnings: this.warnings });
     }
+    if (outcome === "SECRET_STAGED") {
+      return secretStaged({ matches: this.secretStagedLines, warnings: this.warnings });
+    }
     return hookFailed({ warnings: this.warnings });
   }
 
@@ -464,11 +471,13 @@ class Landing {
       lineNumber: index + 1,
       text,
     }));
+    const scannedLines = [...addedLinesScan.addedLines, ...commitMessageLines];
+    this.secretStagedLines = secretMatches(scannedLines);
+    if (this.secretStagedLines.length > 0) {
+      return "SECRET_STAGED";
+    }
     const localPrefixes = localPathPrefixes(os.homedir(), [os.userInfo().username, ...listedUsernames()]);
-    this.homePathStagedLines = localPathMatches(
-      [...addedLinesScan.addedLines, ...commitMessageLines],
-      localPrefixes,
-    );
+    this.homePathStagedLines = localPathMatches(scannedLines, localPrefixes);
     if (this.homePathStagedLines.length > 0) {
       return "HOME_PATH_STAGED";
     }
@@ -1297,6 +1306,16 @@ class Landing {
   ): FailureOutcome | null {
     if (pendingRefs.length === 0) {
       return null;
+    }
+
+    const outgoingScan = this.git.outgoingCommitLines([...pendingRefs.map((pendingRef) => pendingRef.sourceTip ?? pendingRef.branch), "--not", "--remotes"]);
+    if (outgoingScan.failure !== null) {
+      this.warnings.push(`could not scan outgoing commits for secrets: ${outgoingScan.failure}`);
+      return "HOOK_FAILED";
+    }
+    this.secretStagedLines = secretMatches(outgoingScan.addedLines);
+    if (this.secretStagedLines.length > 0) {
+      return "SECRET_STAGED";
     }
 
     const refspecs = pendingRefs.map((pendingRef) => branchRefspec(pendingRef.branch, pendingRef.sourceTip, pendingRef.destination));

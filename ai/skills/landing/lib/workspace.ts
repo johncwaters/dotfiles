@@ -62,6 +62,25 @@ export function localPathMatches(addedLines: AddedLine[], localPrefixes: string[
     .map((addedLine) => `${addedLine.filePath}:${addedLine.lineNumber}`);
 }
 
+const SECRET_SHAPES: { name: string; pattern: RegExp }[] = [
+  { name: "AWS access key id", pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/ },
+  { name: "GitHub token", pattern: /\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{60,}/ },
+  { name: "Anthropic key", pattern: /\bsk-ant-[A-Za-z0-9_-]{32,}/ },
+  { name: "OpenAI key", pattern: /\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,}|\bsk-proj-[A-Za-z0-9_-]{40,}/ },
+  { name: "Slack token", pattern: /\bxox[abposr]-[0-9]{6,}-[A-Za-z0-9-]{10,}/ },
+  { name: "Stripe live key", pattern: /\b[rs]k_live_[0-9A-Za-z]{24,}/ },
+  { name: "Google API key", pattern: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/ },
+  { name: "PostHog personal key", pattern: /\bphx_[A-Za-z0-9]{30,}/ },
+  { name: "private key", pattern: /-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----/ },
+];
+
+export function secretMatches(addedLines: AddedLine[]): string[] {
+  return addedLines.flatMap((addedLine) => {
+    const shape = SECRET_SHAPES.find(({ pattern }) => pattern.test(addedLine.text));
+    return shape ? [`${addedLine.filePath}:${addedLine.lineNumber} (${shape.name})`] : [];
+  });
+}
+
 export const COHERENCE_DIR = ".coherence";
 
 function isNewFileStatus(statusCode: string): boolean {

@@ -11,7 +11,7 @@ Every result carries a typed `next`; do what it names. This file holds only the 
 
 ## A flagged file that belongs
 
-`DENYLISTED_FILE_STAGED` and `HOME_PATH_STAGED` name files or lines `next` says to unstage or replace. When one genuinely belongs in the commit, unstage it anyway, land the rest, and report the file left out; there is no override.
+`DENYLISTED_FILE_STAGED`, `HOME_PATH_STAGED` and `SECRET_STAGED` name files or lines `next` says to unstage, replace, or strip; a `SECRET_STAGED` match prefixed with a commit hash sits in an unpushed commit, so fold that range into the tree with `git reset --soft` before stripping it; a secret that reached a remote earlier also needs rotating. When one genuinely belongs in the commit, unstage it anyway, land the rest, and report the file left out; there is no override.
 
 ## Conflict resolution
 

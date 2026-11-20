@@ -416,6 +416,31 @@ export class Git {
     return this.addedLinesOfDiff([parentCommit ?? this.emptyTreeOid(), "HEAD"]);
   }
 
+  outgoingCommitLines(revisionArgs: string[]): AddedLinesScan {
+    const revList = this.run(["rev-list", "--parents", ...revisionArgs]);
+    if (revList.code !== 0) {
+      return { addedLines: [], failure: revList.stderr.trim() || `git rev-list exited ${revList.code}` };
+    }
+    const addedLines: AddedLine[] = [];
+    for (const [commit = "", ...parents] of nonEmptyLines(revList.stdout).map((line) => line.split(" "))) {
+      const shortCommit = commit.slice(0, 12);
+      const message = this.run(["log", "-1", "--format=%B", commit]);
+      if (message.code !== 0) {
+        return { addedLines: [], failure: message.stderr.trim() || `git log exited ${message.code}` };
+      }
+      addedLines.push(...message.stdout.split("\n").map((text, index) => ({ filePath: `${shortCommit} commit message`, lineNumber: index + 1, text })));
+      if (parents.length > 1) {
+        continue;
+      }
+      const commitScan = this.addedLinesOfDiff([parents[0] ?? this.emptyTreeOid(), commit]);
+      if (commitScan.failure !== null) {
+        return commitScan;
+      }
+      addedLines.push(...commitScan.addedLines.map((addedLine) => ({ ...addedLine, filePath: `${shortCommit} ${addedLine.filePath}` })));
+    }
+    return { addedLines, failure: null };
+  }
+
   headMessage(): string | null {
     const messageRun = this.run(["log", "-1", "--format=%B", "HEAD"]);
     if (messageRun.code !== 0) {

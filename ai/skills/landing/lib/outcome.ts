@@ -17,6 +17,7 @@ export const EXIT_CODES = {
   NOT_REVIEWED: 31,
   PROMOTE_WITHHELD: 32,
   PUSH_WITHHELD: 33,
+  SECRET_STAGED: 34,
 } as const;
 
 export type OutcomeName = keyof typeof EXIT_CODES;
@@ -53,7 +54,7 @@ export type NextStep =
   | { action: "proceed" }
   | { action: "rerun"; script: "land.ts" | "preflight.ts"; after: string }
   | { action: "runGate"; gate: string; then: "landing"; commits?: string[] }
-  | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "hookCause" | "finding"; items: string[] }
+  | { action: "fixAndRerun"; fix: "message" | "unstage" | "replacePaths" | "removeSecret" | "hookCause" | "finding"; items: string[] }
   | { action: "resolveConflicts"; files: string[] }
   | { action: "relay"; report: string }
   | { action: "stop"; report: string };
@@ -180,6 +181,10 @@ export const denylistedFileStaged = defineOutcome("DENYLISTED_FILE_STAGED", {
 export const homePathStaged = defineOutcome("HOME_PATH_STAGED", {
   matches: required("stringList"),
 }, ({ matches }) => ({ action: "fixAndRerun", fix: "replacePaths", items: matches }));
+
+export const secretStaged = defineOutcome("SECRET_STAGED", {
+  matches: required("stringList"),
+}, ({ matches }) => ({ action: "fixAndRerun", fix: "removeSecret", items: matches }));
 
 export const pushFailed = defineOutcome("PUSH_FAILED", {
   commit: optional("string"),

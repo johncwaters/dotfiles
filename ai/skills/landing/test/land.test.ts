@@ -815,6 +815,60 @@ test("a local path in a staged line or the message stops the run before it reach
   }
 });
 
+test("a token-shaped secret in a staged line or the message stops the run, and the cleaned change lands", () => {
+  const repo = makeRepo("feature");
+  const awsKeyId = "AKIA" + "Q".repeat(16);
+  const githubToken = "ghp" + "_" + "a1B2".repeat(9);
+  const privateKeyHeader = "-----BEGIN " + "OPENSSH PRIVATE KEY-----";
+  try {
+    commitFile(repo, "deploy.env.example", "REGION=us-east-1\n");
+    writeFile(repo, "deploy.env.example", `REGION=us-east-1\nAWS_ACCESS_KEY_ID=${awsKeyId}\nSHA=${"f".repeat(40)}\n`);
+    writeFile(repo, "id_deploy.txt", `${privateKeyHeader}\n`);
+    const head = gitOutput(repo, ["rev-parse", "HEAD"]);
+    const messageWithToken = VALID_MESSAGE.replace("A body line.", `Rotated ${githubToken}.`);
+
+    const { code, result } = land(repo, ["--no-push"], messageWithToken);
+
+    assert.equal(result.outcome, "SECRET_STAGED");
+    assert.equal(code, 34);
+    assert.deepEqual(result.matches, [
+      "deploy.env.example:2 (AWS access key id)",
+      "id_deploy.txt:1 (private key)",
+      "commit message:3 (GitHub token)",
+    ]);
+    assert.equal(gitOutput(repo, ["rev-parse", "HEAD"]), head);
+
+    writeFile(repo, "deploy.env.example", "REGION=us-east-1\nAWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}\n");
+    writeFile(repo, "id_deploy.txt", "see the vault\n");
+    assert.equal(land(repo, ["--no-push"], VALID_MESSAGE).result.outcome, "COMMITTED");
+  } finally {
+    cleanup(repo);
+  }
+});
+
+test("a secret in an already-landed commit's amended message is withheld from the push", () => {
+  const origin = makeBareOrigin();
+  const repo = cloneRepo(origin);
+  const awsKeyId = "AKIA" + "Q".repeat(16);
+  try {
+    runGit(repo, ["symbolic-ref", "HEAD", "refs/heads/feature"]);
+    commitFile(repo, "a.txt", "one\n");
+    writeFile(repo, "a.txt", "two\n");
+    assert.equal(land(repo, ["--no-push"], VALID_MESSAGE).result.outcome, "COMMITTED");
+    runGit(repo, ["commit", "-q", "--amend", "-m", `feat: rotate key ${awsKeyId}`]);
+    const amendedCommit = gitOutput(repo, ["rev-parse", "--short=12", "HEAD"]);
+
+    const { code, result } = land(repo, [], "");
+
+    assert.equal(result.outcome, "SECRET_STAGED");
+    assert.equal(code, 34);
+    assert.deepEqual(result.matches, [`${amendedCommit} commit message:1 (AWS access key id)`]);
+    assert.equal(gitOutput(origin, ["branch", "--list", "feature"]), "");
+  } finally {
+    cleanup(origin, repo);
+  }
+});
+
 test("the gate refuses additions only, so a tracked denylisted file stays editable", () => {
   const repo = makeRepo("feature");
   try {

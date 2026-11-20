@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 10,
+  "proseCeiling": 9,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -9,9 +9,11 @@
         ]
       },
       "no-secrets-in-tracked-files-config": {
-        "kind": "prose",
-        "reason": "No secret scan runs on commit.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "ai/skills/landing/lib/workspace.ts",
+          "ai/skills/landing/test/land.test.ts"
+        ]
       },
       "symlink-do-not-copy-a-copy": {
         "kind": "check",
