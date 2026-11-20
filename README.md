@@ -89,6 +89,7 @@ Profile inputs live beside `profiles/<name>/profile.json`: `packages.txt`, `apt-
 - `server`: headless, no editor or desktop topics
 - `work`: Claude and Codex only, no other model CLIs; work integrations originate here.
 - `work-server`: Linux devbox; `ai.json` extends work agent additions without inheriting laptop topics, and `apt-packages.txt` lists the work toolchain.
+- `cloud`: Glimmervoid Cloud tenant VM; shell, ai and git only, since the tenant image owns glimmervoid and every boot reruns `bin/dot`, so no converge timer.
 
 AI inheritance uses `extends` in `ai.json`;
 `ai/test.sh` pins inherited additions, file fallback, confinement, profile isolation,

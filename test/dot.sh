@@ -367,4 +367,47 @@ check "a run requiring origin names why it refused" \
   outputHas "$requireOriginOutput" 'origin unreachable and DOTFILES_REQUIRE_ORIGIN=1'
 check "a run requiring origin converges nothing" outputLacks "$requireOriginOutput" 'converged'
 
+cloudSeed="$sandbox/cloud-seed"
+cloudOrigin="$sandbox/cloud-origin.git"
+cloudHome="$sandbox/cloud-home"
+cloudClone="$cloudHome/Projects/dotfiles"
+cloudStubBin="$sandbox/cloud-stub-bin"
+mkdir -p "$cloudSeed" "$cloudHome" "$cloudStubBin"
+cp -R "$repoRoot/." "$cloudSeed"
+rm -rf "$cloudSeed/.git" "$cloudSeed"/ai/skills/*/node_modules "$cloudSeed"/profiles/*/skills/*/node_modules
+gitAsTester -C "$cloudSeed" init -q
+gitAsTester -C "$cloudSeed" add -A
+gitAsTester -C "$cloudSeed" commit -q -m seed
+gitAsTester init -q --bare "$cloudOrigin"
+gitAsTester -C "$cloudSeed" push -q "$cloudOrigin" main
+cat > "$cloudStubBin/npm" <<'STUB'
+#!/usr/bin/env bash
+[[ "${1:-}" == ci ]] || exit 0
+mkdir -p node_modules
+printf '{}\n' > node_modules/.package-lock.json
+STUB
+chmod +x "$cloudStubBin/npm"
+cloudCommandPath="$cloudStubBin"
+for cloudRequiredCommand in bash git node; do
+  cloudCommandPath+=":$(dirname -- "$(type -P "$cloudRequiredCommand")")"
+done
+
+bootCloudTenant() {
+  env -i HOME="$cloudHome" PATH="$cloudCommandPath:/usr/bin:/bin" XDG_STATE_HOME="$cloudHome/.local/state" \
+    DOTFILES_CLONE_URL="$cloudOrigin" NO_COLOR=1 bash "$cloudSeed/bin/dot" --profile cloud 2>&1
+}
+
+firstCloudBootStatus=0
+firstCloudBootOutput="$(bootCloudTenant)" || firstCloudBootStatus=$?
+check "a fresh cloud tenant clones and converges unattended" test "$firstCloudBootStatus" -eq 0
+check "the cloud profile runs only shell, ai and git" \
+  outputMatches "$firstCloudBootOutput" 'topics +shell ai git$'
+check "the cloud converge lands the shared agent rules for Claude, Codex and agy" \
+  test -L "$cloudHome/.claude/AGENTS.md" -a -f "$cloudHome/.codex/AGENTS.md" -a -f "$cloudHome/.gemini/AGENTS.md"
+check "the cloud converge leaves its clone clean for the next boot's guard" \
+  test -z "$(git -C "$cloudClone" status --porcelain)"
+secondCloudBootStatus=0
+bootCloudTenant > /dev/null || secondCloudBootStatus=$?
+check "the next cloud boot converges again" test "$secondCloudBootStatus" -eq 0
+
 reportTopicResults "dot"
