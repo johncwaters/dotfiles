@@ -451,7 +451,7 @@ async function fitCodeSlots(page, placement, scale) {
 }
 
 export async function collectPageViolations(page, placement, scale) {
-    const inspection = await page.evaluate(async ({ minTextPx, scale, safeInsets, maxCodeLines }) => {
+    const inspection = await page.evaluate(async ({ minTextPx, scale, safeInsets, maxCodeLines, isCopyFree }) => {
         const violations = []
         const images = []
         await document.fonts.ready
@@ -502,6 +502,10 @@ export async function collectPageViolations(page, placement, scale) {
             range.selectNodeContents(node)
             const hasRenderedBox = [...range.getClientRects()].some((rectangle) => rectangle.width > 0 && rectangle.height > 0)
             if (!hasRenderedBox) continue
+            if (isCopyFree) {
+                violations.push(`copy-free placement shows text; the platform prints the title: ${text}`)
+                continue
+            }
             for (const rectangle of range.getClientRects()) {
                 if (rectangle.left * scale < safeInsets.left - 1 || rectangle.right * scale > innerWidth * scale - safeInsets.right + 1 || rectangle.top * scale < safeInsets.top - 1 || rectangle.bottom * scale > innerHeight * scale - safeInsets.bottom + 1) {
                     violations.push(`text outside safe insets: ${text}`)
@@ -511,8 +515,22 @@ export async function collectPageViolations(page, placement, scale) {
             const outputFontSize = parseFloat(style.fontSize) * scale
             if (outputFontSize < minTextPx) violations.push(`text too small (${outputFontSize}px < ${minTextPx}px): ${text}`)
         }
+        const pendingRoots = isCopyFree ? [document] : []
+        while (pendingRoots.length) {
+            const root = pendingRoots.pop()
+            const shadowRootTexts = root === document ? [] : [...root.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent.trim())
+            for (const text of shadowRootTexts.filter(Boolean)) violations.push(`copy-free placement shows text; the platform prints the title: ${text}`)
+            for (const element of root.querySelectorAll('*')) {
+                if (element.shadowRoot) pendingRoots.push(element.shadowRoot)
+                if (!element.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })) continue
+                const ownShadowTexts = root === document || ['STYLE', 'SCRIPT', 'NOSCRIPT'].includes(element.tagName) ? [] : [...element.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent.trim())
+                const pseudoTexts = ['::before', '::after'].map((pseudoElement) => getComputedStyle(element, pseudoElement).content).filter((content) => /"[^"]+"|'[^']+'|counter|attr\(/.test(content.replace(/url\([^)]*\)/g, '')))
+                const fieldTexts = ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName) ? [element.value, element.placeholder].filter((fieldText) => typeof fieldText === 'string').map((fieldText) => fieldText.trim()) : []
+                for (const text of [...ownShadowTexts, ...pseudoTexts, ...fieldTexts].filter(Boolean)) violations.push(`copy-free placement shows text; the platform prints the title: ${text}`)
+            }
+        }
         return { violations, images }
-    }, { minTextPx: placement.minTextPx, scale, safeInsets: placement.safeInsets, maxCodeLines })
+    }, { minTextPx: placement.minTextPx, scale, safeInsets: placement.safeInsets, maxCodeLines, isCopyFree: placement.isCopyFree === true })
     for (const image of inspection.images) {
         const factor = calculateImageUpscale({ ...image, isVector: isVectorImageSource(image.source) })
         if (factor > 1.25) inspection.violations.push(`image upscale ${factor.toFixed(2)}x exceeds 1.25x: ${image.source}`)

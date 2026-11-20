@@ -11,6 +11,7 @@ export const placements = Object.freeze({
     landscape: { width: 1600, height: 900, safeInsets: { top: 54, right: 96, bottom: 54, left: 96 }, maxBytes: 1_000_000, minTextPx: 40 },
     'github-social-preview': { width: 1280, height: 640, safeInsets: { top: 64, right: 96, bottom: 64, left: 96 }, maxBytes: 1_000_000, minTextPx: 35 },
     'youtube-thumbnail': { width: 1280, height: 720, safeInsets: { top: 43, right: 77, bottom: 120, left: 77 }, maxBytes: 1_000_000, minTextPx: 35 },
+    'x-article-cover': { width: 3000, height: 1200, safeInsets: { top: 60, right: 150, bottom: 60, left: 150 }, maxBytes: 5_000_000, minTextPx: 60, isCopyFree: true },
     pinterest: { width: 1000, height: 1500, safeInsets: { top: 90, right: 60, bottom: 90, left: 60 }, maxBytes: 1_000_000, minTextPx: 29 },
 })
 

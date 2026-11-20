@@ -477,13 +477,14 @@ function createTextPageStub(textRectangle) {
     }
 }
 
-test('rendered text pushed entirely off the canvas is reported rather than skipped', async () => {
+test('rendered text pushed entirely off the canvas, or on a copy-free placement, is reported rather than skipped', async () => {
     const insideCanvas = { left: 200, right: 400, top: 100, bottom: 120, width: 200, height: 20 }
     assert.equal((await collectPageViolations(createTextPageStub(insideCanvas), placements['link-card'], 2)).length, 0)
     const belowCanvas = { ...insideCanvas, top: 400, bottom: 420 }
     assert.match((await collectPageViolations(createTextPageStub(belowCanvas), placements['link-card'], 2))[0], /text outside safe insets: Copy pushed below the canvas/)
     const collapsedBox = { ...belowCanvas, width: 0, height: 0 }
     assert.equal((await collectPageViolations(createTextPageStub(collapsedBox), placements['link-card'], 2)).length, 0)
+    assert.match((await collectPageViolations(createTextPageStub(insideCanvas), placements['x-article-cover'], 2))[0], /copy-free placement shows text; the platform prints the title: Copy pushed below the canvas/)
 })
 
 test('sources merge alongside alt text and stale sources disappear on replacement', (context) => {
