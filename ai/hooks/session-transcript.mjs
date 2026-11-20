@@ -21,6 +21,7 @@ function* entryEvents(entry, skillNamesByToolUseId) {
     const slashCommandName = promptText.match(SLASH_COMMAND)?.[1];
     if (slashCommandName && entry.isMeta !== true) yield { kind: "slashCommand", name: slashCommandName };
     if (!isSyntheticPrompt(promptText, entry)) yield { kind: "prompt" };
+    if (entry.isMeta === true && promptText.startsWith("Stop hook feedback:")) yield { kind: "stopFeedback", text: promptText };
     yield* taskNotifications(content);
     for (const block of contentBlocks(entry)) {
       if (block?.type !== "tool_result") continue;

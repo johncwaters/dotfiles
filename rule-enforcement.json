@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 8,
+  "proseCeiling": 7,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -97,9 +97,11 @@
     },
     "ai/AGENTS.md": {
       "output_style": {
-        "kind": "prose",
-        "reason": "No hook reads replies for the banned words.",
-        "candidate": true
+        "kind": "check",
+        "by": [
+          "ai/hooks/require-carbon-unit.mjs",
+          "ai/hooks/test/require-carbon-unit.test.mjs"
+        ]
       },
       "scope": {
         "kind": "check",

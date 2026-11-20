@@ -189,6 +189,10 @@
           {
             "type": "command",
             "command": "node {{HOME}}/.claude/hooks/require-commit-on-stop.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node {{HOME}}/.claude/hooks/require-carbon-unit.mjs"
           }
         ]
       }
