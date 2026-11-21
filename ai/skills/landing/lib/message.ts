@@ -103,7 +103,7 @@ function validateTrailers(block: string[], errors: string[]): void {
   }
   for (const label of REQUIRED_TRAILER_LABELS) {
     if (!values.has(label)) {
-      errors.push(`${label} trailer is required when the message carries trailers`);
+      errors.push(`${label} trailer is required when the message carries trailers; write one of ${TRAILER_VALUES[label].join(", ")}`);
     }
   }
   for (const [label, allowed] of Object.entries(TRAILER_VALUES)) {
