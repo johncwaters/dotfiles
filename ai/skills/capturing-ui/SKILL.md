@@ -5,7 +5,7 @@ description: Captures real UI as evidence: before/after screenshot grids in ligh
 
 # Capturing UI
 
-A mockup another session wrote that breaks the brand (a glow, a raw black shadow) gets an override stylesheet injected into the capture page only; never edit its file.
+A mockup another session wrote that breaks the brand (a glow, a raw black shadow) gets an override stylesheet injected into the capture page only.
 
 Capture only real UI: the product's own code, on its own dev server or in a harness that loads its real components. Dependencies live in this skill directory and are installed by `ai/install.sh`.
 

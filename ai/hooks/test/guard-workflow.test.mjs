@@ -268,7 +268,7 @@ test("a kill by a pattern that matches its own Bash call is denied", () => {
     "kill $(pgrep -f '[v]ite')",
     "pgrep -f '[v]ite' | xargs kill",
     "pkill -f '[v]ite('",
-    `pkill -f '(a+)+[b]'; echo ${"a".repeat(40)}`,
+    `pkill -f '(a+)+[!]'; echo ${"a".repeat(40)}`,
     "pkill vite",
     "pgrep -f vite",
   ]) {
