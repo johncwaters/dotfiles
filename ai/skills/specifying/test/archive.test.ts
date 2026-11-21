@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-test("archive built refuses until every unit has a pushed Ticket trailer", () => {
+test("archive built refuses until every unit has a pushed Ticket trailer or a pushed commit named by --landed", () => {
   const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "spec-archive-"));
   try {
     const repoRoot = path.join(temporaryHome, "decks");
@@ -21,14 +21,15 @@ test("archive built refuses until every unit has a pushed Ticket trailer", () =>
     const unit = (id: string) => ({ id, kind: "unit", title: id, reads: [], changes: ["src"], checks: [], serves: [1] });
     fs.writeFileSync(specPath, JSON.stringify({ status: "challenged", repoRoot, nodes: [unit("U1"), unit("U2")], edges: [] }));
     fs.writeFileSync(specPath.replace(/\.json$/, ".intent.json"), "{}");
-    const archiveBuilt = () => JSON.parse(spawnSync("node", [path.resolve(import.meta.dirname, "../archive.ts"), specPath, "built"], { encoding: "utf8", env: { ...process.env, HOME: temporaryHome } }).stdout);
+    const archiveBuilt = (...flags: string[]) => JSON.parse(spawnSync("node", [path.resolve(import.meta.dirname, "../archive.ts"), specPath, "built", ...flags], { encoding: "utf8", env: { ...process.env, HOME: temporaryHome } }).stdout);
 
-    const refusal = { outcome: "REFUSED", errors: ["U2: no pushed commit carries trailer Ticket: export/U2; land it or archive abandoned"] };
+    const refusal = { outcome: "REFUSED", errors: ["U2: no pushed commit carries trailer Ticket: export/U2; land it, pass --landed U2=<sha> for its pushed commit that lacks the trailer, or archive abandoned"] };
     assert.deepEqual(archiveBuilt(), refusal);
-    git("commit", "-q", "--allow-empty", "-m", "Add the price column", "-m", "Ticket: export/U2");
-    assert.deepEqual(archiveBuilt(), refusal);
+    git("commit", "-q", "--allow-empty", "-m", "Add the price column");
+    const untrailedSha = git("rev-parse", "HEAD").stdout.trim();
+    assert.deepEqual(archiveBuilt("--landed", `U2=${untrailedSha}`), { outcome: "REFUSED", errors: [`U2: --landed U2=${untrailedSha} names no commit on a pushed branch of ${repoRoot}`] });
     git("push", "-q", "origin", "main");
-    assert.equal(archiveBuilt().outcome, "ARCHIVED");
+    assert.equal(archiveBuilt("--landed", `U2=${untrailedSha}`).outcome, "ARCHIVED");
   } finally {
     fs.rmSync(temporaryHome, { recursive: true, force: true });
   }

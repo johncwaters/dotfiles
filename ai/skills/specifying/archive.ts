@@ -3,7 +3,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { specArchiveDirectory } from "./lib/spec-store.ts";
-import { readTicketHistory } from "./lib/ticket-history.ts";
+import { isCommitOnPushedRef, readTicketHistory } from "./lib/ticket-history.ts";
 
 type ArchiveReport =
   | { outcome: "ARCHIVED"; specPath: string; intentPath: string | null }
@@ -17,13 +17,19 @@ function findPreviousArchiveMs(archiveDirectory: string, slug: string): number |
   return archiveTimes.length === 0 ? undefined : Math.max(...archiveTimes);
 }
 
-function findUnlandedUnitErrors(spec: { repoRoot: string; nodes?: { id: string; kind: string }[] }, slug: string, sinceMs: number | undefined): string[] {
+function findUnlandedUnitErrors(spec: { repoRoot: string; nodes?: { id: string; kind: string }[] }, slug: string, sinceMs: number | undefined, landedShaByUnitId: ReadonlyMap<string, string>): string[] {
   const historyRead = readTicketHistory(spec.repoRoot, { sinceMs, isPushedOnly: true });
   if (historyRead.outcome === "UNREADABLE") return [`cannot read Ticket trailers in ${spec.repoRoot}: ${historyRead.reason}`];
   const landedUnitIds = historyRead.history.get(slug) ?? new Map<string, number[]>();
   return (spec.nodes ?? [])
     .filter((node) => node.kind === "unit" && !landedUnitIds.has(node.id))
-    .map((unit) => `${unit.id}: no pushed commit carries trailer Ticket: ${slug}/${unit.id}; land it or archive abandoned`);
+    .filter((unit) => {
+      const landedSha = landedShaByUnitId.get(unit.id);
+      return landedSha === undefined || !isCommitOnPushedRef(spec.repoRoot, landedSha);
+    })
+    .map((unit) => landedShaByUnitId.has(unit.id)
+      ? `${unit.id}: --landed ${unit.id}=${landedShaByUnitId.get(unit.id)} names no commit on a pushed branch of ${spec.repoRoot}`
+      : `${unit.id}: no pushed commit carries trailer Ticket: ${slug}/${unit.id}; land it, pass --landed ${unit.id}=<sha> for its pushed commit that lacks the trailer, or archive abandoned`);
 }
 
 type SpecWithBoards = { nodes?: { board?: { pages?: string[] } }[] };
@@ -38,7 +44,7 @@ function withMockupPagesMoved<T extends SpecWithBoards>(spec: T, fromDirectory: 
   return { ...spec, nodes };
 }
 
-export function archiveSpec(specArgument: string | undefined, outcome: string | undefined, now = new Date()): ArchiveReport {
+export function archiveSpec(specArgument: string | undefined, outcome: string | undefined, now = new Date(), landedShaByUnitId: ReadonlyMap<string, string> = new Map()): ArchiveReport {
   const errors: string[] = [];
   if (!specArgument?.endsWith(".json") || specArgument.endsWith(".intent.json")) {
     errors.push("spec path must end in .json and must not end in .intent.json");
@@ -66,7 +72,7 @@ export function archiveSpec(specArgument: string | undefined, outcome: string | 
     const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     if (outcome === "built") {
       if (intentBytes === null) return { outcome: "REFUSED", errors: [`built needs ${slug}.intent.json; cut the spec first or archive abandoned`] };
-      const unlandedUnitErrors = findUnlandedUnitErrors(spec, slug, findPreviousArchiveMs(archiveDirectory, slug));
+      const unlandedUnitErrors = findUnlandedUnitErrors(spec, slug, findPreviousArchiveMs(archiveDirectory, slug), landedShaByUnitId);
       if (unlandedUnitErrors.length > 0) return { outcome: "REFUSED", errors: unlandedUnitErrors };
     }
     fs.mkdirSync(archiveDirectory, { recursive: true });
@@ -104,7 +110,8 @@ export function archiveSpec(specArgument: string | undefined, outcome: string | 
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
-  const report = archiveSpec(process.argv[2], process.argv[3]);
+  const landedPairs = process.argv.slice(4).flatMap((argument, index, rest) => (rest[index - 1] === "--landed" ? [argument.split("=") as [string, string]] : []));
+  const report = archiveSpec(process.argv[2], process.argv[3], new Date(), new Map(landedPairs));
   process.stdout.write(`${JSON.stringify(report)}\n`);
   process.exitCode = report.outcome === "ARCHIVED" ? 0 : 1;
 }

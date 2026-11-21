@@ -5,10 +5,21 @@ export type TicketHistoryRead = { outcome: "READ"; history: TicketHistory } | { 
 
 export type TicketHistoryScope = { sinceMs?: number; isPushedOnly?: boolean };
 
+function hasRemote(repoRoot: string): boolean {
+  const remotesProcess = spawnSync("git", ["-C", repoRoot, "remote"], { encoding: "utf8" });
+  return remotesProcess.status === 0 && remotesProcess.stdout.trim() !== "";
+}
+
 function selectRefArguments(repoRoot: string, isPushedOnly: boolean): string[] {
   if (!isPushedOnly) return ["--all"];
-  const remotesProcess = spawnSync("git", ["-C", repoRoot, "remote"], { encoding: "utf8" });
-  return remotesProcess.status === 0 && remotesProcess.stdout.trim() !== "" ? ["--remotes"] : ["--branches"];
+  return hasRemote(repoRoot) ? ["--remotes"] : ["--branches"];
+}
+
+export function isCommitOnPushedRef(repoRoot: string, sha: string): boolean {
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) return false;
+  const refNamespace = hasRemote(repoRoot) ? "refs/remotes" : "refs/heads";
+  const containingRefs = spawnSync("git", ["-C", repoRoot, "for-each-ref", "--count=1", "--contains", sha, refNamespace], { encoding: "utf8" });
+  return containingRefs.status === 0 && containingRefs.stdout.trim() !== "";
 }
 
 export function readTicketHistory(repoRoot: string, { sinceMs, isPushedOnly = false }: TicketHistoryScope = {}): TicketHistoryRead {

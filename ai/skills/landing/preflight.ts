@@ -13,6 +13,7 @@ import {
 import { configuredMainline, isBranchAllowed } from "./lib/policy.ts";
 import { readResolvedPolicy } from "./lib/visibility.ts";
 import { checkMainlineFreshness, computeScope, foundingMainlineName, originHoldsOnlyBranch } from "./lib/workspace.ts";
+import { specsDirectory } from "../specifying/lib/spec-store.ts";
 
 type Arguments = { paths: string[]; messageFileToCheck: string | null; noFetch: boolean };
 
@@ -21,6 +22,62 @@ type ReleaseIntegrationLookup = {
   integration?: string;
   warning?: string;
 };
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function canonicalPath(target: string): string {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+function worktreeRoots(git: Git): Set<string> {
+  return new Set(git.worktreeListPorcelain().stdout.split("\n")
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => canonicalPath(line.slice("worktree ".length))));
+}
+
+function uncutSpecWarning(specPath: string, roots: ReadonlySet<string>): string | null {
+  let spec: { status?: unknown; repoRoot?: unknown };
+  try {
+    spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
+  } catch (error) {
+    return `design spec ${specPath} cannot be read to check whether it is cut: ${errorText(error)}`;
+  }
+  if (spec?.status !== "challenged" || typeof spec.repoRoot !== "string" || !roots.has(canonicalPath(spec.repoRoot))) return null;
+  return `design spec ${specPath} is challenged but not cut; run cut.ts on it before landing its work so each ticket commit carries its Ticket trailer`;
+}
+
+function listDirectory(directory: string): { names: string[] } | { warning: string } {
+  if (!fs.existsSync(directory)) return { names: [] };
+  try {
+    return { names: fs.readdirSync(directory) };
+  } catch (error) {
+    return { warning: `cannot list design specs in ${directory}: ${errorText(error)}` };
+  }
+}
+
+function uncutSpecWarnings(git: Git): string[] {
+  const roots = worktreeRoots(git);
+  const repoFolders = listDirectory(specsDirectory());
+  if ("warning" in repoFolders) return [repoFolders.warning];
+  return repoFolders.names.flatMap((repoFolder) => {
+    const repoSpecsDirectory = path.join(specsDirectory(), repoFolder);
+    if (!fs.statSync(repoSpecsDirectory, { throwIfNoEntry: false })?.isDirectory()) return [];
+    const listing = listDirectory(repoSpecsDirectory);
+    if ("warning" in listing) return [listing.warning];
+    const fileNames = new Set(listing.names);
+    return [...fileNames]
+      .filter((fileName) => fileName.endsWith(".json") && !fileName.endsWith(".intent.json"))
+      .filter((fileName) => !fileNames.has(fileName.replace(/\.json$/, ".intent.json")))
+      .map((fileName) => uncutSpecWarning(path.join(repoSpecsDirectory, fileName), roots))
+      .filter((warning): warning is string => warning !== null);
+  });
+}
 
 function parseArguments(argv: string[]): Arguments {
   const parsed: Arguments = { paths: [], messageFileToCheck: null, noFetch: false };
@@ -158,6 +215,7 @@ function preflightResult(paths: string[], noFetch: boolean): Result {
   if (policy && mainline === null) {
     warnings.push(unresolvedMainlineWarning(git, branch, configuredMainline(policy), noFetch));
   }
+  warnings.push(...uncutSpecWarnings(git));
   const releaseIntegration = releaseProfileIntegration(process.cwd());
   if (releaseIntegration.warning) {
     warnings.push(releaseIntegration.warning);
