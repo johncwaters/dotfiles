@@ -304,6 +304,7 @@ installProfileSkillDependencies
 renderProfileAgents() {
   local label="$1"
   local toolHome="$2"
+  local agentOnlyRulesPath="${3:-}"
   local agentsPath="$toolHome/AGENTS.md"
   local profileAgentsPath="$(profilePlanNames source-AGENTS.md)"
   mkdir -p -- "$toolHome"
@@ -318,11 +319,15 @@ renderProfileAgents() {
     printf '\n' >> "$stagedPath"
     cat -- "$profileAgentsPath" >> "$stagedPath"
   fi
+  if [[ -n "$agentOnlyRulesPath" ]]; then
+    printf '\n' >> "$stagedPath"
+    cat -- "$agentOnlyRulesPath" >> "$stagedPath"
+  fi
   commitStagedFile "$label" "$stagedPath" "$agentsPath" "rendered"
 }
 
 renderProfileAgents "Codex AGENTS.md" "$codexHome"
-renderProfileAgents "agy AGENTS.md" "$agyHome"
+renderProfileAgents "agy AGENTS.md" "$agyHome" "$dotfilesRepo/ai/agy-tools.md"
 if command -v kimi > /dev/null 2>&1; then
   renderProfileAgents "Kimi AGENTS.md" "$kimiHome"
 fi

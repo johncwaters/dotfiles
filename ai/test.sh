@@ -687,6 +687,8 @@ check "work-server inherits work rules for Codex" \
   grep -q 'Prefer working in a dedicated git worktree' "$sandbox/.codex/AGENTS.md"
 check "work-server renders shared and work rules for agy as a plain file" \
   bash -c '[[ -f "$1" && ! -L "$1" ]] && grep -q "Prefer working in a dedicated git worktree" "$1" && grep -qF "$(head -1 "$2")" "$1"' _ "$sandbox/.gemini/AGENTS.md" "$stagedRepo/ai/AGENTS.md"
+check "agy's rendered rules end with its tool map for the Claude tools skills name" \
+  bash -c '[[ "$(tail -n 1 "$1")" == "</agy_tools>" ]] && grep -q "define_subagent" "$1"' _ "$sandbox/.gemini/AGENTS.md"
 for skillsHome in "$sandbox/.agents/skills" "$sandbox/.gemini/config/skills"; do
   check "work-server links its own addition into $skillsHome" \
     test "$(readlink "$skillsHome/child-fixture")" = "$sandbox/.dotfiles/profiles/work-server/skills/child-fixture"
