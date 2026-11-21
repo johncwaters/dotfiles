@@ -42,8 +42,35 @@ function readHunk(lines: string[], openerIndex: number): ConflictHunk | null {
   return null;
 }
 
-function addsOnlyBullets(hunk: ConflictHunk): boolean {
-  return hunk.base.length === 0 && [...hunk.ours, ...hunk.theirs].every((line) => BULLET_LINE.test(line));
+const BULLET_OPENER = /^\s*[-*] /;
+
+function bulletBlocks(lines: readonly string[]): string[] | null {
+  if (lines.length > 0 && !BULLET_OPENER.test(lines[0] ?? "")) return null;
+  const blocks: string[][] = [];
+  for (const line of lines) {
+    if (BULLET_OPENER.test(line)) {
+      blocks.push([line]);
+      continue;
+    }
+    blocks.at(-1)?.push(line);
+  }
+  return blocks.map((block) => block.join("\n"));
+}
+
+function mergedBullets(hunk: ConflictHunk): string[] | null {
+  if (![...hunk.base, ...hunk.ours, ...hunk.theirs].every((line) => BULLET_LINE.test(line))) return null;
+  if (hunk.base.length === 0) return [...hunk.ours, ...hunk.theirs];
+  const baseBlocks = bulletBlocks(hunk.base);
+  const ourBlocks = bulletBlocks(hunk.ours);
+  const theirBlocks = bulletBlocks(hunk.theirs);
+  if (baseBlocks === null || ourBlocks === null || theirBlocks === null) return null;
+  const baseBlockSet = new Set(baseBlocks);
+  const ourBlockSet = new Set(ourBlocks);
+  const theirBlockSet = new Set(theirBlocks);
+  if (baseBlocks.some((block) => !ourBlockSet.has(block) && !theirBlockSet.has(block))) return null;
+  const keptOurs = ourBlocks.filter((block) => !baseBlockSet.has(block) || theirBlockSet.has(block));
+  const newTheirs = theirBlocks.filter((block) => !baseBlockSet.has(block) && !ourBlockSet.has(block));
+  return [...keptOurs, ...newTheirs].flatMap((block) => block.split("\n"));
 }
 
 export function keepBothUnreleasedBullets(zdiff3Text: string): string | null {
@@ -65,10 +92,11 @@ export function keepBothUnreleasedBullets(zdiff3Text: string): string | null {
       continue;
     }
     const hunk = readHunk(lines, index);
-    if (hunk === null || !isInsideUnreleased || !addsOnlyBullets(hunk)) {
+    const merged = hunk === null || !isInsideUnreleased ? null : mergedBullets(hunk);
+    if (hunk === null || merged === null) {
       return null;
     }
-    resolvedLines.push(...hunk.ours, ...hunk.theirs);
+    resolvedLines.push(...merged);
     index = hunk.nextIndex;
   }
   return resolvedLines.join("\n");

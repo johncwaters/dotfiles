@@ -484,7 +484,7 @@ test("a feature rebase conflict aborts and restores a clean feature branch", () 
   }
 });
 
-test("a promotion whose only conflict is both sides adding Unreleased changelog bullets keeps both and promotes", () => {
+test("a promotion whose only conflict is Unreleased changelog bullets, one side rewording a shared bullet, keeps both sides' changes and promotes", () => {
   const { origin, seed, local } = seedOrigin();
   const changelog = (bullets: string) => `# Changelog\n\n## [Unreleased]\n\n### Added\n\n${bullets}\n## [1.0.0]\n\n- First\n`;
   try {
@@ -493,9 +493,13 @@ test("a promotion whose only conflict is both sides adding Unreleased changelog 
     runGit(seed, ["push", "-q", "origin", "main"]);
     runGit(local, ["fetch", "-q", "origin"]);
     runGit(local, ["rebase", "-q", "origin/main"]);
+    commitFile(seed, "CHANGELOG.md", changelog("- Shared fix\n"), "shared fix");
+    runGit(seed, ["push", "-q", "origin", "main"]);
+    runGit(local, ["fetch", "-q", "origin"]);
+    runGit(local, ["rebase", "-q", "origin/main"]);
     commitFile(seed, "CHANGELOG.md", changelog("- Shared fix\n- Main bullet\n"), "main bullet");
     runGit(seed, ["push", "-q", "origin", "main"]);
-    writeFile(local, "CHANGELOG.md", changelog("- Shared fix\n- Feature bullet\n  continued\n"));
+    writeFile(local, "CHANGELOG.md", changelog("- Shared fix, reworded\n- Feature bullet\n  continued\n"));
 
     const { result } = land(local, ["--promote"], VALID_MESSAGE);
 
@@ -504,7 +508,7 @@ test("a promotion whose only conflict is both sides adding Unreleased changelog 
     assert.ok(result.warnings.some((warning: string) => warning.includes("kept both sides' Unreleased bullets in CHANGELOG.md")));
     assert.equal(
       gitOutput(local, ["show", "origin/main:CHANGELOG.md"]),
-      changelog("- Shared fix\n- Main bullet\n- Feature bullet\n  continued\n").trimEnd(),
+      changelog("- Main bullet\n- Shared fix, reworded\n- Feature bullet\n  continued\n").trimEnd(),
     );
   } finally {
     cleanup(origin, seed, local);
