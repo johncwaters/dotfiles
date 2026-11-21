@@ -32,8 +32,8 @@ check "a personal machine installs the unit" test -f "$personalHome/.config/syst
 check "the unit loads the secrets file without requiring it" \
   grep -qxF 'EnvironmentFile=-%h/.glimmervoid/secrets.env' "$personalHome/.config/systemd/user/glimmervoid.service"
 check "a personal machine enables the service" logHas "systemctl --user enable --now glimmervoid"
-check "a config without a remote block is remote-disabled" \
-  outputHas "$personalOutput" 'remote access disabled'
+check "a config without a remote block is not published on the tailnet" \
+  outputHas "$personalOutput" 'not published on the tailnet'
 check "a personal machine publishes nothing on the tailnet" logLacks "serve --bg"
 check "a personal machine probes only the local listener" logHas "http://127.0.0.1:3000/"
 check "a personal machine never probes the remote listener" logLacks "http://127.0.0.1:3001/"
@@ -108,10 +108,9 @@ check "an existing config is never overwritten" \
 printf '%s\n' '{ "port": 3000, "remote": { "port": 3001, "publicHost": "testbox.tailnet-name.ts.net" } }' \
   > "$personalHome/.glimmervoid/config.json"
 : > "$commandLog"
-keylessRemoteOutput="$(runInstall "$personalHome" personal)" || true
-check "a remote block with no enabled key reads as disabled" \
-  outputHas "$keylessRemoteOutput" 'remote access disabled'
-check "a remote block with no enabled key publishes nothing on the tailnet" logLacks "serve --bg"
+runInstall "$personalHome" personal > /dev/null || true
+check "a remote block with a publicHost and no enabled key publishes its port on the tailnet" \
+  logHas "serve --bg 3001"
 
 startSandboxHome "glimmervoid-offline"
 offlineHome="$sandbox"

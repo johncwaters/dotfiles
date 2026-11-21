@@ -1,7 +1,6 @@
 {
   "debugMode": false,
   "remote": {
-    "enabled": true,
     "port": 3001,
     "publicHost": "CHANGEME.your-tailnet.ts.net",
     "allowedOrigins": [

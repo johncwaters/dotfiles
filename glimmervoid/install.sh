@@ -220,7 +220,7 @@ try {
 }
 requireObject(config);
 const remote = config.remote === undefined ? {} : requireObject(config.remote);
-process.stdout.write(remote.enabled === true ? "enabled" : "disabled");
+process.stdout.write(typeof remote.publicHost === "string" && remote.publicHost !== "" ? "enabled" : "disabled");
 ' "$glimmervoidConfigPath" 2>/dev/null)"; then
     printf 'unreadable\n'
     return 0
@@ -251,7 +251,7 @@ isValidGlimmervoidPort() {
   (($1 >= 1 && $1 <= 65535))
 }
 
-# The local listener is what a machine with remote access turned off still runs, so its port is validated without asking about remote.port.
+# The local listener is what a machine not published on the tailnet still runs, so its port is validated without asking about remote.port.
 resolveGlimmervoidLocalPort() {
   local label="glimmervoid config"
   if ! resolveGlimmervoidNodePath >/dev/null; then
@@ -382,7 +382,7 @@ configureGlimmervoidRemoteSettings() {
     return 0
   fi
   if ! isGlimmervoidRemoteEnabled; then
-    notePresent "glimmervoid remote config" "remote access disabled"
+    notePresent "glimmervoid remote config" "not published on the tailnet"
     return 0
   fi
   detectedHost="$(detectGlimmervoidTailnetHostname)"

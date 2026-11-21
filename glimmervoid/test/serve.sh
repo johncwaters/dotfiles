@@ -35,7 +35,7 @@ check "a second unauthenticated run reports no change" reportsNoChanges "$unauth
 makeGlimmervoidApp "$optOutHome"
 mkdir -p "$optOutHome/.glimmervoid" "$optOutHome/.claude"
 printf '{}\n' > "$optOutHome/.claude/.credentials.json"
-printf '%s\n' '{ "port": 3000, "remote": { "enabled": false, "port": 3001, "publicHost": "CHANGEME.ts.net" } }' \
+printf '%s\n' '{ "port": 3000, "remote": { "port": 3001 } }' \
   > "$optOutHome/.glimmervoid/config.json"
 optOutState="$stubState/$(basename -- "$optOutHome")"
 mkdir -p "$optOutState"
@@ -43,19 +43,15 @@ printf '3001\n' > "$optOutState/serve-port"
 touch "$optOutState/tailscale-unauthed"
 : > "$commandLog"
 optOutOutput="$(runInstall "$optOutHome" server)" || true
-check "an explicit remote opt out is reported" \
-  outputHas "$optOutOutput" 'remote access disabled'
-check "an explicit remote opt out is never rewritten to enabled" \
-  test "$(configValue "$optOutHome" 'require(process.argv[1]).remote.enabled')" = "false"
-check "an opt out keeps the host its owner wrote" \
-  test "$(configValue "$optOutHome" 'require(process.argv[1]).remote.publicHost')" = "CHANGEME.ts.net"
+check "a config with no publicHost is reported as not published" \
+  outputHas "$optOutOutput" 'not published on the tailnet'
 check "an opt out publishes nothing on the tailnet" logLacks "serve --bg"
 check "an unauthenticated opt out withdraws no route it could not check first" \
   logLacks "serve --https=443 off"
 check "an unauthenticated run owing no withdrawal never says the tailnet could not be asked" \
   outputLacks "$optOutOutput" "cannot be checked before withdrawal"
 check "an unauthenticated run owing no withdrawal reports the serve step as skipped" \
-  outputHas "$optOutOutput" "skipped, glimmervoid remote disabled"
+  outputHas "$optOutOutput" "skipped, glimmervoid not published on the tailnet"
 check "the route an unauthenticated run could not check survives" \
   test -f "$optOutState/serve-port"
 optOutPendingState="$optOutHome/.local/state/dotfiles/glimmervoid-serve-withdrawal-pending"
@@ -77,15 +73,15 @@ check "an owed withdrawal takes down no route it could not check first" \
 check "the route an owed withdrawal could not check survives" \
   test -f "$optOutState/serve-port"
 
-printf '%s\n' '{ "port": 3000, "remote": { "enabled": false } }' \
+printf '%s\n' '{ "port": 3000, "remote": {} }' \
   > "$optOutHome/.glimmervoid/config.json"
 : > "$commandLog"
 portlessRemoteOutput="$(runInstall "$optOutHome" server)" || true
-check "a disabled remote with no remote.port still probes the local listener" \
+check "an unpublished remote with no remote.port still probes the local listener" \
   logHas "http://127.0.0.1:3000/"
-check "a disabled remote is never asked for a remote.port" \
+check "an unpublished remote is never asked for a remote.port" \
   outputLacks "$portlessRemoteOutput" "set remote.port to 1-65535"
-printf '%s\n' '{ "port": 3000, "remote": { "enabled": false, "port": 3001, "publicHost": "CHANGEME.ts.net" } }' \
+printf '%s\n' '{ "port": 3000, "remote": { "port": 3001 } }' \
   > "$optOutHome/.glimmervoid/config.json"
 
 rm -f "$optOutState/tailscale-unauthed" "$optOutOwnedRecord"
@@ -103,7 +99,7 @@ check "the server route is up before remote is turned off" test -f "$servePortSt
 const fs = require("fs");
 const configPath = process.argv[1];
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-config.remote.enabled = false;
+delete config.remote.publicHost;
 config.remote.port = 3002;
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 ' "$serverHome/.glimmervoid/config.json"
@@ -112,7 +108,7 @@ withdrawOutput="$(runInstall "$serverHome" server)" || true
 check "turning remote off takes the published route down after the port changed" \
   logHas "tailscale serve --https=443 off"
 check "the withdrawal is reported" \
-  outputHas "$withdrawOutput" 'route removed, glimmervoid remote disabled'
+  outputHas "$withdrawOutput" 'route removed, glimmervoid not published on the tailnet'
 check "the route is gone from serve status" test ! -f "$servePortState"
 check "turning remote off publishes nothing new" logLacks "serve --bg"
 
@@ -178,8 +174,8 @@ brokenConfigStatus=0
 brokenConfigOutput="$(runInstall "$brokenConfigHome" server)" || brokenConfigStatus=$?
 check "a config that will not parse is named as such" \
   outputMatches "$brokenConfigOutput" '\[warn\].*is not valid JSON'
-check "a config that will not parse never reads as remote disabled" \
-  outputLacks "$brokenConfigOutput" "remote access disabled"
+check "a config that will not parse never reads as unpublished" \
+  outputLacks "$brokenConfigOutput" "not published on the tailnet"
 check "a config that will not parse exits non-zero" test "$brokenConfigStatus" -eq 1
 check "a config that will not parse withdraws no route" logLacks "serve --https"
 check "a config that will not parse installs no unit" \
@@ -187,8 +183,11 @@ check "a config that will not parse installs no unit" \
 check "a config that will not parse starts no service" logLacks "systemctl "
 
 writeRemoteConfig() {
-  printf '{ "port": 3000, "remote": { "enabled": %s, "port": 3001, "publicHost": "testbox.tailnet-name.ts.net" } }\n' \
-    "$2" > "$1/.glimmervoid/config.json"
+  local publicHostField=""
+  if [[ "$2" == true ]]; then
+    publicHostField=', "publicHost": "testbox.tailnet-name.ts.net"'
+  fi
+  printf '{ "port": 3000, "remote": { "port": 3001%s } }\n' "$publicHostField" > "$1/.glimmervoid/config.json"
 }
 
 makeGlimmervoidApp "$unownedRouteHome"
@@ -258,7 +257,7 @@ check "the route covered only by a symlinked record survives" \
   grep -qx '3001' "$unownedRouteState/serve-port"
 rm -f "$matchingUnownedRecord" "$symlinkedOwnershipTarget"
 
-printf '%s\n' '{ "port": 3000, "remote": { "enabled": false } }' \
+printf '%s\n' '{ "port": 3000, "remote": {} }' \
   > "$unownedRouteHome/.glimmervoid/config.json"
 printf '9999\n' > "$unownedRouteState/serve-port"
 : > "$commandLog"
@@ -294,7 +293,7 @@ malformedStatusOutput="$(runInstall "$badStatusHome" server)" || true
 check "a serve status that will not parse is reported as a failed query" \
   outputMatches "$malformedStatusOutput" '\[warn\].*serve status --json failed'
 check "a serve status that will not parse never reads as an absent route" \
-  outputLacks "$malformedStatusOutput" "skipped, glimmervoid remote disabled"
+  outputLacks "$malformedStatusOutput" "skipped, glimmervoid not published on the tailnet"
 check "a serve status that will not parse leaves the route up" logLacks "serve --https"
 check "a serve status that will not parse keeps an owed withdrawal pending" \
   test -f "$badStatusPendingState"
@@ -306,7 +305,7 @@ emptyStatusOutput="$(runInstall "$badStatusHome" server)" || true
 check "an empty serve status is a failed query, not an absent route" \
   outputMatches "$emptyStatusOutput" '\[warn\].*serve status --json failed'
 check "an empty serve status never reads as an absent route" \
-  outputLacks "$emptyStatusOutput" "skipped, glimmervoid remote disabled"
+  outputLacks "$emptyStatusOutput" "skipped, glimmervoid not published on the tailnet"
 check "an empty serve status leaves the route up" logLacks "serve --https"
 check "an empty serve status keeps the withdrawal pending" test -f "$badStatusPendingState"
 
@@ -371,7 +370,7 @@ writeRemoteConfig "$badStatusHome" false
 ownedWithdrawalOutput="$(runInstall "$badStatusHome" server)" || true
 check "the route this topic recorded as its own is withdrawn" logHas "tailscale serve --https=443 off"
 check "the withdrawal of an owned route is reported" \
-  outputHas "$ownedWithdrawalOutput" "route removed, glimmervoid remote disabled"
+  outputHas "$ownedWithdrawalOutput" "route removed, glimmervoid not published on the tailnet"
 check "a withdrawn route leaves no ownership record behind" \
   test ! -e "$badStatusHome/.local/state/dotfiles/glimmervoid-serve-owned"
 
@@ -421,7 +420,7 @@ check "the live route survives the stale marker" test -f "$badStatusState/serve-
 check "the run that cleared the stale marker reports the route as it found it" \
   outputHas "$stalePendingOutput" "remote port 3001"
 
-printf '%s\n' '{ "port": 3000, "pairingNote": "CHANGEME once the device is paired", "remote": { "enabled": true, "port": 3001, "publicHost": "handset.tailnet-name.ts.net" } }' \
+printf '%s\n' '{ "port": 3000, "pairingNote": "CHANGEME once the device is paired", "remote": { "port": 3001, "publicHost": "handset.tailnet-name.ts.net" } }' \
   > "$badStatusHome/.glimmervoid/config.json"
 : > "$commandLog"
 handSetHostOutput="$(runInstall "$badStatusHome" server)" || true

@@ -13,8 +13,8 @@ check "a server home seeds from the server overlay" \
 check "the server overlay contains only the profile differences" \
   "$realNodePath" -e 'const overlay = require(process.argv[1]); const keys = Object.keys(overlay).sort().join(","); if (keys !== "debugMode,remote") process.exit(1)' \
   "$repoRoot/profiles/server/glimmervoid.overlay.json"
-check "the server seed carries a remote block" \
-  test "$(configValue "$serverHome" 'require(process.argv[1]).remote.enabled')" = "true"
+check "the server seed carries a remote block without the retired enabled key" \
+  test "$(configValue "$serverHome" 'Object.keys(require(process.argv[1]).remote).sort().join(",")')" = "allowedOrigins,port,publicHost"
 check "the detected tailnet name replaces CHANGEME" \
   test "$(configValue "$serverHome" 'require(process.argv[1]).remote.publicHost')" = "testbox.tailnet-name.ts.net"
 check "the allowed origin follows the tailnet name" \

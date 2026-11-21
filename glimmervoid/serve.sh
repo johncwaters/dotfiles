@@ -113,7 +113,7 @@ reportGlimmervoidServeUncheckedRoute() {
   local label="$1"
   local reason="$2"
   if ! glimmervoidServeWithdrawalIsOwed; then
-    notePresent "$label" "skipped, glimmervoid remote disabled"
+    notePresent "$label" "skipped, glimmervoid not published on the tailnet"
     return 0
   fi
   markDotfilesStatePending "$glimmervoidServeWithdrawalStateName"
@@ -153,7 +153,7 @@ withdrawGlimmervoidServe() {
   if [[ -z "$backends" ]]; then
     clearDotfilesState "$glimmervoidServeWithdrawalStateName"
     clearDotfilesState "$glimmervoidServeOwnedStateName"
-    notePresent "$label" "skipped, glimmervoid remote disabled"
+    notePresent "$label" "skipped, glimmervoid not published on the tailnet"
     return 0
   fi
   if ! everyBackendTargetsPort "$backends" ""; then
@@ -165,7 +165,7 @@ withdrawGlimmervoidServe() {
     noteWarned "$label" "$(glimmervoidServeNotOursReason)"
     return 0
   fi
-  attemptGlimmervoidServeWithdrawal "$label" "glimmervoid remote disabled" || true
+  attemptGlimmervoidServeWithdrawal "$label" "glimmervoid not published on the tailnet" || true
 }
 
 # Without HTTPS enabled on the tailnet this asks for consent on stdin, and a converge has nobody to answer it; unbounded, it would hang the whole run instead.
