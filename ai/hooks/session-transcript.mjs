@@ -232,13 +232,22 @@ export async function* sessionEvents(transcriptPath, agent = declaredAgent()) {
   yield* (TRANSCRIPT_READERS[agent] ?? claudeTranscriptEvents)(transcriptPath);
 }
 
-export async function finalReply(transcriptPath, agent = declaredAgent()) {
+export async function finalTurnOf(transcriptPath, agent = declaredAgent()) {
   let replyText = null;
+  let stopFeedbackTexts = [];
   for await (const event of sessionEvents(transcriptPath, agent)) {
-    if (event.kind === "prompt") replyText = null;
+    if (event.kind === "prompt") {
+      replyText = null;
+      stopFeedbackTexts = [];
+    }
     if (event.kind === "reply") replyText = event.text;
+    if (event.kind === "stopFeedback") stopFeedbackTexts.push(event.text);
   }
-  return replyText;
+  return { replyText, stopFeedbackTexts };
+}
+
+export async function finalReply(transcriptPath, agent = declaredAgent()) {
+  return (await finalTurnOf(transcriptPath, agent)).replyText;
 }
 
 export function isSkillRun(event, skillName) {

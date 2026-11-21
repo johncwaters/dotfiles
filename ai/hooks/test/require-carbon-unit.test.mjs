@@ -63,3 +63,48 @@ test("code, quotes, identifiers, and user-level terms pass", () => {
     assert.equal(stopDecision(reply).decision, "allow", reply);
   }
 });
+
+test("a reply handing the carbon unit a command it could run itself is sent back once per turn", () => {
+  const handOffs = [
+    "Run the eval in your terminal:\n```bash\nnpm run eval -- --dimension tone\n```",
+    "When ready, type `! npm test` and paste the output.",
+    "`! ./script/bootstrap`",
+    "You can run:\n```\nbash /repo/script/check.sh\n```",
+    "Run this in your terminal:\n\n```bash\nnpm test\n```",
+  ];
+  for (const reply of handOffs) {
+    const { decision, reason } = stopDecision(reply, { cwd: "/repo" });
+    assert.equal(decision, "block", reply);
+    assert.match(reason, /commands you can run yourself/);
+  }
+  const selfRunFeedback = stopFeedback("The reply hands over `npm test`, commands you can run yourself.");
+  const afterSendBack = transcriptOf(prompt("run the evals"), selfRunFeedback);
+  assert.equal(stopDecision("`! npm test`", { transcript_path: afterSendBack }).decision, "allow");
+  assert.equal(stopDecision("`! npm test`", { transcript_path: transcriptOf(prompt("run the evals"), ownFeedback) }).decision, "block");
+});
+
+test("interactive hand-offs, one script file outside the repo, and commands shown as records pass", () => {
+  const passingReplies = [
+    "Run this in your terminal:\n```bash\ngh auth login\n```",
+    "Run `! bash /home/me/scratch/setup-keys.sh` here.",
+    "I ran:\n```bash\nnpm run eval -- --dimension tone\n```\nAll dimensions passed.",
+    "Example:\n```bash\nnode x.mjs\n```",
+    "Interactive steps ship as one script file, never a list of `!` commands.",
+    "Run `! bash ~/setup-keys.sh` in your terminal.",
+    "Run this in your terminal:\n```bash\ncd ~/.dotfiles\nsudo ./install.sh\n```",
+    "Run this in your terminal:\n```bash\ngh auth login \\\n  --hostname github.com\n```",
+    "Run `! npx wrangler login` here.",
+    "This rewrites published history, so it is your call:\n\n`! git push --force origin main`",
+    "Done. The hook now sends back a reply carrying a `! cmd` line or span.",
+    "Run `! bash ~/scratch/setup-keys.sh --profile work` in your terminal.",
+    "Run this in your terminal:\n```bash\nenv DEBIAN_FRONTEND=noninteractive sudo apt install foo\n```",
+    "Run `! yarn login` here.",
+  ];
+  for (const reply of passingReplies) {
+    assert.equal(stopDecision(reply, { cwd: "/repo" }).decision, "allow", reply);
+  }
+  assert.equal(stopDecision("Run `! bash ~/scratch/login-steps.sh` in your terminal.", { cwd: os.homedir() }).decision, "allow");
+  const { decision, reason } = stopDecision("`! gh auth login`\n`! op signin`", { cwd: "/repo" });
+  assert.equal(decision, "block");
+  assert.match(reason, /one script file/);
+});

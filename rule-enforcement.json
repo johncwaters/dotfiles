@@ -118,7 +118,9 @@
         "by": [
           "ai/hooks/agent-payload.mjs",
           "ai/hooks/guard-workflow.mjs",
-          "ai/hooks/test/guard-workflow.test.mjs"
+          "ai/hooks/require-carbon-unit.mjs",
+          "ai/hooks/test/guard-workflow.test.mjs",
+          "ai/hooks/test/require-carbon-unit.test.mjs"
         ]
       },
       "spec_first": {

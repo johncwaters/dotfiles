@@ -15,7 +15,7 @@ If the task cannot be completed inside the surface, stop and report instead of w
 
 <execution>
 A build, test suite, or install never holds the loop past a short wait: run it in the background (Claude's run_in_background, agy's WaitMsBeforeAsync of 10 seconds or less; Codex yields on its own).
-Steps the carbon unit must run themselves (auth, key setup, anything interactive) ship as one script file to run in their own terminal, never a list of `!` commands.
+Run every command that needs no carbon unit yourself, evals, suites, and dimension runs included, so work continues without them; only steps they must run (auth, key setup, anything interactive) ship as one script file for their own terminal, never a list of `!` commands.
 Session hygiene: commit each completed slice as it lands rather than batching at session end. Long-running loops wake every 20-30 minutes minimum. Queue work rather than run 4+ parallel sessions; all sessions share one limit.
 Give `rm -rf` a literal absolute path: Safety Net allows temp paths written out but blocks a `$VAR` or post-`cd` relative target it cannot resolve. Undo your own edit to a tracked file with `git show HEAD:./<path> > <path>`; Safety Net blocks `git checkout <path>` and `git restore`.
 </execution>
