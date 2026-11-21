@@ -92,7 +92,7 @@ test("Codex and agy turns ending with uncommitted session edits are blocked in t
   assert.equal(JSON.parse(agentStop("codex", codexEdit)).decision, "block");
   assert.equal(agentStop("codex", codexEdit, { stop_hook_active: true }), "");
   assert.equal(agentStop("codex", [...codexRolloutLines("codex_exec", "fix it"), turnContext, codexPatchCall("c1", patch)]), "");
-  const agyEdit = [agyStep(0, "USER_INPUT", "<USER_REQUEST>\nfix it\n</USER_REQUEST>"), agyStep(1, "PLANNER_RESPONSE", "", [{ name: "write_file", args: { Path: path.join(dirtyRepository, "a.txt"), Content: "two\n" } }])];
+  const agyEdit = [agyStep(0, "USER_INPUT", "<USER_REQUEST>\nfix it\n</USER_REQUEST>"), agyStep(1, "PLANNER_RESPONSE", "", [{ name: "edit_file", args: { Path: path.join(dirtyRepository, "a.txt"), Target: "one", Replacement: "two" } }])];
   assert.equal(JSON.parse(agentStop("agy", agyEdit)).decision, "continue");
   const agyCommand = [agyStep(2, "PLANNER_RESPONSE", "", [{ name: "run_command", args: { CommandLine: "git status" } }]), agyStep(3, "RUN_COMMAND", "clean")];
   assert.equal(JSON.parse(agentStop("agy", [...agyEdit, ...agyCommand])).decision, "continue");

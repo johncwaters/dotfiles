@@ -180,6 +180,14 @@ function agyReplacementEdits(args) {
     }));
 }
 
+// agy's edit_file replaces every occurrence of each Target, so each edit replays with replace_all.
+function agyEditFileEdits(args) {
+  const pairs = Array.isArray(args.Edits) ? args.Edits : [args];
+  return pairs
+    .filter((pair) => pair && typeof pair === "object")
+    .map((pair) => ({ old_string: textArgument(pair.Target), new_string: textArgument(pair.Replacement), replace_all: true }));
+}
+
 function agyQuestions(args) {
   const questions = Array.isArray(args.questions) ? args.questions : [];
   return questions.map((question) => ({
@@ -200,6 +208,7 @@ const AGY_TOOL_MAPPERS = {
     tool_input: { command: textArgument(args.CommandLine), run_in_background: agyRunsInBackground(args), cwd: textArgument(args.Cwd) },
   }),
   write_file: (args) => ({ tool_name: "Write", tool_input: { file_path: textArgument(args.Path), content: textArgument(args.Content) } }),
+  edit_file: (args) => ({ tool_name: "MultiEdit", tool_input: { file_path: textArgument(args.Path), edits: agyEditFileEdits(args) } }),
   create_file: (args) => ({ tool_name: "Write", tool_input: { file_path: textArgument(args.Path), content: textArgument(args.Content) } }),
   replace_file_content: (args) => ({ tool_name: "MultiEdit", tool_input: { file_path: textArgument(args.TargetFile), edits: agyReplacementEdits(args) } }),
   multi_replace_file_content: (args) => ({ tool_name: "MultiEdit", tool_input: { file_path: textArgument(args.TargetFile), edits: agyReplacementEdits(args) } }),
