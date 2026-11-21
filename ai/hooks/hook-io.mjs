@@ -7,6 +7,11 @@ export const SPAWN_TOOLS = new Set(["Agent", "Task"]);
 export const COMMAND_START = String.raw`(?:^|[;&|({!\x60]|\$\(|\b(?:then|do|else)\b|\b(?:ba|z|da)?sh\s+(?:-\S+\s+)*-c\s+)`;
 export const COMMAND_WRAPPERS = String.raw`(?:[A-Za-z_]\w*=\S*\s+|(?:\S*/)?(?:xargs|time|sudo|nice|nohup|exec|command|env|timeout|stdbuf|eval|watch|npx|bunx|npm\s+(?:exec|x)|bun\s+x|pnpm\s+dlx|yarn\s+dlx)(?:\s+(?:-[A-Za-z]\s+[^-\s]\S*|-\S+|\S+=\S*|\d+\S*))*\s+)*`;
 
+export function gitEnvironmentWithoutOverrides(environment = process.env) {
+  return Object.fromEntries(Object.entries(environment).filter(([variableName]) =>
+    !variableName.startsWith("GIT_CONFIG") && !["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"].includes(variableName)));
+}
+
 export function isAttendedMainLoopCall(payload) {
   if (payload.agent_id) return false;
   if (payload.agent === "codex") return isCodexSessionAttended(payload.transcript_path);

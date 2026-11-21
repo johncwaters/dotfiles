@@ -47,24 +47,11 @@ function inert(value) {
   return `\`${flattened}\``;
 }
 
-function isInheritedGitSetting(variableName) {
-  return (
-    variableName.startsWith("GIT_CONFIG") ||
-    variableName === "GIT_DIR" ||
-    variableName === "GIT_WORK_TREE" ||
-    variableName === "GIT_COMMON_DIR"
-  );
-}
+let environmentWithoutGitOverrides = {};
 
 function probeEnvironment() {
-  const inherited = { ...process.env };
-  for (const variableName of Object.keys(inherited)) {
-    if (isInheritedGitSetting(variableName)) {
-      delete inherited[variableName];
-    }
-  }
   return {
-    ...inherited,
+    ...environmentWithoutGitOverrides,
     GIT_CEILING_DIRECTORIES: tmpdir(),
     GIT_TERMINAL_PROMPT: "0",
     GIT_ASKPASS: "true",
@@ -315,6 +302,8 @@ try {
     parseLedger,
     supersededKeys,
   } = await import("../skills/landing/lib/ledger.ts");
+  const { gitEnvironmentWithoutOverrides } = await import("./hook-io.mjs");
+  environmentWithoutGitOverrides = gitEnvironmentWithoutOverrides();
   const atPath = ledgerPath();
   const { entries } = parseLedger(readFileSync(atPath, "utf8"));
   const addressableEntries = entries.filter(entryPathsAreAbsolute);

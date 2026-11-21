@@ -3,15 +3,12 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileChangesOf } from "../../../ai/hooks/agent-payload.mjs";
-import { allow, denyPreToolUse, nearestExistingDirectory, readPayload } from "../../../ai/hooks/hook-io.mjs";
-
-const GIT_PROBE_ENVIRONMENT = Object.fromEntries(Object.entries(process.env)
-  .filter(([variableName]) => !variableName.startsWith("GIT_CONFIG") && !["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"].includes(variableName)));
+import { allow, denyPreToolUse, gitEnvironmentWithoutOverrides, nearestExistingDirectory, readPayload } from "../../../ai/hooks/hook-io.mjs";
 
 function gitLinesIn(directory, revParseArguments) {
   const gitProbe = spawnSync("git", ["rev-parse", "--path-format=absolute", ...revParseArguments], {
     cwd: directory,
-    env: GIT_PROBE_ENVIRONMENT,
+    env: gitEnvironmentWithoutOverrides(),
     encoding: "utf8",
     timeout: 2000,
     killSignal: "SIGKILL",
