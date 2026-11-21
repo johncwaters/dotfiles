@@ -228,7 +228,7 @@ function normalizeAgy(rawPayload) {
     hook_event_name: rawPayload.hookEventName,
     session_id: rawPayload.conversationId,
     transcript_path: rawPayload.transcriptPath,
-    stop_hook_active: rawPayload.continuationActive === true,
+    stop_hook_active: rawPayload.continuationActive === true || Number(rawPayload.executionNum) > 0,
   };
 }
 

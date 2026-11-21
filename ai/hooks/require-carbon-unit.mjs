@@ -17,6 +17,7 @@ const QUOTED_OR_CODE_SPANS = [
 ];
 const CARBON_UNIT_MARKER = "where <output_style> requires";
 const SELF_RUN_MARKER = "commands you can run yourself";
+const TRANSCRIPT_FEEDBACK_AGENTS = new Set(["claude", "agy"]);
 
 const SHELL_FENCE = /^[ \t]*```([\w-]*)[^\n`]*\n([\s\S]*?)^[ \t]*```/gm;
 const SHELL_FENCE_LANGUAGES = new Set(["", "sh", "bash", "shell", "zsh", "console"]);
@@ -45,7 +46,7 @@ async function finalTurnStateOf(payload) {
     : { replyText: null, stopFeedbackTexts: [] };
   return {
     replyText: typeof payload.last_assistant_message === "string" || !canReadTranscript ? payload.last_assistant_message : turn.replyText,
-    hasSentBack: (marker) => (payload.agent === "claude" && canReadTranscript
+    hasSentBack: (marker) => (TRANSCRIPT_FEEDBACK_AGENTS.has(payload.agent) && canReadTranscript
       ? turn.stopFeedbackTexts.some((feedbackText) => feedbackText.includes(marker))
       : payload.stop_hook_active === true),
   };

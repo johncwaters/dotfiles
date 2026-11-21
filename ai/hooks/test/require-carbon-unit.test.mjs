@@ -38,7 +38,12 @@ test("Codex and agy replies are judged once per turn, agy's read from its transc
   const agyTranscript = transcriptOf(agyStep(0, "USER_INPUT", "<USER_REQUEST>\nship it\n</USER_REQUEST>"), agyStep(1, "PLANNER_RESPONSE", "Landed. The user can rerun dot."));
   const agyStop = (extraPayload) => runHook("require-carbon-unit.mjs", { transcriptPath: agyTranscript, ...extraPayload }, {}, process.cwd(), ["--agent=agy"]).stdout;
   assert.equal(JSON.parse(agyStop({})).decision, "continue");
-  assert.equal(agyStop({ continuationActive: true }), "");
+  const agyStopFeedback = (stepIndex, reason) => agyStep(stepIndex, "SYSTEM_MESSAGE", `<SYSTEM_MESSAGE>\nStop hook blocked termination: ${reason}\n</SYSTEM_MESSAGE>`);
+  const afterCommitGate = transcriptOf(agyStep(0, "USER_INPUT", "<USER_REQUEST>\nship it\n</USER_REQUEST>"), agyStopFeedback(1, "This turn ends with uncommitted edits this session made and no /landing since: a.ts."), agyStep(2, "PLANNER_RESPONSE", "Landed. The user can rerun dot."));
+  const afterOwnBlock = transcriptOf(agyStep(0, "USER_INPUT", "<USER_REQUEST>\nship it\n</USER_REQUEST>"), agyStopFeedback(1, 'The reply says "user" where <output_style> requires "carbon unit".'), agyStep(2, "PLANNER_RESPONSE", "Landed. The user can rerun dot."));
+  const agyContinuedStop = (transcriptPath) => runHook("require-carbon-unit.mjs", { transcriptPath, continuationActive: false, executionNum: 1 }, {}, process.cwd(), ["--agent=agy"]).stdout;
+  assert.equal(JSON.parse(agyContinuedStop(afterCommitGate)).decision, "continue");
+  assert.equal(agyContinuedStop(afterOwnBlock), "");
 });
 
 test("a reply naming people in prose is blocked once with each word named", () => {

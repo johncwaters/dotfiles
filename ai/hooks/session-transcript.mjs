@@ -183,6 +183,7 @@ async function* codexRolloutEvents(transcriptPath) {
 }
 
 const AGY_SLASH_COMMAND = /^\/([\w.-]+)/;
+const AGY_STOP_FEEDBACK_PREFIX = "Stop hook blocked termination:";
 const AGY_READ_TOOLS = new Set(["read_file", "view_file"]);
 const AGY_STEP_TYPES_WITHOUT_TOOL_OUTPUT = new Set(["USER_INPUT", "PLANNER_RESPONSE", "SYSTEM_MESSAGE"]);
 
@@ -214,6 +215,10 @@ async function* agyTranscriptEvents(transcriptPath) {
       const slashCommandName = requestText.match(AGY_SLASH_COMMAND)?.[1];
       if (slashCommandName) yield { kind: "slashCommand", name: slashCommandName };
       if (requestText) yield { kind: "prompt" };
+      continue;
+    }
+    if (step.type === "SYSTEM_MESSAGE" && content.includes(AGY_STOP_FEEDBACK_PREFIX)) {
+      yield { kind: "stopFeedback", text: content };
       continue;
     }
     if (step.type === "PLANNER_RESPONSE") {
