@@ -1,6 +1,7 @@
 system-tools
 node
 claude-code
+agy
 flatpaks
 npm-globals
 python-tools

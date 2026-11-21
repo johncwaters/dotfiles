@@ -23,6 +23,7 @@ knownPackageGroups=(
   system-tools
   node
   claude-code
+  agy
   flatpaks
   casks
   dmgs
@@ -206,6 +207,31 @@ installClaudeCode() {
     return 0
   fi
   noteWarned "Claude Code" "not on PATH yet, open a new shell"
+}
+
+installAgy() {
+  refreshSessionPath
+  persistUserLocalBinOnPath
+  if agy --version >/dev/null 2>&1; then
+    notePresent "agy" "already installed"
+    return 0
+  fi
+  # The vendor script refuses to overwrite an existing agy, so a partial copy from an interrupted install must go first.
+  rm -f -- "$HOME/.local/bin/agy"
+  noteStarting "agy" "running native installer"
+  local installerLog
+  installerLog="$(mktemp "${TMPDIR:-/tmp}/dotfiles-agy-install.XXXXXX")"
+  if ! installFromVendorScript "agy" bash https://antigravity.google/cli/install.sh "$installerLog"; then
+    rm -f -- "$installerLog"
+    return 0
+  fi
+  rm -f -- "$installerLog"
+  refreshSessionPath
+  if agy --version >/dev/null 2>&1; then
+    noteInstalled "agy" "installed"
+    return 0
+  fi
+  noteWarned "agy" "not on PATH yet, open a new shell"
 }
 
 installProfileFlatpaks() {
@@ -778,6 +804,10 @@ fi
 
 if packageGroupEnabled "claude-code"; then
   installClaudeCode
+fi
+
+if packageGroupEnabled "agy"; then
+  installAgy
 fi
 
 if packageGroupEnabled "flatpaks"; then

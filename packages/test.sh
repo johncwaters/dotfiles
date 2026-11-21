@@ -72,6 +72,10 @@ emitBody() {
       printf 'mkdir -p "$HOME/.local/bin"\n'
       printf 'cp "$DOTFILES_TEST_STATE/available/claude" "$HOME/.local/bin/claude"\n'
       ;;
+    *antigravity.google/cli/install.sh)
+      printf 'mkdir -p "$HOME/.local/bin"\n'
+      printf 'cp "$DOTFILES_TEST_STATE/available/agy" "$HOME/.local/bin/agy"\n'
+      ;;
     *)
       return 1
       ;;
@@ -402,6 +406,12 @@ fi
 exit 0
 STUB
 
+writeStub agy <<'STUB'
+#!/usr/bin/env bash
+printf 'agy %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+exit 0
+STUB
+
 writeStub bash_completion <<'STUB'
 #!/usr/bin/env bash
 :
@@ -642,6 +652,8 @@ check "node comes from NodeSource" logHas "https://deb.nodesource.com/setup_22.x
 check "the NodeSource package is installed" logHas "install -y nodejs"
 check "Claude Code runs its native installer" logHas "https://claude.ai/install.sh"
 check "Claude Code landed in ~/.local/bin" test -x "$sandbox/.local/bin/claude"
+check "agy runs its native installer" logHas "https://antigravity.google/cli/install.sh"
+check "agy landed in ~/.local/bin" test -x "$sandbox/.local/bin/agy"
 for flatpakAppId in app.zen_browser.zen com.bitwarden.desktop com.discordapp.Discord \
   com.slack.Slack org.remmina.Remmina; do
   check "$flatpakAppId is installed from flathub" logHas "flatpak install --user -y flathub $flatpakAppId"
