@@ -1,6 +1,6 @@
 ---
 name: measuring-compaction
-description: Measures what Claude Code auto-compaction costs and saves from local session transcripts, covering precomputed vs idle compactions, context dropped from re-reads, which sessions compact, prompt-cache payback per compaction, how much compacting sessions already delegate, and whether agents drift more at larger contexts, and renders house-style PNG cards of it. Use for "is my auto-compact window right", "rerun the compaction analysis", "does compaction bust the cache", "do agents drift past 300k", or graphics for a post about compaction.
+description: Measures what Claude Code auto-compaction costs and saves from local session transcripts, covering compaction counts, re-read context, which sessions compact, prompt-cache payback, delegation, and agent drift by context size, and renders house-style PNG cards of it. Use for "is my auto-compact window right", "rerun the compaction analysis", "does compaction bust the cache", "do agents drift past 300k", or graphics for a post about compaction.
 ---
 
 # Measuring compaction
@@ -9,7 +9,7 @@ Run `node ~/.claude/skills/measuring-compaction/report.ts [--since YYYY-MM-DD] [
 
 Dollar figures use the dated API price table in `report.ts`, so they are API-equivalent, not a subscription bill; refresh it from the `claude-api` skill when prices change, since a model missing from it is priced as Opus 5.5 and named in the first output line.
 
-`--drift` buckets parent calls by context in 50k steps and counts tool errors and carbon-unit corrections with the running-retros digest detectors, plus Reads of a file already in context since the last compaction or edit. It says when 5000 calls sit above 300k, the sample the window trial needs before the window is picked.
+`--drift` buckets parent calls by context in 50k steps and counts tool errors and carbon-unit corrections with the `running-retros` digest detectors, plus Reads of a file already in context since the last compaction or edit. It says when 5000 calls sit above 300k, the sample the window trial needs before the window is picked.
 
 Payback savings count only the calls until the next compaction, so they are a floor. The summary call forks the warm prompt cache, so "summary read from cache" is the expected cost and "summary uncached" the worst case; summary tokens are characters divided by 4.
 

@@ -239,7 +239,8 @@
     "type": "command",
     "command": "node {{HOME}}/.claude/hud/hud.mjs"
   },
-  "autoCompactWindow": 300000,
+  "autoCompactWindow": 600000,
+  "cleanupPeriodDays": 90,
   "modelSettings": {
     "claude-opus-5-5": {
       "effortLevel": "medium"
