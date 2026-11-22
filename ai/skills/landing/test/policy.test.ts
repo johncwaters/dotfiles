@@ -4,6 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   configuredMainline,
+  dotfilesRoot,
   forbiddenBranches,
   isBranchAllowed,
   policyValidationErrors,
@@ -27,6 +28,12 @@ test("an applied profile yields its policy", () => {
   } finally {
     cleanup(root);
   }
+});
+
+test("without a root override the policy root is the repo holding the profiles", () => {
+  const root = dotfilesRoot();
+  assert.ok(fs.existsSync(path.join(root, "script", "bootstrap")));
+  assert.ok(fs.existsSync(path.join(root, "profiles", "personal", "profile.json")));
 });
 
 test("a forbidden branch is not allowed and any other branch is", () => {

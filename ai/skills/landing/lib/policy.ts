@@ -16,12 +16,12 @@ export type PolicyLookup = {
   warning?: string;
 };
 
-export function claudeRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+export function dotfilesRoot(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 }
 
 export function policyRoot(): string {
-  return process.env.CLAUDE_COMMIT_POLICY_ROOT ?? claudeRoot();
+  return process.env.CLAUDE_COMMIT_POLICY_ROOT ?? dotfilesRoot();
 }
 
 export function readCommitPolicy(root: string = policyRoot()): PolicyLookup {
