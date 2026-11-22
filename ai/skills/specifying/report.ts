@@ -34,6 +34,66 @@ function readStoredSpecs(directory: string): StoredSpec[] {
   return specs;
 }
 
+function readArchivedSpecs() {
+  return readStoredSpecs(specArchiveDirectory()).flatMap((storedSpec) => {
+    const filename = path.basename(storedSpec.specPath).match(/^(.+)\.(built|abandoned)\.(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.json$/);
+    if (!filename) return [];
+    const [, slug, outcome, date, sequence = "1"] = filename;
+    return [{ ...storedSpec, slug, outcome, date, sequence: Number(sequence) }];
+  });
+}
+
+function printTable(table: string[][]): void {
+  const widths = table[0].map((_, index) => Math.max(...table.map((row) => row[index].length)));
+  process.stdout.write(`${table.map((row) => row.map((cell, index) => cell.padEnd(widths[index])).join("  ").trimEnd()).join("\n")}\n`);
+}
+
+function formatRate(part: number, whole: number): string {
+  return whole === 0 ? "-" : `${part}/${whole} ${Math.round((100 * part) / whole)}%`;
+}
+
+type LaneYield = { proposals: number; applied: number };
+type ChallengeMonth = { specs: number; ledgers: number; laneRuns: number; contestedSteps: number; rebuttedSteps: number; overturns: number; restores: number; yieldByLane: Map<string, LaneYield> };
+
+export function reportChallenges(): void {
+  const monthsByKey = new Map<string, ChallengeMonth>();
+  for (const { spec, date } of readArchivedSpecs()) {
+    if (typeof spec.challengeStamp !== "string") continue;
+    const monthKey = date.slice(0, 7);
+    const month = monthsByKey.get(monthKey) ?? { specs: 0, ledgers: 0, laneRuns: 0, contestedSteps: 0, rebuttedSteps: 0, overturns: 0, restores: 0, yieldByLane: new Map() };
+    monthsByKey.set(monthKey, month);
+    month.specs += 1;
+    const decisionReasons = (Array.isArray(spec.nodes) ? spec.nodes : []).flatMap((node) => node?.kind === "decision" && typeof node.why === "string" ? [node.why] : []);
+    const restoredReasons = decisionReasons.filter((reason) => reason.includes("reaffirmed:"));
+    month.overturns += decisionReasons.filter((reason) => reason.includes("overturned:") && !reason.includes("reaffirmed:")).length + restoredReasons.length;
+    month.restores += restoredReasons.length;
+    const ledger = spec.challengeLedger;
+    if (!ledger || !Array.isArray(ledger.lanes) || !Array.isArray(ledger.steps) || !ledger.steps.every((ledgerStep) => Array.isArray(ledgerStep?.verdicts))) continue;
+    month.ledgers += 1;
+    month.laneRuns += ledger.lanes.length;
+    for (const ledgerStep of ledger.steps) {
+      const isApplied = ledgerStep.outcome !== "kept";
+      const proposingLanes = new Set(ledgerStep.verdicts.filter((laneVerdict) => laneVerdict.verdict !== "KEEP").map((laneVerdict) => laneVerdict.lane));
+      if (proposingLanes.size > 0) month.contestedSteps += 1;
+      if (proposingLanes.size > 0 && !isApplied) month.rebuttedSteps += 1;
+      for (const lane of proposingLanes) {
+        const laneYield = month.yieldByLane.get(lane) ?? { proposals: 0, applied: 0 };
+        laneYield.proposals += 1;
+        if (isApplied) laneYield.applied += 1;
+        month.yieldByLane.set(lane, laneYield);
+      }
+    }
+  }
+  const laneNames = [...new Set([...monthsByKey.values()].flatMap((month) => [...month.yieldByLane.keys()]))].sort();
+  const rows = [...monthsByKey.entries()].sort(([first], [second]) => first.localeCompare(second)).map(([monthKey, month]) => [
+    monthKey, String(month.specs), String(month.ledgers), String(month.laneRuns),
+    ...laneNames.map((lane) => { const laneYield = month.yieldByLane.get(lane); return laneYield ? formatRate(laneYield.applied, laneYield.proposals) : "-"; }),
+    formatRate(month.rebuttedSteps, month.contestedSteps),
+    String(month.overturns), formatRate(month.restores, month.overturns),
+  ]);
+  printTable([["Month", "Challenged", "With ledger", "Lane runs", ...laneNames.map((lane) => `${lane} applied`), "Rebutted", "Overturns", "Restored"], ...rows]);
+}
+
 export function reportSpecs(now = new Date()): void {
   const historyByRepoRoot = new Map<string, TicketHistory | undefined>();
   function readCachedTicketHistory(repoRoot: string | undefined): TicketHistory | undefined {
@@ -72,12 +132,7 @@ export function reportSpecs(now = new Date()): void {
     }
   }
 
-  const archives = readStoredSpecs(specArchiveDirectory()).flatMap((storedSpec) => {
-    const filename = path.basename(storedSpec.specPath).match(/^(.+)\.(built|abandoned)\.(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.json$/);
-    if (!filename) return [];
-    const [, slug, outcome, date, sequence = "1"] = filename;
-    return [{ ...storedSpec, slug, outcome, date, sequence: Number(sequence) }];
-  });
+  const archives = readArchivedSpecs();
   archives.sort((first, second) => first.date.localeCompare(second.date) || first.sequence - second.sequence);
   const previousArchiveEndMsBySlugInRepo = new Map<string, number>();
   const rows: string[][] = [];
@@ -100,11 +155,13 @@ export function reportSpecs(now = new Date()): void {
     ]);
   }
   rows.sort((first, second) => first[3].localeCompare(second[3]) || first[0].localeCompare(second[0]) || first[1].localeCompare(second[1]));
-  const table = [["Repo", "Slug", "Outcome", "Date", "Units planned", "Tickets landed", "Criteria", "Decisions", "Open questions"], ...rows];
-  const widths = table[0].map((_, index) => Math.max(...table.map((row) => row[index].length)));
-  process.stdout.write(`${table.map((row) => row.map((cell, index) => cell.padEnd(widths[index])).join("  ").trimEnd()).join("\n")}\n`);
+  printTable([["Repo", "Slug", "Outcome", "Date", "Units planned", "Tickets landed", "Criteria", "Decisions", "Open questions"], ...rows]);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
+  if (process.argv.includes("--challenge")) {
+    reportChallenges();
+    process.exit(0);
+  }
   reportSpecs();
 }

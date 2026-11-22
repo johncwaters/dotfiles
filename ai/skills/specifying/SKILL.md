@@ -87,4 +87,4 @@ It writes `<slug>.intent.json` beside the design spec, or names what to settle f
 - `render.ts`: `node <skill-dir>/render.ts <spec.json> tree|design` draws the graph; `tree` also reads an archive's structure.
 - `cut.ts`: `node <skill-dir>/cut.ts <spec.json>` cuts a `challenged` design spec into its intent file, or names what to settle first.
 - `archive.ts`: `node <skill-dir>/archive.ts <spec.json> built|abandoned` archives a design spec and its intent file.
-- `report.ts`: `node <skill-dir>/report.ts` lists archived specs with landed tickets and sweeps specs idle 14 days as abandoned.
+- `report.ts`: `node <skill-dir>/report.ts` lists archived specs with landed tickets and sweeps specs idle 14 days as abandoned; `--challenge` instead prints, per archive month, each challenge lane's applied rate, the rebuttal rate, and overturns restored, and sweeps nothing.
