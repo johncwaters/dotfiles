@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { execFileSync, spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { parseArgs } from 'node:util'
 
 const severities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
 
@@ -96,4 +98,105 @@ function reportLanes() {
   printTable(table)
 }
 
+const escapeWindowSeconds = 14 * 24 * 60 * 60
+
+function runGit(repoPath, gitArguments) {
+  const pinnedConfig = ['-c', 'core.quotePath=false', '-c', 'color.ui=never', '-c', 'diff.noprefix=false']
+  return execFileSync('git', ['-C', repoPath, ...pinnedConfig, ...gitArguments], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
+function isRefPresent(repoPath, ref) {
+  return spawnSync('git', ['-C', repoPath, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { stdio: 'ignore' }).status === 0
+}
+
+function mainlineOf(repoPath) {
+  const mainlineRef = ['refs/remotes/origin/HEAD', 'refs/heads/main', 'refs/heads/master'].find((ref) => isRefPresent(repoPath, ref))
+  if (mainlineRef) return mainlineRef
+  console.error(`no mainline in ${repoPath}: none of origin/HEAD, main, or master resolves`)
+  process.exit(2)
+}
+
+function mainlineCommits(repoPath, mainlineRef) {
+  const log = runGit(repoPath, ['log', '--no-merges', '--format=%H%x1f%ct%x1f%s%x1f%(trailers:key=Confidence,valueonly,separator=%x2C)%x1e', mainlineRef, '--'])
+  return log.split('\x1e').map((record) => record.trim()).filter(Boolean).map((record) => {
+    const [sha, committedAt, subject, confidence] = record.split('\x1f')
+    return { sha, committedAtSeconds: Number(committedAt), subject, isGated: Boolean(confidence?.trim()) }
+  })
+}
+
+function blameablePathsOfFix(repoPath, fixSha) {
+  const rawFields = runGit(repoPath, ['diff', '--raw', '-z', '--no-renames', '--no-ext-diff', `${fixSha}^`, fixSha]).split('\0')
+  const paths = []
+  for (let index = 0; index + 1 < rawFields.length; index += 2) {
+    const [oldMode] = rawFields[index].replace(/^:/, '').split(' ')
+    if (oldMode === '000000' || oldMode === '160000') continue
+    paths.push(rawFields[index + 1])
+  }
+  return paths
+}
+
+function removedRangesOf(repoPath, fixSha, path) {
+  const diff = runGit(repoPath, ['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', `${fixSha}^`, fixSha, '--', path])
+  return diff.split('\n').flatMap((line) => {
+    const hunk = line.match(/^@@ -(\d+)(?:,(\d+))? /)
+    const removedLineCount = hunk?.[2] === undefined ? 1 : Number(hunk[2])
+    return hunk && removedLineCount > 0 ? [`${hunk[1]},+${removedLineCount}`] : []
+  })
+}
+
+function originShasOfFix(repoPath, fix) {
+  const sinceSeconds = fix.committedAtSeconds - escapeWindowSeconds
+  const originShas = new Set()
+  for (const path of blameablePathsOfFix(repoPath, fix.sha)) {
+    const ranges = removedRangesOf(repoPath, fix.sha, path)
+    if (ranges.length === 0) continue
+    const rangeArguments = ranges.flatMap((range) => ['-L', range])
+    const blame = runGit(repoPath, ['blame', '-w', '--porcelain', `--since=${sinceSeconds}`, ...rangeArguments, `${fix.sha}^`, '--', path])
+    let headerSha = null
+    for (const line of blame.split('\n')) {
+      const header = line.match(/^([0-9a-f]{40}) \d+ \d+/)
+      if (header) headerSha = header[1]
+      if (line === 'boundary' && headerSha) originShas.add(`boundary:${headerSha}`)
+      if (header) originShas.add(header[1])
+    }
+  }
+  return [...originShas].filter((sha) => !sha.startsWith('boundary:') && !originShas.has(`boundary:${sha}`))
+}
+
+function escapeRowsByMonth(repoPath) {
+  const commits = mainlineCommits(repoPath, mainlineOf(repoPath))
+  const commitBySha = new Map(commits.map((commit) => [commit.sha, commit]))
+  const escapedShas = new Set()
+  for (const fix of commits.filter((commit) => /^fix(\(.*\))?!?:/.test(commit.subject))) {
+    for (const originSha of originShasOfFix(repoPath, fix)) {
+      const origin = commitBySha.get(originSha)
+      if (!origin?.isGated || origin.sha === fix.sha) continue
+      if (fix.committedAtSeconds - origin.committedAtSeconds > escapeWindowSeconds) continue
+      escapedShas.add(origin.sha)
+    }
+  }
+  const rowsByMonth = new Map()
+  for (const commit of commits.filter((commit) => commit.isGated)) {
+    const month = new Date(commit.committedAtSeconds * 1000).toISOString().slice(0, 7)
+    if (!rowsByMonth.has(month)) rowsByMonth.set(month, { gated: 0, escaped: 0 })
+    rowsByMonth.get(month).gated += 1
+    if (escapedShas.has(commit.sha)) rowsByMonth.get(month).escaped += 1
+  }
+  return rowsByMonth
+}
+function reportEscapes(repoPath) {
+  const table = [['Month', 'Gated', 'Escaped', 'Escape rate']]
+  const rowsByMonth = escapeRowsByMonth(repoPath)
+  for (const month of [...rowsByMonth.keys()].sort()) {
+    const { gated, escaped } = rowsByMonth.get(month)
+    table.push([month, gated, escaped, `${Math.round((escaped / gated) * 100)}%`])
+  }
+  printTable(table)
+}
+
+const { values: options } = parseArgs({ options: { escapes: { type: 'boolean' }, repo: { type: 'string' } } })
+if (options.escapes) {
+  reportEscapes(resolve(options.repo ?? '.'))
+  process.exit(0)
+}
 reportLanes()
