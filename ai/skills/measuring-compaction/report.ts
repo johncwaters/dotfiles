@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { defaultProjectsDir, listTranscriptsSince } from "../running-retros/lib/digest.ts";
+import { defaultProjectsDir, digestTranscript, listTranscriptsSince } from "../running-retros/lib/digest.ts";
 
 type Usage = {
   input_tokens?: number;
@@ -19,6 +19,7 @@ type TranscriptLine = {
   compactMetadata?: { trigger?: string; preTokens?: number; precomputed?: boolean; durationMs?: number };
   message?: { id?: string; model?: string; usage?: Usage; content?: unknown };
 };
+type ToolUseBlock = { type?: string; name?: string; input?: { file_path?: string; offset?: number } };
 type Call = { usage: Usage; model: string };
 type PricePerMillion = { input: number; cacheRead: number; write5m: number; write1h: number; output: number };
 type Compaction = {
@@ -53,6 +54,11 @@ const PRICE_BY_MODEL: Record<string, PricePerMillion> = {
 const FALLBACK_MODEL = "claude-opus-5-5";
 const PRE_CAP_AUTO_COMPACT_TOKENS = 967_000;
 const CHARACTERS_PER_TOKEN = 4;
+const DRIFT_BUCKET_TOKENS = 50_000;
+const DRIFT_BUCKET_COUNT = 13;
+const DRIFT_SAMPLE_TARGET_CALLS = 5000;
+const CURRENT_CAP_TOKENS = 300_000;
+const FILE_CHANGING_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 
 function priceFor(model: string): PricePerMillion {
   return PRICE_BY_MODEL[model] ?? PRICE_BY_MODEL[FALLBACK_MODEL]!;
@@ -74,17 +80,18 @@ function textLength(content: unknown): number {
   return content.reduce((total, block) => total + (typeof block?.text === "string" ? block.text.length : 0), 0);
 }
 
-function readLines(transcriptPath: string): TranscriptLine[] {
-  const lines: TranscriptLine[] = [];
-  for (const rawLine of fs.readFileSync(transcriptPath, "utf8").split("\n")) {
-    if (!rawLine) continue;
-    try {
-      lines.push(JSON.parse(rawLine));
-    } catch {
-      continue;
-    }
+function parseLine(rawLine: string): TranscriptLine {
+  try {
+    return JSON.parse(rawLine) ?? {};
+  } catch {
+    return {};
   }
-  return lines;
+}
+
+function readLines(transcriptPath: string): TranscriptLine[] {
+  const rawLines = fs.readFileSync(transcriptPath, "utf8").split("\n");
+  if (rawLines.at(-1) === "") rawLines.pop();
+  return rawLines.map(parseLine);
 }
 
 function countDelegation(lines: TranscriptLine[], transcriptPath: string): Delegation {
@@ -180,6 +187,114 @@ export function summarizeSession(transcriptPath: string, since: string): Session
     unpricedModels: [...new Set(calls.map((call) => call.model).filter((model) => !PRICE_BY_MODEL[model] && model !== "<synthetic>"))],
     calledAt,
   };
+}
+
+export type DriftCounters = { calls: number[]; toolErrors: number[]; reads: number[]; rereads: number[]; corrections: number[] };
+
+function emptyDriftCounters(): DriftCounters {
+  const zeroes = () => new Array<number>(DRIFT_BUCKET_COUNT).fill(0);
+  return { calls: zeroes(), toolErrors: zeroes(), reads: zeroes(), rereads: zeroes(), corrections: zeroes() };
+}
+
+function driftBucketOf(context: number): number {
+  return Math.min(DRIFT_BUCKET_COUNT - 1, Math.floor(context / DRIFT_BUCKET_TOKENS));
+}
+
+export async function summarizeDrift(transcriptPath: string, since: string): Promise<DriftCounters | null> {
+  const lines = readLines(transcriptPath);
+  const firstTimestamp = lines.find((line) => line.timestamp)?.timestamp;
+  if (!firstTimestamp || firstTimestamp < since) return null;
+  const counters = emptyDriftCounters();
+  const seenMessageIds = new Set<string>();
+  const filesInContext = new Set<string>();
+  const callLineNumbers: number[] = [];
+  const callBuckets: number[] = [];
+  let currentBucket: number | null = null;
+  lines.forEach((line, index) => {
+    if (line.subtype === "compact_boundary") {
+      filesInContext.clear();
+      return;
+    }
+    if (line.type !== "assistant") return;
+    const usage = line.message?.usage;
+    const messageId = line.message?.id;
+    if (usage && messageId && !seenMessageIds.has(messageId)) {
+      seenMessageIds.add(messageId);
+      currentBucket = driftBucketOf(contextOf(usage));
+      counters.calls[currentBucket]! += 1;
+      callLineNumbers.push(index + 1);
+      callBuckets.push(currentBucket);
+    }
+    const content = line.message?.content;
+    if (currentBucket === null || !Array.isArray(content)) return;
+    for (const block of content as ToolUseBlock[]) {
+      const filePath = block?.type === "tool_use" ? block.input?.file_path : undefined;
+      if (!filePath) continue;
+      if (FILE_CHANGING_TOOLS.has(block.name ?? "")) filesInContext.delete(filePath);
+      if (block.name !== "Read" || block.input?.offset !== undefined) continue;
+      counters.reads[currentBucket]! += 1;
+      if (filesInContext.has(filePath)) counters.rereads[currentBucket]! += 1;
+      filesInContext.add(filePath);
+    }
+  });
+  if (callLineNumbers.length === 0) return null;
+  const digest = await digestTranscript(transcriptPath, { includeGit: false });
+  let callPosition = -1;
+  for (const incident of digest.incidents) {
+    if (incident.kind !== "correction" && incident.kind !== "tool-error") continue;
+    while (callPosition + 1 < callLineNumbers.length && callLineNumbers[callPosition + 1]! < incident.line) callPosition += 1;
+    if (callPosition < 0) continue;
+    const counter = incident.kind === "correction" ? counters.corrections : counters.toolErrors;
+    counter[callBuckets[callPosition]!]! += 1;
+  }
+  return counters;
+}
+
+async function summarizeDriftSequentially(transcriptPaths: string[], since: string): Promise<DriftCounters[]> {
+  const sessions: DriftCounters[] = [];
+  for (const transcriptPath of transcriptPaths) {
+    const counters = await summarizeDrift(transcriptPath, since);
+    if (counters) sessions.push(counters);
+  }
+  return sessions;
+}
+
+export function buildDriftReport(sessions: DriftCounters[]) {
+  const total = emptyDriftCounters();
+  for (const session of sessions) {
+    for (const key of Object.keys(total) as (keyof DriftCounters)[]) session[key].forEach((count, bucket) => (total[key][bucket]! += count));
+  }
+  const firstBucketAboveCap = CURRENT_CAP_TOKENS / DRIFT_BUCKET_TOKENS;
+  return {
+    buckets: total.calls.map((calls, bucket) => ({
+      fromTokens: bucket * DRIFT_BUCKET_TOKENS,
+      calls,
+      toolErrorsPer100Calls: calls ? (100 * total.toolErrors[bucket]!) / calls : 0,
+      rereadShareOfReads: total.reads[bucket] ? total.rereads[bucket]! / total.reads[bucket]! : 0,
+      correctionsPer1000Calls: calls ? (1000 * total.corrections[bucket]!) / calls : 0,
+    })),
+    callsAboveCurrentCap: sum(total.calls.slice(firstBucketAboveCap)),
+    sampleTargetCalls: DRIFT_SAMPLE_TARGET_CALLS,
+  };
+}
+
+export type DriftReport = ReturnType<typeof buildDriftReport>;
+
+function formatDriftReport(drift: DriftReport): string {
+  const isLastBucket = (bucket: number) => bucket === DRIFT_BUCKET_COUNT - 1;
+  const rows = drift.buckets
+    .filter((bucket) => bucket.calls > 0)
+    .map((bucket) => {
+      const label = isLastBucket(bucket.fromTokens / DRIFT_BUCKET_TOKENS) ? `${bucket.fromTokens / 1000}k+` : `${bucket.fromTokens / 1000}-${bucket.fromTokens / 1000 + DRIFT_BUCKET_TOKENS / 1000}k`;
+      return `${label.padEnd(10)}${String(bucket.calls).padStart(8)}${bucket.toolErrorsPer100Calls.toFixed(2).padStart(14)}${percent(bucket.rereadShareOfReads).padStart(10)}${bucket.correctionsPer1000Calls.toFixed(2).padStart(15)}`;
+    });
+  const sampleVerdict = drift.callsAboveCurrentCap >= drift.sampleTargetCalls ? "enough to compare" : "not enough to compare yet";
+  return [
+    "drift by context, parent calls; re-reads are Reads of a file already in context",
+    `${"context".padEnd(10)}${"calls".padStart(8)}${"errors/100".padStart(14)}${"re-reads".padStart(10)}${"fixes/1000".padStart(15)}`,
+    ...rows,
+    `calls above ${CURRENT_CAP_TOKENS / 1000}k: ${drift.callsAboveCurrentCap} of ${drift.sampleTargetCalls} needed, ${sampleVerdict}`,
+  ].join("\n");
 }
 
 function median(values: number[]): number {
@@ -313,7 +428,7 @@ function formatReport(report: CompactionReport): string {
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
-    options: { since: { type: "string" }, json: { type: "string" }, graphics: { type: "string" } },
+    options: { since: { type: "string" }, json: { type: "string" }, graphics: { type: "string" }, drift: { type: "boolean" } },
   });
   const since = values.since ?? new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
   if (Number.isNaN(Date.parse(since))) throw new Error(`--since must be a date, got ${since}`);
@@ -322,7 +437,9 @@ async function main(): Promise<void> {
   if (sessions.length === 0) throw new Error(`no sessions with model calls since ${since}`);
   const report = buildReport(sessions, since);
   console.log(formatReport(report));
-  if (values.json) fs.writeFileSync(values.json, JSON.stringify(report));
+  const drift = values.drift ? buildDriftReport(await summarizeDriftSequentially(transcriptPaths, since)) : null;
+  if (drift) console.log(formatDriftReport(drift));
+  if (values.json) fs.writeFileSync(values.json, JSON.stringify(drift ? { ...report, drift } : report));
   if (!values.graphics) return;
   if (report.compactions.total === 0) throw new Error(`no compactions since ${report.since}, so there is nothing to chart`);
   const { renderGraphics } = await import("./graphics.ts");
