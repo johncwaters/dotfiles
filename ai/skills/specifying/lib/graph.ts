@@ -52,6 +52,9 @@ export type MockupBoard = { id: string; boxes: string[]; pages: string[] };
 export type Node = Goal | NonGoal | Branch | Decision | OpenQuestion | Unit | Design;
 export type EdgeKind = "blocks" | "implements" | "dependsOn" | "deferredBy";
 export type Edge = { from: Node["id"]; kind: EdgeKind; to: Node["id"] };
+export type LedgerVerdict = { step?: number; lane: string; verdict: "CUT" | "SHRINK" | "KEEP"; because: string; evidence: string };
+export type LedgerStep = { step: number; unitIds: string[]; verdicts: LedgerVerdict[]; outcome: "kept" | "shrunk" | "cut"; rebuttal?: string };
+export type ChallengeLedger = { lanes: string[]; steps: LedgerStep[] };
 export const REVIEW_GATES = ["gating-reviews"] as const;
 export type ReviewGate = (typeof REVIEW_GATES)[number];
 export type DesignSpec = {
@@ -62,6 +65,7 @@ export type DesignSpec = {
   edges: Edge[];
   challengeStamp?: string;
   challengedUnitIds?: string[];
+  challengeLedger?: ChallengeLedger;
   reviewGate?: ReviewGate;
 };
 
@@ -378,13 +382,57 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
   });
 }
 
+const LEDGER_OUTCOMES = ["kept", "shrunk", "cut"];
+const LEDGER_VERDICTS = ["CUT", "SHRINK", "KEEP"];
+
+function validateLedgerStepShape(ledgerStep: unknown, subject: string, errors: string[]): void {
+  if (!isRecord(ledgerStep)) {
+    addError(errors, 1, subject, "supply a ledger step object");
+    return;
+  }
+  rejectUnknownFields(ledgerStep, ["step", "unitIds", "verdicts", "outcome", "rebuttal"], subject, errors);
+  if (!Number.isInteger(ledgerStep.step)) addError(errors, 1, `${subject}.step`, "supply the plan step number");
+  if (!Array.isArray(ledgerStep.unitIds) || ledgerStep.unitIds.length === 0) addError(errors, 1, `${subject}.unitIds`, "supply the ids of the units this step judged");
+  if (Array.isArray(ledgerStep.unitIds)) ledgerStep.unitIds.forEach((unitId: unknown, unitIndex: number) => requireString(unitId, `${subject}.unitIds[${unitIndex}]`, errors));
+  if (!LEDGER_OUTCOMES.includes(ledgerStep.outcome as string)) addError(errors, 1, `${subject}.outcome`, "use kept, shrunk, or cut");
+  if (Object.hasOwn(ledgerStep, "rebuttal")) requireString(ledgerStep.rebuttal, `${subject}.rebuttal`, errors);
+  if (!Array.isArray(ledgerStep.verdicts) || ledgerStep.verdicts.length === 0) {
+    addError(errors, 1, `${subject}.verdicts`, "supply every lane verdict the workflow returned for this step");
+    return;
+  }
+  ledgerStep.verdicts.forEach((laneVerdict: unknown, verdictIndex: number) => {
+    const verdictSubject = `${subject}.verdicts[${verdictIndex}]`;
+    if (!isRecord(laneVerdict)) {
+      addError(errors, 1, verdictSubject, "supply a lane verdict object");
+      return;
+    }
+    rejectUnknownFields(laneVerdict, ["step", "lane", "verdict", "because", "evidence"], verdictSubject, errors);
+    if (!LEDGER_VERDICTS.includes(laneVerdict.verdict as string)) addError(errors, 1, `${verdictSubject}.verdict`, "use CUT, SHRINK, or KEEP");
+    for (const field of ["lane", "because", "evidence"]) requireString(laneVerdict[field], `${verdictSubject}.${field}`, errors);
+  });
+}
+
+function validateLedgerShape(ledger: unknown, errors: string[]): void {
+  if (!isRecord(ledger)) {
+    addError(errors, 1, "spec.challengeLedger", "supply { lanes, steps }");
+    return;
+  }
+  rejectUnknownFields(ledger, ["lanes", "steps"], "spec.challengeLedger", errors);
+  if (!Array.isArray(ledger.lanes) || ledger.lanes.length === 0) addError(errors, 1, "spec.challengeLedger.lanes", "supply the names of the lanes the challenge ran");
+  if (!Array.isArray(ledger.steps) || ledger.steps.length === 0) {
+    addError(errors, 1, "spec.challengeLedger.steps", "supply one ledger step per judged plan step");
+    return;
+  }
+  ledger.steps.forEach((ledgerStep: unknown, stepIndex: number) => validateLedgerStepShape(ledgerStep, `spec.challengeLedger.steps[${stepIndex}]`, errors));
+}
+
 function validateShape(value: unknown): string[] {
   const errors: string[] = [];
   if (!isRecord(value)) {
     addError(errors, 1, "spec", "supply a DesignSpec object");
     return errors;
   }
-  rejectUnknownFields(value, ["status", "request", "repoRoot", "nodes", "edges", "challengeStamp", "challengedUnitIds", "reviewGate"], "spec", errors);
+  rejectUnknownFields(value, ["status", "request", "repoRoot", "nodes", "edges", "challengeStamp", "challengedUnitIds", "challengeLedger", "reviewGate"], "spec", errors);
   if (Object.hasOwn(value, "reviewGate") && !(REVIEW_GATES as readonly unknown[]).includes(value.reviewGate)) {
     addError(errors, 1, "spec.reviewGate", `use one of ${REVIEW_GATES.join(", ")}`);
   }
@@ -398,6 +446,7 @@ function validateShape(value: unknown): string[] {
   if (Array.isArray(value.challengedUnitIds)) {
     value.challengedUnitIds.forEach((unitId: unknown, index: number) => requireString(unitId, `spec.challengedUnitIds[${index}]`, errors));
   }
+  if (Object.hasOwn(value, "challengeLedger")) validateLedgerShape(value.challengeLedger, errors);
   if (!Array.isArray(value.nodes)) addError(errors, 1, "spec.nodes", "supply an array of nodes");
   if (Array.isArray(value.nodes)) {
     const commitsCited = readCommitsCited(value.nodes, value.repoRoot);
@@ -599,8 +648,35 @@ function measureReadingBytes(resolvedRoot: string, listedPaths: string[], stopAb
   return { totalBytes, unmeasurablePaths, hasUncountedPaths };
 }
 
+function validateLedgerAgainstStamp(spec: DesignSpec, errors: string[]): void {
+  const ledger = spec.challengeLedger;
+  if (ledger === undefined) {
+    addError(errors, 7, "spec.challengeLedger", "record the challenge's lane verdicts and step outcomes as challenging-plans step 3 says, or set status back to sliced and challenge again");
+    return;
+  }
+  const challengedUnitIds = new Set(spec.challengedUnitIds ?? []);
+  const ledgerUnitIds = new Set(ledger.steps.flatMap((ledgerStep) => ledgerStep.unitIds));
+  const unjudgedUnitIds = [...challengedUnitIds].filter((unitId) => !ledgerUnitIds.has(unitId));
+  const strayUnitIds = [...ledgerUnitIds].filter((unitId) => !challengedUnitIds.has(unitId));
+  if (unjudgedUnitIds.length > 0 || strayUnitIds.length > 0) addError(errors, 7, "spec.challengeLedger", `the ledger's unitIds must cover exactly challengedUnitIds; missing ${unjudgedUnitIds.join(", ") || "none"}, extra ${strayUnitIds.join(", ") || "none"}`);
+  for (const ledgerStep of ledger.steps) {
+    const lanesWithoutVerdict = ledger.lanes.filter((lane) => !ledgerStep.verdicts.some((laneVerdict) => laneVerdict.lane === lane));
+    const unlistedLanes = ledgerStep.verdicts.map((laneVerdict) => laneVerdict.lane).filter((lane) => !ledger.lanes.includes(lane));
+    if (lanesWithoutVerdict.length > 0 || unlistedLanes.length > 0) addError(errors, 7, `spec.challengeLedger step ${ledgerStep.step}`, `record one verdict per lane in challengeLedger.lanes; missing ${lanesWithoutVerdict.join(", ") || "none"}, unlisted ${unlistedLanes.join(", ") || "none"}`);
+    const hasAggressiveVerdict = ledgerStep.verdicts.some((laneVerdict) => laneVerdict.verdict !== "KEEP");
+    const subject = `spec.challengeLedger step ${ledgerStep.step}`;
+    if (ledgerStep.outcome !== "kept" && !hasAggressiveVerdict) addError(errors, 7, subject, `outcome ${ledgerStep.outcome} needs a lane CUT or SHRINK behind it; set outcome kept`);
+    if (ledgerStep.outcome === "kept" && hasAggressiveVerdict && ledgerStep.rebuttal === undefined) addError(errors, 7, subject, "a kept step that drew a CUT or SHRINK needs the rebuttal that escaped it");
+  }
+  const countOutcome = (outcome: LedgerStep["outcome"]) => ledger.steps.filter((ledgerStep) => ledgerStep.outcome === outcome).length;
+  const ledgerStamp = `CHALLENGE: ${countOutcome("kept")} kept, ${countOutcome("shrunk")} shrunk, ${countOutcome("cut")} cut`;
+  if (spec.challengeStamp?.startsWith(ledgerStamp)) return;
+  addError(errors, 7, "spec.challengeStamp", `the ledger's outcomes give ${ledgerStamp}; write that stamp or correct the ledger`);
+}
+
 function validateChallengeStamp(spec: DesignSpec, units: Unit[], errors: string[]): void {
   if (spec.status !== "challenged") {
+    if (spec.challengeLedger !== undefined) addError(errors, 7, "spec.challengeLedger", "omit challengeLedger until status is challenged");
     if (spec.challengeStamp !== undefined) addError(errors, 7, "spec.challengeStamp", "omit challengeStamp until status is challenged");
     if (spec.challengedUnitIds !== undefined) addError(errors, 7, "spec.challengedUnitIds", "omit challengedUnitIds until status is challenged");
     return;
@@ -608,6 +684,7 @@ function validateChallengeStamp(spec: DesignSpec, units: Unit[], errors: string[
   if (!spec.challengeStamp || !CHALLENGE_STAMP_PATTERN.test(spec.challengeStamp)) {
     addError(errors, 7, "spec.challengeStamp", "supply CHALLENGE: <n> kept, <n> shrunk, <n> cut for challenged status");
   }
+  validateLedgerAgainstStamp(spec, errors);
   if (spec.challengedUnitIds === undefined) {
     addError(errors, 7, "spec.challengedUnitIds", "supply the ids of the units without a deferredBy edge that the challenge judged");
     return;
@@ -620,7 +697,7 @@ function validateChallengeStamp(spec: DesignSpec, units: Unit[], errors: string[
     errors,
     7,
     "spec.challengedUnitIds",
-    `the challenge judged ${spec.challengedUnitIds.join(", ") || "zero units"} while the units without a deferredBy edge are ${readyUnitIds.join(", ") || "none"}; set status back to sketch, grilled, or sliced and remove challengeStamp and challengedUnitIds before changing units`,
+    `the challenge judged ${spec.challengedUnitIds.join(", ") || "zero units"} while the units without a deferredBy edge are ${readyUnitIds.join(", ") || "none"}; set status back to sketch, grilled, or sliced and remove challengeLedger, challengeStamp, and challengedUnitIds before changing units`,
   );
 }
 

@@ -6,7 +6,7 @@ import { executableSourceOfWorkflow, workflowDirectory } from './qa-swarm-source
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 
 const workflowArgsByFileName = {
-  'plan-challenge.js': { goal: 'Ship the fixture.', planText: '1. First step\n2. Second step\n', repoPath: '/repo' },
+  'plan-challenge.js': { goal: 'Ship the fixture.', planText: '1. First step\n2. Second step\n', repoPath: '/repo', lanes: ['scale'] },
   'qa-swarm.js': { reviewCmd: 'git diff HEAD', repoPath: '/repo', context: 'fixture', changedFiles: ['src/file.js'], ruleLanes: { lanes: ['code', 'security'], filesByLane: { code: ['src/file.js'], security: ['src/file.js'] } } }
 }
 
@@ -47,9 +47,9 @@ test('a new retryAttemptId changes only the plan-challenge retry prompts', async
   const firstRunPrompts = firstRunCalls.map((agentCall) => agentCall.prompt)
   const secondRunPrompts = secondRunCalls.map((agentCall) => agentCall.prompt)
 
-  assert.equal(firstRunPrompts.length, 6)
-  assert.deepEqual(secondRunPrompts.slice(0, 3), firstRunPrompts.slice(0, 3))
-  for (let retryIndex = 3; retryIndex < 6; retryIndex += 1) {
+  assert.equal(firstRunPrompts.length, 4)
+  assert.deepEqual(secondRunPrompts.slice(0, 2), firstRunPrompts.slice(0, 2))
+  for (let retryIndex = 2; retryIndex < 4; retryIndex += 1) {
     assert.notEqual(secondRunPrompts[retryIndex], firstRunPrompts[retryIndex])
   }
 })

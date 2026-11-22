@@ -31,6 +31,7 @@ test("cut refuses the deferred example and renders its challenged tickets", () =
     spec.status = "challenged";
     spec.challengeStamp = "CHALLENGE: 2 kept, 0 shrunk, 0 cut";
     spec.challengedUnitIds = ["U1", "U2"];
+    spec.challengeLedger = { lanes: ["simplify"], steps: [1, 2].map((step) => ({ step, unitIds: [`U${step}`], verdicts: [{ lane: "simplify", verdict: "KEEP", because: "the goal needs it", evidence: "src/export/index.ts:14" }], outcome: "kept" })) };
     spec.nodes.reverse();
     fs.writeFileSync(specPath, JSON.stringify(spec), "utf8");
     const cutProcess = spawnSync("node", [scriptPath, specPath], { encoding: "utf8" });
@@ -74,6 +75,7 @@ test("cut refuses the deferred example and renders its challenged tickets", () =
     spec.status = "sliced";
     delete spec.challengeStamp;
     delete spec.challengedUnitIds;
+    delete spec.challengeLedger;
     fs.writeFileSync(specPath, JSON.stringify(spec), "utf8");
     const staleProcess = spawnSync("node", [scriptPath, specPath], { encoding: "utf8" });
     assert.equal(staleProcess.status, 1, staleProcess.stderr);

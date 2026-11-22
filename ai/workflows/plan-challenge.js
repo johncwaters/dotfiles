@@ -1,13 +1,9 @@
-export const meta = { name: 'plan-challenge', description: 'Runs three adversarial plan challenges and returns their verdicts.', phases: [{ title: 'Challenge', detail: 'Challenge necessity, leverage, and scale concurrently.' }] }
+export const meta = { name: 'plan-challenge', description: 'Runs the selected adversarial plan challenges and returns their parsed verdicts.', phases: [{ title: 'Challenge', detail: 'Challenge simplicity, and scale when selected, concurrently.' }] }
 
-const laneBriefs = [
+const allLaneBriefs = [
   {
-    lane: 'necessity',
-    brief: 'Burden of proof per step: argue the step should be CUT. Does the goal still land without it? Hunt YAGNI, speculative generality, gold-plating, unenforceable docs, tests duplicating existing coverage, work the goal never asked for. Hunt invented requirements: a step whose only payoff is a guarantee the goal never states (fresh reads, atomic multi-key writes, exactly-once delivery, ordering, concurrent writers, a permission changing mid-operation) is a CUT naming the tolerance that already holds, verified in the repo or quoted from the goal.'
-  },
-  {
-    lane: 'leverage',
-    brief: 'For each step argue SHRINK: existing code to reuse (grep for prior art before claiming there is none), fewer files, a standard tool over custom code, two steps that are one step wearing two numbers.'
+    lane: 'simplify',
+    brief: 'Per step: CUT when the goal still lands without it (YAGNI, gold-plating, unenforceable docs, tests duplicating coverage, a guarantee the goal never states such as fresh reads, exactly-once, ordering, or concurrent writers); SHRINK to existing code, a standard tool, fewer files, or a merge with a step it duplicates; otherwise KEEP. Every verdict, KEEP included, carries the same burden: cite the file:line or command that settles it.'
   },
   {
     lane: 'scale',
@@ -59,7 +55,7 @@ PLAN_SUMMARY:
 Cover every numbered step exactly once and in step order. Use one verdict per line and no bare | inside a field. End with this block and nothing after it.`
 }
 
-function verdictStepNumbersFrom(laneText) {
+function verdictsFrom(laneText) {
   if (typeof laneText !== 'string') {
     return null
   }
@@ -71,15 +67,18 @@ function verdictStepNumbersFrom(laneText) {
   if (!planSummaryMatch || planSummaryMatch[1].trim() === '') {
     return null
   }
-  const stepNumbers = []
+  const verdicts = []
   for (const blockLine of blockMatch[1].split('\n')) {
-    const verdictMatch = blockLine.trim().match(/^- step: (\d+) \| verdict: (?:CUT|SHRINK|KEEP) \| because: .+ \| evidence: .+$/)
-    if (!verdictMatch) {
-      continue
+    const verdictMatch = blockLine.trim().match(/^- step: (\d+) \| verdict: (CUT|SHRINK|KEEP) \| because: (.+) \| evidence: (.+)$/)
+    if (verdictMatch) {
+      verdicts.push({ step: Number(verdictMatch[1]), verdict: verdictMatch[2], because: verdictMatch[3], evidence: verdictMatch[4] })
     }
-    stepNumbers.push(Number(verdictMatch[1]))
   }
-  return stepNumbers
+  return verdicts
+}
+
+function verdictStepNumbersFrom(laneText) {
+  return verdictsFrom(laneText)?.map((verdict) => verdict.step) ?? null
 }
 
 function coversEveryPlanStep(laneText, requiredStepNumbers) {
@@ -121,6 +120,7 @@ function rerunChallengeLane(laneBrief, firstLaneText, requiredStepNumbers) {
 }
 
 phase('Challenge')
+const laneBriefs = allLaneBriefs.filter((laneBrief) => laneBrief.lane === 'simplify' || (args.lanes ?? []).includes(laneBrief.lane))
 const requiredStepNumbers = numberedStepsFrom(args.planText)
 if (requiredStepNumbers.length === 0) {
   return { lanes: [], survivingLanes: [] }
@@ -137,7 +137,6 @@ if (lanesNeedingRerun.length > 0) {
   }
 }
 
-const laneOutputs = laneBriefs.map((laneBrief) => ({ lane: laneBrief.lane, text: laneTextsByName.get(laneBrief.lane) }))
-const lanes = laneOutputs.filter((laneOutput) => coversEveryPlanStep(laneOutput.text, requiredStepNumbers))
+const lanes = laneBriefs.map((laneBrief) => laneTextsByName.get(laneBrief.lane)).flatMap((laneText, laneIndex) => coversEveryPlanStep(laneText, requiredStepNumbers) ? [{ lane: laneBriefs[laneIndex].lane, verdicts: verdictsFrom(laneText) }] : [])
 const survivingLanes = lanes.map((laneOutput) => laneOutput.lane)
 return { lanes, survivingLanes }

@@ -192,11 +192,16 @@ test("an unmeasurable entry is reported beside the other rule errors and skipped
   assertAllowed(writeSpec(spec));
 });
 
-test("a challenge stamp is denied once the units ready for work differ from the units it judged", () => {
+test("a challenge stamp is denied once it or the units ready for work differ from what the ledger judged", () => {
   const spec = slicedSpec();
   spec.status = "challenged";
-  spec.challengeStamp = "CHALLENGE: 1 kept, 0 shrunk, 0 cut";
+  spec.challengeStamp = "CHALLENGE: 0 kept, 1 shrunk, 0 cut";
   spec.challengedUnitIds = ["U1"];
+  spec.challengeLedger = { lanes: ["simplify"], steps: [{ step: 1, unitIds: ["U1"], verdicts: [{ step: 1, lane: "simplify", verdict: "SHRINK", because: "reuse the parser", evidence: "parse.ts:3" }], outcome: "kept" }] };
+  assert.match(denialReason(writeSpec(spec)), /Rule 7: spec\.challengeLedger step 1: a kept step that drew a CUT or SHRINK needs the rebuttal/);
+  spec.challengeLedger.steps[0].rebuttal = "parse.ts:3 drops the evidence field the ledger needs";
+  assert.match(denialReason(writeSpec(spec)), /Rule 7: spec\.challengeStamp: the ledger's outcomes give CHALLENGE: 1 kept, 0 shrunk, 0 cut/);
+  spec.challengeStamp = "CHALLENGE: 1 kept, 0 shrunk, 0 cut";
   spec.nodes.push(
     { id: "Q1", kind: "openQuestion", question: "Which extension?", settledBy: "The next request" },
     { id: "U2", kind: "unit", title: "Deferred extension", reads: [], changes: ["extension.ts"], checks: [{ run: "node --test" }], serves: [1] },
@@ -204,7 +209,7 @@ test("a challenge stamp is denied once the units ready for work differ from the 
   spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U2", kind: "deferredBy", to: "Q1" });
   assertAllowed(writeSpec(spec));
   spec.edges = spec.edges.filter((edge) => edge.kind !== "deferredBy");
-  assert.match(denialReason(writeSpec(spec)), /Rule 7: spec\.challengedUnitIds: .*U1, U2.*set status back.*remove challengeStamp/);
+  assert.match(denialReason(writeSpec(spec)), /Rule 7: spec\.challengedUnitIds: .*U1, U2.*set status back.*remove challengeLedger, challengeStamp/);
 });
 
 test("Edit and MultiEdit replay detect dependency cycles without changing disk", () => {

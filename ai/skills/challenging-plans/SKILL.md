@@ -1,11 +1,11 @@
 ---
 name: challenging-plans
-description: Challenges a fresh plan with three read-only subagents to simplify every step. One argues for cutting it, one for shrinking it, and one for the lowest algorithmic bound the operation admits. The caller judges the verdicts, revises the plan, and stamps it with a CHALLENGE line. Use when the specifying skill reaches its challenge step or a drafted plan needs a direct challenge.
+description: Challenges a fresh plan with read-only subagents to simplify every step. A simplify lane argues for cutting, shrinking, or merging each step, and a scale lane, when the plan handles growing data, argues for the lowest algorithmic bound. The caller re-checks each verdict, records it in a ledger, revises the plan, and stamps it with a CHALLENGE line. Use when the specifying skill reaches its challenge step or a drafted plan needs a direct challenge.
 ---
 
 # Plan Challenge
 
-Every step is guilty until justified. Three challengers press necessity, leverage, and scale; the output is a plan at most the original size.
+Every step is guilty until justified. The simplify lane presses necessity and reuse, the scale lane presses bounds; the output is a plan at most the original size.
 
 ## Input
 
@@ -13,30 +13,30 @@ Every step is guilty until justified. Three challengers press necessity, leverag
 
 ## Output
 
-**Guaranteed output.** A revised plan whose final line is the stamp:
+**Guaranteed output.** A revised plan, a ledger of every verdict and its outcome, and as the last line the stamp:
 
 ```
 CHALLENGE: <kept> kept, <shrunk> shrunk, <cut> cut
 ```
 
-The `specifying` skill stores that line as the design spec's `challengeStamp`, and its validator refuses a stamp that does not cover the units ready for work, which is what makes this skill part of the process rather than a suggestion. Writing the stamp without running the challengers defeats the gate and is a violation.
+The `specifying` skill stores the ledger as `challengeLedger` and the stamp as `challengeStamp`; its validator recounts the stamp from the ledger. Writing either without running the lanes is a violation.
 
-**Boundaries.** Challengers argue without editing files, rewriting the plan, or adding work. A challenge that proposes a new step is out of order and dropped: the only legal moves are cut, shrink, merge, keep.
+**Boundaries.** Challengers argue without editing files, rewriting the plan, or adding work. A challenge that proposes a new step is dropped: the only legal moves are cut, shrink, merge, keep.
 
 ## Step 1: Run the workflow
 
-Call `Workflow({name: 'plan-challenge', args: { goal, planText, repoPath }})`. To re-run a dead lane retry under `resumeFromRunId` without replaying its cached output, add a new `retryAttemptId`. `lanes` holds each surviving lane's `text` to judge. Read `survivingLanes` for the `(lanes: <comma-separated names>)` stamp suffix whenever fewer than all three lanes survive. A plan written as prose or headings has no detectable step, so before calling, restate it as a numbered list (`1.`, `2.`, one line per step at column zero) and pass that text. Always call by `name`: the `Workflow(plan-challenge)` allow rule in settings.base.json matches named runs only, and `scriptPath` fails anyway because the tool checks the symlink-resolved path.
+Add `scale` to `lanes` when any step loops over data that grows with use (rows, files, board elements, requests, sessions); `simplify` always runs. Call `Workflow({name: 'plan-challenge', args: { goal, planText, repoPath, lanes }})`. To re-run a dead lane retry under `resumeFromRunId`, add a new `retryAttemptId`. `lanes` returns each surviving lane's parsed `verdicts`; add `(lanes: <names>)` to the stamp when a requested lane is missing from `survivingLanes`. Restate a prose plan as a numbered list (`1.`, one line per step at column zero) before calling. Always call by `name`: the `Workflow(plan-challenge)` allow rule matches named runs only.
 
-Workflow tool absent in this session: read `~/.claude/workflows/plan-challenge.js`, spawn the lane set it names in one message with multiple calls, as before, and converge by the rules in that script.
+Workflow tool absent: read `~/.claude/workflows/plan-challenge.js`, spawn its selected lanes in one message, and parse them by its rules.
 
-## Step 2: Converge and judge
+## Step 2: Judge
 
-The caller judges; challengers only argue. Per step, start from the most aggressive verdict any lane returned (CUT beats SHRINK beats KEEP). A step survives a CUT or escapes a SHRINK only through a rebuttal naming the concrete failure that occurs without it; "might need it later", "best practice", and "small anyway" all lose. A scale SHRINK is escaped only by a rebuttal naming the fact that bounds the input (an enum, a config cap, a fixed list) and where it lives; "it will be small" loses. `unverified` evidence loses to verified evidence pointing the other way.
+The caller judges; challengers only argue. Per step, take the most aggressive verdict (CUT beats SHRINK beats KEEP), then re-check its cited evidence in the repo. It applies only when that check holds; `unverified` evidence, or evidence the check contradicts, is rebutted. A verified CUT or SHRINK is escaped only by a rebuttal naming the concrete failure without the step; "might need it later", "best practice", and "small anyway" lose. A scale SHRINK is escaped only by naming the fact that bounds the input (an enum, a config cap, a fixed list) and where it lives.
 
-Overriding more than a third of the aggressive verdicts means the challengers misread the goal: fix the goal statement and respawn rather than bulk-rebutting.
+No lane surviving is no challenge: return the plan unstamped.
 
-No lane surviving is not a thinner challenge but no challenge at all: return the plan to its caller unstamped.
+## Step 3: Record, revise, and stamp
 
-## Step 3: Revise and stamp
+Write one ledger step per original step: `{ step, unitIds, verdicts, outcome, rebuttal }`, `verdicts` as the workflow returned them with `lane` added, `outcome` `kept`, `shrunk` (a merged step counts as shrunk), or `cut`, and `rebuttal` on a kept step that drew a CUT or SHRINK.
 
-Apply the surviving verdicts, merge and renumber, and keep each step one short line naming its work; a merged step names the combined work in one line, not both texts. Under the steps, list a `Bounds:` block with one line per surviving step, keyed by its new number: a step a scale SHRINK rewrote carries only the lowered bound that SHRINK named, or for a cache SHRINK at the same bound, that bound marked `O(n) in rows; no cache`; a merged step carries the bounds of every step it absorbed; only a cut step drops its bound. Write a bound as `O(n) in rows` or, when a scale KEEP named the infrastructure a lowering would need, `O(n²) in rows; O(n log n) needs an index on created_at`, so the carbon unit approving the plan sees the cost being approved and what would lower it, while step lines stay short enough to become titles. Append the `CHALLENGE:` stamp as the last line and hand the revised plan to whatever comes next — usually the `specifying` skill, which records the stamp. Counts in the stamp refer to the original steps: a step merged into another counts as shrunk.
+Apply the outcomes, merge and renumber, one short line per step. Under the steps, list a `Bounds:` block, one line per surviving step: a scale SHRINK's lowered bound, `O(n) in rows; no cache` for a same-bound cache SHRINK, every absorbed bound for a merge, or `O(n²) in rows; O(n log n) needs an index on created_at` when a scale KEEP named the infrastructure a lowering needs. Append the stamp, counted from the ledger outcomes.
