@@ -81,6 +81,7 @@ State the verdict and the count of surviving `ACTIONABLE` findings at HIGH or hi
 VERDICT: <APPROVE|APPROVE WITH NITS|REQUEST CHANGES|BLOCKED|FAILED>
 ACTIONABLE: <count>
 TRUNCATED: <lane list or "none">
+LANES: <lanes run>
 REVIEW_FILE: <path>
 
 STRUCTURED_FINDINGS:
@@ -96,7 +97,7 @@ Write the return to `review-<pinned id>.txt` in the scratchpad and name it in `R
 
 `VERDICT` comes first so a caller can gate on one line without parsing the block. `TRUNCATED` names every lane whose findings a cap dropped, or `none`, and it is machine-readable because the caller reports it: nothing afterwards sweeps for the overflow a cap dropped.
 
-The summary states: the pinned tree or SHA range, changed-file set, file and line counts, which lanes ran and which degraded, the count per severity, the count per disposition, and qa-swarm's `Dropped unproven` count. Then stop. No recommendation about what to do next, and no offer to fix anything.
+The summary states: the pinned tree or SHA range, changed-file set, file and line counts, which lanes degraded, the counts per severity and per disposition, and qa-swarm's `Dropped unproven` count. Then stop. No recommendation about what to do next, and no offer to fix anything.
 
 ## Token discipline
 

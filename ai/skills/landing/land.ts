@@ -58,6 +58,8 @@ import {
   gateToRerun,
   lastStamp,
   recordLandedCommit,
+  recordReviewedCommit,
+  type StampRow,
   verifyStamp,
 } from "./lib/stamp.ts";
 import { readGithubRemote } from "./lib/visibility.ts";
@@ -178,6 +180,7 @@ class Landing {
   private mainline: string | null = null;
   private pushed = false;
   private commitHash: string | null = null;
+  private landedStamp: StampRow | null = null;
   private deferredFeatureBranch: string | null = null;
   private parkedFeatureBranch: string | null = null;
   private featurePushRemote: string | null = null;
@@ -234,6 +237,7 @@ class Landing {
         ...(stamp ? { stampTree: stamp.tree } : {}),
       });
     }
+    this.landedStamp = verification.stamp;
     this.scopePaths = withNewJournalFiles(this.git, this.stampedPaths);
     const { untracked } = computeScope(this.git, this.scopePaths);
 
@@ -454,7 +458,17 @@ class Landing {
     }
     this.commitHash = committedHash;
     recordLandedCommit(this.git, committedHash);
+    this.recordReviewedCommit(committedHash);
     return null;
+  }
+
+  private recordReviewedCommit(committedHash: string): void {
+    if (this.landedStamp === null) return;
+    try {
+      recordReviewedCommit(this.git, committedHash, this.landedStamp);
+    } catch (error) {
+      this.warnings.push(`review ledger not written: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private refuseLocalPaths(addedLinesScan: AddedLinesScan, messageText: string | null): FailureOutcome | null {

@@ -918,9 +918,17 @@ test("a spec lands live: refused unreviewed, ticket commits scoped to the stamp,
     writeFile(local, "stray.txt", "never reviewed\n");
     assert.equal(landUnstamped(local, [], ticketMessage("U1")).result.outcome, "NOT_REVIEWED");
 
-    assert.equal(stamp(local, ["ticket.txt"]).code, 0);
-    const firstTicket = landUnstamped(local, [], ticketMessage("U1"));
+    fs.mkdirSync(reviewGatesDirectory(local), { recursive: true });
+    const reviewFile = path.join(reviewGatesDirectory(local), "review.txt");
+    const reviewLedger = path.join(reviewGatesDirectory(local), "review-ledger.jsonl");
+    fs.writeFileSync(reviewFile, "VERDICT: APPROVE WITH NITS\nLANES: code, boundary\n\nSTRUCTURED_FINDINGS:\n- file: ticket.txt | line: 1 | side: RIGHT | severity: MEDIUM | reviewer: convergent: code/logic + boundary | disposition: ACTIONABLE | body: Proof: x\n\nOVERALL_SUMMARY:\nRan code and boundary.\n");
+    assert.equal(stamp(local, ["ticket.txt"], {}, ["--review-file", reviewFile]).code, 0);
+    const firstTicket = landUnstamped(local, [], ticketMessage("U1"), { REVIEW_LEDGER: reviewLedger });
     assert.equal(firstTicket.result.outcome, "COMMITTED");
+    const reviewedCommit = JSON.parse(fs.readFileSync(reviewLedger, "utf8"));
+    assert.equal(reviewedCommit.commit, firstTicket.result.commit);
+    assert.deepEqual(reviewedCommit.lanes, ["code", "boundary"]);
+    assert.deepEqual(reviewedCommit.reviewedFindings, [{ severity: "MEDIUM", reviewer: "convergent: code/logic + boundary", disposition: "ACTIONABLE" }]);
     assert.deepEqual(firstTicket.result.next, { action: "done" });
     assert.deepEqual(gitOutput(local, ["show", "--name-only", "--format=", "HEAD"]).split("\n"), ["ticket.txt"]);
     assert.equal(gitOutput(local, ["log", "-1", "--format=%(trailers:key=Ticket,valueonly)"]), "live-spec/U1");
@@ -931,8 +939,10 @@ test("a spec lands live: refused unreviewed, ticket commits scoped to the stamp,
     assert.equal(stamp(local, ["ticket.txt"]).code, 0);
     writeFile(local, "ticket.txt", "first ticket\nsecond ticket, edited after review\n");
     assert.equal(landUnstamped(local, [], ticketMessage("U2")).result.outcome, "NOT_REVIEWED");
-    assert.equal(stamp(local, ["ticket.txt"]).code, 0);
-    assert.equal(landUnstamped(local, [], ticketMessage("U2")).result.outcome, "COMMITTED");
+    assert.equal(stamp(local, ["ticket.txt"], {}, ["--review-file", reviewFile]).code, 0);
+    const unwritableLedgerLanding = landUnstamped(local, [], ticketMessage("U2"), { REVIEW_LEDGER: path.join(reviewLedger, "nested.jsonl") });
+    assert.equal(unwritableLedgerLanding.result.outcome, "COMMITTED");
+    assert.match(String(unwritableLedgerLanding.result.warnings), /review ledger not written/);
     assert.equal(gitOutput(origin, ["rev-parse", "main"]), mainBeforeSpec);
 
     const intentLanding = landUnstamped(local, ["--promote"], VALID_MESSAGE);

@@ -4,8 +4,10 @@ import {
   changedPathsOutside,
   EMPTY_FINDINGS,
   isStampGate,
+  parseReviewFile,
   parseStampFindings,
   releaseBranch,
+  type ReviewRecord,
   STAMP_GATES,
   type StampFindings,
   UiEvidenceMissing,
@@ -23,7 +25,7 @@ import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const BROWSER_CODE_FAILED_EXIT_CODE = 30;
 const UI_EVIDENCE_MISSING_EXIT_CODE = 31;
-const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--ui-evidence <layout-shift report> | --no-ui-evidence <reason>] | verify | clear | pin`;
+const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--review-file <file>] [--ui-evidence <layout-shift report> | --no-ui-evidence <reason>] | verify | clear | pin`;
 
 function releaseBaseRef(git: Git): string | null {
   const { mainline } = readResolvedPolicy(git);
@@ -38,10 +40,10 @@ function fail(reason: string): never {
   process.exit(2);
 }
 
-type WriteArguments = { gate: string; paths: string[]; findingsFile: string | null; refusesOtherChanges: boolean; uiEvidence: UiEvidence };
+type WriteArguments = { gate: string; paths: string[]; findingsFile: string | null; reviewFile: string | null; refusesOtherChanges: boolean; uiEvidence: UiEvidence };
 
 function parseWriteArguments(argv: string[]): WriteArguments {
-  const parsed = { gate: "", paths: [] as string[], findingsFile: null as string | null, refusesOtherChanges: false };
+  const parsed = { gate: "", paths: [] as string[], findingsFile: null as string | null, reviewFile: null as string | null, refusesOtherChanges: false };
   let reportFile: string | undefined;
   let waiverReason: string | undefined;
   let collectingPaths = false;
@@ -71,6 +73,13 @@ function parseWriteArguments(argv: string[]): WriteArguments {
       collectingPaths = false;
       continue;
     }
+    if (argument === "--review-file") {
+      parsed.reviewFile = argv[index + 1] ?? "";
+      if (parsed.reviewFile === "") fail("--review-file takes the REVIEW_FILE path reviewing-code returned");
+      index += 1;
+      collectingPaths = false;
+      continue;
+    }
     if (argument === "--paths" || argument === "--only") {
       collectingPaths = true;
       parsed.refusesOtherChanges ||= argument === "--only";
@@ -89,7 +98,7 @@ function parseWriteArguments(argv: string[]): WriteArguments {
 }
 
 function writeCommand(git: Git, argv: string[]): void {
-  const { gate, paths, findingsFile, refusesOtherChanges, uiEvidence } = parseWriteArguments(argv);
+  const { gate, paths, findingsFile, reviewFile, refusesOtherChanges, uiEvidence } = parseWriteArguments(argv);
   if (!isStampGate(gate)) {
     fail(`--gate must be one of ${STAMP_GATES.join(", ")}`);
   }
@@ -106,12 +115,13 @@ function writeCommand(git: Git, argv: string[]): void {
     }
   }
   const findings: StampFindings = findingsFile === null ? EMPTY_FINDINGS : parseStampFindings(JSON.parse(fs.readFileSync(findingsFile, "utf8")));
-  process.stdout.write(`${JSON.stringify(writeStampOrExit(git, gate, paths, findings, uiEvidence))}\n`);
+  const reviewRecord = reviewFile === null ? undefined : parseReviewFile(fs.readFileSync(reviewFile, "utf8"));
+  process.stdout.write(`${JSON.stringify(writeStampOrExit(git, gate, paths, findings, uiEvidence, reviewRecord))}\n`);
 }
 
-function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: StampFindings, uiEvidence: UiEvidence): StampRow {
+function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: StampFindings, uiEvidence: UiEvidence, reviewRecord?: ReviewRecord): StampRow {
   try {
-    return writeStamp(git, gate, paths, findings, uiEvidence);
+    return writeStamp(git, gate, paths, findings, uiEvidence, reviewRecord);
   } catch (error) {
     if (error instanceof UiEvidenceMissing) {
       process.stderr.write(`UI_EVIDENCE_MISSING: serve the changed UI, run node ~/.claude/skills/designing-ui/scripts/layout-shift.mjs --url <url> --report $(mktemp -d)/ui.json until it exits 0, then pass --ui-evidence <that report>, or --no-ui-evidence <reason>\n${error.message}\n`);

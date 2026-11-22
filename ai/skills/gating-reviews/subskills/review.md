@@ -13,9 +13,8 @@ that proof in place of a confirming review.
 
 1. Invoke `/reviewing-code` with target `working`, the repo path, preflight's `paths`
    as `--paths`, and one or two sentences of what changed and the goal
-   it serves. Use only `working`: `land.ts` stages every tracked
-   modification in scope plus the scoped untracked files, so a `staged` review would
-   approve a subset of what gets committed.
+   it serves. Use only `working`: `land.ts` stages the whole stamped
+   scope, untracked files included, so a `staged` review would approve a subset of it.
 2. Act on `VERDICT`, `TRUNCATED`, and the rows, not the HIGH+ `ACTIONABLE` count:
    - `VERDICT: FAILED`: the review did not complete. Re-run it once. Failing twice, stop
      and report; a failed review counts only as failed.
@@ -42,7 +41,7 @@ that proof in place of a confirming review.
      asking the carbon unit: name it in the stamp's `preexistingFailures`.
 
 **Stamp the tree** last, after every fix and the suite, skipped review included:
-`node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings <file>`
+`node "$HOME/.claude/skills/landing/stamp.ts" write --gate gating-reviews --paths <preflight paths> --findings <file> [--review-file <REVIEW_FILE>]`
 with `{liveFindings, unverifiedFindings, preexistingFailures, truncatedLanes, droppedUnproven}`
 in a file saved with Write, each finding `{severity, file, summary}`. A live or `UNVERIFIED` MEDIUM+ on any branch
 stamp makes `land.ts --promote` return `PROMOTE_WITHHELD`. Exit 30 or 31 prints its fix; UI evidence is a zero-shift `layout-shift.mjs --report` from `/designing-ui`.

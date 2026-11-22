@@ -4,6 +4,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { Git } from '../../landing/lib/git.ts'
+import { readReviewLedger } from '../../landing/lib/stamp.ts'
 
 const severities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
 
@@ -52,7 +54,7 @@ function readQaSwarmRun(runFile) {
 }
 
 function emptyLaneRow() {
-  return { runs: 0, tokens: 0, durationMs: 0, findingsBySeverity: Object.fromEntries(severities.map((severity) => [severity, 0])) }
+  return { actionable: 0, runs: 0, tokens: 0, durationMs: 0, findingsBySeverity: Object.fromEntries(severities.map((severity) => [severity, 0])) }
 }
 
 function laneRowsByMonth() {
@@ -79,6 +81,13 @@ function laneRowsByMonth() {
       for (const lane of finding.lanes) laneRowFor(month, lane).findingsBySeverity[finding.severity] += 1
     }
   }
+  for (const ledgerRow of readReviewLedger()) {
+    const taggedLanes = ledgerRow.reviewedFindings.flatMap((finding) => [...String(finding?.reviewer).matchAll(/([a-z-]+)\//g)].map((match) => match[1]))
+    const reviewLanes = new Set((ledgerRow.lanes.length > 0 ? ledgerRow.lanes : taggedLanes).map((lane) => laneFromLabel(lane)))
+    for (const finding of ledgerRow.reviewedFindings.filter((reviewedFinding) => reviewedFinding?.disposition === 'ACTIONABLE')) {
+      for (const lane of lanesFromReviewerTags(finding.reviewer, reviewLanes)) laneRowFor(ledgerRow.at.slice(0, 7), lane).actionable += 1
+    }
+  }
   return rowsByMonth
 }
 
@@ -88,11 +97,11 @@ function printTable(table) {
 }
 
 function reportLanes() {
-  const table = [['Month', 'Lane', 'Runs', 'Tokens', 'Minutes', ...severities]]
+  const table = [['Month', 'Lane', 'Runs', 'Tokens', 'Minutes', ...severities, 'Actionable']]
   const rowsByMonth = laneRowsByMonth()
   for (const month of [...rowsByMonth.keys()].sort()) {
     for (const [lane, laneRow] of [...rowsByMonth.get(month)].sort(([left], [right]) => left.localeCompare(right))) {
-      table.push([month, lane, laneRow.runs, laneRow.tokens, Math.round(laneRow.durationMs / 60000), ...severities.map((severity) => laneRow.findingsBySeverity[severity])])
+      table.push([month, lane, laneRow.runs, laneRow.tokens, Math.round(laneRow.durationMs / 60000), ...severities.map((severity) => laneRow.findingsBySeverity[severity]), laneRow.actionable])
     }
   }
   printTable(table)
@@ -163,8 +172,25 @@ function originShasOfFix(repoPath, fix) {
   return [...originShas].filter((sha) => !sha.startsWith('boundary:') && !originShas.has(`boundary:${sha}`))
 }
 
+function reviewedCommitFinder(repoPath, mainlineRef) {
+  const ledgerRows = readReviewLedger()
+  const ledgerRowByCommit = new Map(ledgerRows.map((row) => [row.commit, row]))
+  const ledgerRowByPatchId = new Map(ledgerRows.filter((row) => row.patchId).map((row) => [row.patchId, row]))
+  let patchIdByCommit = null
+  return (sha) => {
+    if (ledgerRowByCommit.has(sha) || ledgerRowByPatchId.size === 0) return ledgerRowByCommit.get(sha)
+    patchIdByCommit ??= mainlinePatchIds(repoPath, mainlineRef)
+    return ledgerRowByPatchId.get(patchIdByCommit.get(sha))
+  }
+}
+
+function mainlinePatchIds(repoPath, mainlineRef) {
+  return new Git(repoPath).patchIdsByCommit([mainlineRef, '--'])
+}
+
 function escapeRowsByMonth(repoPath) {
-  const commits = mainlineCommits(repoPath, mainlineOf(repoPath))
+  const mainlineRef = mainlineOf(repoPath)
+  const commits = mainlineCommits(repoPath, mainlineRef)
   const commitBySha = new Map(commits.map((commit) => [commit.sha, commit]))
   const escapedShas = new Set()
   for (const fix of commits.filter((commit) => /^fix(\(.*\))?!?:/.test(commit.subject))) {
@@ -175,21 +201,26 @@ function escapeRowsByMonth(repoPath) {
       escapedShas.add(origin.sha)
     }
   }
+  const reviewedCommitOf = reviewedCommitFinder(repoPath, mainlineRef)
   const rowsByMonth = new Map()
   for (const commit of commits.filter((commit) => commit.isGated)) {
     const month = new Date(commit.committedAtSeconds * 1000).toISOString().slice(0, 7)
-    if (!rowsByMonth.has(month)) rowsByMonth.set(month, { gated: 0, escaped: 0 })
-    rowsByMonth.get(month).gated += 1
-    if (escapedShas.has(commit.sha)) rowsByMonth.get(month).escaped += 1
+    if (!rowsByMonth.has(month)) rowsByMonth.set(month, { gated: 0, escaped: 0, escapedCountByLane: new Map() })
+    const monthRow = rowsByMonth.get(month)
+    monthRow.gated += 1
+    if (!escapedShas.has(commit.sha)) continue
+    monthRow.escaped += 1
+    for (const lane of reviewedCommitOf(commit.sha)?.lanes ?? []) monthRow.escapedCountByLane.set(lane, (monthRow.escapedCountByLane.get(lane) ?? 0) + 1)
   }
   return rowsByMonth
 }
 function reportEscapes(repoPath) {
-  const table = [['Month', 'Gated', 'Escaped', 'Escape rate']]
+  const table = [['Month', 'Gated', 'Escaped', 'Escape rate', 'Escaped, reviewed by']]
   const rowsByMonth = escapeRowsByMonth(repoPath)
   for (const month of [...rowsByMonth.keys()].sort()) {
-    const { gated, escaped } = rowsByMonth.get(month)
-    table.push([month, gated, escaped, `${Math.round((escaped / gated) * 100)}%`])
+    const { gated, escaped, escapedCountByLane } = rowsByMonth.get(month)
+    const escapedLanes = [...escapedCountByLane].map(([lane, count]) => `${lane} ${count}`).join(', ') || '-'
+    table.push([month, gated, escaped, `${Math.round((escaped / gated) * 100)}%`, escapedLanes])
   }
   printTable(table)
 }

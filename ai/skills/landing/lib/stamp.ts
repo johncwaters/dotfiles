@@ -25,7 +25,11 @@ export type StampFindings = {
   droppedUnproven: number;
 };
 
-export type StampRow = StampFindings & {
+export type ReviewedFinding = { severity: string; reviewer: string; disposition: string };
+
+export type ReviewRecord = { lanes: string[]; reviewedFindings: ReviewedFinding[] };
+
+export type StampRow = StampFindings & Partial<ReviewRecord> & {
   v: 1;
   at: string;
   gate: StampGate;
@@ -337,7 +341,50 @@ export class UiEvidenceMissing extends Error {
   }
 }
 
-export function writeStamp(git: Git, gate: StampGate, paths: string[], findings: StampFindings, uiEvidence: UiEvidence = { kind: "none" }): StampRow {
+export function parseReviewFile(reviewText: string): ReviewRecord {
+  const lanes = reviewText.match(/^LANES: (.+)$/m)?.[1]?.split(",").map((lane) => lane.trim()).filter(Boolean) ?? [];
+  const reviewedFindings = reviewText.split("\n").flatMap((line) => {
+    const severity = line.match(/\| severity: ([A-Z]+) \|/)?.[1];
+    const reviewer = line.match(/\| reviewer: ([^|]+?) \|/)?.[1];
+    const disposition = line.match(/\| disposition: ([A-Z]+) \|/)?.[1];
+    if (!line.startsWith("- file:") || !severity || !reviewer || !disposition) return [];
+    return [{ severity, reviewer, disposition }];
+  });
+  return { lanes, reviewedFindings };
+}
+
+export type ReviewLedgerRow = ReviewRecord & { v: 1; at: string; repo: string; commit: string; patchId: string | null };
+
+export function readReviewLedger(): ReviewLedgerRow[] {
+  const ledgerFile = reviewLedgerPath();
+  if (!fs.existsSync(ledgerFile)) return [];
+  return fs.readFileSync(ledgerFile, "utf8").split("\n").filter((line) => line.trim().length > 0).map((line) => JSON.parse(line) as ReviewLedgerRow).filter((row) => row.v === 1);
+}
+
+export function reviewLedgerPath(): string {
+  const configuredPath = process.env.REVIEW_LEDGER;
+  if (configuredPath && path.isAbsolute(configuredPath)) return configuredPath;
+  return path.join(os.homedir(), ".claude", "review-ledger.jsonl");
+}
+
+export function recordReviewedCommit(git: Git, commit: string, stamp: StampRow): void {
+  if (!isReviewGate(stamp.gate) || stamp.reviewedFindings === undefined) return;
+  const mainCheckoutPath = path.dirname(path.resolve(git.repo, git.commonDir()));
+  const row: ReviewLedgerRow = {
+    v: 1,
+    at: new Date().toISOString(),
+    repo: path.basename(mainCheckoutPath),
+    commit,
+    patchId: git.patchIdsByCommit(["-1", commit]).get(commit) ?? null,
+    lanes: stamp.lanes ?? [],
+    reviewedFindings: stamp.reviewedFindings,
+  };
+  const ledgerFile = reviewLedgerPath();
+  fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });
+  fs.appendFileSync(ledgerFile, `${JSON.stringify(row)}\n`);
+}
+
+export function writeStamp(git: Git, gate: StampGate, paths: string[], findings: StampFindings, uiEvidence: UiEvidence = { kind: "none" }, reviewRecord?: ReviewRecord): StampRow {
   const tree = pinScopedTree(git, paths);
   if (tree === null) {
     throw new Error(`could not pin the tree over ${paths.join(", ")}`);
@@ -364,6 +411,7 @@ export function writeStamp(git: Git, gate: StampGate, paths: string[], findings:
     unverifiedFindings,
     preexistingFailures,
     ...(recordedEvidence === undefined ? {} : { uiEvidence: recordedEvidence }),
+    ...reviewRecord,
   };
   const ledgerFile = stampLedgerPath(git);
   fs.mkdirSync(path.dirname(ledgerFile), { recursive: true });

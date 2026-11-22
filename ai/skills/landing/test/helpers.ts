@@ -168,6 +168,9 @@ export function runSkillScript(
   if (!("CLAUDE_COMMIT_LEDGER" in env)) {
     childEnv.CLAUDE_COMMIT_LEDGER = ledgerPath;
   }
+  if (!("REVIEW_LEDGER" in env)) {
+    childEnv.REVIEW_LEDGER = path.join(ledgerDirectory, "review-ledger.jsonl");
+  }
   const messageFlag = script === "land.ts" ? "--message-file" : "--check-message";
   const messageFile = path.join(ledgerDirectory, "message.txt");
   fs.writeFileSync(messageFile, message, "utf8");
