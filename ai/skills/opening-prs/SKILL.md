@@ -51,7 +51,7 @@ Read the diff against the merge-base (`git diff $(git merge-base <base> HEAD)`) 
 
 When real open questions remain, write 1 to 3 concrete questions a reviewer can answer in a sentence each. With none, omit the feedback list. Mine them from the diff: open TODOs, a dependency added, a threshold picked without evidence. "Any feedback?" is not a question; "Retries live in the task queue so a crashed client loses nothing; any caller that breaks?" is. Questions the carbon unit supplies win over mined ones.
 
-Any visual change (frontend files, or anything a repo rule covers) requires screenshots or a recording, even when the repo is silent. Load `capturing-ui` to capture them, then follow [references/visual-evidence.md](references/visual-evidence.md) for approval, upload, and embedding. Uploads are public forever, so upload only material free of customer data and internal information. No way to capture the UI: say so in the PR body, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
+Any visual change (frontend files, or anything a repo rule covers) requires screenshots or a recording, even when the repo is silent. Load `capturing-ui` to capture them, then follow [references/visual-evidence.md](references/visual-evidence.md) for the check, upload, and embedding. Uploads are public forever, so upload only material free of customer data and internal information. No way to capture the UI: say so in the PR body, unless Step 2 found a repo rule that makes missing screenshots a blocker, which stops the run.
 
 ## Step 5: Build the body
 

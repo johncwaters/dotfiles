@@ -2,7 +2,7 @@
 
 The repo's own guide wins over this file and the core evidence reference: `agents/reviewers-guide.md` in `PostHog/posthog.com`, the `hogli pr:*` commands in `PostHog/posthog`. Capture flags for PostHog sites live in `capturing-ui-posthog`.
 
-- **Upload:** posthog.com: `gh pr-assets image --yes --pr <n> <files>` (`--yes` only after the approval step). PostHog/posthog: `hogli pr:upload-image`. Pass the `gh pr-assets` output to `markdown --uploaded`.
+- **Upload:** posthog.com: `gh pr-assets image --yes --pr <n> <files>` (`--yes` only after the check step). PostHog/posthog: `hogli pr:upload-image`. Pass the `gh pr-assets` output to `markdown --uploaded`.
 
 ## posthog.com checks beyond the pictures
 
