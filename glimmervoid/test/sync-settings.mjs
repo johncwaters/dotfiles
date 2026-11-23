@@ -316,6 +316,13 @@ try {
   assert.equal(fs.readFileSync(configPath, 'utf8'), previousConfig);
   assert.equal(fs.readFileSync(basePath, 'utf8'), previousBase);
   console.log('  ok   a real listening server defers settings and base writes');
+  const keepingExecution = spawn(process.execPath, [syncPath, 'apply', configPath, settingsPath, basePath, sandbox], {
+    env: { ...process.env, GLIMMERVOID_SERVER_KEEPS_OUTSIDE_WRITES: '1' },
+  });
+  assert.equal(await new Promise(resolve => keepingExecution.on('exit', resolve)), 0);
+  assert.equal(readJson(configPath).scrollback, 2);
+  assert.deepEqual(readJson(basePath), { scrollback: 2 });
+  console.log('  ok   a listening server that keeps outside writes takes settings live');
 } finally {
   await new Promise(resolve => server.close(resolve));
 }

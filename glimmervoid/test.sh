@@ -376,6 +376,43 @@ check "the launch agent works out of the home, not a checkout" \
 check "darwin never touches systemd" logLacks "systemctl "
 check "darwin never touches tailscale serve" logLacks "tailscale serve"
 
+startSandboxHome "glimmervoid-live-write"
+liveWriteHome="$sandbox"
+mkdir -p "$liveWriteHome/.glimmervoid/bin" "$liveWriteHome/.local/bin"
+ln -sf "$stubBin/node" "$liveWriteHome/.local/bin/node"
+liveWritePortFile="$toolingHome/live-write-port"
+"$realNodePath" -e 'const server=require("net").createServer(socket=>socket.end());server.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(server.address().port)));setTimeout(()=>server.close(),120000)' \
+  "$liveWritePortFile" &
+liveWriteListenerPid=$!
+until [[ -s "$liveWritePortFile" ]]; do sleep 0.1; done
+printf '#!/bin/sh\necho 0.63.1\n' > "$liveWriteHome/.glimmervoid/bin/glimmervoid"
+chmod +x "$liveWriteHome/.glimmervoid/bin/glimmervoid"
+liveWriteBinaryInode="$("$realNodePath" -p 'require("fs").statSync(process.argv[1]).ino' "$liveWriteHome/.glimmervoid/bin/glimmervoid")"
+writeStub launchctl <<'STUB'
+#!/usr/bin/env bash
+printf 'launchctl %s\n' "$*" >> "$DOTFILES_TEST_LOG"
+[[ "${1:-} ${2:-}" == "print gui/$(id -u)/dev.dotfiles.glimmervoid" ]] && printf '\tpid = 4242\n'
+[[ "${1:-}" == bootstrap || "${1:-}" == print ]]
+STUB
+provideCommand launchctl
+writeStub lsof <<STUB
+#!/usr/bin/env bash
+printf 'p4242\nftxt\ni%s\n' "$liveWriteBinaryInode"
+STUB
+provideCommand lsof
+printf '{"port":%s}\n' "$(cat "$liveWritePortFile")" > "$liveWriteHome/.glimmervoid/config.json"
+liveWriteOutput="$(runInstall "$liveWriteHome" work "" /dev/null darwin)" || true
+check "a running server on the installed fixed release takes shared settings live" \
+  bash -c '! grep -q "changes pending" <<< "$1" && test -s "$2"' _ "$liveWriteOutput" "$liveWriteHome/.glimmervoid/dotfiles-settings-base.json"
+printf '#!/bin/sh\necho 0.63.0\n' > "$liveWriteHome/.glimmervoid/bin/glimmervoid"
+printf '{"port":%s}\n' "$(cat "$liveWritePortFile")" > "$liveWriteHome/.glimmervoid/config.json"
+rm -f "$liveWriteHome/.glimmervoid/dotfiles-settings-base.json"
+liveWriteOutput="$(runInstall "$liveWriteHome" work "" /dev/null darwin)" || true
+check "a running server older than the save fix still defers shared settings" \
+  outputMatches "$liveWriteOutput" 'changes pending'
+kill "$liveWriteListenerPid" 2>/dev/null || true
+withdrawCommand lsof
+
 [[ -s "$topicDir/test/service.sh" ]] || exit 1
 # shellcheck source=./test/service.sh
 source "$topicDir/test/service.sh" || exit 1

@@ -501,9 +501,61 @@ installGlimmervoidBinary() {
   noteInstalled "$label" "$("$glimmervoidBinaryPath" --version 2>/dev/null || printf 'installed')"
 }
 
+firstGlimmervoidVersionRereadingConfigBeforeSave="0.63.1"
+
+glimmervoidServerProcessIdFromServiceManager() {
+  if isDarwin; then
+    launchctl print "gui/$(id -u)/$glimmervoidLaunchAgentLabel" 2>/dev/null |
+      awk '$1 == "pid" && $2 == "=" { print $3; exit }'
+    return 0
+  fi
+  systemctl --user show --property=MainPID --value "$glimmervoidUnitName" 2>/dev/null
+}
+
+glimmervoidServerExecutableInode() {
+  local nodePath="$1"
+  local serverProcessId="$2"
+  local lsofPath
+  if isDarwin; then
+    lsofPath="$(resolveSystemCommand lsof)" || return 0
+    "$lsofPath" -a -p "$serverProcessId" -d txt -Fi 2>/dev/null | sed -n 's/^i//p' | head -n 1
+    return 0
+  fi
+  "$nodePath" -p 'require("fs").statSync(process.argv[1]).ino' "/proc/$serverProcessId/exe" 2>/dev/null
+}
+
+runningGlimmervoidServerIsInstalledBinary() {
+  local nodePath="$1"
+  local serverProcessId runningInode installedInode
+  serverProcessId="$(glimmervoidServerProcessIdFromServiceManager)"
+  [[ "$serverProcessId" =~ ^[1-9][0-9]*$ ]] || return 1
+  runningInode="$(glimmervoidServerExecutableInode "$nodePath" "$serverProcessId")"
+  installedInode="$("$nodePath" -p 'require("fs").statSync(process.argv[1]).ino' "$glimmervoidBinaryPath" 2>/dev/null)"
+  [[ -n "$runningInode" && "$runningInode" == "$installedInode" ]]
+}
+
+glimmervoidServerKeepsOutsideWrites() {
+  local nodePath="$1"
+  local installedVersion
+  runningGlimmervoidServerIsInstalledBinary "$nodePath" || return 1
+  installedVersion="$("$glimmervoidBinaryPath" --version 2>/dev/null)" || return 1
+  isVersionAtLeast "$installedVersion" "$firstGlimmervoidVersionRereadingConfigBeforeSave"
+}
+
+runGlimmervoidSettingsApply() {
+  local nodePath="$1"
+  local serverKeepsOutsideWrites="$2"
+  local settingsSyncErrorPath="$3"
+  GLIMMERVOID_SERVER_KEEPS_OUTSIDE_WRITES="$serverKeepsOutsideWrites" \
+    "$nodePath" "$dotfilesRepo/glimmervoid/sync-settings.mjs" apply \
+    "$glimmervoidConfigPath" "$dotfilesRepo/glimmervoid/settings.json" \
+    "$glimmervoidConfigDirectory/dotfiles-settings-base.json" "$HOME" 2> "$settingsSyncErrorPath"
+}
+
 applyGlimmervoidSharedSettings() {
   local label="glimmervoid settings"
   local nodePath settingsSyncOutput settingsSyncErrorPath settingsSyncReason=""
+  local settingsSyncStatus=0
   if ! nodePath="$(resolveGlimmervoidNodePath)"; then
     noteWarned "$label" "$(describeGlimmervoidNodeSearch)"
     return 0
@@ -512,9 +564,12 @@ applyGlimmervoidSharedSettings() {
     noteWarned "$label" "cannot create a scratch file; shared settings not applied"
     return 0
   fi
-  if ! settingsSyncOutput="$("$nodePath" "$dotfilesRepo/glimmervoid/sync-settings.mjs" apply \
-    "$glimmervoidConfigPath" "$dotfilesRepo/glimmervoid/settings.json" \
-    "$glimmervoidConfigDirectory/dotfiles-settings-base.json" "$HOME" 2> "$settingsSyncErrorPath")"; then
+  settingsSyncOutput="$(runGlimmervoidSettingsApply "$nodePath" 0 "$settingsSyncErrorPath")" || settingsSyncStatus=$?
+  if ((settingsSyncStatus == 0)) && [[ "$settingsSyncOutput" == *'changes pending'* ]] &&
+    glimmervoidServerKeepsOutsideWrites "$nodePath"; then
+    settingsSyncOutput="$(runGlimmervoidSettingsApply "$nodePath" 1 "$settingsSyncErrorPath")" || settingsSyncStatus=$?
+  fi
+  if ((settingsSyncStatus != 0)); then
     settingsSyncReason="$(sed -nE 's/^[A-Za-z]*Error: //p' "$settingsSyncErrorPath" | head -n 1)"
     rm -f -- "$settingsSyncErrorPath"
     [[ -z "$settingsSyncOutput" ]] || printf '%s\n' "$settingsSyncOutput"
@@ -561,7 +616,7 @@ fi
 
 # The devbox carries remote access and pairing, so a Mac serves only its own local dashboard.
 if isDarwin; then
-  installDarwinLaunchAgent "glimmervoid service" dev.dotfiles.glimmervoid \
+  installDarwinLaunchAgent "glimmervoid service" "$glimmervoidLaunchAgentLabel" \
     "$dotfilesRepo/glimmervoid/dotfiles-glimmervoid.plist.template" || true
   finishTopic
 fi

@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 systemdUserDirectory="$HOME/.config/systemd/user"
-glimmervoidUnitPath="$systemdUserDirectory/glimmervoid.service"
+glimmervoidUnitName="glimmervoid"
+glimmervoidLaunchAgentLabel="dev.dotfiles.glimmervoid"
+glimmervoidUnitPath="$systemdUserDirectory/$glimmervoidUnitName.service"
 glimmervoidSlicePath="$systemdUserDirectory/app-glimmervoid.slice"
 glimmervoidServiceInputsStateName="glimmervoid-service-inputs-record"
 
@@ -126,7 +128,7 @@ startGlimmervoidService() {
   if ((remoteSettingsRewritten == 1)) || glimmervoidServiceInputsChanged "$inputsToken"; then
     unitChanged=1
   fi
-  if ! enableUserService "$label" "glimmervoid" "$unitChanged"; then
+  if ! enableUserService "$label" "$glimmervoidUnitName" "$unitChanged"; then
     return 1
   fi
   recordGlimmervoidServiceInputs "$inputsToken"

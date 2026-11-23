@@ -304,7 +304,8 @@ async function runCommand() {
   }
   if (command !== 'apply') throw new Error('expected apply, collect, collect-remote, staged-hash or accept');
   const planned = planApply(config, wanted, base);
-  if (!isDeepStrictEqual(config, planned.config) && await portListens(config.port ?? 3000)) {
+  const serverKeepsOutsideWrites = process.env.GLIMMERVOID_SERVER_KEEPS_OUTSIDE_WRITES === '1';
+  if (!isDeepStrictEqual(config, planned.config) && !serverKeepsOutsideWrites && await portListens(config.port ?? 3000)) {
     console.log('[warned] glimmervoid settings: changes pending; stop glimmervoid and rerun dot');
     return;
   }
