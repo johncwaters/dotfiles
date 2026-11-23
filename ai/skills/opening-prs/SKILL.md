@@ -1,6 +1,6 @@
 ---
 name: opening-prs
-description: Opens or updates GitHub pull requests under repo rules, with concrete feedback questions when decisions remain open. Follows installed opening-prs-* extensions, works only from landed commits, and confirms the body before posting. Use for /opening-prs, "open a PR", "put up a draft", "contribute this upstream", or "get early feedback on this".
+description: Opens or updates GitHub pull requests under repo rules, with concrete feedback questions when decisions remain open. Follows installed opening-prs-* extensions, works only from landed commits, and posts without asking unless the change may be sensitive or not meant to be public. Use for /opening-prs, "open a PR", "put up a draft", "contribute this upstream", or "get early feedback on this".
 ---
 
 # Open PR
@@ -76,9 +76,9 @@ Where repo rules are silent, an agent context section holds only its required fi
 
 Update mode: rewrite an existing `PR status` or `Feedback wanted` block in place as a `Feedback wanted:` list of remaining open questions; remove the block when none remain. If questions remain and no block exists, add the list where a new PR would put it. Keep every other byte of the body, since it may hold screenshots, links, and ticked boxes a carbon unit added. The append-only rule from Step 2 overrides these edits.
 
-## Step 6: Confirm and apply
+## Step 6: Apply
 
-Opening or editing a PR notifies carbon units, so wait for approval before posting. New PR: show the title, draft state, and full body. Update mode: show the diff between the current body and the new one, plus any draft-state change.
+Post without asking. Stop and ask only when the PR may disclose something that should not be public: the landing disclosure check held the change back, or the diff or body may carry customer data, secrets, or internal material the public-repo rule in Step 5 keeps out. When stopping, show the title, draft state, and full body (in update mode, the body diff) with the reason.
 
 - New PR: `gh pr create --title "<title>" --body-file -`, body on stdin, ready for review even with open questions. Add `--draft` only when the carbon unit asks for a draft or the repo's draft rule from Step 2 requires one.
 - Fork: add `--repo <parent> --base <parent default branch> --head <owner>:<branch>`, so the PR opens on the upstream project rather than on the fork.
