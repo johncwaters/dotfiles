@@ -37,7 +37,38 @@ function describeStep(step, stepIndex) {
     if (typeof step?.fill === 'string' && typeof step.value === 'string') return `step ${stepNumber} fill ${step.fill}`
     if (typeof step?.scroll === 'string') return `step ${stepNumber} scroll ${step.scroll}`
     if (Number.isFinite(step?.waitMs) && step.waitMs >= 0) return `step ${stepNumber} wait ${step.waitMs}ms`
-    throw new Error(`step ${stepNumber}: expected {click}, {fill, value}, {scroll}, or {waitMs} with waitMs >= 0`)
+    if (typeof step?.offline === 'boolean') return `step ${stepNumber} offline ${step.offline}`
+    if (typeof step?.failRequests === 'string' && (step.status === undefined || isHttpStatus(step.status))) return `step ${stepNumber} fail ${step.failRequests} with ${step.status ?? 'network error'}`
+    throw new Error(`step ${stepNumber}: expected {click}, {fill, value}, {scroll}, {waitMs} with waitMs >= 0, {offline: true|false}, or {failRequests: <url glob>, status?: 100-599}`)
+}
+
+function isHttpStatus(status) {
+    return Number.isInteger(status) && status >= 100 && status <= 599
+}
+
+function trackForcedFailures() {
+    let offlineStepLabel = null
+    const interceptedRequestCountByStepLabel = new Map()
+    return {
+        recordOffline(stepLabel, isOffline) {
+            offlineStepLabel = isOffline ? stepLabel : null
+        },
+        recordInterception(stepLabel) {
+            interceptedRequestCountByStepLabel.set(stepLabel, (interceptedRequestCountByStepLabel.get(stepLabel) ?? 0) + 1)
+        },
+        activeAtEnd() {
+            const failingRouteLabels = [...interceptedRequestCountByStepLabel.keys()]
+            return offlineStepLabel ? [offlineStepLabel, ...failingRouteLabels] : failingRouteLabels
+        },
+    }
+}
+
+function failMatchingRequests(page, { failRequests, status }, stepLabel, forcedFailures) {
+    return page.route(failRequests, (route) => {
+        forcedFailures.recordInterception(stepLabel)
+        if (status === undefined) return route.abort('failed')
+        return route.fulfill({ status, body: '', headers: { 'access-control-allow-origin': '*' } })
+    })
 }
 
 function readSteps(stepsPath) {
@@ -56,8 +87,13 @@ function readMillisecondsFlag(flags, name, defaultMs) {
     return milliseconds
 }
 
-async function runStep(page, step) {
+async function runStep(page, step, stepLabel, forcedFailures) {
     if (step.waitMs !== undefined) return sleep(step.waitMs)
+    if (step.offline !== undefined) {
+        forcedFailures.recordOffline(stepLabel, step.offline)
+        return page.context().setOffline(step.offline)
+    }
+    if (step.failRequests !== undefined) return failMatchingRequests(page, step, stepLabel, forcedFailures)
     const selector = step.click ?? step.fill ?? step.scroll
     const target = page.locator(selector).first()
     if (!(await target.count())) throw new Error(`no element matches ${selector}`)
@@ -79,6 +115,7 @@ async function scrollThroughPage(page) {
 async function measureContext(browser, { url, width, mode, settleMs, quietMs, steps, screenshotPrefix }) {
     const context = await browser.newContext({ viewport: { width, height: 860 }, colorScheme: mode })
     const shifts = []
+    const forcedFailures = trackForcedFailures()
     let currentStepLabel = 'load'
     let markActivity = () => {}
     await context.exposeBinding('__reportLayoutShift', (_source, shift) => {
@@ -98,7 +135,7 @@ async function measureContext(browser, { url, width, mode, settleMs, quietMs, st
     await settleAndScroll('load scroll pass')
     for (const [stepIndex, step] of steps.entries()) {
         currentStepLabel = describeStep(step, stepIndex)
-        await runStep(page, step).catch((error) => {
+        await runStep(page, step, currentStepLabel, forcedFailures).catch((error) => {
             throw new Error(`${currentStepLabel}: ${error.message}`)
         })
         markActivity()
@@ -107,7 +144,7 @@ async function measureContext(browser, { url, width, mode, settleMs, quietMs, st
     const screenshot = screenshotPrefix ? `${screenshotPrefix}-${width}-${mode}.png` : null
     if (screenshot) await page.screenshot({ path: screenshot })
     await context.close()
-    return { shifts, screenshot }
+    return { shifts, screenshot, activeFailures: forcedFailures.activeAtEnd() }
 }
 
 function formatShift(shift) {
@@ -132,7 +169,8 @@ async function main() {
         for (const shift of shifts) console.log(formatShift(shift))
         if (reportFile) {
             const screenshots = measurements.map((measurement) => measurement.screenshot)
-            writeFileSync(reportFile, `${JSON.stringify({ url: flags.url, shifts, screenshots }, null, 1)}\n`)
+            const forcedFailures = measurements[0].activeFailures.filter((stepLabel) => measurements.every((measurement) => measurement.activeFailures.includes(stepLabel)))
+            writeFileSync(reportFile, `${JSON.stringify({ url: flags.url, shifts, screenshots, forcedFailures }, null, 1)}\n`)
         }
         process.exitCode = shifts.length ? 1 : 0
     } finally {

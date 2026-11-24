@@ -26,7 +26,7 @@ screen | state | fix
 Finish when each step has walked the whole flow in scope and every gap has a fix or a named reason to leave it, then:
 
 1. Run `node ~/.claude/skills/designing-ui/scripts/lint-slop.mjs <ui-files-or-dir>` and rerun until it exits 0, keeping a flag only where the resolved taste names that rule.
-2. Serve the flow and run `node ~/.claude/skills/designing-ui/scripts/layout-shift.mjs --url <flow-url> [--steps steps.json]`, with steps as `[{"click": "<selector>"}, {"fill": "<selector>", "value": "..."}, {"scroll": "<selector>"}, {"waitMs": 1500}]` walking every state in scope. Rerun until it exits 0: zero shifts, click-driven ones included, so reserve space for late content and keep controls a fixed size.
+2. Serve the flow and run `node ~/.claude/skills/designing-ui/scripts/layout-shift.mjs --url <flow-url> [--steps steps.json]`, with steps as `[{"click": "<selector>"}, {"fill": "<selector>", "value": "..."}, {"scroll": "<selector>"}, {"waitMs": 1500}, {"offline": true}, {"failRequests": "<url glob>", "status": 503}]` walking every state in scope. `offline` and `failRequests` (a `status` such as 401, 403, 429, or 503, or none for a network error) force step 6's failures and last for the rest of the walk; end the walk in a failure state, since the review stamp refuses a report that forced none unless `--no-failure-states <reason>` names why. Rerun until it exits 0: zero shifts, click-driven ones included, so reserve space for late content and keep controls a fixed size.
 3. Template check: swap in a competitor's product name. A screen that still fits gets pushed further in its copy, its moments, and its signature detail.
 
 ## Scripts

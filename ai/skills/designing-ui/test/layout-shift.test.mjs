@@ -9,21 +9,24 @@ const layoutShiftScript = new URL("../scripts/layout-shift.mjs", import.meta.url
 const fixturesDirectory = new URL("./fixtures/", import.meta.url);
 const clickSaveStepsPath = new URL("click-save.json", fixturesDirectory).pathname;
 
-function measureFixture(fixtureName, extraArguments = []) {
+function measureFixture(fixtureName, extraArguments = [], stepsPath = clickSaveStepsPath) {
   const fixtureUrl = new URL(fixtureName, fixturesDirectory).href;
-  const run = spawnSync(process.execPath, [layoutShiftScript, "--url", fixtureUrl, "--steps", clickSaveStepsPath, ...extraArguments], { encoding: "utf8" });
+  const run = spawnSync(process.execPath, [layoutShiftScript, "--url", fixtureUrl, "--steps", stepsPath, ...extraArguments], { encoding: "utf8" });
   return { exitCode: run.status, stdout: run.stdout, stderr: run.stderr };
 }
 
-test("a page that reserves space for late content and button state reports no shift and writes a report with a screenshot per width and mode", (context) => {
+test("a page that reserves space for late content and button state, walked offline and with failing requests, reports no shift and names only the failures still forced at the end with a screenshot per width and mode", (context) => {
   const reportDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "layout-shift-report-"));
   context.after(() => fs.rmSync(reportDirectory, { recursive: true, force: true }));
   const reportFile = path.join(reportDirectory, "ui.json");
-  const { exitCode, stdout, stderr } = measureFixture("stable.html", ["--report", reportFile]);
+  const failureStepsPath = path.join(reportDirectory, "failure-steps.json");
+  fs.writeFileSync(failureStepsPath, JSON.stringify([{ offline: true }, { offline: false }, { failRequests: "**/no-such-path/**", status: 500 }, { failRequests: "**/api/**", status: 503 }, { click: "#save" }, { offline: true }]));
+  const { exitCode, stdout, stderr } = measureFixture("stable.html", ["--report", reportFile], failureStepsPath);
   assert.equal(exitCode, 0, stdout + stderr);
   assert.equal(stdout, "");
   const report = JSON.parse(fs.readFileSync(reportFile, "utf8"));
   assert.deepEqual(report.shifts, []);
+  assert.deepEqual(report.forcedFailures, ["step 6 offline true", "step 4 fail **/api/** with 503"]);
   assert.deepEqual(report.screenshots.map((screenshot) => path.basename(screenshot)).sort(), ["ui-1440-dark.png", "ui-1440-light.png", "ui-640-dark.png", "ui-640-light.png"]);
   for (const screenshot of report.screenshots) assert.ok(fs.statSync(screenshot).size > 0, screenshot);
 });

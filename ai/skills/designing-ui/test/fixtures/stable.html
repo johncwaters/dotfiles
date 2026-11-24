@@ -1,6 +1,6 @@
 <!doctype html>
 <html><body>
-<div style="display:flex;gap:8px"><button id="save" style="width:12rem" onclick="document.getElementById('status').textContent='Saving'">Save</button><div>next</div></div>
+<div style="display:flex;gap:8px"><button id="save" style="width:12rem" onclick="document.getElementById('status').textContent='Saving'; fetch('https://example.invalid/api/items').then((response) => { document.getElementById('status').textContent = 'Saved ' + response.status }, () => { document.getElementById('status').textContent = 'Offline' })">Save</button><div>next</div></div>
 <p id="status" style="min-height:1.5em"></p>
 <p>content below</p>
 <div style="height:2000px"></div>
