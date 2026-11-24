@@ -25,7 +25,7 @@ import { readResolvedPolicy } from "./lib/visibility.ts";
 
 const BROWSER_CODE_FAILED_EXIT_CODE = 30;
 const UI_EVIDENCE_MISSING_EXIT_CODE = 31;
-const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--review-file <file>] [--ui-evidence <layout-shift report> | --no-ui-evidence <reason>] | verify | clear | pin`;
+const USAGE = `usage: stamp.ts write --gate <${STAMP_GATES.join("|")}> (--paths | --only) <path>... [--findings <file>] [--review-file <file>] [--ui-evidence <layout-shift report> [--no-failure-states <reason>] | --no-ui-evidence <reason>] | verify | clear | pin`;
 
 function releaseBaseRef(git: Git): string | null {
   const { mainline } = readResolvedPolicy(git);
@@ -46,13 +46,15 @@ function parseWriteArguments(argv: string[]): WriteArguments {
   const parsed = { gate: "", paths: [] as string[], findingsFile: null as string | null, reviewFile: null as string | null, refusesOtherChanges: false };
   let reportFile: string | undefined;
   let waiverReason: string | undefined;
+  let failureWaiver: string | undefined;
   let collectingPaths = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] ?? "";
-    if (argument === "--ui-evidence" || argument === "--no-ui-evidence") {
+    if (argument === "--ui-evidence" || argument === "--no-ui-evidence" || argument === "--no-failure-states") {
       const value = argv[index + 1] ?? "";
       if (argument === "--ui-evidence") reportFile = value;
       if (argument === "--no-ui-evidence") waiverReason = value;
+      if (argument === "--no-failure-states") failureWaiver = value;
       index += 1;
       collectingPaths = false;
       continue;
@@ -90,7 +92,7 @@ function parseWriteArguments(argv: string[]): WriteArguments {
     }
     parsed.paths.push(argument);
   }
-  const uiEvidence = uiEvidenceFromFlags(reportFile, waiverReason);
+  const uiEvidence = uiEvidenceFromFlags(reportFile, waiverReason, failureWaiver);
   if (typeof uiEvidence === "string") {
     fail(uiEvidence);
   }
@@ -124,7 +126,7 @@ function writeStampOrExit(git: Git, gate: StampGate, paths: string[], findings: 
     return writeStamp(git, gate, paths, findings, uiEvidence, reviewRecord);
   } catch (error) {
     if (error instanceof UiEvidenceMissing) {
-      process.stderr.write(`UI_EVIDENCE_MISSING: serve the changed UI, run node ~/.claude/skills/designing-ui/scripts/layout-shift.mjs --url <url> --report $(mktemp -d)/ui.json until it exits 0, then pass --ui-evidence <that report>, or --no-ui-evidence <reason>\n${error.message}\n`);
+      process.stderr.write(`UI_EVIDENCE_MISSING: serve the changed UI, run node ~/.claude/skills/designing-ui/scripts/layout-shift.mjs --url <url> --steps <steps.json> --report $(mktemp -d)/ui.json with an {"offline": true} or {"failRequests": "<url glob>", "status": 503} step ending the walk on the failure UI, until it exits 0, then pass --ui-evidence <that report> (plus --no-failure-states <reason> when no failure applies), or --no-ui-evidence <reason>\n${error.message}\n`);
       process.exit(UI_EVIDENCE_MISSING_EXIT_CODE);
     }
     if (!(error instanceof BrowserCodeFailed)) throw error;

@@ -1034,7 +1034,7 @@ test("a review gate refuses to stamp an untracked browser-code failure in an own
   assert.match((ownedLiveNoteStamp.result.preexistingFailures as string[]).join("\n"), /^browser-code: NOTE live-csp http:\/\/127\.0\.0\.1:9\/ could not be reached \(refused the private address 127\.0\.0\.1\)/m);
 });
 
-test("a review gate refuses to stamp a changed or deleted stylesheet, however its path is spelled, until a zero-shift layout-shift report newer than the edit or a waiver reason is named", (context) => {
+test("a review gate refuses to stamp a changed or deleted stylesheet, however its path is spelled, until a zero-shift layout-shift report newer than the edit that forced a failure state, or a waiver reason, is named", (context) => {
   const repo = makeRepo();
   context.after(() => cleanup(repo));
   commitFile(repo, "old.css", "p { margin: 0; }\n", "init");
@@ -1044,8 +1044,8 @@ test("a review gate refuses to stamp a changed or deleted stylesheet, however it
   fs.writeFileSync(screenshot, "png");
   fs.utimesSync(screenshot, new Date(0), new Date(0));
   const report = path.join(screenshotDirectory, "ui.json");
-  const writeReport = (shifts: unknown[], screenshots: string[]) => {
-    fs.writeFileSync(report, JSON.stringify({ url: "http://localhost/", shifts, screenshots }));
+  const writeReport = (shifts: unknown[], screenshots: string[], forcedFailures: string[] = ["step 1 offline true"]) => {
+    fs.writeFileSync(report, JSON.stringify({ url: "http://localhost/", shifts, screenshots, forcedFailures }));
     fs.utimesSync(report, new Date(), new Date(Date.now() + 60_000));
   };
   writeFile(repo, "app.css", "body { color: red; }\n");
@@ -1090,6 +1090,14 @@ test("a review gate refuses to stamp a changed or deleted stylesheet, however it
   assert.equal(inCheckoutLink.code, 31, inCheckoutLink.stderr);
   assert.match(inCheckoutLink.stderr, /inside the checkout/);
   fs.rmSync(inCheckoutReport);
+  writeReport([], [screenshot], []);
+  const happyPathOnly = stamp(repo, ["app.css"], {}, ["--ui-evidence", report]);
+  assert.equal(happyPathOnly.code, 31, happyPathOnly.stderr);
+  assert.match(happyPathOnly.stderr, /forced no failure state; add an \{"offline": true\} or \{"failRequests"/);
+  const failureWaived = stamp(repo, ["app.css"], {}, ["--ui-evidence", report, "--no-failure-states", "spacing tweak, no request in the flow"]);
+  assert.equal(failureWaived.code, 0, failureWaived.stderr);
+  assert.deepEqual(failureWaived.result.unverifiedFindings, [{ severity: "LOW", file: "app.css", summary: "UI failure states not forced: spacing tweak, no request in the flow" }]);
+  writeReport([], [screenshot]);
   const evidenced = stamp(repo, ["app.css"], {}, ["--ui-evidence", report]);
   assert.equal(evidenced.code, 0, evidenced.stderr);
   assert.equal(evidenced.result.uiEvidence, report);

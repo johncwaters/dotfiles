@@ -38,27 +38,32 @@ function describeStep(step, stepIndex) {
     if (typeof step?.scroll === 'string') return `step ${stepNumber} scroll ${step.scroll}`
     if (Number.isFinite(step?.waitMs) && step.waitMs >= 0) return `step ${stepNumber} wait ${step.waitMs}ms`
     if (typeof step?.offline === 'boolean') return `step ${stepNumber} offline ${step.offline}`
-    if (typeof step?.failRequests === 'string' && (step.status === undefined || isHttpStatus(step.status))) return `step ${stepNumber} fail ${step.failRequests} with ${step.status ?? 'network error'}`
-    throw new Error(`step ${stepNumber}: expected {click}, {fill, value}, {scroll}, {waitMs} with waitMs >= 0, {offline: true|false}, or {failRequests: <url glob>, status?: 100-599}`)
+    if (typeof step?.failRequests === 'string' && (step.status === undefined || isFailureStatus(step.status))) return `step ${stepNumber} fail ${step.failRequests} with ${step.status ?? 'network error'}`
+    throw new Error(`step ${stepNumber}: expected {click}, {fill, value}, {scroll}, {waitMs} with waitMs >= 0, {offline: true|false}, or {failRequests: <url glob>, status?: 400-599}`)
 }
 
-function isHttpStatus(status) {
-    return Number.isInteger(status) && status >= 100 && status <= 599
+function isFailureStatus(status) {
+    return Number.isInteger(status) && status >= 400 && status <= 599
 }
 
 function trackForcedFailures() {
     let offlineStepLabel = null
+    let hasRequestFailedOffline = false
     const interceptedRequestCountByStepLabel = new Map()
     return {
         recordOffline(stepLabel, isOffline) {
             offlineStepLabel = isOffline ? stepLabel : null
+            hasRequestFailedOffline = false
+        },
+        recordFailedRequest() {
+            if (offlineStepLabel) hasRequestFailedOffline = true
         },
         recordInterception(stepLabel) {
             interceptedRequestCountByStepLabel.set(stepLabel, (interceptedRequestCountByStepLabel.get(stepLabel) ?? 0) + 1)
         },
         activeAtEnd() {
             const failingRouteLabels = [...interceptedRequestCountByStepLabel.keys()]
-            return offlineStepLabel ? [offlineStepLabel, ...failingRouteLabels] : failingRouteLabels
+            return hasRequestFailedOffline ? [offlineStepLabel, ...failingRouteLabels] : failingRouteLabels
         },
     }
 }
@@ -124,6 +129,7 @@ async function measureContext(browser, { url, width, mode, settleMs, quietMs, st
     })
     await context.addInitScript(observeLayoutShifts)
     const page = await context.newPage()
+    page.on('requestfailed', () => forcedFailures.recordFailedRequest())
     const pageActivity = trackPageActivity(page)
     markActivity = pageActivity.markActivity
     const settleAndScroll = async (scrollLabel) => {

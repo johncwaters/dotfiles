@@ -40,7 +40,7 @@ export type StampRow = StampFindings & Partial<ReviewRecord> & {
   uiEvidence?: string;
 };
 
-export type UiEvidence = { kind: "report"; file: string } | { kind: "waived"; reason: string } | { kind: "none" };
+export type UiEvidence = { kind: "report"; file: string; failureWaiver?: string } | { kind: "waived"; reason: string } | { kind: "none" };
 
 export type StampVerification =
   | { matches: true; stamp: StampRow }
@@ -178,10 +178,12 @@ export function changedPathsOutside(git: Git, allowedPaths: string[]): string[] 
   return changedPaths.filter((changedPath) => !isAllowed(changedPath));
 }
 
-export function uiEvidenceFromFlags(reportFile: string | undefined, waiverReason: string | undefined): UiEvidence | string {
+export function uiEvidenceFromFlags(reportFile: string | undefined, waiverReason: string | undefined, failureWaiver?: string): UiEvidence | string {
   if (reportFile !== undefined && waiverReason !== undefined) return "pass --ui-evidence or --no-ui-evidence, not both";
+  if (failureWaiver !== undefined && reportFile === undefined) return "--no-failure-states goes with --ui-evidence; --no-ui-evidence already waives the whole check";
+  if (failureWaiver !== undefined && failureWaiver.trim() === "") return "--no-failure-states needs a reason";
   if (waiverReason !== undefined) return waiverReason.trim() === "" ? "--no-ui-evidence needs a reason" : { kind: "waived", reason: waiverReason.trim() };
-  if (reportFile !== undefined) return reportFile === "" ? "--ui-evidence needs the layout-shift report path" : { kind: "report", file: path.resolve(reportFile) };
+  if (reportFile !== undefined) return reportFile === "" ? "--ui-evidence needs the layout-shift report path" : { kind: "report", file: path.resolve(reportFile), ...(failureWaiver === undefined ? {} : { failureWaiver: failureWaiver.trim() }) };
   return { kind: "none" };
 }
 
@@ -220,22 +222,27 @@ function evidenceFileRefusal(repoRoot: string, evidenceFile: string, uiFiles: st
   return null;
 }
 
-function readLayoutShiftReport(reportFile: string): { shifts: unknown[]; screenshots: string[] } | null {
+function readLayoutShiftReport(reportFile: string): { shifts: unknown[]; screenshots: string[]; forcedFailures: string[] } | null {
   try {
     const report = JSON.parse(fs.readFileSync(reportFile, "utf8"));
     const hasScreenshots = Array.isArray(report?.screenshots) && report.screenshots.length > 0 && report.screenshots.every((screenshot: unknown) => typeof screenshot === "string");
-    return Array.isArray(report?.shifts) && hasScreenshots ? report : null;
+    if (!Array.isArray(report?.shifts) || !hasScreenshots) return null;
+    const forcedFailures = Array.isArray(report.forcedFailures) ? report.forcedFailures.filter((label: unknown) => typeof label === "string") : [];
+    return { shifts: report.shifts, screenshots: report.screenshots, forcedFailures };
   } catch {
     return null;
   }
 }
 
-function layoutShiftReportRefusal(repoRoot: string, reportFile: string, uiFiles: string[]): string | null {
+function layoutShiftReportRefusal(repoRoot: string, reportFile: string, uiFiles: string[], failureWaiver: string | undefined): string | null {
   const reportFileRefusal = evidenceFileRefusal(repoRoot, reportFile, uiFiles, REPORT_EXTENSIONS);
   if (reportFileRefusal !== null) return reportFileRefusal;
   const report = readLayoutShiftReport(reportFile);
   if (report === null) return `${reportFile} is not a layout-shift.mjs --report file`;
   if (report.shifts.length > 0) return `${reportFile} records ${report.shifts.length} layout shifts; fix them and rerun`;
+  if (report.forcedFailures.length === 0 && failureWaiver === undefined) {
+    return `${reportFile} forced no failure state; add an {"offline": true} or {"failRequests": "<url glob>", "status": 503} step to the walk and end it on the failure UI, or pass --no-failure-states <reason>`;
+  }
   const screenshotRefusals = report.screenshots.map((screenshot) => evidenceFileRefusal(repoRoot, path.resolve(path.dirname(reportFile), screenshot), uiFiles, SCREENSHOT_EXTENSIONS));
   return screenshotRefusals.find((refusal) => refusal !== null) ?? null;
 }
@@ -247,9 +254,11 @@ function uiEvidenceOutcome(git: Git, paths: string[], uiEvidence: UiEvidence): {
     return { waiverFindings: [{ severity: "LOW", file: path.relative(git.run(["rev-parse", "--show-toplevel"]).stdout.trim(), uiFiles[0] ?? ""), summary: `UI change not rendered: ${uiEvidence.reason}` }] };
   }
   if (uiEvidence.kind === "none") throw new UiEvidenceMissing("no --ui-evidence layout-shift report of the changed UI was named", uiFiles);
-  const refusal = layoutShiftReportRefusal(git.run(["rev-parse", "--show-toplevel"]).stdout.trim(), uiEvidence.file, uiFiles);
+  const repoRoot = git.run(["rev-parse", "--show-toplevel"]).stdout.trim();
+  const refusal = layoutShiftReportRefusal(repoRoot, uiEvidence.file, uiFiles, uiEvidence.failureWaiver);
   if (refusal !== null) throw new UiEvidenceMissing(refusal, uiFiles);
-  return { recordedEvidence: uiEvidence.file, waiverFindings: [] };
+  if (uiEvidence.failureWaiver === undefined) return { recordedEvidence: uiEvidence.file, waiverFindings: [] };
+  return { recordedEvidence: uiEvidence.file, waiverFindings: [{ severity: "LOW", file: path.relative(repoRoot, uiFiles[0] ?? ""), summary: `UI failure states not forced: ${uiEvidence.failureWaiver}` }] };
 }
 
 function readStampRows(git: Git): StampRow[] {
