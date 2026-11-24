@@ -41,6 +41,7 @@ function render(spec: DesignSpec, mode: string): string {
       lines.push(`   - reads: ${unit.reads.map(oneLine).join(", ")}`);
       lines.push(`   - changes: ${unit.changes.map(oneLine).join(", ")}`);
       lines.push(`   - checks: ${unit.checks.map((check) => `\`${oneLine(check.run)}\``).join("; ")}`);
+      if (unit.checksWaiver) lines.push(`   - checks waiver: ${oneLine(unit.checksWaiver)}`);
       if (dependencyIds.length > 0) lines.push(`   - depends on: ${dependencyIds.join(", ")}`);
       continue;
     }
@@ -52,6 +53,7 @@ function render(spec: DesignSpec, mode: string): string {
       if (question?.kind === "openQuestion") lines.push(`  deferred by ${questionId} (${oneLine(question.question)})`);
     }
     if (unit.budgetWaiver) lines.push(`  budget waiver (${oneLine(unit.budgetWaiver)})`);
+    if (unit.checksWaiver) lines.push(`  checks waiver (${oneLine(unit.checksWaiver)})`);
   }
   return lines.join("\n");
 }

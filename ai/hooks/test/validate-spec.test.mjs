@@ -255,6 +255,21 @@ test("a real reading budget excess requires a waiver, a unit within budget refus
   assertAllowed(writeSpec(spec));
 });
 
+test("a unit under a medium-or-higher goal needs a check a reviewer can rerun or a checksWaiver", () => {
+  const spec = slicedSpec();
+  const unit = spec.nodes.find((node) => node.id === "U1");
+  unit.checks = [];
+  assertAllowed(writeSpec(spec));
+  const goal = spec.nodes.find((node) => node.id === "G1");
+  goal.risk = "medium";
+  assert.match(denialReason(writeSpec(spec)), /Rule 14: node U1: add a check a reviewer can rerun.*checksWaiver.*goal risk is medium/);
+  delete goal.risk;
+  assert.match(denialReason(writeSpec(spec)), /Rule 14: node U1: .*goal risk is unset/);
+  goal.risk = "medium";
+  unit.checksWaiver = "The unit edits prose that no command reads";
+  assert.doesNotMatch(denialReason(writeSpec(spec)), /Rule 14/);
+});
+
 test("binary files in a unit cost no reading budget", () => {
   fs.mkdirSync(path.join(repoRoot, "media"));
   const regeneratedVideo = Buffer.alloc(300000, 0x41);

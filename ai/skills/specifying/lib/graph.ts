@@ -33,6 +33,7 @@ export type Unit = {
   reads: string[];
   changes: string[];
   checks: { run: string }[];
+  checksWaiver?: string;
   serves?: number[];
   budgetWaiver?: string;
   splits?: string;
@@ -88,6 +89,7 @@ export function unitTicketCriteria(unit: Unit, goalCriteria: string[]): string[]
   return [...new Set([
     ...(unit.serves ?? []).map((criterionNumber) => oneLine(goalCriteria[criterionNumber - 1] ?? "")),
     ...unit.checks.map((check) => oneLine(`The command ${check.run} exits 0.`)),
+    ...(unit.checksWaiver ? [oneLine(`No command proves this unit: ${unit.checksWaiver}`)] : []),
   ])];
 }
 
@@ -99,7 +101,7 @@ const NODE_FIELDS = {
   branch: ["id", "kind", "question", "leaning", "upstream"],
   decision: ["id", "kind", "question", "answer", "why", "source", "evidence", "isConstraint", "lifecycle", "mockup"],
   openQuestion: ["id", "kind", "question", "settledBy"],
-  unit: ["id", "kind", "title", "reads", "changes", "checks", "serves", "budgetWaiver", "splits"],
+  unit: ["id", "kind", "title", "reads", "changes", "checks", "checksWaiver", "serves", "budgetWaiver", "splits"],
   design: ["id", "kind", "layer", "title", "code", "at", "states", "transitions", "board"],
 } satisfies Record<Node["kind"], string[]>;
 const NODE_ID_PATTERNS = {
@@ -290,7 +292,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     addError(errors, 2, subject, `use ${nodeKind === "goal" ? "G1" : `${NODE_ID_PATTERNS[nodeKind].source[1]}<positive integer>`} for a ${nodeKind} id`);
   }
   for (const field of NODE_FIELDS[nodeKind]) {
-    if (["id", "kind", "reads", "changes", "checks", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream", "problem", "lifecycle", "mockup", "code", "states", "transitions", "board"].includes(field)) continue;
+    if (["id", "kind", "reads", "changes", "checks", "checksWaiver", "serves", "evidence", "isConstraint", "budgetWaiver", "splits", "risk", "criteria", "layer", "at", "upstream", "problem", "lifecycle", "mockup", "code", "states", "transitions", "board"].includes(field)) continue;
     requireString(value[field], `${subject}.${field}`, errors);
   }
   if (nodeKind === "goal") {
@@ -363,6 +365,7 @@ function validateNodeShape(value: unknown, index: number, errors: string[], comm
     paths.forEach((entry: unknown, pathIndex: number) => requireString(entry, `${subject}.${field}[${pathIndex}]`, errors));
   }
   if (Object.hasOwn(value, "budgetWaiver")) requireString(value.budgetWaiver, `${subject}.budgetWaiver`, errors);
+  if (Object.hasOwn(value, "checksWaiver")) requireString(value.checksWaiver, `${subject}.checksWaiver`, errors);
   if (Object.hasOwn(value, "splits")) requireString(value.splits, `${subject}.splits`, errors);
   if (Object.hasOwn(value, "serves") && (!Array.isArray(value.serves) || !value.serves.every((criterionNumber: unknown) => Number.isInteger(criterionNumber) && Number(criterionNumber) >= 1))) {
     addError(errors, 1, `${subject}.serves`, "supply serves as an array of goal criterion numbers starting at 1, or omit it");
@@ -780,10 +783,14 @@ export function validateGraph(value: unknown): string[] {
   if (spec.status === "sketch" && goal !== undefined && goal.upstream === undefined) addError(errors, 1, "node G1.upstream", "write the goal's upstream at sketch, as sketch.md step 4 says");
   if (spec.status === "sketch" && goal !== undefined && goal.problem === undefined) addError(errors, 1, "node G1.problem", "write the problem the goal answers at sketch, as sketch.md step 4 says");
   const isGoalMissingCriteria = isSliced && goal !== undefined && goalCriteria.length === 0;
+  const needsUnitChecks = goal?.risk !== "low";
   if (isGoalMissingCriteria) addError(errors, 17, "node G1", "add criteria, 1 to 12 observable results; every unit serves one at sliced status");
   for (const unit of units) {
     if (!isSliced) continue;
     if (unit.changes.length === 0) addError(errors, 10, `node ${unit.id}`, "add at least one changes path");
+    if (needsUnitChecks && unit.checks.length === 0 && unit.checksWaiver === undefined) {
+      addError(errors, 14, `node ${unit.id}`, `add a check a reviewer can rerun, such as a committed script, or supply checksWaiver saying why no command proves this unit (goal risk is ${goal?.risk ?? "unset"})`);
+    }
     for (const [checkIndex, check] of unit.checks.entries()) {
       const normalizedCommand = check.run.replace(/[\t\r\n]/g, " ");
       if (/[;&|<>$`'"\x00-\x1f\x7f-\x9f]/.test(normalizedCommand)) {
