@@ -554,11 +554,11 @@ test("posting prose with gh is denied until writing-in-voice has run in the sess
   for (const command of [...commentCommands, ...footerOnlyCommands]) {
     const footerDecision = decisionFor(bashCall(command, withVoice));
     assert.equal(footerDecision.decision, "deny", `no footer: ${command}`);
-    assert.match(footerDecision.reason, /Glimmervoid footer.*Automated reply by \[Glimmervoid\]\(https:\/\/glimmervoid\.dev\)\. Not written by a human/);
+    assert.match(footerDecision.reason, /Glimmervoid footer.*Automated review by \[Glimmervoid\]\(https:\/\/glimmervoid\.dev\)\. Not written by a human/);
   }
-  assert.equal(decisionFor(bashCall("gh pr comment 1 -b 'Fixed.\n\n<sub>Automated reply by Glimmervoid. Not written by a human</sub>'", withVoice)).decision, "allow");
+  assert.equal(decisionFor(bashCall("gh pr comment 1 -b 'Fixed.\n\n<sub>Automated review by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>'", withVoice)).decision, "allow");
   const footerDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "footer-"));
-  fs.writeFileSync(path.join(footerDirectory, "reply.md"), "Fixed.\n\n<sub>Automated reply by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>\n");
+  fs.writeFileSync(path.join(footerDirectory, "reply.md"), "Fixed.\n\n<sub>Automated review by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>\n");
   for (const command of ["gh issue comment 12 --body-file reply.md", "gh api -X POST repos/o/r/pulls/7/comments/99/replies -F body=@reply.md"]) {
     assert.equal(decisionFor(bashCall(command, withVoice, { cwd: footerDirectory })).decision, "allow", `footer file: ${command}`);
   }

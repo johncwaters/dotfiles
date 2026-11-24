@@ -45,7 +45,7 @@ const GH_API_METHOD_FLAG = /^(?:-X|--method)(?:=?(.*))$/;
 const VOICE_REASON =
   "Posting prose to GitHub as the carbon unit (a PR, issue, comment, or review) needs the writing-in-voice skill loaded first: run /writing-in-voice, draft the body to its rules and lint, then post. ai/AGENTS.md <writing_as_me>.";
 const AGENT_FOOTER_TEXT = "Not written by a human";
-const AGENT_FOOTER_LINE = "<sub>Automated reply by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>";
+const AGENT_FOOTER_LINE = "<sub>Automated review by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>";
 const FOOTER_REASON =
   `A GitHub comment, review, or review-thread reply an agent posts ends with the Glimmervoid footer, so readers know an agent wrote it. Append this line to the body, then post: ${AGENT_FOOTER_LINE}`;
 const GH_COMMENT_API_PATH = /(?:^|\/)(?:comments|replies|reviews)(?:\/\d+(?:\/events)?)?(?:\?|$)/;

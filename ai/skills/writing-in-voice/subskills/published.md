@@ -11,7 +11,7 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 3. **Draft with the template** that fits under [Templates](#templates).
 4. **Revise** against the sentence rules and the template's steps. Rewriting is easier than writing because now there is a problem to solve.
 5. **Lint** with `--longform`, as the skill's `scripts/lint-draft.mjs` entry says, and rerun until it exits 0.
-6. **Deliver** the piece, then at most three lines on the choices made and any open questions (missing numbers, unverified claims).
+6. **Deliver** the piece, then at most three lines on the choices made and any open questions (missing numbers, unverified claims). A GitHub comment, review, or review-thread reply an agent posts ends with `<sub>Automated review by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>` as its last line, the footer Glimmervoid's own reviews carry; `guard-workflow` denies a Claude post without it.
 
 ## Templates
 

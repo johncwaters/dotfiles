@@ -100,7 +100,7 @@ Each inline body:
 
 <the finding body>
 
-<sub>Automated review. Not written by a human</sub>
+<sub>Automated review by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>
 ```
 
 Convergent findings use `**[convergent: <tag> + <tag>] <SEVERITY>**`.
