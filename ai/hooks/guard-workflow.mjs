@@ -44,6 +44,16 @@ const GH_API_METHOD_FLAG = /^(?:-X|--method)(?:=?(.*))$/;
 
 const VOICE_REASON =
   "Posting prose to GitHub as the carbon unit (a PR, issue, comment, or review) needs the writing-in-voice skill loaded first: run /writing-in-voice, draft the body to its rules and lint, then post. ai/AGENTS.md <writing_as_me>.";
+const AGENT_FOOTER_TEXT = "Not written by a human";
+const AGENT_FOOTER_LINE = "<sub>Automated reply by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>";
+const FOOTER_REASON =
+  `A GitHub comment, review, or review-thread reply an agent posts ends with the Glimmervoid footer, so readers know an agent wrote it. Append this line to the body, then post: ${AGENT_FOOTER_LINE}`;
+const GH_COMMENT_API_PATH = /(?:^|\/)(?:comments|replies|reviews)(?:\/\d+(?:\/events)?)?(?:\?|$)/;
+const GH_COMMENT_MUTATION = /\b(?:add|submit|update)\w*(?:Comment|Review)\w*/;
+const GH_BODY_WRITE_METHODS = new Set(["POST", "PATCH", "PUT"]);
+const UNRESOLVABLE_PATH_WORD = /[$~`]/;
+const GH_BODY_FILE_FLAG = /^(?:--body-file|-F|--field|--input)$/;
+const GH_FIELD_FILE_VALUE = /^(?:-F|--field=?)?[^=@\s-][^=@\s]*=@(.+)$/;
 const UPSTREAM_CLAUSE = /\bUpstream:[ \t]*(.*)$/gm;
 const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)/i;
 const SKILLS_ENDING_SPECIFYING = [...LANDING_SKILLS, "gating-reviews", "reviewing-prs"];
@@ -467,7 +477,7 @@ function ghApiMethodOf(words) {
 }
 
 function ghCallMayPostProse(argumentText) {
-  const words = (argumentText.match(QUOTE_AWARE_WORD) ?? []).map((word) => word.replace(/^['"]|['"]$/g, ""));
+  const words = ghCallWords(argumentText);
   const positionalWords = [];
   for (let index = 0; index < words.length; index += 1) {
     if (GH_GLOBAL_OPTION_TAKING_VALUE.test(words[index]) && positionalWords.length === 0) {
@@ -481,6 +491,79 @@ function ghCallMayPostProse(argumentText) {
   if (command === "" || GH_PROSELESS_COMMANDS.has(command)) return false;
   if (command === "api") return ghApiMethodOf(words) !== "GET";
   return !GH_PROSELESS_ACTIONS_BY_COMMAND.get(command)?.has(action);
+}
+
+function ghCallWords(argumentText) {
+  return (argumentText.match(QUOTE_AWARE_WORD) ?? []).map((word) => word.replace(/^['"]|['"]$/g, ""));
+}
+
+function ghPositionalWords(words) {
+  const positionalWords = [];
+  for (let index = 0; index < words.length; index += 1) {
+    if (GH_GLOBAL_OPTION_TAKING_VALUE.test(words[index]) && positionalWords.length === 0) {
+      index += 1;
+      continue;
+    }
+    if (words[index].startsWith("-")) continue;
+    positionalWords.push(words[index]);
+  }
+  return positionalWords;
+}
+
+function namedBodyFiles(argumentText) {
+  const words = ghCallWords(argumentText);
+  const filePaths = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const fieldFile = words[index].match(GH_FIELD_FILE_VALUE);
+    if (fieldFile) filePaths.push(fieldFile[1]);
+    const nextWord = words[index + 1] ?? "";
+    if (GH_BODY_FILE_FLAG.test(words[index]) && nextWord !== "" && !nextWord.includes("=")) filePaths.push(nextWord);
+    if (/^--(?:body-file|input)=/.test(words[index])) filePaths.push(words[index].slice(words[index].indexOf("=") + 1));
+  }
+  return filePaths;
+}
+
+function readFileText(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function ghCallPostsComment(argumentText, cwd) {
+  const words = ghCallWords(argumentText);
+  const positionalWords = ghPositionalWords(words);
+  const [command = "", action = ""] = positionalWords;
+  const hasBodyFlag = words.some((word) => /^(?:-b|--body|--body-file|-F)(?:=|$)/.test(word) || /^-b\S/.test(word));
+  if ((command === "pr" || command === "issue") && action === "comment") return true;
+  if (command === "pr" && action === "review") return hasBodyFlag;
+  if ((command === "pr" || command === "issue") && (action === "close" || action === "reopen")) return words.some((word) => /^(?:-c|--comment)(?:=|$)/.test(word));
+  if (command !== "api" || !GH_BODY_WRITE_METHODS.has(ghApiMethodOf(words))) return false;
+  const apiWords = positionalWords.slice(1);
+  if (!apiWords.includes("graphql")) return apiWords.some((word) => GH_COMMENT_API_PATH.test(word));
+  const queryFileText = namedBodyFiles(argumentText).map((filePath) => readFileText(path.resolve(cwd, filePath))).join("\n");
+  return GH_COMMENT_MUTATION.test(argumentText) || GH_COMMENT_MUTATION.test(queryFileText);
+}
+
+function commentCallHasFooter(argumentText, callSegment, command, cwd) {
+  if (callSegment.includes(AGENT_FOOTER_TEXT)) return true;
+  const bodyFiles = namedBodyFiles(argumentText);
+  if (bodyFiles.includes("-")) return command.includes(AGENT_FOOTER_TEXT);
+  if (bodyFiles.some((filePath) => UNRESOLVABLE_PATH_WORD.test(filePath)) || /(?:^|[;&|(\s])cd\s/.test(command)) return true;
+  return bodyFiles.some((filePath) => readFileText(path.resolve(cwd, filePath)).includes(AGENT_FOOTER_TEXT));
+}
+
+function guardCommentFooter(command, cwd) {
+  const scannedCommand = maskLiteralHeredocBodies(command.replace(/\\\r?\n/g, " "));
+  const ghCalls = [...scannedCommand.matchAll(GH_CALL)];
+  const isEveryCommentFootered = ghCalls.every((match, callIndex) => {
+    if (!ghCallPostsComment(match[1], cwd)) return true;
+    const callSegment = scannedCommand.slice(match.index, ghCalls[callIndex + 1]?.index ?? scannedCommand.length);
+    return commentCallHasFooter(match[1], callSegment, command, cwd);
+  });
+  if (isEveryCommentFootered) return;
+  denyPreToolUse(FOOTER_REASON);
 }
 
 async function guardProsePost(command, transcriptPath) {
@@ -730,6 +813,7 @@ async function main() {
   const toolInput = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
   if (payload.tool_name === "Bash") await guardRawCommit(String(toolInput.command || ""), payload.transcript_path);
   if (payload.tool_name === "Bash") await guardProsePost(String(toolInput.command || ""), payload.transcript_path);
+  if (payload.tool_name === "Bash") guardCommentFooter(String(toolInput.command || ""), typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd());
   if (!isAttendedMainLoopCall(payload) || !fs.existsSync(payload.transcript_path)) allow();
   const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
   if (payload.tool_name === "Bash") guardKillSelfMatch(String(toolInput.command || ""));

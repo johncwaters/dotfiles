@@ -527,5 +527,43 @@ test("posting prose with gh is denied until writing-in-voice has run in the sess
   ];
   for (const command of readingCommands) assert.equal(decisionFor(bashCall(command, withoutVoice)).decision, "allow", command);
   const withVoice = writeTranscript([prompt("open a PR"), ...skillRun("writing-in-voice"), prompt("now post it")]);
-  for (const command of publishingCommands) assert.equal(decisionFor(bashCall(command, withVoice)).decision, "allow", command);
+  const commentCommands = [
+    "gh issue comment 12 --body-file reply.md",
+    "gh pr review 7 --comment --body-file review.md",
+    "gh --repo=o/r issue comment 1 -b x",
+    "gh api repos/o/r/issues/7/comments \\\n  -f body=hi",
+    "gh api repos/o/r/pulls/7/comments -fbody=hi",
+    "gh api -X POST repos/o/r/pulls/7/reviews --input review.json",
+    "gh api graphql -f query='mutation{addComment}'",
+    'gh issue close 7 --comment "done"',
+    "bash -c 'gh pr comment 1 -b x'",
+    'sh -c "gh pr comment 1 -b x"',
+    "eval 'gh pr comment 1 -b x'",
+    "gh api -X POST repos/o/r/pulls/7/comments/99/replies -F body=@reply.md",
+  ];
+  for (const command of publishingCommands.filter((command) => !commentCommands.includes(command))) {
+    assert.equal(decisionFor(bashCall(command, withVoice)).decision, "allow", command);
+  }
+  const footerOnlyCommands = [
+    "gh api graphql -f query='mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: \"PRRT_1\", body: \"Fixed.\"}) { comment { id } } }'",
+    "gh api graphql -f query='mutation{submitPullRequestReview(input:{pullRequestReviewId:\"X\",event:COMMENT,body:\"hi\"}){clientMutationId}}'",
+    "gh api -X POST repos/o/r/pulls/7/reviews/55/events -f event=COMMENT -f body=hi",
+    'gh issue reopen 7 --comment "reopening"',
+    'gh api -X POST repos/o/r/pulls/7/comments/99/replies -f body="Fixed. Not written by a human" && gh api -X POST repos/o/r/pulls/7/comments/100/replies -f body="Also fixed."',
+  ];
+  for (const command of [...commentCommands, ...footerOnlyCommands]) {
+    const footerDecision = decisionFor(bashCall(command, withVoice));
+    assert.equal(footerDecision.decision, "deny", `no footer: ${command}`);
+    assert.match(footerDecision.reason, /Glimmervoid footer.*Automated reply by \[Glimmervoid\]\(https:\/\/glimmervoid\.dev\)\. Not written by a human/);
+  }
+  assert.equal(decisionFor(bashCall("gh pr comment 1 -b 'Fixed.\n\n<sub>Automated reply by Glimmervoid. Not written by a human</sub>'", withVoice)).decision, "allow");
+  const footerDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "footer-"));
+  fs.writeFileSync(path.join(footerDirectory, "reply.md"), "Fixed.\n\n<sub>Automated reply by [Glimmervoid](https://glimmervoid.dev). Not written by a human</sub>\n");
+  for (const command of ["gh issue comment 12 --body-file reply.md", "gh api -X POST repos/o/r/pulls/7/comments/99/replies -F body=@reply.md"]) {
+    assert.equal(decisionFor(bashCall(command, withVoice, { cwd: footerDirectory })).decision, "allow", `footer file: ${command}`);
+  }
+  fs.rmSync(footerDirectory, { recursive: true, force: true });
+  for (const command of ["gh pr review 7 --approve", "gh api repos/o/r/pulls/7/comments", "gh pr create --title T --body-file b.md", "gh api -X DELETE repos/o/r/issues/comments/123", 'gh api -X POST repos/o/r/pulls/7/reviews --input "$BODY"']) {
+    assert.doesNotMatch(decisionFor(bashCall(command, withVoice)).reason ?? "", /Glimmervoid footer/, command);
+  }
 });
