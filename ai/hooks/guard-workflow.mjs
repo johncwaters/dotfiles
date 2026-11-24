@@ -57,6 +57,7 @@ const GH_FIELD_FILE_VALUE = /^(?:-F|--field=?)?[^=@\s-][^=@\s]*=@(.+)$/;
 const UPSTREAM_CLAUSE = /\bUpstream:[ \t]*(.*)$/gm;
 const CHANGE_AT_SOURCE_LABEL = /\(change at the source\)/i;
 const SKILLS_ENDING_SPECIFYING = [...LANDING_SKILLS, "gating-reviews", "reviewing-prs"];
+const NEXT_SUBSKILL_BY_STATUS = { sketch: "grill.md", grilled: "slice.md", sliced: "challenge.md" };
 const RULED_OUT_BY = /\S.*\bruled out by\s+\S/i;
 const SPEC_ARCHIVE_RUN = /\bnode\s+(?:-\S+\s+)*\S*specifying\/archive\.ts\s/;
 const INTERPRETER_EVAL_FLAG = String.raw`\b(?:(?:node|nodejs|bun|deno)(?:\s+-\S+)*\s+(?:-[ep]|--eval|--print)|(?:perl|ruby)(?:\s+-\S+)*\s+-\w*[eE]|php(?:\s+-\S+)*\s+-r|osascript(?:\s+-\S+)*\s+-e)`;
@@ -591,9 +592,72 @@ function isSpecGatedPath(filePath) {
   return isInsideGitWorktree(filePath);
 }
 
-async function denyUnlessSpecGateCleared(transcriptPath) {
-  if (await hasSpecGateCleared(transcriptPath, specsDirectory())) return;
-  denyPreToolUse(SPEC_GATE_REASON);
+function isDesignSpecFile(filePath) {
+  return isInsideDirectory(filePath, specsDirectory()) && filePath.endsWith(".json") && !filePath.endsWith(".intent.json");
+}
+
+function writtenFilePaths(event, sessionDirectory) {
+  if (event.kind !== "toolUse") return [];
+  if (EDIT_TOOLS.has(event.name)) return [String(event.input?.file_path || "")];
+  if (event.name === "Bash") return bashWriteTargets(String(event.input?.command || "").replace(/\$\{HOME\}|\$HOME\b/g, os.homedir()), sessionDirectory);
+  return [];
+}
+
+async function specPathsWrittenInOpenSpecifyingRun(transcriptPath, sessionDirectory) {
+  let specPaths = new Set();
+  let isSpecifyingOpen = false;
+  for await (const event of sessionEvents(transcriptPath)) {
+    if (isSkillRun(event, "specifying")) {
+      isSpecifyingOpen = true;
+      specPaths = new Set();
+    }
+    if (SKILLS_ENDING_SPECIFYING.some((skillName) => isSkillRun(event, skillName))) isSpecifyingOpen = false;
+    if (!isSpecifyingOpen) continue;
+    for (const filePath of writtenFilePaths(event, sessionDirectory)) {
+      if (isDesignSpecFile(filePath)) specPaths.add(filePath);
+    }
+  }
+  return isSpecifyingOpen ? [...specPaths] : [];
+}
+
+function readSpec(specPath) {
+  try {
+    return JSON.parse(fs.readFileSync(specPath, "utf8")) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function nextSubskill(spec) {
+  const hasOpenBranch = Array.isArray(spec.nodes) && spec.nodes.some((node) => node?.kind === "branch");
+  if (spec.status === "sketch" && !hasOpenBranch) return "design.md";
+  return NEXT_SUBSKILL_BY_STATUS[spec.status];
+}
+
+function unchallengedSpec(specPaths) {
+  for (const specPath of specPaths) {
+    const spec = readSpec(specPath);
+    if (Object.hasOwn(NEXT_SUBSKILL_BY_STATUS, spec.status)) return { specPath, status: spec.status, subskill: nextSubskill(spec) };
+  }
+  return null;
+}
+
+function isGitIgnored(filePath) {
+  if (path.basename(filePath) === UNRESOLVED_TARGET_NAME) return false;
+  const ignoreProbe = spawnSync("git", ["-C", nearestExistingDirectory(filePath), "check-ignore", "-q", filePath], { timeout: 2000, killSignal: "SIGKILL" });
+  return ignoreProbe.status === 0;
+}
+
+function unchallengedSpecReason({ specPath, status, subskill }) {
+  return `${SPEC_GATE_MARKER} Design spec ${specPath} is at ${status}, and this session's /specifying run must reach challenged before it edits the repo. ` +
+    `Run subskills/${subskill} of /specifying next, or archive the spec abandoned with archive.ts. Git-ignored files, such as a mockup harness, stay editable.`;
+}
+
+async function denyUnlessSpecGateCleared(transcriptPath, editedPaths, sessionDirectory) {
+  if (!(await hasSpecGateCleared(transcriptPath, specsDirectory()))) denyPreToolUse(SPEC_GATE_REASON);
+  if (editedPaths.every(isGitIgnored)) return;
+  const pendingSpec = unchallengedSpec(await specPathsWrittenInOpenSpecifyingRun(transcriptPath, sessionDirectory));
+  if (pendingSpec) denyPreToolUse(unchallengedSpecReason(pendingSpec));
 }
 
 function resolveShellPath(word, baseDirectory) {
@@ -774,8 +838,9 @@ function bashWriteTargets(command, sessionDirectory) {
 }
 
 async function guardSpecFirstForBash(command, sessionDirectory, transcriptPath) {
-  if (!bashWriteTargets(command, sessionDirectory).some(isSpecGatedPath)) return;
-  await denyUnlessSpecGateCleared(transcriptPath);
+  const gatedTargets = bashWriteTargets(command, sessionDirectory).filter(isSpecGatedPath);
+  if (gatedTargets.length === 0) return;
+  await denyUnlessSpecGateCleared(transcriptPath, gatedTargets, sessionDirectory);
 }
 
 const COMMAND_END = String.raw`(?=\s|$|[;&|)'"])`;
@@ -818,8 +883,8 @@ async function main() {
   const sessionDirectory = typeof payload.cwd === "string" && path.isAbsolute(payload.cwd) ? payload.cwd : process.cwd();
   if (payload.tool_name === "Bash") guardKillSelfMatch(String(toolInput.command || ""));
   if (payload.tool_name === "Bash") await guardSpecFirstForBash(String(toolInput.command || ""), sessionDirectory, payload.transcript_path);
-  const changedFilePaths = fileChangesOf(payload).map((change) => String(change.tool_input.file_path || ""));
-  if (changedFilePaths.some(isSpecGatedPath)) await denyUnlessSpecGateCleared(payload.transcript_path);
+  const gatedFilePaths = fileChangesOf(payload).map((change) => String(change.tool_input.file_path || "")).filter(isSpecGatedPath);
+  if (gatedFilePaths.length > 0) await denyUnlessSpecGateCleared(payload.transcript_path, gatedFilePaths, sessionDirectory);
   if (payload.tool_name === "AskUserQuestion") await guardUpstreamQuestions(toolInput, payload.transcript_path);
   allow();
 }

@@ -417,6 +417,39 @@ test("running /specifying or a review gate or reading a design spec clears the s
   assert.equal(decisionFor(editCall(repoFile, intentRead)).decision, "allow");
 });
 
+test("a repo edit is denied while the design spec this session's /specifying run wrote is below challenged, except for git-ignored files", (context) => {
+  const repoFile = path.join(repository, "a.txt");
+  const specPath = path.join(sandboxHome, ".agents/specs/repo/export.json");
+  const ignoreFile = path.join(repository, ".gitignore");
+  context.after(() => fs.rmSync(ignoreFile, { force: true }));
+  fs.writeFileSync(ignoreFile, ".glimmervoid/\n");
+  fs.mkdirSync(path.dirname(specPath), { recursive: true });
+  const writeSpecAt = (status, nodes = []) => fs.writeFileSync(specPath, JSON.stringify({ status, nodes }));
+  const specWritten = writeTranscript([prompt("add an export button"), ...skillRun("specifying"), toolUse("Write", { file_path: specPath })]);
+  const specWrittenByShell = writeTranscript([prompt("add an export button"), ...skillRun("specifying"), toolUse("Bash", { command: `cat > "$HOME/.agents/specs/repo/export.json" <<'EOF'\n{}\nEOF` })]);
+
+  writeSpecAt("grilled");
+  const denial = decisionFor(editCall(repoFile, specWritten));
+  assert.equal(denial.decision, "deny");
+  assert.match(denial.reason, /export\.json is at grilled.*subskills\/slice\.md/);
+  assert.equal(decisionFor(bashCall("echo x > a.txt", specWrittenByShell, { cwd: repository })).decision, "deny");
+  assert.equal(decisionFor(editCall(path.join(repository, ".glimmervoid/harness.html"), specWritten)).decision, "allow");
+  fs.mkdirSync(path.join(repository, ".glimmervoid"), { recursive: true });
+  assert.equal(decisionFor(bashCall('echo x > "$(printf ../a.txt)"', specWritten, { cwd: path.join(repository, ".glimmervoid") })).decision, "deny");
+  assert.equal(decisionFor(editCall(repoFile, writeTranscript([prompt("add an export button"), ...skillRun("specifying")]))).decision, "allow");
+  assert.equal(decisionFor(editCall(repoFile, writeTranscript([prompt("add an export button"), ...skillRun("specifying"), toolUse("Write", { file_path: specPath }), ...skillRun("gating-reviews")]))).decision, "allow");
+
+  writeSpecAt("sketch", [{ id: "B1", kind: "branch" }]);
+  assert.match(decisionFor(editCall(repoFile, specWritten)).reason, /subskills\/grill\.md/);
+  writeSpecAt("sketch");
+  assert.match(decisionFor(editCall(repoFile, specWritten)).reason, /subskills\/design\.md/);
+
+  writeSpecAt("challenged");
+  assert.equal(decisionFor(editCall(repoFile, specWritten)).decision, "allow");
+  fs.rmSync(specPath);
+  assert.equal(decisionFor(editCall(repoFile, specWritten)).decision, "allow");
+});
+
 test("edits outside a git worktree or under ~/.claude skip the spec gate", () => {
   const transcriptPath = writeTranscript([prompt("note this")]);
   assert.equal(decisionFor(editCall(path.join(sandboxHome, "scratch/notes.md"), transcriptPath)).decision, "allow");
