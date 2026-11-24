@@ -27,7 +27,7 @@ test("archive built refuses until every unit has a pushed Ticket trailer or a pu
     assert.deepEqual(archiveBuilt(), refusal);
     git("commit", "-q", "--allow-empty", "-m", "Add the price column");
     const untrailedSha = git("rev-parse", "HEAD").stdout.trim();
-    assert.deepEqual(archiveBuilt("--landed", `U2=${untrailedSha}`), { outcome: "REFUSED", errors: [`U2: --landed U2=${untrailedSha} names no commit on a pushed branch of ${repoRoot}`] });
+    assert.deepEqual(archiveBuilt("--landed", `U2=${untrailedSha}`), { outcome: "REFUSED", errors: [`U2: --landed U2=${untrailedSha} names no commit on a pushed branch of ${fs.realpathSync(repoRoot)}`] });
     git("push", "-q", "origin", "main");
     assert.equal(archiveBuilt("--landed", `U2=${untrailedSha}`).outcome, "ARCHIVED");
   } finally {
