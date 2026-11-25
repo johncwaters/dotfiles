@@ -1,5 +1,5 @@
 {
-  "proseCeiling": 4,
+  "proseCeiling": 5,
   "files": {
     "AGENTS.md": {
       "personal-machine-setup-linux-for-the": {
@@ -284,6 +284,10 @@
       }
     },
     "profiles/work/AGENTS.md": {
+      "pr_status": {
+        "kind": "prose",
+        "reason": "No script runs a PR status check; which repos a request covers is judgment."
+      },
       "worktree": {
         "kind": "check",
         "by": [
