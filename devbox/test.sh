@@ -1157,6 +1157,59 @@ check "invalid runtime config preserves its bytes" grep -qx 'invalid JSON' "$san
 printf '0.28.0\n' > "$stubState/glimmervoid-version"
 : > "$commandLog"
 rm -f "$stubState/listening-3456" "$stubState/listening-3457" "$sandbox/.glimmervoid/config.json"
+mkdir -p "$sandbox/.local/bin"
+cat > "$sandbox/.local/bin/gh" <<'RETIRED'
+#!/usr/bin/env bash
+set -euo pipefail
+targetRepo=""
+arguments=("$@")
+if [[ "${arguments[0]:-}" == auth && "${arguments[1]:-}" == token ]] && env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh auth token > /dev/null 2>&1; then
+  exec env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh "$@"
+fi
+for ((index = 0; index < ${#arguments[@]}; index++)); do
+  case "${arguments[index]}" in
+    -R | --repo) targetRepo="${arguments[index + 1]:-}"; break ;;
+    --repo=*) targetRepo="${arguments[index]#--repo=}"; break ;;
+    -R?*) targetRepo="${arguments[index]#-R}"; break ;;
+  esac
+done
+if [[ -z "$targetRepo" && "${arguments[0]:-}" == api ]]; then
+  for apiArgument in "${arguments[@]:1}"; do
+    apiPath="${apiArgument#/}"
+    [[ "$apiPath" == repos/*/* ]] || continue
+    apiPath="${apiPath#repos/}"
+    apiOwner="${apiPath%%/*}"
+    apiName="${apiPath#*/}"
+    targetRepo="$apiOwner/${apiName%%[/?#]*}"
+    break
+  done
+fi
+if [[ -z "$targetRepo" && "${arguments[0]:-}" == repo && ( "${arguments[1]:-}" == clone || "${arguments[1]:-}" == view ) ]]; then
+  for repoArgument in "${arguments[@]:2}"; do
+    [[ "$repoArgument" != -* ]] || continue
+    if [[ "$repoArgument" == */* ]]; then targetRepo="$repoArgument"; fi
+    break
+  done
+fi
+if [[ -z "$targetRepo" ]]; then
+  targetRepo="$(git remote get-url origin 2>/dev/null || true)"
+fi
+targetRepo="${targetRepo#https://github.com/}"
+targetRepo="${targetRepo#http://github.com/}"
+targetRepo="${targetRepo#ssh://git@github.com/}"
+targetRepo="${targetRepo#git@github.com:}"
+targetRepo="${targetRepo#github.com/}"
+while [[ "$targetRepo" == */ ]]; do targetRepo="${targetRepo%/}"; done
+targetRepo="${targetRepo%.git}"
+if [[ -n "${GH_PERSONAL_TOKEN:-}" && "${targetRepo,,}" == johncwaters/* ]]; then
+  export GH_TOKEN="$GH_PERSONAL_TOKEN"
+  exec /usr/bin/gh "$@"
+fi
+storedLoginToken="$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh auth token 2> /dev/null || true)"
+GH_TOKEN="${storedLoginToken:-$(coder external-auth access-token primary-github)}"
+export GH_TOKEN
+exec /usr/bin/gh "$@"
+RETIRED
 remoteOutput="$( (umask 022; runRemoteProvision) )"
 check "remote provision installs the latest release binary without touching rc files" \
   logHas "glimmervoid-installer 0.29.1 NO_MODIFY_PATH=1"
@@ -1168,8 +1221,7 @@ check "remote provision without a flox environment leaves PATH unchanged" \
 check "remote provision without flox does not report activation" outputLacks "$remoteOutput" 'flox env posthog'
 check "remote provision waits for both listeners" outputHas "$remoteOutput" 'both listeners ready'
 check "remote provision prints the forwarding URL" outputHas "$remoteOutput" 'https://3457--dev--devbox-fixture--fixture.coder.dev.posthog.dev/'
-check "remote provision writes an executable gh wrapper" test -x "$sandbox/.local/bin/gh"
-check "gh wrapper acquires external auth only when invoked" grep -qF 'coder external-auth access-token primary-github' "$sandbox/.local/bin/gh"
+check "remote provision removes the retired gh wrapper" test ! -e "$sandbox/.local/bin/gh"
 check "provisioning never acquires a GitHub token" logLacks 'external-auth'
 check "server log has mode 0600" test "$(fileModeOf "$sandbox/.glimmervoid/server.log")" = 600
 check "glimmervoid starts with the box umask rather than a private one" test "$(cat "$stubState/umask-at-start")" = 0022
@@ -1232,11 +1284,9 @@ check "flox links for another system are noted in the status line" \
   outputHas "$otherSystemFloxOutput" 'flox env posthog not on PATH'
 rm -rf "$sandbox/posthog/.flox"
 
-cp "$sandbox/.local/bin/gh" "$stubState/original-wrapper"
 : > "$commandLog"
 rerunRemoteOutput="$(runRemoteProvision)"
 check "remote rerun installs no npm package" logLacks 'glimmervoid-installer'
-check "remote rerun preserves the gh wrapper" cmp -s "$sandbox/.local/bin/gh" "$stubState/original-wrapper"
 check "remote rerun leaves the running server untouched" logLacks 'setsid'
 check "remote rerun reports the running version rather than the upgraded CLI" outputHas "$rerunRemoteOutput" 'already running; 0.28.0; left running'
 check "remote rerun reports no changes" outputLacks "$rerunRemoteOutput" '[installed]'
@@ -1621,56 +1671,6 @@ assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'store'), '');
 assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'get', 'evil.invalid'), '');
 assert.equal(answer('johncwaters/glimmervoid.git', 'fixture', 'get', 'github.com', 'http'), '');
 JS
-
-wrapperStubDirectory="$stubState/wrapper-bin"
-mkdir -p "$wrapperStubDirectory"
-wrapperTestPath="$stubState/gh-wrapper-test"
-sed -e 's|exec /usr/bin/gh "\$@"|printf "%s\\n" "$GH_TOKEN"; exit 0|' -e "s|/usr/bin/gh|$wrapperStubDirectory/gh-stored-login|g" \
-  "$sandbox/.local/bin/gh" > "$wrapperTestPath"
-cat > "$wrapperStubDirectory/gh-stored-login" <<'STUB'
-#!/usr/bin/env bash
-[[ -z "${GH_TOKEN:-}" && -n "${FIXTURE_STORED_LOGIN:-}" ]] || exit 1
-printf '%s\n' "$FIXTURE_STORED_LOGIN"
-STUB
-cat > "$wrapperStubDirectory/coder" <<'STUB'
-#!/usr/bin/env bash
-printf 'fixture-coder\n'
-STUB
-cat > "$wrapperStubDirectory/git" <<'STUB'
-#!/usr/bin/env bash
-printf '%s\n' "$FIXTURE_ORIGIN"
-STUB
-chmod +x "$wrapperStubDirectory/coder" "$wrapperStubDirectory/git" "$wrapperStubDirectory/gh-stored-login"
-runGhWrapper() {
-  env HOME="$sandbox" PATH="$wrapperStubDirectory:$coreBin" \
-    GH_PERSONAL_TOKEN="${1:-}" FIXTURE_ORIGIN="$2" FIXTURE_STORED_LOGIN= "$BASH" "$wrapperTestPath" "${@:3}"
-}
-check "gh selects personal auth for -R" test "$(runGhWrapper fixture-personal '' pr list -R johncwaters/glimmervoid)" = fixture-personal
-check "gh selects personal auth for --repo" test "$(runGhWrapper fixture-personal '' pr list --repo=johncwaters/glimmervoid)" = fixture-personal
-check "gh selects personal auth from an HTTPS origin" test "$(runGhWrapper fixture-personal https://github.com/johncwaters/glimmervoid.git pr list)" = fixture-personal
-check "gh selects personal auth from an SSH origin" test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git pr list)" = fixture-personal
-check "gh retains Coder auth for PostHog even with a personal token" test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git pr list)" = fixture-coder
-check "gh explicit repo overrides a personal origin" test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git pr list -R PostHog/posthog)" = fixture-coder
-check "gh without a personal token uses Coder auth" test "$(runGhWrapper '' git@github.com:johncwaters/glimmervoid.git pr list)" = fixture-coder
-check "gh api for a PostHog path from a personal cwd uses Coder auth" \
-  test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git api repos/PostHog/posthog/pulls)" = fixture-coder
-check "gh api for a personal path from a PostHog cwd uses personal auth" \
-  test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git api -X GET /repos/johncwaters/glimmervoid/pulls?state=open)" = fixture-personal
-check "gh repo view of a PostHog repo from a personal cwd uses Coder auth" \
-  test "$(runGhWrapper fixture-personal git@github.com:johncwaters/glimmervoid.git repo view PostHog/posthog)" = fixture-coder
-check "gh repo clone of a personal repo from a PostHog cwd uses personal auth" \
-  test "$(runGhWrapper fixture-personal git@github.com:PostHog/posthog.git repo clone johncwaters/glimmervoid -- --depth 1)" = fixture-personal
-
-runStoredLoginGhWrapper() {
-  env HOME="$sandbox" PATH="$wrapperStubDirectory:$coreBin" GH_TOKEN=fixture-inherited \
-    FIXTURE_STORED_LOGIN="$1" FIXTURE_ORIGIN="$2" "$BASH" "$wrapperTestPath" "${@:3}"
-}
-check "gh auth token hands sessions the stored login, so git pushes keep its repo scope" \
-  test "$(runStoredLoginGhWrapper fixture-stored '' auth token)" = fixture-stored
-check "gh auth token without a stored login falls back to Coder auth" \
-  test "$(runStoredLoginGhWrapper '' '' auth token)" = fixture-coder
-check "gh pr create on a PostHog repo the Coder app does not cover uses the stored login" \
-  test "$(runStoredLoginGhWrapper fixture-stored https://github.com/PostHog/posthog.com.git pr create --draft)" = fixture-stored
 
 curlStubDirectory="$stubState/curl-bin"
 mkdir -p "$curlStubDirectory"

@@ -408,78 +408,19 @@ installDevboxGlimmervoid() {
 
 
 
-installDevboxGhWrapper() {
-  if [[ ! -x /usr/bin/gh ]]; then
-    installDevboxAptPackages gh
-  fi
-  mkdir -p "$HOME/.local/bin"
+removeRetiredDevboxGhWrapper() {
   local wrapperPath="$HOME/.local/bin/gh"
-  local stagedWrapperPath
-  stagedWrapperPath="$(mktemp "$HOME/.local/bin/.gh.XXXXXX")"
-  cat > "$stagedWrapperPath" <<'WRAPPER'
-#!/usr/bin/env bash
-set -euo pipefail
-targetRepo=""
-arguments=("$@")
-if [[ "${arguments[0]:-}" == auth && "${arguments[1]:-}" == token ]] && env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh auth token > /dev/null 2>&1; then
-  exec env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh "$@"
-fi
-for ((index = 0; index < ${#arguments[@]}; index++)); do
-  case "${arguments[index]}" in
-    -R | --repo) targetRepo="${arguments[index + 1]:-}"; break ;;
-    --repo=*) targetRepo="${arguments[index]#--repo=}"; break ;;
-    -R?*) targetRepo="${arguments[index]#-R}"; break ;;
+  [[ -f "$wrapperPath" ]] || return 0
+  case "$(cksum < "$wrapperPath")" in
+    "4189254777 138" | "3555087348 1747" | "926693648 1876" | "3280277471 1956" | "2934243630 2011") ;;
+    *) return 0 ;;
   esac
-done
-if [[ -z "$targetRepo" && "${arguments[0]:-}" == api ]]; then
-  for apiArgument in "${arguments[@]:1}"; do
-    apiPath="${apiArgument#/}"
-    [[ "$apiPath" == repos/*/* ]] || continue
-    apiPath="${apiPath#repos/}"
-    apiOwner="${apiPath%%/*}"
-    apiName="${apiPath#*/}"
-    targetRepo="$apiOwner/${apiName%%[/?#]*}"
-    break
-  done
-fi
-if [[ -z "$targetRepo" && "${arguments[0]:-}" == repo && ( "${arguments[1]:-}" == clone || "${arguments[1]:-}" == view ) ]]; then
-  for repoArgument in "${arguments[@]:2}"; do
-    [[ "$repoArgument" != -* ]] || continue
-    if [[ "$repoArgument" == */* ]]; then targetRepo="$repoArgument"; fi
-    break
-  done
-fi
-if [[ -z "$targetRepo" ]]; then
-  targetRepo="$(git remote get-url origin 2>/dev/null || true)"
-fi
-targetRepo="${targetRepo#https://github.com/}"
-targetRepo="${targetRepo#http://github.com/}"
-targetRepo="${targetRepo#ssh://git@github.com/}"
-targetRepo="${targetRepo#git@github.com:}"
-targetRepo="${targetRepo#github.com/}"
-while [[ "$targetRepo" == */ ]]; do targetRepo="${targetRepo%/}"; done
-targetRepo="${targetRepo%.git}"
-if [[ -n "${GH_PERSONAL_TOKEN:-}" && "${targetRepo,,}" == johncwaters/* ]]; then
-  export GH_TOKEN="$GH_PERSONAL_TOKEN"
-  exec /usr/bin/gh "$@"
-fi
-storedLoginToken="$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh auth token 2> /dev/null || true)"
-GH_TOKEN="${storedLoginToken:-$(coder external-auth access-token primary-github)}"
-export GH_TOKEN
-exec /usr/bin/gh "$@"
-WRAPPER
-  if cmp -s "$stagedWrapperPath" "$wrapperPath"; then
-    rm -f "$stagedWrapperPath"
-    chmod 700 "$wrapperPath"
-    reportDevboxItem present gh "Coder external auth wrapper"
-    return 0
-  fi
-  chmod 700 "$stagedWrapperPath"
-  mv -f "$stagedWrapperPath" "$wrapperPath"
-  reportDevboxItem installed gh "Coder external auth wrapper"
+  rm -f "$wrapperPath"
+  reportDevboxItem installed gh "retired Coder external auth wrapper removed"
 }
 
 installDevboxPersonalGitAuth() {
+  mkdir -p "$HOME/.local/bin"
   local helperPath="$HOME/.local/bin/git-credential-personal"
   local stagedHelperPath
   stagedHelperPath="$(mktemp "$HOME/.local/bin/.git-credential-personal.XXXXXX")"
@@ -578,7 +519,7 @@ installDevboxPrerequisites() {
   chmod 600 "$glimmervoidDirectory/provision.log"
   installDevboxNode
   installDevboxGlimmervoid
-  installDevboxGhWrapper
+  removeRetiredDevboxGhWrapper
   installDevboxPersonalGitAuth
   installDevboxModernGit
   installDevboxDocauditSchedule
