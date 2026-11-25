@@ -79,6 +79,10 @@ const UPSTREAM_PATH_OR_COMMAND = /[\w./-]+\.[A-Za-z]\w*:\d+|`[^`\s]+\s[^`]*[-/.=
 const HEX_RUN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
 const SHA_SHAPE = /^(?=.*\d)(?=.*[a-f])/;
 const COMMIT_LOOKUP_TIMEOUT_MS = 2000;
+const IDENTIFIER_LOOKUP_TIMEOUT_MS = 2000;
+const RISK_NEUTRAL_PATH = /(^|\/)(test|tests|__tests__|spec)\/|(^|\/)test\.[^./]+$|[._](test|spec)\.[^./]+$|(^|\/)CHANGELOG[^/]*$|(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|uv\.lock|poetry\.lock|Cargo\.lock|go\.sum)$/;
+const REPO_PATH_LINE = /([\w./-]+\.[A-Za-z]\w*):\d+/g;
+const CODE_IDENTIFIER = /(?<![\w$])(?:_*[a-z][a-z0-9_]*[A-Z]\w*|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\b/g;
 const CITATION_FORMS = "path:line, the sha of a commit in repoRoot, a fetched page's URL, or a backticked command with its arguments";
 
 export function oneLine(text: string): string {
@@ -165,6 +169,33 @@ function readCommitsCited(nodes: unknown[], repoRoot: unknown): Set<string> | un
   if (gitProcess.error || gitProcess.status !== 0) return undefined;
   const answers = gitProcess.stdout.split("\n");
   return new Set(hexRuns.filter((_, hexRunIndex) => / commit \d+$/.test(answers[hexRunIndex] ?? "")));
+}
+
+function runGitLookup(repoRoot: string, gitArguments: string[]): number | undefined {
+  const gitProcess = spawnSync("git", ["-C", repoRoot, ...gitArguments], {
+    stdio: "ignore",
+    env: { ...process.env, GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" },
+    timeout: IDENTIFIER_LOOKUP_TIMEOUT_MS,
+  });
+  return gitProcess.error ? undefined : (gitProcess.status ?? undefined);
+}
+
+function listCitedRepoPaths(evidence: string): string[] {
+  return [...evidence.replace(/https?:\/\/\S+/g, " ").matchAll(REPO_PATH_LINE)].map((match) => match[1] ?? "");
+}
+
+function validateReadDecisionsAgainstRepo(spec: DesignSpec, errors: string[]): void {
+  const repoReadDecisions = spec.nodes.filter((node): node is Decision => node.kind === "decision" && node.source === "read");
+  for (const decision of repoReadDecisions) {
+    const citedPaths = listCitedRepoPaths(decision.evidence ?? "");
+    const identifiers = [...new Set(decision.answer.match(CODE_IDENTIFIER) ?? [])];
+    if (citedPaths.length === 0 || identifiers.length === 0) continue;
+    if (runGitLookup(spec.repoRoot, ["ls-files", "--error-unmatch", "--", ...citedPaths]) !== 0) continue;
+    for (const identifier of identifiers) {
+      if (runGitLookup(spec.repoRoot, ["grep", "-q", "-w", "-F", "--untracked", "-e", identifier]) !== 1) continue;
+      addError(errors, 19, `node ${decision.id}`, `its answer names ${identifier}, which repoRoot does not contain; a read decision states what the repo already shows, so mark a new design assumed with a cited source, or decided`);
+    }
+  }
 }
 
 function citesCommit(upstream: string, commitsCited: Set<string> | undefined): boolean {
@@ -825,6 +856,10 @@ export function validateGraph(value: unknown): string[] {
     addError(errors, 12, `node ${node.id}`, "add an implements edge from a unit or mark the decision isConstraint: true");
   }
   const goalRisk = goal?.risk;
+  const nonTestChangedPaths = [...new Set(units.filter((unit) => !deferredIds.has(unit.id)).flatMap((unit) => unit.changes.map((changedPath) => changedPath.trim().replace(/\\/g, "/"))))].filter((changedPath) => !RISK_NEUTRAL_PATH.test(changedPath));
+  if (isSliced && goalRisk === "low" && nonTestChangedPaths.length > 1) {
+    addError(errors, 19, "node G1.risk", `set risk to medium or above: the units change ${nonTestChangedPaths.length} paths beyond tests, changelogs and lockfiles (${nonTestChangedPaths.join(", ")}), and grill.md step 4 rates behavior changed across files medium`);
+  }
   const needsDesign = goalRisk !== "low";
   if (isSliced && needsDesign && !spec.nodes.some((node) => node.kind === "design")) {
     addError(errors, 18, "spec.nodes", `add design nodes from subskills/design.md; a spec settles its design before slicing unless its risk is low (risk is ${goalRisk ?? "unset"})`);
@@ -848,6 +883,7 @@ export function validateGraph(value: unknown): string[] {
     if (!isOwnerChanged) addError(errors, 12, `node ${machine.id}`, `list ${machine.at} in the changes of a unit implementing this machine; the owner is the one module that writes it`);
   }
   if (resolvedRoot === undefined || errors.some((error) => error.startsWith("Rule 6:"))) return errors;
+  validateReadDecisionsAgainstRepo(spec, errors);
   if (isSliced) {
     const resolvedChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => resolveExistingPath(path.resolve(spec.repoRoot, candidate)))]));
     const lexicalChangedPathsById = new Map(units.map((unit) => [unit.id, unit.changes.map((candidate) => path.resolve(spec.repoRoot, candidate.trim().replace(/\\/g, "/")))]));

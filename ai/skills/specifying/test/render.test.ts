@@ -25,8 +25,9 @@ test("plan renders active units in dependency order with exactly one challenge s
       request: "Render the active plan",
       repoRoot,
       nodes: [
-        { id: "G1", kind: "goal", text: "An actionable plan", risk: "low", criteria: ["The plan renders."] },
+        { id: "G1", kind: "goal", text: "An actionable plan", risk: "medium", criteria: ["The plan renders."] },
         { id: "D1", kind: "decision", question: "Which format?", answer: "Numbered text", why: "The challenge workflow consumes it", source: "decided" },
+        { id: "D2", kind: "decision", question: "Lifecycle?", answer: "None", why: "Rendering keeps no state", source: "decided", lifecycle: "none", isConstraint: true },
         { id: "Q1", kind: "openQuestion", question: "Which later extension?", settledBy: "Next request" },
         { id: "U2", kind: "unit", title: "Render the plan", reads: ["1. existing.ts"], changes: ["render.ts"], checks: [{ run: "node --test\n2. keep this command indented" }], serves: [1] },
         { id: "U3", kind: "unit", title: "Deferred extension", reads: [], changes: ["extension.ts"], checks: [{ run: "node --test" }], serves: [1] },

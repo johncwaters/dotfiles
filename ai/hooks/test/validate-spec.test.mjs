@@ -28,6 +28,16 @@ function slicedSpec() {
   };
 }
 
+function raiseToMediumRisk(spec) {
+  spec.nodes.find((node) => node.id === "G1").risk = "medium";
+  spec.nodes.push(
+    { id: "I9", kind: "design", layer: "behavior", title: "Graph validation", code: "A write of an invalid graph is refused." },
+    { id: "D9", kind: "decision", question: "Lifecycle?", answer: "None", why: "Stateless", source: "decided", lifecycle: "none", isConstraint: true },
+  );
+  spec.edges.push({ from: "U1", kind: "implements", to: "I9" });
+  return spec;
+}
+
 function writeSpec(spec, filePath = specPath) {
   return runHook("validate-spec.mjs", { tool_name: "Write", tool_input: { file_path: filePath, content: JSON.stringify(spec) } }, { HOME: temporaryHome });
 }
@@ -77,6 +87,7 @@ test("a sliced spec is refused until its units are ticket-ready", () => {
   assert.match(disguisedInputReason, /Rule 14: node U1\.checks\[0\]\.run/);
   unit.checks = [{ run: "node --test" }];
   unit.changes = ["shared"];
+  raiseToMediumRisk(spec);
   spec.nodes.push(
     { id: "U2", kind: "unit", title: "Extend validation", reads: [], changes: ["shared/graph.ts"], checks: [{ run: "node --test" }], serves: [1] },
     { id: "U3", kind: "unit", title: "Connect validation", reads: [], changes: ["shared-sibling"], checks: [{ run: "node --test" }], serves: [1] },
@@ -142,7 +153,7 @@ test("checks repeating the repo gate are denied by id, capped with the count the
   }
   const reason = denialReason(writeSpec(spec));
   assert.match(reason, /Rule 14: node U1\.checks\[0\]\.run: drop npm run typecheck: build\.md already runs/);
-  assert.match(reason, /\n5 more errors; they show on the next write/);
+  assert.match(reason, /\n6 more errors; they show on the next write/);
   assert.doesNotMatch(reason, /validate\.ts/);
 });
 
@@ -164,6 +175,7 @@ test("a missing repoRoot or reads path is denied instead of measuring zero bytes
   const spec = slicedSpec();
   spec.nodes.find((node) => node.id === "U1").reads = ["misspelled.ts"];
   assert.match(denialReason(writeSpec(spec)), /Rule 6: node U1: reads path misspelled\.ts is missing/);
+  raiseToMediumRisk(spec);
   spec.nodes.push({ id: "U2", kind: "unit", title: "Create the file", reads: [], changes: ["misspelled.ts"], checks: [{ run: "node --test" }], serves: [1] });
   spec.edges.push({ from: "U2", kind: "implements", to: "D1" });
   assertAllowed(writeSpec(spec));
@@ -248,7 +260,8 @@ test("a real reading budget excess requires a waiver, a unit within budget refus
   unit.changes = ["spilled"];
   assertAllowed(writeSpec(spec));
   fs.rmSync(path.join(repoRoot, "spilled"), { recursive: true });
-  spec.nodes.push({ id: "U2", kind: "unit", title: "Generate the contract", reads: [], changes: ["large/generated.txt"], checks: [], serves: [1] });
+  raiseToMediumRisk(spec);
+  spec.nodes.push({ id: "U2", kind: "unit", title: "Generate the contract", reads: [], changes: ["large/generated.txt"], checks: [{ run: "node --test" }], serves: [1] });
   spec.edges.push({ from: "U2", kind: "implements", to: "D1" }, { from: "U1", kind: "dependsOn", to: "U2" });
   unit.reads = ["large/generated.txt"];
   unit.changes = ["graph.ts"];
@@ -288,7 +301,7 @@ test("binary files in a unit cost no reading budget", () => {
 test("a large file the unit only changes counts at the changed-only cap", () => {
   fs.writeFileSync(path.join(repoRoot, "CHANGELOG.md"), "x".repeat(400000));
   fs.writeFileSync(path.join(repoRoot, "core.ts"), "x".repeat(179000));
-  const spec = slicedSpec();
+  const spec = raiseToMediumRisk(slicedSpec());
   const unit = spec.nodes.find((node) => node.id === "U1");
   unit.reads = ["core.ts"];
   unit.changes = ["core.ts", "CHANGELOG.md"];
@@ -373,6 +386,35 @@ test("a goal or branch upstream and a read or assumed decision's evidence are re
   }
   assert.match(denialReason(writeSpec(sketchCiting("It worked until 1234567890abcdef1234567890abcdef12345678 dropped the answer hook", "B1", citedRepository))), /Rule 1: node B1\.upstream: say what one level up/);
   assert.equal(fs.existsSync(fetchMarkerPath), false, "the commit lookup fetched from the spec's repository");
+});
+
+test("a low-risk spec changing several files, or a read decision naming an identifier HEAD lacks, is refused", (testContext) => {
+  const spec = slicedSpec();
+  spec.nodes.push({ id: "U2", kind: "unit", title: "Add the reader", reads: [], changes: ["reader.ts", "test/reader.test.ts", "CHANGELOG.md"], checks: [{ run: "node --test" }], serves: [1] });
+  spec.edges.push({ from: "U2", kind: "implements", to: "D1" });
+  assert.match(denialReason(writeSpec(spec)), /Rule 19: node G1\.risk: set risk to medium or above: the units change 2 paths beyond tests, changelogs and lockfiles \(graph\.ts, reader\.ts\)/);
+
+  const gitRepository = makeRepo();
+  testContext.after(() => fs.rmSync(gitRepository, { recursive: true, force: true }));
+  commitFile(gitRepository, "graph.ts", "export function gatherContext() {}\n");
+  const readSpec = { ...slicedSpec(), repoRoot: gitRepository };
+  const readDecision = { id: "D2", kind: "decision", question: "Where is context built?", answer: "gatherContext records hasPackageJson and POSTHOG_INSTALL_DOCS_URL.", why: "It builds the prompt.", source: "read", evidence: "graph.ts:1" };
+  readSpec.nodes.push(readDecision);
+  readSpec.edges.push({ from: "U1", kind: "implements", to: "D2" });
+  const reason = denialReason(writeSpec(readSpec));
+  assert.match(reason, /Rule 19: node D2: its answer names hasPackageJson, which repoRoot does not contain/);
+  assert.match(reason, /Rule 19: node D2: its answer names POSTHOG_INSTALL_DOCS_URL/);
+  assert.doesNotMatch(reason, /names gatherContext/);
+  readDecision.answer = "gatherContext sets _hasPackageJson.";
+  readDecision.evidence = "graph.ts:1 per https://example.com/doc";
+  assert.match(denialReason(writeSpec(readSpec)), /Rule 19: node D2: its answer names _hasPackageJson/);
+  fs.writeFileSync(path.join(gitRepository, "graph.ts"), "export function gatherContext() {}\nexport const _hasPackageJson = true;\n");
+  assertAllowed(writeSpec(readSpec));
+  fs.mkdirSync(path.join(gitRepository, "vendor"));
+  fs.writeFileSync(path.join(gitRepository, "vendor", "lib.d.ts"), "export function useSyncExternalStore() {}\n");
+  readDecision.answer = "The lib exports useSyncExternalStore and missingHelper.";
+  readDecision.evidence = "vendor/lib.d.ts:1";
+  assertAllowed(writeSpec(readSpec));
 });
 
 test("unrelated writes and malformed or unreadable inputs allow silently", () => {
