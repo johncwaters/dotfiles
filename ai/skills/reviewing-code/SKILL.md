@@ -106,3 +106,4 @@ Expense should land on lanes, not on this skill's own reasoning. Everything here
 ## Scripts
 
 - `scripts/route-lanes.mjs`: picks rule lanes from changed paths and lines; run in Step 2.
+- `scripts/report.mjs`: prints each lane's runs, tokens, minutes, findings, and actionable count per month; `--escapes [--repo <path>]` prints the share of gated commits a fix reached within 14 days and the lanes that reviewed them. Run it when tuning lanes.

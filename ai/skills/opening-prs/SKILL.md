@@ -78,7 +78,7 @@ Update mode: rewrite an existing `PR status` or `Feedback wanted` block in place
 
 ## Step 6: Apply
 
-Post without asking. Stop and ask only when the PR may disclose something that should not be public: the landing disclosure check held the change back, or the diff or body may carry customer data, secrets, or internal material the public-repo rule in Step 5 keeps out. When stopping, show the title, draft state, and full body (in update mode, the body diff) with the reason.
+Post without asking. Stop and ask only when the PR may disclose something meant to stay private: the landing disclosure check held the change back, or the diff or body may carry customer data, secrets, or internal material the public-repo rule in Step 5 keeps out. When stopping, show the title, draft state, and full body (in update mode, the body diff) with the reason.
 
 - New PR: `gh pr create --title "<title>" --body-file -`, body on stdin, ready for review even with open questions. Add `--draft` only when the carbon unit asks for a draft or the repo's draft rule from Step 2 requires one.
 - Fork: add `--repo <parent> --base <parent default branch> --head <owner>:<branch>`, so the PR opens on the upstream project rather than on the fork.

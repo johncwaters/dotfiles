@@ -26,7 +26,7 @@ This skill is reached through the `designing-ui` skill's taste step. Choose one 
 
 ### Screens
 
-- A full-screen state (error, offline, not running, empty, sign-in) is one heading, one plain sentence, and at most one action, in two text styles: heading and body. Detail lives in docs or the CLI, never in extra lines under the sentence.
+- A full-screen state (error, offline, not running, empty, sign-in) is one heading, one plain sentence, and at most one action, in two text styles: heading and body. Detail lives in docs or the CLI; the sentence stands alone.
 - Most screens get two text styles at most. A third (a muted caption, a small hint, a code chip) has to carry something the operator acts on.
 
 ### Absolute bans

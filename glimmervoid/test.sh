@@ -401,6 +401,7 @@ printf 'p4242\nftxt\ni%s\n' "$liveWriteBinaryInode"
 STUB
 provideCommand lsof
 printf '{"port":%s}\n' "$(cat "$liveWritePortFile")" > "$liveWriteHome/.glimmervoid/config.json"
+writeDarwinDirectoryServiceStub "$stubBin"
 liveWriteOutput="$(runInstall "$liveWriteHome" work "" /dev/null darwin)" || true
 check "a running server on the installed fixed release takes shared settings live" \
   bash -c '! grep -q "changes pending" <<< "$1" && test -s "$2"' _ "$liveWriteOutput" "$liveWriteHome/.glimmervoid/dotfiles-settings-base.json"
@@ -412,6 +413,7 @@ check "a running server older than the save fix still defers shared settings" \
   outputMatches "$liveWriteOutput" 'changes pending'
 kill "$liveWriteListenerPid" 2>/dev/null || true
 withdrawCommand lsof
+rm -f "$stubBin/dscl" "$stubBin/.dscl-account-home" "$stubBin/.dscl-login-shell"
 
 [[ -s "$topicDir/test/service.sh" ]] || exit 1
 # shellcheck source=./test/service.sh
