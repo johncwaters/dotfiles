@@ -95,24 +95,38 @@ resolveDevboxWorkspace() {
   devboxDashboardUrl="https://3457--dev--$devboxWorkspaceName--$coderUsername.${devboxWorkspaceDomain}/"
 }
 
-# A hung coder ssh holds an agent connection, and Coder bumps the deadline on any connection, so the box never autostops.
+# A hung coder ssh holds an agent connection, and Coder bumps the deadline on any connection, so the box never autostops; macOS sleep(1) pauses while the Mac sleeps, so the watchdog polls the wall clock.
 # coder ssh prints its outdated-template banner on every call when stderr is a TTY (coder cli/ssh.go), so stderr goes through a pipe.
+devboxSshDeadlineStatus=3
+devboxSshDeadlinePollSeconds=5
+
 runDevboxSsh() {
   local deadlineSeconds="${DEVBOX_SSH_DEADLINE_SECONDS:-1200}"
   CODER_SSH_DISABLE_AUTOSTART=true CODER_SSH_USAGE_APP=disable "$devboxCoderPath" ssh "$devboxWorkspaceName" -- "$@" <&0 2> >(cat >&2) &
   local sshPid=$!
   (
-    sleep "$deadlineSeconds" &
-    trap "kill $! 2>/dev/null; exit 0" TERM
-    wait $!
+    local pollSleepPid=""
+    trap 'kill "$pollSleepPid" 2>/dev/null; exit 0' TERM
+    local deadlineEpochSeconds nowEpochSeconds remainingSeconds
+    printf -v deadlineEpochSeconds '%(%s)T' -1
+    ((deadlineEpochSeconds += deadlineSeconds))
+    while printf -v nowEpochSeconds '%(%s)T' -1; ((nowEpochSeconds < deadlineEpochSeconds)); do
+      remainingSeconds=$((deadlineEpochSeconds - nowEpochSeconds))
+      sleep "$((remainingSeconds < devboxSshDeadlinePollSeconds ? remainingSeconds : devboxSshDeadlinePollSeconds))" &
+      pollSleepPid=$!
+      wait "$pollSleepPid"
+    done
+    trap '' TERM
     kill -9 "$sshPid"
+    exit "$devboxSshDeadlineStatus"
   ) </dev/null >/dev/null 2>&1 &
   local watchdogPid=$!
   local sshStatus=0
   wait "$sshPid" 2>/dev/null || sshStatus=$?
   kill "$watchdogPid" 2>/dev/null
-  wait "$watchdogPid" 2>/dev/null
-  if ((sshStatus == 137)); then
+  local watchdogStatus=0
+  wait "$watchdogPid" 2>/dev/null || watchdogStatus=$?
+  if ((watchdogStatus == devboxSshDeadlineStatus)); then
     printf 'devbox: coder ssh ran past %s seconds; killed\n' "$deadlineSeconds" >&2
   fi
   return "$sshStatus"

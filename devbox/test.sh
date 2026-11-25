@@ -49,6 +49,7 @@ case "$1" in
     printf '%s %s\n' "${CODER_SSH_DISABLE_AUTOSTART:-}" "${CODER_SSH_USAGE_APP:-}" >> "$DOTFILES_TEST_STATE/ssh-safety"
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-failed" ]] || exit 1
     [[ ! -f "$DOTFILES_TEST_STATE/ssh-hangs" ]] || exec sleep 30
+    [[ ! -f "$DOTFILES_TEST_STATE/ssh-sigkilled" ]] || kill -9 $$
     if [[ -f "$DOTFILES_TEST_STATE/execute-dotfiles" && "${7:-}" == sync-repos ]]; then
       cat > /dev/null
       DOTFILES_TEST_REMOTE=1 XDG_STATE_HOME="$DOTFILES_TEST_STATE/remote-home/.local/state" \
@@ -384,6 +385,11 @@ hungEnsureError="$(runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_F
 rm -f "$stubState/ssh-hangs"
 check "a hung coder ssh fails ensure" test "$hungEnsureStatus" -ne 0
 check "a hung coder ssh is killed at its deadline" outputHas "$hungEnsureError" 'coder ssh ran past 1 seconds; killed'
+touch "$stubState/ssh-sigkilled"
+sigkilledEnsureError="$(runInStubbedSandbox "$sandbox" DOTFILES_PROFILE=work DEVBOX_FORWARD_ANY_HOUR=1 \
+  bash -c 'source "$1/commands.bash"; devbox ensure' _ "$topicDirectory" 2>&1 >/dev/null)" || true
+rm -f "$stubState/ssh-sigkilled"
+check "a coder ssh killed from outside is not reported as past its deadline" bash -c '! grep -qF "ran past" <<< "$1"' _ "$sigkilledEnsureError"
 
 jobLogPath="$stubState/devbox-ensure.log"
 rm -f "$jobLogPath" "$jobLogPath.1"
