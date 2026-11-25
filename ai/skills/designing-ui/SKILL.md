@@ -31,5 +31,5 @@ Finish when each step has walked the whole flow in scope and every gap has a fix
 
 ## Scripts
 
-- `scripts/lint-slop.mjs`: flags taste-neutral AI-template tells (transition-all, hover scale, looping pulse or bounce, gradient text, 800+ weights, emoji, colored glows, off-grid arbitrary px) as `file:line: rule`, exit 1 while any remain.
+- `scripts/lint-slop.mjs`: flags taste-neutral AI-template tells (transition-all, hover scale, looping pulse or bounce, gradient text, 800+ weights, emoji, colored glows, off-grid arbitrary px, icon nudges: an icon shifted by a px `margin-top`, `top`, or `translateY`, fixed by `align-items: start` on the row and `margin-block: calc((1lh - <icon size>) / 2)` on the icon) as `file:line: rule`, exit 1 while any remain.
 - `scripts/layout-shift.mjs`: loads a URL in Chromium at 640 and 1440 wide in light and dark, scrolls the whole page after load and after the last step, since only on-screen shifts are reported, walks the optional steps, and prints every layout shift as `width mode | when | score | frame url | element rects`, exit 1 while any remain. `--report <file>` outside the checkout also writes a screenshot per width and mode beside it, named after it, and the JSON report the review stamp's `--ui-evidence` takes. Chromium only: Firefox and Safari lack the Layout Instability API.
