@@ -134,8 +134,30 @@ runDevboxSsh() {
 
 # Under launchd SSH_AUTH_SOCK names Apple's agent, which never holds the Secretive signing key.
 devboxSecretiveSocketPath="$HOME/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh"
+devboxSecureEnclaveProviderPath=/usr/lib/ssh-keychain.dylib
+devboxHogliSecureEnclaveKeyPath="$HOME/.ssh/id_ecdsa_sk_git_signing"
+
+devboxSecureEnclaveAddDeadlineSeconds="${DEVBOX_SECURE_ENCLAVE_ADD_DEADLINE_SECONDS:-10}"
+
+canForwardSecureEnclaveKey() {
+  [[ "${SSH_AUTH_SOCK:-}" == */com.apple.launchd.*/Listeners ]] || return 1
+  [[ -f "$devboxHogliSecureEnclaveKeyPath" && -f "$devboxSecureEnclaveProviderPath" ]]
+}
+
+loadSecureEnclaveKeyIntoLaunchdAgent() {
+  if ! perl -e 'alarm shift; exec @ARGV' "$devboxSecureEnclaveAddDeadlineSeconds" \
+    /usr/bin/ssh-add -q -S "$devboxSecureEnclaveProviderPath" "$devboxHogliSecureEnclaveKeyPath" </dev/null; then
+    printf 'devbox: could not load the Secure Enclave signing key into the launchd ssh-agent within %s seconds\n' "$devboxSecureEnclaveAddDeadlineSeconds" >&2
+    return 1
+  fi
+  printf '%s\n' "$SSH_AUTH_SOCK"
+}
 
 devboxForwardedAgentSocket() {
+  if canForwardSecureEnclaveKey; then
+    loadSecureEnclaveKeyIntoLaunchdAgent
+    return
+  fi
   local inheritedSocket="${SSH_AUTH_SOCK:-}"
   if [[ -n "$inheritedSocket" && "$inheritedSocket" != */com.apple.launchd.*/Listeners ]]; then
     printf '%s\n' "$inheritedSocket"
