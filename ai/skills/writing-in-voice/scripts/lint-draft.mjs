@@ -10,6 +10,8 @@ const SPLICE_AFTER_COMMA = /,\s+(?:(?:i|you|we|they|it|that|this|these|those|he|
 const LIST_CONTINUATION = /,\s+(?:and|or)\s/i;
 const MESSAGE_WORD_CAP = 50;
 const MESSAGE_CODE_SPAN_CAP = 1;
+const COMMIT_HASH = /(?<![\w/.#@=-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])(?:[0-9a-f]{40}|[0-9a-f]{7,12})(?![\w/-])/i;
+const URL_TOKEN = /\S+:\/\/\S+/g;
 const NOT_X_ITS_Y = /\b(?:it|this|that)(?:['’]s|\s+is)\s+not\b[^.!?]*?[,;]\s*(?:it|this|that)(?:['’]s|\s+is)\b/gi;
 
 const SHARED_PATTERN_RULES = [
@@ -101,6 +103,14 @@ function mixedApostropheFlags(lines) {
   return [{ line: firstCurlyLine.number, rule: "mixed-apostrophes", text: firstCurlyLine.text.trim() }];
 }
 
+function commitReferenceFlags(draft) {
+  return draft.split("\n").flatMap((rawLine, index) => {
+    if (/^\s*>/.test(rawLine)) return [];
+    const commitHash = rawLine.replace(URL_TOKEN, "").match(COMMIT_HASH);
+    return commitHash ? [{ line: index + 1, rule: "commit-reference", text: commitHash[0] }] : [];
+  });
+}
+
 function messageLengthFlags(lines) {
   if (lines.length === 0) return [];
   const wordCount = lines.reduce((total, line) => total + (line.rawText.match(/\S+/g) ?? []).length, 0);
@@ -121,8 +131,8 @@ function lintDraft(rawDraft, { isLongform = false } = {}) {
       for (const rule of brokenRules) flags.push({ line: line.number, rule, text: sentence });
     }
   }
-  if (!isLongform) return [...flags, ...messageLengthFlags(lines)];
-  return [...flags, ...repeatedContrastFlags(lines), ...headingSectionFlags(draft), ...mixedApostropheFlags(lines)].sort((first, second) => first.line - second.line);
+  if (!isLongform) return [...flags, ...commitReferenceFlags(draft), ...messageLengthFlags(lines)];
+  return [...flags, ...commitReferenceFlags(draft), ...repeatedContrastFlags(lines), ...headingSectionFlags(draft), ...mixedApostropheFlags(lines)].sort((first, second) => first.line - second.line);
 }
 
 function runCommandLine(argumentList) {
@@ -134,6 +144,7 @@ function runCommandLine(argumentList) {
   if (flags.some((flag) => flag.rule === "comma-splice")) console.log("comma-splice: delete the whole sentence. A spliced line is usually a fluff acknowledgement, and splitting it with a period or joining it with 'and' keeps the fluff. Rewrite it only when it carries a fact the reader needs.");
   if (flags.some((flag) => flag.rule === "teaser")) console.log("teaser: delete the whole sentence. It announces a reason without giving one, so open the next sentence with the reason itself.");
   if (flags.some((flag) => flag.rule === "kicker")) console.log("kicker: end the sentence at the fact. Delete the clause after ', and' or state its fact plainly in a sentence of its own.");
+  if (flags.some((flag) => flag.rule === "commit-reference")) console.log("commit-reference: drop the commit hash. The reader sees the change on the PR, and a hash in prose is noise to them.");
   if (flags.some((flag) => flag.rule === "message-length")) console.log(`message-length: a casual reply stays one short paragraph of at most ${MESSAGE_WORD_CAP} words and ${MESSAGE_CODE_SPAN_CAP} code span. Cut the caveats and commands the reader did not ask for, or split the reply into a short answer and a follow-up.`);
   console.log(`${flags.length} flag(s). Delete or rewrite each flagged sentence and rerun until 0.`);
   process.exitCode = flags.length > 0 ? 1 : 0;

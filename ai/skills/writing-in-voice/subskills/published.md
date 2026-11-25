@@ -6,7 +6,7 @@ Two influences, one habit: respect a smart, busy reader. Aaron Sorkin supplies s
 
 ## Workflow
 
-1. **Pitch before prose.** Get a one-sentence pitch containing "but", "except", or "and then". No turn in the sentence means no tension and no piece yet. If the carbon unit hasn't supplied the substance (the claim, the numbers, what happened), ask for it rather than inventing it: "having something interesting to say matters more than the title." A short comment or review reply skips the pitch and leads with its answer.
+1. **Pitch before prose.** Get a one-sentence pitch containing "but", "except", or "and then". No turn in the sentence means no tension and no piece yet. If the carbon unit hasn't supplied the substance (the claim, the numbers, what happened), ask for it rather than inventing it: "having something interesting to say matters more than the title." A short comment or review reply skips the pitch and leads with its answer. A reply on a review thread the change addressed is one or two sentences, saying what changed only when the diff does not show it, with no recap, no thanks, and no commit hash.
 2. **Title first.** Specific beats clever: a number, a concrete claim, a real dollar figure. Generic test: if a bland B2B SaaS blog would publish this title, rewrite it. An issue title names the defect and where it lives.
 3. **Draft with the template** that fits under [Templates](#templates).
 4. **Revise** against the sentence rules and the template's steps. Rewriting is easier than writing because now there is a problem to solve.

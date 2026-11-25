@@ -58,4 +58,10 @@ test("shared voice rules flag on every draft and long-form rules only with --lon
   assert.equal(lintDraft("The export broke because the batch size is unset. Restarting the worker fixes it.").exitCode, 0);
   const hyphenAndPossessiveDraft = "It's covered by [90-day data retention](/docs/data-retention).\n\nThe 2024’s costs are below.\n";
   assert.deepEqual(lintDraft(hyphenAndPossessiveDraft, "--longform").rules, ["volatile-number", "mixed-apostrophes"]);
+  for (const rejectedReply of ["Fixed in 870facd.", "Fixed in `870facd4c0e8a6b2c2d7a9091c5243c21a9b16a4`.", "Reverted:\n\n```sh\ngit revert 870facd4c0\n```"]) {
+    assert.deepEqual(lintDraft(rejectedReply).rules, ["commit-reference"], rejectedReply);
+    assert.deepEqual(lintDraft(rejectedReply, "--longform").rules, ["commit-reference"], rejectedReply);
+  }
+  assert.match(lintDraft("Fixed in 870facd.").stdout, /commit-reference: drop the commit hash/);
+  assert.equal(lintDraft("Fixed. It shipped in 2026 with 1234567 rows over a decade, see [the run](https://github.com/o/r/commit/870facd4c0) and https://github.com/o/r/commits?sha=870facd4c0. Person 550e8400-e29b-41d4-a716-446655440000 has event 0190a1b2c3d4e5f6.", "--longform").exitCode, 0);
 });
