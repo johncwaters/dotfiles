@@ -627,8 +627,8 @@ class Landing {
       this.pushFeatureAfterFailedMainlinePromotion(featureBranch, foundingOutcome);
       return foundingOutcome;
     }
-    const mainlineTipBeforePromotion = this.git.revParseRef(`refs/heads/${mainline}`);
-    const promoteOutcome = this.promoteHop(current, mainline);
+    const pushesFirst = originHasMainline && !this.config.noPush;
+    const promoteOutcome = this.promoteHop(current, mainline, pushesFirst);
     if (promoteOutcome) {
       this.pushFeatureAfterFailedMainlinePromotion(featureBranch, promoteOutcome);
       return promoteOutcome;
@@ -644,9 +644,11 @@ class Landing {
 
     const pushOutcome = this.pushMainline(mainline);
     if (pushOutcome) {
-      this.restoreMainlineAfterFailedPush(mainline, mainlineTipBeforePromotion);
       this.pushFeatureAfterFailedMainlinePromotion(featureBranch, pushOutcome);
       return pushOutcome;
+    }
+    if (pushesFirst && this.readOnlyHolderMainlineTip !== null) {
+      this.fastForwardLocalMainlineAfterPush(mainline, this.readOnlyHolderMainlineTip);
     }
 
     this.promoted.push(mainline);
@@ -671,30 +673,22 @@ class Landing {
     return "PROMOTE_FAILED";
   }
 
-  private restoreMainlineAfterFailedPush(mainline: string, mainlineTipBeforePromotion: string | null): void {
-    if (mainlineTipBeforePromotion === null || this.readOnlyHolderMainlineTip !== null) {
+  private fastForwardLocalMainlineAfterPush(mainline: string, pushedTip: string): void {
+    const localRef = `refs/heads/${mainline}`;
+    const localTip = this.git.revParseRef(localRef);
+    if (localTip === null || this.git.isAncestor(pushedTip, localRef)) {
       return;
     }
-    const promotedTip = this.git.revParseRef(`refs/heads/${mainline}`);
-    if (promotedTip === null || promotedTip === mainlineTipBeforePromotion || promotedTip !== this.git.revParseHead()) {
+    if (!this.git.isAncestor(localRef, pushedTip)) {
+      this.warnings.push(`origin/${mainline} holds the landing; local ${mainline} has commits origin/${mainline} lacks, so it was left at ${localTip}`);
       return;
     }
-    const worktrees = this.git.worktreeListPorcelain();
-    const holder = worktrees.code === 0 ? findWorktreeForBranch(worktrees.stdout, mainline) : null;
-    const restore =
-      holder === null
-        ? this.git.updateRef(`refs/heads/${mainline}`, mainlineTipBeforePromotion, promotedTip)
-        : this.git.resetKeepIn(holder, mainlineTipBeforePromotion);
-    if (restore.code === 0) {
-      this.warnings.push(
-        `local ${mainline} was reset to ${mainlineTipBeforePromotion} after its push failed, so a rerun promotes again`,
-      );
+    const warningCountBefore = this.warnings.length;
+    if (this.fastForwardDestination(pushedTip, mainline) === null) {
       return;
     }
-    const failureText = (restore.stderr || restore.stdout || "unknown error").trim();
-    this.warnings.push(
-      `could not reset local ${mainline} to ${mainlineTipBeforePromotion} after its push failed; a rerun moves its local-only commits to a rescue branch: ${failureText}`,
-    );
+    const failureText = this.warnings.splice(warningCountBefore).join("; ");
+    this.warnings.push(`origin/${mainline} holds the landing; local ${mainline} was left at ${localTip} because it could not be fast-forwarded: ${failureText}`);
   }
 
   private pushDeferredFeatureBranch(): FailureOutcome | null {
@@ -748,7 +742,7 @@ class Landing {
     if (remoteFeatureTip === null) {
       return;
     }
-    const mainlineRef = this.readOnlyHolderMainlineTip === null ? `refs/heads/${mainline}` : `refs/remotes/origin/${mainline}`;
+    const mainlineRef = this.readOnlyHolderMainlineTip ?? `refs/heads/${mainline}`;
     const mainlineTip = this.git.revParseRef(mainlineRef);
     if (mainlineTip === null) {
       this.warnings.push(`could not verify merged remote branch ${featureBranch}: ${mainline} is unavailable`);
@@ -942,7 +936,7 @@ class Landing {
     );
   }
 
-  private promoteHop(source: string, destination: string): FailureOutcome | null {
+  private promoteHop(source: string, destination: string, pushesFirst: boolean): FailureOutcome | null {
     const featureTipBeforeRebase = this.git.revParseHead();
     if (featureTipBeforeRebase === null) {
       this.warnings.push(
@@ -950,7 +944,7 @@ class Landing {
       );
       return "PROMOTE_FAILED";
     }
-    const rebaseBase = this.readOnlyHolderMainlineTip ?? destination;
+    const rebaseBase = this.readOnlyHolderMainlineTip ?? (pushesFirst ? `refs/remotes/origin/${destination}` : destination);
     const rebase = this.rebaseInTemporaryWorktree(source, rebaseBase, featureTipBeforeRebase);
     if (rebase.failure !== null) {
       return rebase.failure;
@@ -965,6 +959,10 @@ class Landing {
     }
     if (this.commitHash !== null) {
       this.commitHash = rebase.rebasedTip;
+    }
+    if (pushesFirst) {
+      this.readOnlyHolderMainlineTip = rebase.rebasedTip;
+      return null;
     }
     return this.fastForwardDestination(source, destination);
   }

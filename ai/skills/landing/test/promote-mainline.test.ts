@@ -439,6 +439,33 @@ test("an ahead or diverged mainline moves its local-only commits to a rescue bra
   }
 });
 
+test("local mainline stays at origin's tip until the mainline push lands, so a concurrent landing never rescues it", () => {
+  const { origin, seed, local } = seedOrigin();
+  const recordDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "landing-push-first-"));
+  const localMainAtPushPath = path.join(recordDirectory, "local-main-at-push");
+  try {
+    const originMainBefore = gitOutput(origin, ["rev-parse", "main"]);
+    writeOriginHook(origin, "update", [
+      "#!/bin/sh",
+      'if [ "$1" != "refs/heads/main" ]; then exit 0; fi',
+      `env -u GIT_DIR -u GIT_QUARANTINE_PATH -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git -C '${local}' rev-parse refs/heads/main > '${localMainAtPushPath}'`,
+      "exit 0",
+      "",
+    ].join("\n"));
+    writeFile(local, "base.txt", "base\nfeature change\n");
+    const { result } = land(local, ["--promote"], VALID_MESSAGE);
+
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.equal(fs.readFileSync(localMainAtPushPath, "utf8").trim(), originMainBefore);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
+    assert.equal(gitOutput(local, ["rev-parse", "main"]), result.commit);
+    assert.equal(gitOutput(local, ["branch", "--list", "rescue/*"]), "");
+  } finally {
+    cleanup(origin, seed, local, recordDirectory);
+  }
+});
+
 test("a rejected mainline push is PROMOTE_FAILED and pushes the feature branch", () => {
   const featureBranch = "glimmervoid/session/promotion-fallback";
   const { origin, seed, local } = seedOrigin(featureBranch);
@@ -792,7 +819,7 @@ test("a mainline checked out read-only stops promotion without an origin", () =>
   }
 });
 
-test("a mainline checked out in a dirty worktree stops promotion", () => {
+test("a mainline checked out in a dirty worktree still lands on origin and leaves the holder untouched", () => {
   const { origin, seed, local } = seedOrigin();
   const holder = cloneRepo(origin);
   const session = path.join(path.dirname(holder), "session");
@@ -803,11 +830,11 @@ test("a mainline checked out in a dirty worktree stops promotion", () => {
     const mainBefore = gitOutput(holder, ["rev-parse", "main"]);
     const { result } = land(session, ["--promote"], VALID_MESSAGE);
 
-    assert.equal(result.outcome, "PROMOTE_FAILED");
-    assert.equal(result.branchPushed, true);
+    assert.equal(result.outcome, "COMMITTED");
+    assert.deepEqual(result.promoted, ["main"]);
+    assert.equal(gitOutput(origin, ["rev-parse", "main"]), result.commit);
     assert.equal(gitOutput(holder, ["rev-parse", "main"]), mainBefore);
-    assert.equal(gitOutput(origin, ["rev-parse", "feature"]), result.commit);
-    assert.match((result.warnings as string[]).join("\n"), /has uncommitted changes/);
+    assert.match((result.warnings as string[]).join("\n"), /origin\/main holds the landing; local main was left at .*has uncommitted changes/);
   } finally {
     cleanup(origin, seed, local, path.dirname(holder));
   }
