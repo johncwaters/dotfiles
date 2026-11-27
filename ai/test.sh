@@ -447,16 +447,21 @@ for toolName in codex kimi-code; do
   toolAgentsPath="$sandbox/.$toolName/AGENTS.md"
   check "work $toolName AGENTS.md is a rendered plain file" \
     bash -c '[[ -f "$1" && ! -L "$1" ]]' _ "$toolAgentsPath"
-  check "work $toolName AGENTS.md carries the shared rules then the work rules" \
-    bash -c 'diff -q "$1" <(cat "$2"; printf "\n"; cat "$3") > /dev/null' _ \
-    "$toolAgentsPath" "$stagedRepo/ai/AGENTS.md" "$stagedRepo/profiles/work/AGENTS.md"
+  toolMapPath="/dev/null"
+  [[ "$toolName" == codex ]] && toolMapPath="$stagedRepo/ai/codex-tools.md"
+  check "work $toolName AGENTS.md carries the shared rules, the work rules, then its tool map" \
+    bash -c 'diff -q "$1" <(cat "$2"; printf "\n"; cat "$3"; [[ -s "$4" ]] && { printf "\n"; cat "$4"; }) > /dev/null' _ \
+    "$toolAgentsPath" "$stagedRepo/ai/AGENTS.md" "$stagedRepo/profiles/work/AGENTS.md" "$toolMapPath"
 done
 runTopicInstall "$stagedTopicDir" personal > /dev/null
 check "personal profile removes the work AGENTS.profile.md link" \
   bash -c '[[ ! -e "$1" && ! -L "$1" ]]' _ "$profileAgentsPath"
 for toolName in codex kimi-code; do
-  check "personal $toolName AGENTS.md holds only the shared rules" \
-    cmp -s "$sandbox/.$toolName/AGENTS.md" "$stagedRepo/ai/AGENTS.md"
+  toolMapPath="/dev/null"
+  [[ "$toolName" == codex ]] && toolMapPath="$stagedRepo/ai/codex-tools.md"
+  check "personal $toolName AGENTS.md holds only the shared rules and its tool map" \
+    bash -c 'diff -q "$1" <(cat "$2"; [[ -s "$3" ]] && { printf "\n"; cat "$3"; }) > /dev/null' _ \
+    "$sandbox/.$toolName/AGENTS.md" "$stagedRepo/ai/AGENTS.md" "$toolMapPath"
 done
 check "personal Kimi mcp.json drops the work servers and keeps hand-added ones" kimiMcpServersMatch personal
 printf '{"mcpServers":{"posthog":{"url":"https://mine.invalid/mcp"}},}\n' > "$sandbox/.kimi-code/mcp.json"
@@ -691,6 +696,8 @@ check "agy's rendered rules end with its tool map for the Claude tools skills na
   bash -c '[[ "$(tail -n 1 "$1")" == "</agy_tools>" ]] && grep -q "invoke_subagent" "$1"' _ "$sandbox/.gemini/AGENTS.md"
 check "agy reaches the workflow bridge at the ScriptPath its tool map names" \
   bash -c 'grep -qF "~/.claude/workflows/agy/claude-workflow.py" "$1" && [[ -f "$2/claude-workflow.py" && -f "$2/host.mjs" ]]' _ "$sandbox/.gemini/AGENTS.md" "$sandbox/.claude/workflows/agy"
+check "Codex's rendered rules end with a tool map whose workflow runner is installed" \
+  bash -c '[[ "$(tail -n 1 "$1")" == "</codex_tools>" ]] && grep -qF "~/.claude/workflows/agy/codex-workflow.mjs" "$1" && [[ -f "$2/codex-workflow.mjs" ]]' _ "$sandbox/.codex/AGENTS.md" "$sandbox/.claude/workflows/agy"
 for claudeAgentPath in "$stagedRepo/ai/agents"/*.md; do
   agyAgentPath="$sandbox/.gemini/config/agents/$(basename -- "$claudeAgentPath")"
   check "agy runs $(basename -- "$claudeAgentPath" .md) with the Claude lane body byte for byte" \

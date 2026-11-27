@@ -358,7 +358,7 @@ renderProfileAgents() {
   commitStagedFile "$label" "$stagedPath" "$agentsPath" "rendered"
 }
 
-renderProfileAgents "Codex AGENTS.md" "$codexHome"
+renderProfileAgents "Codex AGENTS.md" "$codexHome" "$dotfilesRepo/ai/codex-tools.md"
 renderProfileAgents "agy AGENTS.md" "$agyHome" "$dotfilesRepo/ai/agy-tools.md"
 if command -v kimi > /dev/null 2>&1; then
   renderProfileAgents "Kimi AGENTS.md" "$kimiHome"
