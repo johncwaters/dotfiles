@@ -688,7 +688,14 @@ check "work-server inherits work rules for Codex" \
 check "work-server renders shared and work rules for agy as a plain file" \
   bash -c '[[ -f "$1" && ! -L "$1" ]] && grep -q "Prefer working in a dedicated git worktree" "$1" && grep -qF "$(head -1 "$2")" "$1"' _ "$sandbox/.gemini/AGENTS.md" "$stagedRepo/ai/AGENTS.md"
 check "agy's rendered rules end with its tool map for the Claude tools skills name" \
-  bash -c '[[ "$(tail -n 1 "$1")" == "</agy_tools>" ]] && grep -q "define_subagent" "$1"' _ "$sandbox/.gemini/AGENTS.md"
+  bash -c '[[ "$(tail -n 1 "$1")" == "</agy_tools>" ]] && grep -q "invoke_subagent" "$1"' _ "$sandbox/.gemini/AGENTS.md"
+check "agy reaches the workflow bridge at the ScriptPath its tool map names" \
+  bash -c 'grep -qF "~/.claude/workflows/agy/claude-workflow.py" "$1" && [[ -f "$2/claude-workflow.py" && -f "$2/host.mjs" ]]' _ "$sandbox/.gemini/AGENTS.md" "$sandbox/.claude/workflows/agy"
+for claudeAgentPath in "$stagedRepo/ai/agents"/*.md; do
+  agyAgentPath="$sandbox/.gemini/config/agents/$(basename -- "$claudeAgentPath")"
+  check "agy runs $(basename -- "$claudeAgentPath" .md) with the Claude lane body byte for byte" \
+    bash -c '[[ -f "$2" && ! -L "$2" ]] && cmp -s <(awk "n>=2; /^---\$/{n++}" "$1") <(awk "n>=2; /^---\$/{n++}" "$2") && grep -qx "  - run_command" "$2"' _ "$claudeAgentPath" "$agyAgentPath"
+done
 for skillsHome in "$sandbox/.agents/skills" "$sandbox/.gemini/config/skills"; do
   check "work-server links its own addition into $skillsHome" \
     test "$(readlink "$skillsHome/child-fixture")" = "$sandbox/.dotfiles/profiles/work-server/skills/child-fixture"

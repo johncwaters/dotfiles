@@ -1,17 +1,7 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { executableSourceOfWorkflow } from '../agy/host.mjs'
 
-const testDirectory = path.dirname(fileURLToPath(import.meta.url))
-export const workflowDirectory = path.join(testDirectory, '..')
-const metaExportDeclaration = /^export const meta =/
-
-export function executableSourceOfWorkflow(workflowFileName) {
-  const workflowSource = fs.readFileSync(path.join(workflowDirectory, workflowFileName), 'utf8')
-  assert.match(workflowSource, metaExportDeclaration, `${workflowFileName} no longer opens with the meta export this test strips to make the workflow evaluable, so evaluating it would fail with a bare SyntaxError. Repoint the declaration pattern before running it again.`)
-  return workflowSource.replace(metaExportDeclaration, 'const meta =')
-}
+export { executableSourceOfWorkflow, workflowDirectory } from '../agy/host.mjs'
 
 export const executableWorkflowSource = executableSourceOfWorkflow('qa-swarm.js')
 

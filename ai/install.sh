@@ -273,6 +273,38 @@ convergeSharedEntryDirectory agents agent
 convergeSharedEntryDirectory workflows workflow
 installSharedSkillDependencies
 
+renderAgyLaneAgents() {
+  local agyAgentsDirectory="$agySkillsHome/agents"
+  local claudeAgentPath agentName stagedPath previousNames retiredName
+  local renderedNames=""
+  if ! command -v node > /dev/null 2>&1; then
+    noteWarned "agy lane agents" "node not found, convergence skipped"
+    return 0
+  fi
+  mkdir -p -- "$agyAgentsDirectory"
+  for claudeAgentPath in "$dotfilesRepo/ai/agents"/*.md; do
+    agentName="$(basename -- "$claudeAgentPath" .md)"
+    renderedNames+="${renderedNames:+$'\n'}$agentName"
+    clearDestinationIfNotPlainFile "agy agent $agentName" "$agyAgentsDirectory/$agentName.md" || continue
+    stagedPath="$(mktemp "$agyAgentsDirectory/.dotfiles-render.XXXXXX")"
+    if ! node "$dotfilesRepo/ai/render-agy-agent.mjs" "$claudeAgentPath" "$stagedPath"; then
+      rm -f -- "$stagedPath"
+      noteWarned "agy agent $agentName" "render failed"
+      continue
+    fi
+    commitStagedFile "agy agent $agentName" "$stagedPath" "$agyAgentsDirectory/$agentName.md" "rendered"
+  done
+  previousNames="$(readDotfilesState ai-managed-agy-agents || true)"
+  while IFS= read -r retiredName; do
+    [[ -n "$retiredName" && ! -f "$dotfilesRepo/ai/agents/$retiredName.md" ]] || continue
+    rm -f -- "$agyAgentsDirectory/$retiredName.md"
+    noteApplied "agy agent $retiredName" "retired render removed"
+  done <<< "$previousNames"
+  writeDotfilesState ai-managed-agy-agents "$renderedNames"
+}
+
+renderAgyLaneAgents
+
 linkEntry "AGENTS.md" "ai/AGENTS.md" "$claudeHome/AGENTS.md"
 linkEntry "MODELS.md" "ai/MODELS.md" "$claudeHome/MODELS.md"
 linkEntry "tsconfig.json" "ai/tsconfig.json" "$claudeHome/tsconfig.json"

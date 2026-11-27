@@ -27,7 +27,7 @@ The `specifying` skill stores the ledger as `challengeLedger` and the stamp as `
 
 Add `scale` to `lanes` when any step loops over data that grows with use (rows, files, board elements, requests, sessions); `simplify` always runs. Call `Workflow({name: 'plan-challenge', args: { goal, planText, repoPath, lanes }})`. To re-run a dead lane retry under `resumeFromRunId`, add a new `retryAttemptId`. `lanes` returns each surviving lane's parsed `verdicts`; add `(lanes: <names>)` to the stamp when a requested lane is missing from `survivingLanes`. Restate a prose plan as a numbered list (`1.`, one line per step at column zero) before calling. Always call by `name`: the `Workflow(plan-challenge)` allow rule matches named runs only.
 
-Workflow tool absent: read `~/.claude/workflows/plan-challenge.js`, spawn its selected lanes in one message, and parse them by its rules.
+Workflow tool absent and no mapping for one in your tool notes: read `~/.claude/workflows/plan-challenge.js`, spawn its selected lanes in one message, and parse them by its rules.
 
 ## Step 2: Judge
 

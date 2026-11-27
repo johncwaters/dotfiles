@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import path from 'node:path'
+import readline from 'node:readline'
 import { test } from 'node:test'
-import { executableSourceOfWorkflow, workflowDirectory } from './qa-swarm-source.mjs'
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+import { runWorkflow, workflowDirectory } from '../agy/host.mjs'
 
 const workflowArgsByFileName = {
   'plan-challenge.js': { goal: 'Ship the fixture.', planText: '1. First step\n2. Second step\n', repoPath: '/repo', lanes: ['scale'] },
@@ -21,10 +22,23 @@ function runWorkflowWithFailingAgents(workflowFileName, workflowArgs) {
       return null
     }
   }
-  const bindingNames = Object.keys(runtimeBindings)
-  const bindingValues = Object.values(runtimeBindings)
-  const workflowRun = AsyncFunction('args', ...bindingNames, executableSourceOfWorkflow(workflowFileName))(workflowArgs, ...bindingValues)
-  return workflowRun.then(() => agentCalls)
+  return runWorkflow(workflowFileName, workflowArgs, runtimeBindings).then(() => agentCalls)
+}
+
+async function runWorkflowThroughAgyHost(workflowFileName, workflowArgs) {
+  const hostProcess = spawn(process.execPath, [path.join(workflowDirectory, 'agy', 'host.mjs'), path.basename(workflowFileName, '.js')], { stdio: ['pipe', 'pipe', 'inherit'] })
+  const hostExit = new Promise((resolve) => hostProcess.on('exit', resolve))
+  hostProcess.stdin.write(`${JSON.stringify({ args: workflowArgs })}\n`)
+  const agentRequests = []
+  let doneMessage = null
+  for await (const line of readline.createInterface({ input: hostProcess.stdout })) {
+    const message = JSON.parse(line)
+    if (message.op === 'done') doneMessage = message
+    if (message.op !== 'agent') continue
+    agentRequests.push(message)
+    hostProcess.stdin.write(`${JSON.stringify({ id: message.id, ok: false })}\n`)
+  }
+  return { agentRequests, doneMessage, exitCode: await hostExit }
 }
 
 const workflowFileNames = fs.readdirSync(workflowDirectory).filter((fileName) => fileName.endsWith('.js'))
@@ -37,6 +51,19 @@ for (const workflowFileName of workflowFileNames) {
     const agentCallKeys = agentCalls.map((agentCall) => JSON.stringify([agentCall.prompt, agentCall.options]))
     assert.ok(agentCalls.length > 0)
     assert.equal(new Set(agentCallKeys).size, agentCallKeys.length)
+  })
+}
+
+for (const workflowFileName of workflowFileNames) {
+  test(`${workflowFileName} sends agy the same agent calls through the host channel and still returns`, async () => {
+    const workflowArgs = workflowArgsByFileName[workflowFileName]
+    const inProcessCalls = await runWorkflowWithFailingAgents(workflowFileName, workflowArgs)
+    const { agentRequests, doneMessage, exitCode } = await runWorkflowThroughAgyHost(workflowFileName, workflowArgs)
+    assert.equal(exitCode, 0)
+    assert.ok(doneMessage, 'the host exited without sending done, so agy would report the workflow as failed')
+    const hostCallKeys = agentRequests.map((request) => JSON.stringify([request.prompt, request.agentType, request.schema])).sort()
+    const inProcessCallKeys = inProcessCalls.map((agentCall) => JSON.stringify([agentCall.prompt, agentCall.options?.agentType ?? null, agentCall.options?.schema ?? null])).sort()
+    assert.deepEqual(hostCallKeys, inProcessCallKeys)
   })
 }
 
