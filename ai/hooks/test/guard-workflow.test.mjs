@@ -20,6 +20,10 @@ function toolUse(name, input) {
   return { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: `tool-${name}`, name, input }] } };
 }
 
+function assistantText(text) {
+  return { type: "assistant", message: { role: "assistant", content: [{ type: "text", text }] } };
+}
+
 function toolResult(text, { toolUseId = "tool-x", isError = true } = {}) {
   return { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: toolUseId, is_error: isError, content: text }] } };
 }
@@ -327,8 +331,21 @@ test("the first repo edit of a session without /specifying is denied once", () =
   const fresh = writeTranscript([prompt("add an export button")]);
   const { decision, reason } = decisionFor(editCall(repoFile, fresh));
   assert.equal(decision, "deny");
-  const afterDenial = writeTranscript([prompt("add an export button"), toolUse("Edit", { file_path: repoFile }), toolResult(`PreToolUse:Edit hook error: ${reason}`, { toolUseId: "tool-Edit" })]);
+  const deniedEdit = [prompt("add an export button"), toolUse("Edit", { file_path: repoFile }), toolResult(`PreToolUse:Edit hook error: ${reason}`, { toolUseId: "tool-Edit" })];
+  const afterDenial = writeTranscript([...deniedEdit, assistantText("The carbon unit dictated this edit verbatim, so retrying.")]);
   assert.equal(decisionFor(editCall(repoFile, afterDenial)).decision, "allow");
+  const unstatedRetry = decisionFor(editCall(repoFile, writeTranscript(deniedEdit)));
+  assert.equal(unstatedRetry.decision, "deny");
+  assert.match(unstatedRetry.reason, /no reply naming a case/);
+  const specClaimEntries = [...deniedEdit, assistantText("Let me check the log first."), toolUse("Bash", { command: "git log -1" }), assistantText("The task list entry is my spec, so this resumes from it.")];
+  const specClaimRetry = decisionFor(editCall(repoFile, writeTranscript(specClaimEntries)));
+  assert.equal(specClaimRetry.decision, "deny");
+  assert.match(specClaimRetry.reason, /~\/\.agents\/specs/);
+  const harnessReply = { type: "assistant", isApiErrorMessage: true, message: { role: "assistant", model: "<synthetic>", content: [{ type: "text", text: "API Error: the carbon unit dictated nothing" }] } };
+  assert.equal(decisionFor(editCall(repoFile, writeTranscript([...deniedEdit, harnessReply]))).decision, "deny");
+  const restatedAfterClaim = [...specClaimEntries, toolUse("Edit", { file_path: repoFile }), toolResult(`PreToolUse:Edit hook error: ${specClaimRetry.reason}`, { toolUseId: "tool-Edit" }), assistantText("The carbon unit said to skip /specifying for this one.")];
+  assert.equal(decisionFor(editCall(repoFile, writeTranscript(restatedAfterClaim))).decision, "allow");
+  assert.equal(decisionFor(editCall(repoFile, writeTranscript([...deniedEdit, assistantText("No spec needed: a typo fix.")]))).decision, "allow");
   const hookSource = fs.readFileSync(path.resolve(import.meta.dirname, "../guard-workflow.mjs"), "utf8");
   const afterReadingSource = writeTranscript([prompt("add an export button"), toolUse("Read", { file_path: "guard-workflow.mjs" }), toolResult(hookSource, { toolUseId: "tool-Read", isError: false })]);
   assert.equal(decisionFor(editCall(repoFile, afterReadingSource)).decision, "deny");
@@ -408,6 +425,17 @@ test("Codex and agy edits hit the spec gate once, and a codex exec turn is unatt
   const agyPayload = { toolCall: { name: "write_file", args: { Path: repoFile, Content: "three\n" } }, transcriptPath: agyTranscript, conversationId: "agy-1" };
   const agyProcess = runHook("guard-workflow.mjs", agyPayload, { HOME: sandboxHome }, process.cwd(), ["--agent=agy"]);
   assert.equal(JSON.parse(agyProcess.stdout).decision, "deny");
+  const agyDecision = (steps) => {
+    const hookProcess = runHook("guard-workflow.mjs", { ...agyPayload, transcriptPath: writeTranscript(steps) }, { HOME: sandboxHome }, process.cwd(), ["--agent=agy"]);
+    return hookProcess.stdout === "" ? "allow" : JSON.parse(hookProcess.stdout).decision;
+  };
+  const agyDeniedWrite = [
+    agyStep(0, "USER_INPUT", "<USER_REQUEST>\nadd an export button\n</USER_REQUEST>"),
+    agyStep(1, "PLANNER_RESPONSE", "", [{ name: "write_file", args: { Path: repoFile, Content: "three\n" } }]),
+    agyStep(2, "GENERIC", `tool call denied by pre-tool hook: ${JSON.parse(agyProcess.stdout).reason}`, [], "ERROR"),
+  ];
+  assert.equal(agyDecision(agyDeniedWrite), "deny");
+  assert.equal(agyDecision([...agyDeniedWrite, agyStep(3, "PLANNER_RESPONSE", "The carbon unit dictated this edit verbatim; retrying.")]), "allow");
 });
 
 test("running /specifying or a review gate or reading a design spec clears the spec gate", () => {

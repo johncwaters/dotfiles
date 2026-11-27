@@ -41,7 +41,9 @@ function* entryEvents(entry, skillNamesByToolUseId) {
     return;
   }
   if (entry.type !== "assistant") return;
+  const isWrittenByHarness = entry.isApiErrorMessage === true || asObject(entry.message)?.model === "<synthetic>";
   for (const block of contentBlocks(entry)) {
+    if (block?.type === "text" && !isWrittenByHarness && asText(block.text).trim()) yield { kind: "reply", text: asText(block.text) };
     if (block?.type !== "tool_use") continue;
     const input = asObject(block.input) ?? {};
     if (block.name === "Skill" && typeof input.skill === "string") skillNamesByToolUseId.set(asText(block.id), input.skill);

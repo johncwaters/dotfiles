@@ -15,6 +15,7 @@ v8.setFlagsFromString("--enable-experimental-regexp-engine");
 const SPEC_GATE_MARKER = "[spec-gate]";
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 const SPEC_GATE_DENIAL_OPENING = `${SPEC_GATE_MARKER} This is the first repo edit`;
+const SPEC_GATE_RETRY_OPENING = `${SPEC_GATE_MARKER} This retry`;
 const GIT_GLOBAL_OPTIONS = String.raw`(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|super-prefix|config-env)\s+\S+|--?[A-Za-z][\w-]*(?:=\S+)?))*`;
 const GIT_ALIAS_TO_COMMIT_OR_PUSH = String.raw`-c\s*(?:alias\.[^=\s]+=\S*|"alias\.[^"=]+=[^"]*|'alias\.[^'=]+=[^']*)\b(?:commit|push)\b`;
 const GIT_INVOCATION = String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}['"\\]*(?:\S*/)?git['"]?${GIT_GLOBAL_OPTIONS}\s+`;
@@ -159,10 +160,17 @@ const KILL_SELF_MATCH_REASON =
   "A kill by pattern (pkill -f, or pgrep -f feeding kill) matches full command lines, and this pattern matches text in this same Bash call, which its own shell carries, so the call kills itself. " +
   "Run the kill in its own Bash call with one character of the pattern bracketed ('[n]ode server'), so the pattern no longer matches its own text.";
 
+const SPEC_FILE_RULE = "A task list entry, findings doc, or prompt is not a design spec: resume one by reading its file under ~/.agents/specs, which clears this gate.";
+const STATED_SKIP_CASE = /\b(?:typo|mechanical|dictated|verbatim)\b|\bskip(?:ping)? (?:the )?\/?specifying\b|\bsaid (?:to )?skip\b/i;
+const AGENTS_WITH_REPLY_EVENTS = new Set(["claude", "agy"]);
 const SPEC_GATE_REASON =
   `${SPEC_GATE_MARKER} This is the first repo edit in a session that never ran /specifying. ` +
   "Any change that involves a choice goes through /specifying first: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a non-trivial bug fix, or a multi-file change. Run /specifying now. " +
-  "Retry this same edit only for a typo or mechanical edit with no decision in it, an edit the carbon unit dictated verbatim, or when the carbon unit said to skip /specifying; \"small\" or \"obvious\" is not an exemption. The gate fires once per session.";
+  "Retry this same edit only for a typo or mechanical edit with no decision in it, an edit the carbon unit dictated verbatim, or when the carbon unit said to skip /specifying, and name which in your reply before the retry; \"small\" or \"obvious\" is not an exemption. " +
+  `${SPEC_FILE_RULE} The gate fires once per session.`;
+const SPEC_GATE_UNSTATED_REASON =
+  `${SPEC_GATE_RETRY_OPENING} follows a spec-gate denial with no reply naming a case where /specifying does not apply. ${SPEC_FILE_RULE} ` +
+  "Name the case in your reply (a typo or mechanical edit, an edit the carbon unit dictated verbatim, or the carbon unit said to skip /specifying), then retry; otherwise run /specifying.";
 
 async function hasLandingSkillRunSinceLastPrompt(transcriptPath) {
   let hasLandingSkillRun = false;
@@ -237,23 +245,33 @@ function isInsideDirectory(filePath, directory) {
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
-function isSpecGateDenial(event, editToolUseIds) {
-  if (event.kind !== "toolResult" || !event.text.includes(SPEC_GATE_DENIAL_OPENING)) return false;
+function isSpecGateDenial(event, editToolUseIds, denialOpening = SPEC_GATE_DENIAL_OPENING) {
+  if (event.kind !== "toolResult" || !event.text.includes(denialOpening)) return false;
   if (declaredAgent() !== "claude") return editToolUseIds.has(event.toolUseId);
   return event.isError && event.text.startsWith("PreToolUse:");
 }
 
-async function hasSpecGateCleared(transcriptPath, specsDirectory) {
+function retryDenialReason(repliesSinceDenial) {
+  if (!AGENTS_WITH_REPLY_EVENTS.has(declaredAgent())) return null;
+  return repliesSinceDenial.some((replyText) => STATED_SKIP_CASE.test(replyText)) ? null : SPEC_GATE_UNSTATED_REASON;
+}
+
+async function specGateDenialReason(transcriptPath, specsDirectory) {
   const editToolUseIds = new Set();
+  let repliesSinceDenial = null;
   for await (const event of sessionEvents(transcriptPath)) {
-    if (["specifying", "gating-reviews"].some((skillName) => isSkillRun(event, skillName))) return true;
+    if (["specifying", "gating-reviews"].some((skillName) => isSkillRun(event, skillName))) return null;
     if (event.kind === "toolUse" && EDIT_TOOLS.has(event.name)) editToolUseIds.add(event.id);
-    if (isSpecGateDenial(event, editToolUseIds)) return true;
+    if (isSpecGateDenial(event, editToolUseIds) || (repliesSinceDenial && isSpecGateDenial(event, editToolUseIds, SPEC_GATE_RETRY_OPENING))) {
+      repliesSinceDenial = [];
+      continue;
+    }
+    if (repliesSinceDenial && event.kind === "reply") repliesSinceDenial.push(event.text);
     if (event.kind !== "toolUse" || event.name !== "Read") continue;
     const readPath = String(event.input.file_path || "");
-    if (path.isAbsolute(readPath) && isInsideDirectory(readPath, specsDirectory)) return true;
+    if (path.isAbsolute(readPath) && isInsideDirectory(readPath, specsDirectory)) return null;
   }
-  return false;
+  return repliesSinceDenial ? retryDenialReason(repliesSinceDenial) : SPEC_GATE_REASON;
 }
 
 function isInsideGitWorktree(filePath) {
@@ -656,7 +674,8 @@ function unchallengedSpecReason({ specPath, status, subskill }) {
 }
 
 async function denyUnlessSpecGateCleared(transcriptPath, editedPaths, sessionDirectory) {
-  if (!(await hasSpecGateCleared(transcriptPath, specsDirectory()))) denyPreToolUse(SPEC_GATE_REASON);
+  const specGateReason = await specGateDenialReason(transcriptPath, specsDirectory());
+  if (specGateReason) denyPreToolUse(specGateReason);
   if (editedPaths.every(isGitIgnored)) return;
   const pendingSpec = unchallengedSpec(await specPathsWrittenInOpenSpecifyingRun(transcriptPath, sessionDirectory));
   if (pendingSpec) denyPreToolUse(unchallengedSpecReason(pendingSpec));
