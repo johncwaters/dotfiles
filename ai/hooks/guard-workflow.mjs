@@ -108,7 +108,13 @@ const ERE_LITERAL_ESCAPES = new Set(".[]{}()*+?^$|\\/");
 const OUTPUT_REDIRECT = /(?:^|[^<>&\d=-])(?:\d|&)?>>?(?![&>(=])[ \t]*([^\s;&|()<>]*)/g;
 const FILE_WRITING_COMMAND = new RegExp(String.raw`${COMMAND_START}\s*${COMMAND_WRAPPERS}(?:\S*/)?(tee|sed|perl|ruby|patch|git${GIT_GLOBAL_OPTIONS}\s+apply)(?=\s|$)([^;&|\n]*)`, "gm");
 const FIND_EXEC_EDIT = /-(?:exec|execdir|ok|okdir)\s+(?:\S*\/)?(sed|perl|ruby)(?=\s)([^;&|\n]*)/g;
-const DIRECTORY_CHANGE = /(?:^|[;&|(\n])\s*(?:cd|pushd)\s+([^\s;&|)]+)/g;
+const DIRECTORY_CHANGE = /(?<![\w./~$-])\\?(?:cd|pushd|popd)(?![\w./-])(?:[ \t]+([^\s;&|)]+))?/g;
+const LEADING_DIRECTORY_CHANGE = /^(?:cd|pushd)[ \t]+([^\s;&|)]+)$/;
+const UNCONDITIONAL_SEPARATORS = new Set(["", ";", "\n", "&&"]);
+const DIRECTORY_STACK_OR_OPTION_WORD = /^(?:[+-]|~[+-])/;
+const CDPATH_SEARCHED_WORD = /^(?![./~])/;
+const COMMAND_SUBSTITUTION = /\$\(|`/;
+const MAX_CANDIDATE_FOLDERS = 32;
 const VARIABLE_REFERENCE = /\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))/g;
 const PLAIN_ASSIGNMENT = /^(?:export\s+)?([A-Za-z_]\w*)=((?:'[^']*'|"[^"\\`$]*(?:\$\{?[A-Za-z_]\w*\}?[^"\\`$]*)*"|[^\s'"\\`])*)$/;
 const CONDITIONAL_OR_SUBSHELL_CODE = /(?:^|[\s;&|])(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function|\{|\}|#\S*)(?=$|[\s;&|])|(?<!\$)\(|`|\bcoproc\b/;
@@ -161,7 +167,7 @@ const KILL_SELF_MATCH_REASON =
 const SPEC_FILE_RULE = "A task list entry, findings doc, or prompt is not a design spec: resume one by reading its file under ~/.agents/specs, which clears this gate.";
 const STATED_SKIP_CASE = /\b(?:typo|mechanical|dictated|verbatim)\b|\bskip(?:ping)? (?:the )?\/?specifying\b|\bsaid (?:to )?skip\b/i;
 const AGENTS_WITH_REPLY_EVENTS = new Set(["claude", "agy"]);
-const UNRESOLVED_BASH_TARGET_RULE = "A Bash write whose target path the gate cannot resolve is checked against the folder it runs in and the literal folder its path names, so a write outside the repo spells its whole path out literally.";
+const UNRESOLVED_BASH_TARGET_RULE = "A Bash write whose target path or folder the gate cannot resolve counts as a repo edit wherever the session runs, so a write outside the repo spells its whole path out literally.";
 const SPEC_GATE_REASON =
   `${SPEC_GATE_MARKER} This is the first repo edit in a session that never ran /specifying. ` +
   "Any change that involves a choice goes through /specifying first: a feature, a behavior change, a refactor, a new skill, hook, agent, or config, a non-trivial bug fix, or a multi-file change. Run /specifying now. " +
@@ -618,7 +624,7 @@ function isDesignSpecFile(filePath) {
 function writtenFilePaths(event, sessionDirectory) {
   if (event.kind !== "toolUse") return [];
   if (EDIT_TOOLS.has(event.name)) return [String(event.input?.file_path || "")];
-  if (event.name === "Bash") return bashWriteTargets(String(event.input?.command || "").replace(/\$\{HOME\}|\$HOME\b/g, os.homedir()), sessionDirectory);
+  if (event.name === "Bash") return bashWriteTargets(String(event.input?.command || "").replace(/\$\{HOME\}|\$HOME\b/g, os.homedir()), sessionDirectory).targets;
   return [];
 }
 
@@ -672,10 +678,10 @@ function unchallengedSpecReason({ specPath, status, subskill }) {
     `Run subskills/${subskill} of /specifying next, or archive the spec abandoned with archive.ts. Git-ignored files, such as a mockup harness, stay editable.`;
 }
 
-async function denyUnlessSpecGateCleared(transcriptPath, editedPaths, sessionDirectory) {
+async function denyUnlessSpecGateCleared(transcriptPath, editedPaths, sessionDirectory, hasUnresolvableTarget = false) {
   const specGateReason = await specGateDenialReason(transcriptPath, specsDirectory());
   if (specGateReason) denyPreToolUse(specGateReason);
-  if (editedPaths.every(isGitIgnored)) return;
+  if (!hasUnresolvableTarget && editedPaths.every(isGitIgnored)) return;
   const pendingSpec = unchallengedSpec(await specPathsWrittenInOpenSpecifyingRun(transcriptPath, sessionDirectory));
   if (pendingSpec) denyPreToolUse(unchallengedSpecReason(pendingSpec));
 }
@@ -684,6 +690,7 @@ function resolveShellPath(word, baseDirectory) {
   const unquotedWord = word.replace(/^(['"])(.*)\1$/, "$2");
   if (unquotedWord === "" || UNRESOLVABLE_PATH_CHARACTERS.test(unquotedWord)) return null;
   if (unquotedWord === "~" || unquotedWord.startsWith("~/")) return path.join(os.homedir(), unquotedWord.slice(1));
+  if (unquotedWord.startsWith("~")) return null;
   return path.resolve(baseDirectory, unquotedWord);
 }
 
@@ -783,12 +790,12 @@ function topLevelStatements(command) {
       index += 1;
       continue;
     }
-    statements.push({ text: command.slice(statementStart, index).trim(), offset: statementStart, separatorBefore, separatorAfter: separator });
+    statements.push({ text: command.slice(statementStart, index).trim(), offset: statementStart, end: index, separatorBefore, separatorAfter: separator });
     separatorBefore = separator;
     index += separator.length;
     statementStart = index;
   }
-  statements.push({ text: command.slice(statementStart).trim(), offset: statementStart, separatorBefore, separatorAfter: "" });
+  statements.push({ text: command.slice(statementStart).trim(), offset: statementStart, end: command.length, separatorBefore, separatorAfter: "" });
   return statements;
 }
 
@@ -832,49 +839,78 @@ function provenVariableValues(command) {
   return valueByName;
 }
 
-function literalDirectoryPrefixTarget(expandedWord) {
-  const unquotedWord = expandedWord.replace(/^(['"])(.*)\1$/, "$2").replace(/^(?:~|\$\{HOME\}|\$HOME)(?=\/)/, os.homedir());
-  const firstUnresolvableIndex = unquotedWord.search(UNRESOLVABLE_PATH_CHARACTERS);
-  if (firstUnresolvableIndex === -1 || !path.isAbsolute(unquotedWord)) return null;
-  const literalDirectory = unquotedWord.slice(0, unquotedWord.lastIndexOf("/", firstUnresolvableIndex) + 1);
-  return path.join(literalDirectory, UNRESOLVED_TARGET_NAME);
+function foldersAfterDirectoryChanges(directoryWords, sessionDirectory, isFolderKeptOnFailure, isCdpathSearched) {
+  let folders = [sessionDirectory];
+  for (const directoryWord of directoryWords) {
+    if (directoryWord === undefined || DIRECTORY_STACK_OR_OPTION_WORD.test(directoryWord)) return null;
+    if (isCdpathSearched && CDPATH_SEARCHED_WORD.test(directoryWord)) return null;
+    const changedFolders = folders.map((folder) => resolveShellPath(directoryWord, folder));
+    if (changedFolders.includes(null)) return null;
+    folders = [...new Set(isFolderKeptOnFailure ? [...folders, ...changedFolders] : changedFolders)];
+    if (folders.length > MAX_CANDIDATE_FOLDERS) return null;
+  }
+  return folders;
+}
+
+function candidateFoldersAt(writeIndex, scannedCommand, statements, valueByName, sessionDirectory) {
+  const controlKeywordIndex = firstControlKeywordIndex(scannedCommand);
+  const isCdpathSearched = Boolean(process.env.CDPATH) || /\bCDPATH\b/.test(scannedCommand);
+  const earlierStatements = statements.filter((statement) => statement.end <= writeIndex);
+  const leadingDirectoryWordOf = (statement) => statement.text.match(LEADING_DIRECTORY_CHANGE);
+  const directoryChangesBeforeWrite = [...scannedCommand.matchAll(DIRECTORY_CHANGE)].filter((directoryChange) => directoryChange.index < writeIndex);
+  const leadingDirectoryChanges = earlierStatements.filter(leadingDirectoryWordOf);
+  const isPlainCommand = controlKeywordIndex > writeIndex && !COMMAND_SUBSTITUTION.test(scannedCommand.slice(0, writeIndex));
+  const isEveryDirectoryChangeLeading = directoryChangesBeforeWrite.length === leadingDirectoryChanges.length;
+  const firstDirectoryChangeIndex = earlierStatements.findIndex(leadingDirectoryWordOf);
+  const statementsSinceFirstDirectoryChange = firstDirectoryChangeIndex === -1 ? [] : earlierStatements.slice(firstDirectoryChangeIndex);
+  const runsOnlyAfterEarlierSuccess = statementsSinceFirstDirectoryChange.every((statement) => ["&&", "|"].includes(statement.separatorAfter));
+  const changesDirectoryOnlyThroughAndChain = leadingDirectoryChanges.every((statement) => statement.separatorAfter === "&&" && UNCONDITIONAL_SEPARATORS.has(statement.separatorBefore));
+  if (isPlainCommand && isEveryDirectoryChangeLeading && runsOnlyAfterEarlierSuccess && changesDirectoryOnlyThroughAndChain) {
+    const directoryWords = leadingDirectoryChanges.map((statement) => expandAssignedVariables(leadingDirectoryWordOf(statement)[1], valueByName));
+    return foldersAfterDirectoryChanges(directoryWords, sessionDirectory, false, isCdpathSearched);
+  }
+  const directoryWords = directoryChangesBeforeWrite.map((directoryChange) => directoryChange[1] && expandAssignedVariables(directoryChange[1], directoryChange.index < controlKeywordIndex ? valueByName : new Map()));
+  return foldersAfterDirectoryChanges(directoryWords, sessionDirectory, true, isCdpathSearched);
 }
 
 function bashWriteTargets(command, sessionDirectory) {
   const commandWithoutLiteralHeredocs = maskLiteralHeredocBodies(command);
   const scannedCommand = maskQuotedTextForWriteScan(commandWithoutLiteralHeredocs);
   const valueByName = provenVariableValues(commandWithoutLiteralHeredocs);
-  let baseDirectory = sessionDirectory;
-  const scannedControlKeywordIndex = firstControlKeywordIndex(scannedCommand);
-  for (const directoryChange of scannedCommand.matchAll(DIRECTORY_CHANGE)) {
-    const isUnconditionalDirectoryChange = directoryChange.index < scannedControlKeywordIndex;
-    const directoryWord = expandAssignedVariables(directoryChange[1], isUnconditionalDirectoryChange ? valueByName : new Map());
-    baseDirectory = resolveShellPath(directoryWord, baseDirectory) ?? baseDirectory;
-  }
-  const fileInBaseDirectory = path.join(baseDirectory, UNRESOLVED_TARGET_NAME);
-  const targetsOf = (word) => {
+  const statements = topLevelStatements(scannedCommand);
+  const targets = [];
+  let hasUnresolvableTarget = false;
+  const targetsOf = (word, writeIndex) => {
     const expandedWord = expandAssignedVariables(word, valueByName);
-    const resolvedTarget = resolveShellPath(expandedWord, baseDirectory);
-    if (resolvedTarget) return [resolvedTarget];
-    return [fileInBaseDirectory, literalDirectoryPrefixTarget(expandedWord)].filter(Boolean);
+    const folders = candidateFoldersAt(writeIndex, scannedCommand, statements, valueByName, sessionDirectory);
+    const resolvedTargets = (folders ?? [sessionDirectory]).map((folder) => resolveShellPath(expandedWord, folder));
+    const isRelativeToUnknownFolder = folders === null && !/^['"]?[/~]/.test(expandedWord);
+    if (resolvedTargets.includes(null) || isRelativeToUnknownFolder) hasUnresolvableTarget = true;
+    return resolvedTargets.filter(Boolean);
   };
-  const resolveTarget = (word) => targetsOf(word)[0];
-  const targets = [...scannedCommand.matchAll(OUTPUT_REDIRECT)].flatMap((redirect) => targetsOf(redirect[1]));
-  for (const [, commandName, argumentText] of [...scannedCommand.matchAll(FILE_WRITING_COMMAND), ...scannedCommand.matchAll(FIND_EXEC_EDIT)]) {
+  for (const redirect of scannedCommand.matchAll(OUTPUT_REDIRECT)) targets.push(...targetsOf(redirect[1], redirect.index));
+  for (const writingCommand of [...scannedCommand.matchAll(FILE_WRITING_COMMAND), ...scannedCommand.matchAll(FIND_EXEC_EDIT)]) {
+    const [, commandName, argumentText] = writingCommand;
     if (commandName === "patch" || commandName.startsWith("git")) {
-      targets.push(fileInBaseDirectory);
+      targets.push(...targetsOf(UNRESOLVED_TARGET_NAME, writingCommand.index));
       continue;
     }
     const argumentWords = argumentText.split(/[<>]/)[0].match(QUOTE_AWARE_WORD) ?? [];
-    for (const word of editedFileWords(commandName, argumentWords, (candidate) => fs.existsSync(resolveTarget(candidate)))) targets.push(...targetsOf(word));
+    const folders = candidateFoldersAt(writingCommand.index, scannedCommand, statements, valueByName, sessionDirectory) ?? [sessionDirectory];
+    const namesExistingPath = (candidate) => folders.some((folder) => {
+      const resolvedTarget = resolveShellPath(expandAssignedVariables(candidate, valueByName), folder);
+      return resolvedTarget !== null && fs.existsSync(resolvedTarget);
+    });
+    for (const word of editedFileWords(commandName, argumentWords, namesExistingPath)) targets.push(...targetsOf(word, writingCommand.index));
   }
-  return [...new Set(targets)].filter((target) => !isInsideDirectory(target, "/dev"));
+  return { targets: [...new Set(targets)].filter((target) => !isInsideDirectory(target, "/dev")), hasUnresolvableTarget };
 }
 
 async function guardSpecFirstForBash(command, sessionDirectory, transcriptPath) {
-  const gatedTargets = bashWriteTargets(command, sessionDirectory).filter(isSpecGatedPath);
-  if (gatedTargets.length === 0) return;
-  await denyUnlessSpecGateCleared(transcriptPath, gatedTargets, sessionDirectory);
+  const { targets, hasUnresolvableTarget } = bashWriteTargets(command, sessionDirectory);
+  const gatedTargets = targets.filter(isSpecGatedPath);
+  if (gatedTargets.length === 0 && !hasUnresolvableTarget) return;
+  await denyUnlessSpecGateCleared(transcriptPath, gatedTargets, sessionDirectory, hasUnresolvableTarget);
 }
 
 const COMMAND_END = String.raw`(?=\s|$|[;&|)'"])`;
