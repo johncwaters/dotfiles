@@ -297,7 +297,7 @@ renderAgyLaneAgents() {
   previousNames="$(readDotfilesState ai-managed-agy-agents || true)"
   while IFS= read -r retiredName; do
     [[ -n "$retiredName" && ! -f "$dotfilesRepo/ai/agents/$retiredName.md" ]] || continue
-    rm -f -- "$agyAgentsDirectory/$retiredName.md"
+    rm -f -- "$agyAgentsDirectory/$retiredName.md" "$(renderedCopyPath "$agyAgentsDirectory/$retiredName.md")"
     noteApplied "agy agent $retiredName" "retired render removed"
   done <<< "$previousNames"
   writeDotfilesState ai-managed-agy-agents "$renderedNames"
