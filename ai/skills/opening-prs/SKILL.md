@@ -70,6 +70,7 @@ Post without asking. Stop and ask only when the PR may disclose something meant 
 - New PR: `gh pr create --title "<title>" --body-file -`, body on stdin, ready for review. Add `--draft` only when the carbon unit asks for a draft or the repo's draft rule from Step 2 requires one.
 - Fork: add `--repo <parent> --base <parent default branch> --head <owner>:<branch>`, so the PR opens on the upstream project rather than on the fork.
 - Update mode: `gh pr edit <number> --body-file -`, body on stdin. On a draft: `gh pr ready <number>`, unless the carbon unit asked for a draft or the repo's draft rule requires one. Keep a ready PR ready.
+- Draft under a repo rule that names when to mark it ready (such as CI passing), new or in update mode: carry it to ready in this run, since a draft requests no reviewers. Run `gh pr checks <number> --watch --fail-fast` in the background; a fresh PR can report no checks for its first minute, so rerun it after a minute when it says so. On exit 0, run `gh pr ready <number>`. Otherwise keep it a draft and report each failing check from `gh pr checks <number> --json name,bucket,link`. A draft the carbon unit asked for stays a draft.
 - Leave merging and enqueueing outside this run.
 - The rules ask for an assignee or labels: resolve the handle from `gh api user --jq .login` and pass `--assignee`/`--label`; use only the resolved handle.
 
