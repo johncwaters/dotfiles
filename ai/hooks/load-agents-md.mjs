@@ -78,9 +78,19 @@ function readWithoutFollowingSymlinks(filePath) {
   return readBoundedRegularFile(filePath, fs.constants.O_NOFOLLOW);
 }
 
+function isRepositoryRoot(directory) {
+  const gitPath = path.join(directory, ".git");
+  try {
+    if (fs.statSync(gitPath).isFile()) return fs.readFileSync(gitPath, "utf8").startsWith("gitdir:");
+    return fs.existsSync(path.join(gitPath, "HEAD"));
+  } catch {
+    return false;
+  }
+}
+
 function findRepositoryRoot(startDirectory) {
   let directory = startDirectory;
-  while (!fs.existsSync(path.join(directory, ".git"))) {
+  while (!isRepositoryRoot(directory)) {
     const parentDirectory = path.dirname(directory);
     if (parentDirectory === directory) {
       return null;

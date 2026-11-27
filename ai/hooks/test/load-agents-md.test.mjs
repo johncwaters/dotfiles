@@ -15,8 +15,10 @@ beforeEach(() => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), "load-agents-md-repo-"));
   stateHomeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "load-agents-md-state-"));
   foreignWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "load-agents-md-foreign-"));
-  fs.mkdirSync(path.join(workspace, ".git"));
-  fs.mkdirSync(path.join(foreignWorkspace, ".git"));
+  for (const repository of [workspace, foreignWorkspace]) {
+    fs.mkdirSync(path.join(repository, ".git"));
+    fs.writeFileSync(path.join(repository, ".git", "HEAD"), "ref: refs/heads/main\n");
+  }
   sessionCounter += 1;
 });
 
@@ -158,12 +160,15 @@ test("compaction resets claims so the main loop gets shadowed files again", () =
   assert.match(sessionStartHook("compact"), /ROOT-RULE/);
 });
 
-test("file outside any repository injects nothing", () => {
-  fs.rmSync(path.join(workspace, ".git"), { recursive: true });
+test("file outside any repository injects nothing, even under an empty .git folder or file", () => {
+  fs.rmSync(path.join(workspace, ".git", "HEAD"));
   writeRepoFile("CLAUDE.md", "pointer\n");
   writeRepoFile("AGENTS.md", "Codeword ROOT-RULE\n");
   writeRepoFile("code.go", "package main\n");
 
+  assert.equal(readHook("code.go"), "");
+  fs.rmSync(path.join(workspace, ".git"), { recursive: true });
+  fs.writeFileSync(path.join(workspace, ".git"), "");
   assert.equal(readHook("code.go"), "");
 });
 
