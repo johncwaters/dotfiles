@@ -122,6 +122,8 @@ const ATTACHED_SCRIPT_FLAG = /^(?:--(?:expression|file)=|-e.)/;
 const INLINE_SCRIPT_FLAG = /^-[A-Za-z0-9]*e$/;
 const UNRESOLVABLE_PATH_CHARACTERS = /[$`*?[{]/;
 const UNRESOLVED_TARGET_NAME = "unresolved-write-target";
+const LITERAL_LOOP_HEADER = /(?:^|[\s;&|])for\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*)[;\n]\s*do\b/g;
+const SLASH_FREE_LOOP_WORD = /^[\w.-]+$/;
 const LITERAL_WORD = /^[\w.:/@+=-]+$/;
 const INERT_WORD = /^(?:[\w.:/@+=-]+|'[^']*'|"[^"$`\\]*")$/;
 const ABSOLUTE_LITERAL_PATH = /^\/[\w.:/@+=-]*$/;
@@ -667,6 +669,17 @@ function resolveShellPath(word, baseDirectory) {
   return path.resolve(baseDirectory, unquotedWord);
 }
 
+function fileInResolvedDirectory(expandedWord, baseDirectory, loopVariableNames) {
+  const unquotedWord = expandedWord.replace(/^(['"])(.*)\1$/, "$2");
+  const fileNameStart = unquotedWord.lastIndexOf("/") + 1;
+  const fileName = unquotedWord.slice(fileNameStart);
+  const unresolvedNames = [...fileName.matchAll(VARIABLE_REFERENCE)].map(([, bracedName, bareName]) => bracedName ?? bareName);
+  if (fileNameStart === 0 || /`|\$\(/.test(fileName) || unresolvedNames.length === 0) return null;
+  if (!unresolvedNames.every((name) => loopVariableNames.has(name))) return null;
+  const directory = resolveShellPath(unquotedWord.slice(0, fileNameStart), baseDirectory);
+  return directory && path.join(directory, UNRESOLVED_TARGET_NAME);
+}
+
 function editedFileWords(commandName, argumentWords, namesExistingPath) {
   if (commandName === "tee") return argumentWords.filter((word) => !word.startsWith("-"));
   const isInPlace = argumentWords.some((word) => IN_PLACE_FLAG.test(word));
@@ -737,9 +750,14 @@ function maskQuotedTextForWriteScan(command) {
   return maskedCommand;
 }
 
-function expandAssignedVariables(word, valueByName) {
+function expandAssignedVariables(word, valueByName, conditionalNames = new Set()) {
   if (word.startsWith("'")) return word;
-  return word.replace(VARIABLE_REFERENCE, (reference, bracedName, bareName) => valueByName.get(bracedName ?? bareName) ?? reference);
+  return word.replace(VARIABLE_REFERENCE, (reference, bracedName, bareName, offset) => {
+    const name = bracedName ?? bareName;
+    if (!valueByName.has(name)) return reference;
+    const isRootedWhenUnset = /^"?$/.test(word.slice(0, offset)) && word[offset + reference.length] === "/";
+    return !conditionalNames.has(name) || isRootedWhenUnset ? valueByName.get(name) : reference;
+  });
 }
 
 function topLevelStatements(command) {
@@ -772,12 +790,12 @@ function topLevelStatements(command) {
   return statements;
 }
 
-function assignedValueOf(rawValue, valueByName) {
+function assignedValueOf(rawValue, valueByName, conditionalNames) {
   if (/^'[^']*'$/.test(rawValue)) return rawValue.slice(1, -1);
   const doubleQuoted = rawValue.match(/^"([^"]*)"$/);
   const unquotedValue = doubleQuoted ? doubleQuoted[1] : rawValue;
   if (!doubleQuoted && /['"]/.test(rawValue)) return null;
-  return expandAssignedVariables(unquotedValue, valueByName);
+  return expandAssignedVariables(unquotedValue, valueByName, conditionalNames);
 }
 
 function isRunUnconditionallyInThisShell({ separatorBefore, separatorAfter }) {
@@ -793,38 +811,57 @@ function firstControlKeywordIndex(command) {
 
 function provenVariableValues(command) {
   const valueByName = new Map();
+  const conditionalNames = new Set();
   const bareWordCount = (name) => command.match(new RegExp(String.raw`(?<![$\w{])${name}(?!\w)`, "g")).length;
   const firstReferenceOffset = (name) => command.search(new RegExp(String.raw`\$\{?${name}(?!\w)`));
-  if (RUNTIME_REBINDING.test(command)) return valueByName;
+  if (RUNTIME_REBINDING.test(command)) return { valueByName, conditionalNames };
   const statements = topLevelStatements(command);
   const controlKeywordIndex = firstControlKeywordIndex(command);
   const isCompleteBeforeControl = (index) => (statements[index + 1]?.offset ?? command.length) <= controlKeywordIndex;
   for (const [index, statement] of statements.entries()) {
     if (!isCompleteBeforeControl(index)) break;
     const assignment = statement.text.match(PLAIN_ASSIGNMENT);
-    if (!assignment || !isRunUnconditionallyInThisShell(statement)) continue;
+    const isRunAfterSuccess = statement.separatorBefore === "&&" && !["|", "&"].includes(statement.separatorAfter);
+    if (!assignment || !(isRunUnconditionallyInThisShell(statement) || isRunAfterSuccess)) continue;
     const [, name, rawValue] = assignment;
     const referenceOffset = firstReferenceOffset(name);
     const isAssignedOnceBeforeUse = bareWordCount(name) === 1 && (referenceOffset === -1 || referenceOffset > statement.offset);
-    const value = isAssignedOnceBeforeUse ? assignedValueOf(rawValue, valueByName) : null;
-    if (value !== null && !value.includes("$")) valueByName.set(name, value);
+    const value = isAssignedOnceBeforeUse ? assignedValueOf(rawValue, valueByName, conditionalNames) : null;
+    if (value === null || value.includes("$")) continue;
+    valueByName.set(name, value);
+    if (isRunAfterSuccess) conditionalNames.add(name);
   }
-  return valueByName;
+  return { valueByName, conditionalNames };
+}
+
+function literalLoopVariableNames(command) {
+  const loopVariableNames = new Set();
+  if (RUNTIME_REBINDING.test(command)) return loopVariableNames;
+  for (const [, name, loopWordList] of command.matchAll(LITERAL_LOOP_HEADER)) {
+    const isBoundOnlyByThisLoop = command.match(new RegExp(String.raw`(?<![$\w{])${name}(?!\w)`, "g")).length === 1;
+    const hasOnlySlashFreeWords = loopWordList.trim().split(/\s+/).every((loopWord) => SLASH_FREE_LOOP_WORD.test(loopWord) && !/^\.\.?$/.test(loopWord));
+    if (isBoundOnlyByThisLoop && hasOnlySlashFreeWords) loopVariableNames.add(name);
+  }
+  return loopVariableNames;
 }
 
 function bashWriteTargets(command, sessionDirectory) {
   const commandWithoutLiteralHeredocs = maskLiteralHeredocBodies(command);
   const scannedCommand = maskQuotedTextForWriteScan(commandWithoutLiteralHeredocs);
-  const valueByName = provenVariableValues(commandWithoutLiteralHeredocs);
+  const { valueByName, conditionalNames } = provenVariableValues(commandWithoutLiteralHeredocs);
+  const loopVariableNames = literalLoopVariableNames(commandWithoutLiteralHeredocs);
   let baseDirectory = sessionDirectory;
   const scannedControlKeywordIndex = firstControlKeywordIndex(scannedCommand);
   for (const directoryChange of scannedCommand.matchAll(DIRECTORY_CHANGE)) {
     const isUnconditionalDirectoryChange = directoryChange.index < scannedControlKeywordIndex;
-    const directoryWord = expandAssignedVariables(directoryChange[1], isUnconditionalDirectoryChange ? valueByName : new Map());
+    const directoryWord = expandAssignedVariables(directoryChange[1], isUnconditionalDirectoryChange ? valueByName : new Map(), conditionalNames);
     baseDirectory = resolveShellPath(directoryWord, baseDirectory) ?? baseDirectory;
   }
   const fileInBaseDirectory = path.join(baseDirectory, UNRESOLVED_TARGET_NAME);
-  const resolveTarget = (word) => resolveShellPath(expandAssignedVariables(word, valueByName), baseDirectory) ?? fileInBaseDirectory;
+  const resolveTarget = (word) => {
+    const expandedWord = expandAssignedVariables(word, valueByName, conditionalNames);
+    return resolveShellPath(expandedWord, baseDirectory) ?? fileInResolvedDirectory(expandedWord, baseDirectory, loopVariableNames) ?? fileInBaseDirectory;
+  };
   const targets = [...scannedCommand.matchAll(OUTPUT_REDIRECT)].map((redirect) => resolveTarget(redirect[1]));
   for (const [, commandName, argumentText] of [...scannedCommand.matchAll(FILE_WRITING_COMMAND), ...scannedCommand.matchAll(FIND_EXEC_EDIT)]) {
     if (commandName === "patch" || commandName.startsWith("git")) {

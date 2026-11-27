@@ -371,10 +371,15 @@ test("the first repo edit of a session without /specifying is denied once", () =
     ['echo "$(date>a.txt)"', repository],
     ["bash -lc 'date>a.txt'", repository],
     [`cd '${repository}/dir<x>' && echo x > f.txt`, outsideRepository],
+    [`for i in 1 2; do echo x > ${repository}/run$i.log; done`, outsideRepository],
+    [`for d in a; do echo x > ${sandboxHome}/$d/a.txt; done`, repository],
+    [`for f in ../x/a.txt; do echo x > ${sandboxHome}/$f; done`, repository],
+    [`f=$(printf ../x/a.txt); echo x | tee ${sandboxHome}/$f`, repository],
+    [`test -d /nonexistent && D=${sandboxHome}/; echo x > \${D}b.txt`, repository],
   ]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd })).decision, "deny", command);
   }
-  for (const command of ["sed -n 1p a.txt", "grep -o 'x>y' a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, `sed -i '' 's#one#two#' ${path.join(sandboxHome, "scratch.txt")}`, `sed -i 's/one two/three/' ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee", `export S=${sandboxHome}; D="$S/notes"; cat > "$D/scratch.txt"`, `S=${sandboxHome}; cat > $S/tl.py <<'EOF'\nfor row in rows:  # (each)\n    print(row)\nEOF`, `S=${sandboxHome}; mkdir -p $S/libs && cd $S/libs\necho x > gbm.c`, `S=${sandboxHome}; cd $S && cat > a.md <<'EOF'\nx\nEOF\nfor f in $S/*.md; do echo $f; done`, `S=${sandboxHome}\nfor f in a; do :; done\necho x > $S/a.txt`]) {
+  for (const command of ["sed -n 1p a.txt", "grep -o 'x>y' a.txt", "ls 2>&1 >/dev/null", 'grep -rn "a > b" .', `sed -i s/one/two/ ${path.join(sandboxHome, "scratch.txt")}`, `sed -i '' 's#one#two#' ${path.join(sandboxHome, "scratch.txt")}`, `sed -i 's/one two/three/' ${path.join(sandboxHome, "scratch.txt")}`, "git diff | tee", `export S=${sandboxHome}; D="$S/notes"; cat > "$D/scratch.txt"`, `S=${sandboxHome}; cat > $S/tl.py <<'EOF'\nfor row in rows:  # (each)\n    print(row)\nEOF`, `S=${sandboxHome}; mkdir -p $S/libs && cd $S/libs\necho x > gbm.c`, `S=${sandboxHome}; cd $S && cat > a.md <<'EOF'\nx\nEOF\nfor f in $S/*.md; do echo $f; done`, `S=${sandboxHome}\nfor f in a; do :; done\necho x > $S/a.txt`, `cd ${repository} && S=${sandboxHome}; echo x > $S/a.txt`, `S=${sandboxHome}; for i in 1 2; do echo x > $S/run$i.log; done`]) {
     assert.equal(decisionFor(bashCall(command, fresh, { cwd: repository })).decision, "allow", command);
   }
   assert.equal(decisionFor(bashCall("sed -i s/one/two/ a.txt", afterDenial, { cwd: repository })).decision, "allow");
