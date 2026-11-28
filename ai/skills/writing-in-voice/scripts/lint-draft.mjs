@@ -14,6 +14,18 @@ const COMMIT_HASH = /(?<![\w/.#@=-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])(?:[0-9a-f]
 const URL_TOKEN = /\S+:\/\/\S+/g;
 const NOT_X_ITS_Y = /\b(?:it|this|that)(?:['’]s|\s+is)\s+not\b[^.!?]*?[,;]\s*(?:it|this|that)(?:['’]s|\s+is)\b/gi;
 
+const ENGAGEMENT_VERB = String.raw`(?:like|rt|retweet|repost|share|follow|bookmark|save)`;
+const ENGAGEMENT_ASKS = [
+  String.raw`${ENGAGEMENT_VERB}(?:,? (?:and|&) ${ENGAGEMENT_VERB})*(?: (?:this|me|us)(?: post| thread)?)? (?:if (?:you (?:agree|relate|remember|found|enjoyed|liked|learned)|this (?:helped|resonates|was useful))|for (?:more|later)|to help others)\b`,
+  String.raw`(?:like|rt|retweet|repost)(?: (?:and|&) ${ENGAGEMENT_VERB})*(?: this(?: post| thread)?)? if you\b`,
+  String.raw`(?:like|share|repost|bookmark|save) this(?: post| thread)?[.!]*$`,
+  String.raw`(?:hit|smash) (?:that|the) (?:like|follow|subscribe|bell)\b`,
+  String.raw`(?:drop|leave) (?:an? |your )?(?:\p{Extended_Pictographic}\S*|comment|reply|yes|["“][^"”]*["”]) (?:below|in the comments)`,
+  String.raw`tag (?:a|your) friend\b`,
+  String.raw`comment ["“]?yes\b`,
+];
+const ENGAGEMENT_BAIT = new RegExp(String.raw`^(?:[\p{Extended_Pictographic}\uFE0F*_>#-]\s*|please\s+)*(?:${ENGAGEMENT_ASKS.join("|")})`, "iu");
+
 const SHARED_PATTERN_RULES = [
   { rule: "filler-word", pattern: /\b(?:just|basically|finally)\b/i },
   { rule: "em-dash", pattern: /—/ },
@@ -21,6 +33,7 @@ const SHARED_PATTERN_RULES = [
   { rule: "corporate-opener", pattern: /\bhope this (?:email|message|note) finds you well\b|\bfriendly reminder\b/i },
   { rule: "teaser", pattern: /\b(?:(?:shows|explains) why|here['’]s (?:why|how|the thing))\s*[.!?:]*\s*$/i },
   { rule: "kicker", pattern: /,\s+and\s+(?:(?:nobody|no one|nothing|none|never|not a single|not one)\b|[^,;:.!?]*?\bkept\s+[a-z]+ing\b)[^,;:]*(?:,[^,;:]{0,20})?$/i },
+  { rule: "engagement-bait", pattern: ENGAGEMENT_BAIT },
   { rule: "corporate-closer", pattern: /^\s*(?:best|cheers|regards|best regards|kind regards|warm regards|warmly|sincerely|all the best)\s*[,.!]?\s*$/i },
 ];
 
@@ -144,6 +157,7 @@ function runCommandLine(argumentList) {
   if (flags.some((flag) => flag.rule === "comma-splice")) console.log("comma-splice: delete the whole sentence. A spliced line is usually a fluff acknowledgement, and splitting it with a period or joining it with 'and' keeps the fluff. Rewrite it only when it carries a fact the reader needs.");
   if (flags.some((flag) => flag.rule === "teaser")) console.log("teaser: delete the whole sentence. It announces a reason without giving one, so open the next sentence with the reason itself.");
   if (flags.some((flag) => flag.rule === "kicker")) console.log("kicker: end the sentence at the fact. Delete the clause after ', and' or state its fact plainly in a sentence of its own.");
+  if (flags.some((flag) => flag.rule === "engagement-bait")) console.log("engagement-bait: delete the sentence. Asking for the like or share reads as bait, so let the post earn the reply.");
   if (flags.some((flag) => flag.rule === "commit-reference")) console.log("commit-reference: drop the commit hash. The reader sees the change on the PR, and a hash in prose is noise to them.");
   if (flags.some((flag) => flag.rule === "message-length")) console.log(`message-length: a casual reply stays one short paragraph of at most ${MESSAGE_WORD_CAP} words and ${MESSAGE_CODE_SPAN_CAP} code span. Cut the caveats and commands the reader did not ask for, or split the reply into a short answer and a follow-up.`);
   console.log(`${flags.length} flag(s). Delete or rewrite each flagged sentence and rerun until 0.`);

@@ -46,6 +46,9 @@ test("shared voice rules flag on every draft and long-form rules only with --lon
     assert.deepEqual(lintDraft(kicker, "--longform").rules, ["kicker"], kicker);
   }
   assert.match(lintDraft(recordedKickers[0]).stdout, /kicker: end the sentence at the fact/);
+  const recordedBait = ["Like if you agree!", "Follow for more tips on agents.", "Bookmark this.", "RT if you shipped on a Friday.", "Drop a 🔥 below if this helped.", "Like and share if you agree!", "👇 Like if you found this useful.", "**Like if you agree.**", "Tag a friend who needs this."];
+  for (const bait of recordedBait) assert.deepEqual(lintDraft(bait).rules, ["engagement-bait"], bait);
+  assert.match(lintDraft(recordedBait[0]).stdout, /engagement-bait: delete the sentence/);
   const longformDraft = "# Setup\n\nInstall it.\n\n## Why\n\nIt is not slow. It is careful and coming soon.\n\n- \u{1F680} Fast\n";
   assert.equal(lintDraft(longformDraft).exitCode, 0);
   assert.deepEqual(lintDraft(longformDraft, "--longform").rules, ["one-sentence-heading", "vague-quantity", "emoji-bullet"]);
@@ -55,7 +58,7 @@ test("shared voice rules flag on every draft and long-form rules only with --lon
   const rejectedSlackReply = "The export broke because `EXPORT_BATCH_SIZE` is unset on that worker. Run `kubectl rollout restart deploy/export` and it should recover, though if the queue is still backed up after a few minutes it is worth checking the dead letter topic too, since retries pile up there when the batch size is missing.";
   assert.deepEqual(lintDraft(rejectedSlackReply).rules, ["message-length"]);
   assert.deepEqual(lintDraft(rejectedSlackReply, "--longform").rules, []);
-  assert.equal(lintDraft("The export broke because the batch size is unset. Restarting the worker fixes it.").exitCode, 0);
+  assert.equal(lintDraft("The export broke because the batch size is unset. Restarting the worker fixes it. I like the follow button and drop a note below the chart. Drop a comment in the YAML to skip it. Bookmark this page for the runbook.").exitCode, 0);
   const hyphenAndPossessiveDraft = "It's covered by [90-day data retention](/docs/data-retention).\n\nThe 2024’s costs are below.\n";
   assert.deepEqual(lintDraft(hyphenAndPossessiveDraft, "--longform").rules, ["volatile-number", "mixed-apostrophes"]);
   for (const rejectedReply of ["Fixed in 870facd.", "Fixed in `870facd4c0e8a6b2c2d7a9091c5243c21a9b16a4`.", "Reverted:\n\n```sh\ngit revert 870facd4c0\n```"]) {

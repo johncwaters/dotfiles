@@ -9,5 +9,5 @@
 
 Short social posts compress this to hook (mid-motion), turn ("but"), payoff (opinion or number), button.
 
-- **Social posts** run one or two sentences per paragraph with a blank line between, since the feed is skimmed on a phone, and spend at most one casual parenthetical aside ("only two eyes, duh") right after the claim it deflates.
+- **Social posts** run one or two sentences per paragraph with a blank line between, since the feed is skimmed on a phone, and spend at most one casual parenthetical aside ("only two eyes, duh") right after the claim it deflates. Before posting, the draft must be worth copying or DMing to someone, or invite a real reply or quote; a post that is neither gets cut, since the feed ranks on those sends and answers, and asking for them outright is the bait the linter flags.
 - **Playful posts** are one joke in one paragraph under 200 characters that commits to the bit without explaining or conceding it. Attached media is the payoff, so the copy does not describe it, and an announcement frame ("So I built X"), product name, or feature count appears only when the author supplies it. Stretched vowels, `!`, and a deadpan closing parenthetical stay; typos, chat abbreviations, and emoticons go.

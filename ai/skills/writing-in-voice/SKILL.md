@@ -26,7 +26,7 @@ The carbon unit writes like a senior engineer in casual-professional mode: warm 
 
 ## Tells that mark prose as machine-written
 
-Readers can tell, and these are not how the carbon unit writes. Strip every one on sight, on both paths. `scripts/lint-draft.mjs` flags filler words, machine vocabulary, corporate openers and sign-offs, em dashes, kicker clauses, teasers, a message over 50 words or with 2 or more code spans, and, with `--longform`, emoji bullets; these it does not:
+Readers can tell, and these are not how the carbon unit writes. Strip every one on sight, on both paths. `scripts/lint-draft.mjs` flags filler words, machine vocabulary, corporate openers and sign-offs, em dashes, kicker clauses, teasers, engagement bait ("like if you agree", "follow for more"), a message over 50 words or with 2 or more code spans, and, with `--longform`, emoji bullets; these it does not:
 
 - **Reflexive triplets**, "It's not X, it's Y" more than once per piece, stacked rhetorical questions, uniform sentence length, and emoji bullets in a message.
 - **Endings that recap**, or a name signed under the message.
